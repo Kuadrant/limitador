@@ -1,0 +1,5 @@
+./target
+Dockerfile
+*.swp
+.dockerignore
+.git
