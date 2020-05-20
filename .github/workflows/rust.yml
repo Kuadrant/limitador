@@ -13,7 +13,7 @@ jobs:
 
     steps:
     - name: Start Redis
-      uses: superchargejs/redis-github-action@v1
+      uses: supercharge/redis-github-action@1.1.0
       with:
         redis-version: 5
 
