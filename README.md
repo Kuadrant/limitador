@@ -1,5 +1,8 @@
 # Limitador
 
+[![Docker Repository on Quay](https://quay.io/repository/3scale/limitador/status
+"Docker Repository on Quay")](https://quay.io/repository/3scale/limitador)
+
 **Status: Experimental**
 
 Limitador is a generic rate-limiter written in Rust. It can be used as a library
