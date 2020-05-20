@@ -73,7 +73,6 @@ impl RateLimiter {
         }
     }
 
-    // TODO: return iterator and avoid collect() call
     fn counters_that_apply(
         &self,
         namespace: &str,
