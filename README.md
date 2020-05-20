@@ -7,11 +7,16 @@ or as a service that implements Envoy's Rate Limit protocol.
 
 ## Run the grpc server
 
+After cloning the repo:
+```bash
+git submodule update --init
+```
+
 To run Limitador, you need to provide a YAML file with the limits. There's an
 example file that allows 10 requests per minute and per user_id when the HTTP
 method is "GET" and 5 when it is a "POST":
 ```bash
-LIMITS_FILE=./examples/limits.yaml cargo run --release --bin ratelimit-server
+LIMITS_FILE=./examples/limits.yaml cargo run --release
 ```
 
 There's a minimal Envoy config to try limitador in `examples/envoy.yaml`. The
@@ -21,6 +26,14 @@ assumes that there's an upstream API deployed in the port 1323. You can use
 
 
 ## Develop
+
+### Pull the git submodules
+
+After cloning the repo, pull the git submodules with the Envoy grpc dependencies:
+
+```bash
+git submodule update --init
+```
 
 ### Build
 
