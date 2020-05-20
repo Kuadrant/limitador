@@ -1,0 +1,27 @@
+[package]
+name = "limitador"
+version = "0.1.0"
+authors = ["David Ortiz <z.david.ortiz@gmail.com>"]
+edition = "2018"
+
+[[bin]] # Bin to run the rate-limit gRPC server
+name = "ratelimit-server"
+path = "src/server.rs"
+
+[dependencies]
+ttl_cache = "0.5"
+tonic = "0.2"
+prost = "0.6"
+prost-types = "0.6"
+tokio = { version = "0.2", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.8"
+serde_json = "1.0"
+redis = "0.16"
+thiserror = "1.0"
+
+[build-dependencies]
+tonic-build = "0.2"
+
+[dev-dependencies]
+serial_test = "*"
