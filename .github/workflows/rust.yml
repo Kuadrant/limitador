@@ -12,6 +12,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Start Redis
+      uses: superchargejs/redis-github-action@v1
+      with:
+        redis-version: 5
+
     - uses: actions/checkout@v2
     - name: Build
       run: git submodule update --init && cargo build --verbose
