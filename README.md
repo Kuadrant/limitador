@@ -1,5 +1,6 @@
 # Limitador
 
+![Github Workflow](https://github.com/3scale/limitador/workflows/Rust/badge.svg)
 [![Docker Repository on Quay](https://quay.io/repository/3scale/limitador/status
 "Docker Repository on Quay")](https://quay.io/repository/3scale/limitador)
 
