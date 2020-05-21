@@ -1,11 +1,15 @@
+#[cfg(feature = "redis_storage")]
+use ::redis::RedisError;
+
 use crate::counter::Counter;
 use crate::limit::Limit;
-use ::redis::RedisError;
 use std::collections::HashSet;
 use std::time::Duration;
 use thiserror::Error;
 
 pub mod in_memory;
+
+#[cfg(feature = "redis_storage")]
 pub mod redis;
 
 pub trait Storage: Sync + Send {
@@ -28,6 +32,7 @@ impl StorageErr {
     }
 }
 
+#[cfg(feature = "redis_storage")]
 impl From<RedisError> for StorageErr {
     fn from(e: RedisError) -> Self {
         StorageErr { msg: e.to_string() }

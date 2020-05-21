@@ -58,3 +58,11 @@ Then, run the tests:
 cargo test
 ```
 
+### WASM
+
+To use limitador from a project that compiles to WASM, there are some features
+that need to be disabled. Add this to your `Cargo.toml`:
+```toml
+[dependencies]
+limitador = { version = "0.1.0", default-features = false }
+```
