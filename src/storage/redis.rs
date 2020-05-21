@@ -6,6 +6,7 @@ use crate::limit::Limit;
 use crate::storage::{Storage, StorageErr};
 use std::collections::HashSet;
 use std::iter::FromIterator;
+use std::time::Duration;
 
 // TODO: define keys so that all the ones that belong to the same namespace
 // go to the same shard.
@@ -69,6 +70,10 @@ impl Storage for RedisStorage {
                 )
                 .map_err(|e| e.into()),
         }
+    }
+
+    fn get_counters(&mut self) -> Vec<(Counter, i64, Duration)> {
+        unimplemented!()
     }
 }
 

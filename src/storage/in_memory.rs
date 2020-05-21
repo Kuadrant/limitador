@@ -62,6 +62,10 @@ impl Storage for InMemoryStorage {
 
         Ok(())
     }
+
+    fn get_counters(&mut self) -> Vec<(Counter, i64, Duration)> {
+        unimplemented!()
+    }
 }
 
 impl InMemoryStorage {

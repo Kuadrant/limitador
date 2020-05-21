@@ -4,8 +4,9 @@ use crate::limit::Limit;
 use crate::storage::in_memory::InMemoryStorage;
 use crate::storage::Storage;
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
-mod counter;
+pub mod counter;
 pub mod errors;
 pub mod limit;
 mod storage;
@@ -71,6 +72,10 @@ impl RateLimiter {
             }
             None => Err(LimitadorError::MissingNamespace),
         }
+    }
+
+    pub fn get_counters(&mut self) -> Vec<(Counter, i64, Duration)> {
+        self.storage.get_counters()
     }
 
     fn counters_that_apply(

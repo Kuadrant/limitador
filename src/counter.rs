@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
 
-#[derive(Eq, Clone, Serialize, Deserialize)]
+#[derive(Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct Counter {
     limit: Limit,
 
