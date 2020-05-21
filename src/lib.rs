@@ -9,7 +9,7 @@ use std::time::Duration;
 pub mod counter;
 pub mod errors;
 pub mod limit;
-mod storage;
+pub mod storage;
 
 pub struct RateLimiter {
     storage: Box<dyn Storage>,
@@ -20,6 +20,10 @@ impl RateLimiter {
         RateLimiter {
             storage: Box::new(InMemoryStorage::default()),
         }
+    }
+
+    pub fn new_with_storage(storage: Box<dyn Storage>) -> RateLimiter {
+        RateLimiter { storage }
     }
 
     pub fn add_limit(&mut self, limit: Limit) -> Result<(), LimitadorError> {
