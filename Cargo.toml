@@ -6,7 +6,7 @@ edition = "2018"
 
 # We make some features optional to be able to compile for wasm32.
 [features]
-default = ["redis", "envoy_rls"]
+default = ["redis_storage", "envoy_rls"]
 redis_storage = ["redis"]
 envoy_rls = ["tokio", "tonic", "prost", "prost-types"]
 
