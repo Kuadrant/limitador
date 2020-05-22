@@ -54,6 +54,10 @@ impl Limit {
         self.seconds
     }
 
+    pub fn has_variable(&self, var: &str) -> bool {
+        self.variables.contains(var)
+    }
+
     pub fn applies(&self, values: &HashMap<String, String>) -> bool {
         self.conditions
             .iter()

@@ -110,3 +110,34 @@ fn update_counters_returns_err_when_no_namespace() {
         LimitadorError::MissingNamespace
     );
 }
+
+#[test]
+fn takes_into_account_only_vars_of_the_limits() {
+    let max_hits = 3;
+
+    let limit = Limit::new(
+        "test_namespace",
+        max_hits,
+        60,
+        vec!["req.method == GET"],
+        vec!["req.method", "app_id"],
+    );
+
+    let mut rate_limiter = RateLimiter::new();
+    rate_limiter.add_limit(limit.clone()).unwrap();
+
+    let mut values: HashMap<String, String> = HashMap::new();
+    values.insert("namespace".to_string(), "test_namespace".to_string());
+    values.insert("req.method".to_string(), "GET".to_string());
+    values.insert("app_id".to_string(), "test_app_id".to_string());
+
+    for i in 0..max_hits {
+        // Add an extra value that does not apply to the limit on each
+        // iteration. It should not affect.
+        values.insert("does_not_apply".to_string(), i.to_string());
+
+        assert_eq!(false, rate_limiter.is_rate_limited(&values, 1).unwrap());
+        rate_limiter.update_counters(&values, 1).unwrap();
+    }
+    assert_eq!(true, rate_limiter.is_rate_limited(&values, 1).unwrap());
+}

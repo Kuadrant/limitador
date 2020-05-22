@@ -25,9 +25,12 @@ impl Counter {
     pub fn new(limit: Limit, set_variables: HashMap<String, String>) -> Counter {
         // TODO: check that all the variables defined in the limit are set.
 
+        let mut vars = set_variables;
+        vars.retain(|var, _| limit.has_variable(var));
+
         Counter {
             limit,
-            set_variables,
+            set_variables: vars,
         }
     }
 
