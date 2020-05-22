@@ -8,6 +8,7 @@ use std::time::Duration;
 use thiserror::Error;
 
 pub mod in_memory;
+pub mod wasm;
 
 #[cfg(feature = "redis_storage")]
 pub mod redis;
