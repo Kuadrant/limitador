@@ -12,17 +12,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Start Redis
-      uses: supercharge/redis-github-action@1.1.0
-      with:
-        redis-version: 5
+      - name: Start Redis
+        uses: supercharge/redis-github-action@1.1.0
+        with:
+          redis-version: 5
 
-    - uses: actions/checkout@v2
-    - name: Build
-      run: git submodule update --init && cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      - uses: actions/checkout@v2
 
-    - uses: actions/checkout@v2
-    - name: Build for WASM
-      run: cargo build --target=wasm32-unknown-unknown --verbose
+      - name: Build
+        run: git submodule update --init && cargo build --verbose
+
+      - name: Run tests
+        run: cargo test --verbose
+
+      - name: Build for WASM
+        uses: actions-rs/toolchain@v1
+        with:
+          command: build
+          toolchain: stable
+          target: wasm32-unknown-unknown
