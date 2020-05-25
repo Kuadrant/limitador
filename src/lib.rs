@@ -78,8 +78,8 @@ impl RateLimiter {
         }
     }
 
-    pub fn get_counters(&mut self) -> Vec<(Counter, i64, Duration)> {
-        self.storage.get_counters()
+    pub fn get_counters(&mut self, namespace: &str) -> Vec<(Counter, i64, Duration)> {
+        self.storage.get_counters(namespace)
     }
 
     fn counters_that_apply(

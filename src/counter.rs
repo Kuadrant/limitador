@@ -41,6 +41,10 @@ impl Counter {
     pub fn seconds(&self) -> u64 {
         self.limit.seconds()
     }
+
+    pub fn namespace(&self) -> &str {
+        self.limit.namespace()
+    }
 }
 
 impl Hash for Counter {

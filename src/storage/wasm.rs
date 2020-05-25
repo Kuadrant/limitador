@@ -142,10 +142,11 @@ impl Storage for WasmStorage {
         Ok(())
     }
 
-    fn get_counters(&mut self) -> Vec<(Counter, i64, Duration)> {
+    fn get_counters(&mut self, namespace: &str) -> Vec<(Counter, i64, Duration)> {
         self.counters
             .get_all(self.clock.get_current_time())
             .iter()
+            .filter(|(counter, _, _)| counter.namespace() == namespace)
             .map(|(counter, value, expires_at)| {
                 (
                     counter.clone(),
