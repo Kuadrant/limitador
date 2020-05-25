@@ -25,9 +25,14 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
-      - name: Build for WASM
-        uses: actions-rs/toolchain@v1
+      - uses: actions-rs/toolchain@v1
         with:
-          command: build
           toolchain: stable
           target: wasm32-unknown-unknown
+          override: true
+
+      - name: Build for WASM
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --target wasm32-unknown-unknown
