@@ -4,7 +4,7 @@
 # Build Stage
 # ------------------------------------------------------------------------------
 
-FROM rust:1.43 as limitador-build
+FROM rust:1.44 as limitador-build
 
 RUN apt-get update \
  && apt-get install musl-tools -y
@@ -45,7 +45,7 @@ RUN RUSTFLAGS=-Clinker=musl-gcc cargo build --release --target=x86_64-unknown-li
 # Run Stage
 # ------------------------------------------------------------------------------
 
-FROM alpine:3.11
+FROM alpine:3.12
 
 RUN addgroup -g 1000 limitador \
  && adduser -D -s /bin/sh -u 1000 -G limitador limitador
