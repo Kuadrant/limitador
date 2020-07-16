@@ -8,6 +8,7 @@ use limitador::RateLimiter;
 use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;
+use tokio::signal;
 use tonic::{transport::Server, Request, Response, Status};
 
 const LIMITS_FILE_ENV: &str = "LIMITS_FILE";
@@ -117,6 +118,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let svc = RateLimitServiceServer::with_interceptor(rate_limiter, intercept);
 
     Server::builder().add_service(svc).serve(addr).await?;
+
+    signal::ctrl_c().await?;
 
     Ok(())
 }
