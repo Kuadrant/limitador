@@ -59,9 +59,14 @@ impl Limit {
     }
 
     pub fn applies(&self, values: &HashMap<String, String>) -> bool {
-        self.conditions
+        let all_conditions_apply = self
+            .conditions
             .iter()
-            .all(|cond| Self::condition_applies(&cond, values))
+            .all(|cond| Self::condition_applies(&cond, values));
+
+        let all_vars_are_set = self.variables.iter().all(|var| values.contains_key(var));
+
+        all_conditions_apply && all_vars_are_set
     }
 
     fn condition_applies(condition: &str, values: &HashMap<String, String>) -> bool {
@@ -125,16 +130,18 @@ mod tests {
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "5".into());
+        values.insert("y".into(), "1".into());
 
         assert!(limit.applies(&values))
     }
 
     #[test]
-    fn limit_does_not_apply() {
+    fn limit_does_not_apply_when_cond_is_false() {
         let limit = Limit::new("test_namespace", 10, 60, vec!["x == 5"], vec!["y"]);
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "1".into());
+        values.insert("y".into(), "1".into());
 
         assert_eq!(false, limit.applies(&values))
     }
@@ -146,6 +153,18 @@ mod tests {
         // Notice that "x" is not set
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("a".into(), "1".into());
+        values.insert("y".into(), "1".into());
+
+        assert_eq!(false, limit.applies(&values))
+    }
+
+    #[test]
+    fn limit_does_not_apply_when_var_not_set() {
+        let limit = Limit::new("test_namespace", 10, 60, vec!["x == 5"], vec!["y"]);
+
+        // Notice that "y" is not set
+        let mut values: HashMap<String, String> = HashMap::new();
+        values.insert("x".into(), "5".into());
 
         assert_eq!(false, limit.applies(&values))
     }
@@ -163,6 +182,7 @@ mod tests {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "5".into());
         values.insert("y".into(), "2".into());
+        values.insert("z".into(), "1".into());
 
         assert!(limit.applies(&values))
     }
@@ -180,6 +200,7 @@ mod tests {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "3".into());
         values.insert("y".into(), "2".into());
+        values.insert("z".into(), "1".into());
 
         assert_eq!(false, limit.applies(&values))
     }
