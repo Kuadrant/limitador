@@ -65,24 +65,21 @@ impl RateLimitService for MyRateLimiter {
             values.insert(entry.key.clone(), entry.value.clone());
         }
 
-        // TODO: lock rate_limited and update_counters together.
-        // Although some users might decide to call them separately.
+        let is_rate_limited = self
+            .limiter
+            .lock()
+            .await
+            .check_rate_limited_and_update(&values, 1);
 
-        let rate_limited = self.limiter.lock().await.is_rate_limited(&values, 1);
-
-        // TODO: For now, deny the request if there's an error.
-        // Make this configurable.
-        let resp_code = match self.limiter.lock().await.update_counters(&values, 1) {
-            Ok(_) => match rate_limited {
-                Ok(is_limited) => {
-                    if is_limited {
-                        Code::OverLimit
-                    } else {
-                        Code::Ok
-                    }
+        let resp_code = match is_rate_limited {
+            Ok(rate_limited) => {
+                if rate_limited {
+                    Code::OverLimit
+                } else {
+                    Code::Ok
                 }
-                Err(_) => Code::OverLimit,
-            },
+            }
+            // TODO: For now, deny the request if there's an error
             Err(_) => Code::OverLimit,
         };
 

@@ -78,6 +78,26 @@ impl RateLimiter {
         }
     }
 
+    pub fn check_rate_limited_and_update(
+        &mut self,
+        values: &HashMap<String, String>,
+        delta: i64,
+    ) -> Result<bool, LimitadorError> {
+        match self.is_rate_limited(values, delta) {
+            Ok(rate_limited) => {
+                if rate_limited {
+                    Ok(true)
+                } else {
+                    match self.update_counters(values, delta) {
+                        Ok(_) => Ok(false),
+                        Err(e) => Err(e),
+                    }
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     pub fn get_counters(&mut self, namespace: &str) -> Vec<(Counter, i64, Duration)> {
         self.storage.get_counters(namespace)
     }
