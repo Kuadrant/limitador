@@ -34,6 +34,12 @@ impl RateLimiter {
         self.storage.get_limits(namespace).map_err(|err| err.into())
     }
 
+    pub fn delete_limits(&mut self, namespace: &str) -> Result<(), LimitadorError> {
+        self.storage
+            .delete_limits(namespace)
+            .map_err(|err| err.into())
+    }
+
     pub fn is_rate_limited(
         &self,
         values: &HashMap<String, String>,

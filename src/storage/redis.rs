@@ -44,6 +44,15 @@ impl Storage for RedisStorage {
         Ok(limits)
     }
 
+    fn delete_limits(&mut self, namespace: &str) -> Result<(), StorageErr> {
+        let mut con = self.client.get_connection()?;
+
+        let set_key = Self::key_for_limits_of_namespace(namespace);
+
+        con.del(set_key)?;
+        Ok(())
+    }
+
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
         let mut con = self.client.get_connection()?;
 
@@ -115,6 +124,46 @@ mod tests {
         let limit = Limit::new(namespace, 10, 60, vec!["x == 10"], vec!["x"]);
         storage.add_limit(limit.clone()).unwrap();
         assert!(storage.get_limits(namespace).unwrap().contains(&limit))
+    }
+
+    #[test]
+    #[serial]
+    fn delete_limits() {
+        clean_db();
+        let namespace = "test_namespace";
+        let mut storage = RedisStorage::default();
+
+        [
+            Limit::new(namespace, 10, 60, vec!["x == 10"], vec!["z"]),
+            Limit::new(namespace, 20, 60, vec!["y == 5"], vec!["z"]),
+        ]
+        .iter()
+        .for_each(|limit| storage.add_limit(limit.clone()).unwrap());
+
+        storage.delete_limits(namespace).unwrap();
+
+        assert!(storage.get_limits(namespace).unwrap().is_empty())
+    }
+
+    #[test]
+    #[serial]
+    fn delete_limits_does_not_delete_limits_from_other_namespaces() {
+        clean_db();
+        let namespace1 = "test_namespace_1";
+        let namespace2 = "test_namespace_2";
+        let mut storage = RedisStorage::default();
+
+        storage
+            .add_limit(Limit::new(namespace1, 10, 60, vec!["x == 10"], vec!["z"]))
+            .unwrap();
+        storage
+            .add_limit(Limit::new(namespace2, 5, 60, vec!["x == 10"], vec!["z"]))
+            .unwrap();
+
+        storage.delete_limits(namespace1).unwrap();
+
+        assert!(storage.get_limits(namespace1).unwrap().is_empty());
+        assert_eq!(storage.get_limits(namespace2).unwrap().len(), 1)
     }
 
     #[test]

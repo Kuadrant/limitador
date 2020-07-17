@@ -101,6 +101,11 @@ impl Storage for WasmStorage {
         Ok(limits)
     }
 
+    fn delete_limits(&mut self, namespace: &str) -> Result<(), StorageErr> {
+        self.limits_for_namespace.remove(namespace);
+        Ok(())
+    }
+
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
         let within_limits = match self.counters.get(counter) {
             Some(entry) => {

@@ -59,6 +59,35 @@ fn add_several_limits_in_the_same_namespace() {
 }
 
 #[test]
+fn delete_limits_of_a_namespace() {
+    let namespace = "test_namespace";
+    let mut rate_limiter = RateLimiter::new();
+
+    [
+        Limit::new(
+            namespace,
+            10,
+            60,
+            vec!["req.method == POST"],
+            vec!["req.method", "app_id"],
+        ),
+        Limit::new(
+            namespace,
+            5,
+            60,
+            vec!["req.method == GET"],
+            vec!["req.method", "app_id"],
+        ),
+    ]
+    .iter()
+    .for_each(|limit| rate_limiter.add_limit(limit.clone()).unwrap());
+
+    rate_limiter.delete_limits(namespace).unwrap();
+
+    assert!(rate_limiter.get_limits(namespace).unwrap().is_empty())
+}
+
+#[test]
 fn rate_limited() {
     let max_hits = 3;
 

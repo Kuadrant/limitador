@@ -16,6 +16,7 @@ pub mod redis;
 pub trait Storage: Sync + Send {
     fn add_limit(&mut self, limit: Limit) -> Result<(), StorageErr>;
     fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, StorageErr>;
+    fn delete_limits(&mut self, namespace: &str) -> Result<(), StorageErr>;
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr>;
     fn update_counter(&mut self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
     fn get_counters(&mut self, namespace: &str) -> Vec<(Counter, i64, Duration)>;
