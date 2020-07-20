@@ -171,6 +171,33 @@ fn rate_limited_returns_err_when_no_namespace() {
 }
 
 #[test]
+fn rate_limited_with_delta_higher_than_one() {
+    let limit = Limit::new(
+        "test_namespace",
+        10,
+        60,
+        vec!["req.method == GET"],
+        vec!["app_id"],
+    );
+
+    let mut rate_limiter = RateLimiter::new();
+    rate_limiter.add_limit(limit.clone()).unwrap();
+
+    let mut values: HashMap<String, String> = HashMap::new();
+    values.insert("namespace".to_string(), "test_namespace".to_string());
+    values.insert("req.method".to_string(), "GET".to_string());
+    values.insert("app_id".to_string(), "test_app_id".to_string());
+
+    // Report 5 hits twice. The limit is 10, so the first limited call should be
+    // the third one.
+    for _ in 0..2 {
+        assert_eq!(false, rate_limiter.is_rate_limited(&values, 5).unwrap());
+        rate_limiter.update_counters(&values, 5).unwrap();
+    }
+    assert_eq!(true, rate_limiter.is_rate_limited(&values, 1).unwrap());
+}
+
+#[test]
 fn update_counters_returns_err_when_no_namespace() {
     let mut rate_limiter = RateLimiter::new();
 

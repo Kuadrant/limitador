@@ -73,7 +73,7 @@ impl Storage for InMemoryStorage {
             None => {
                 self.counters.insert(
                     counter.clone(),
-                    counter.max_value() - 1,
+                    counter.max_value() - delta,
                     Duration::from_secs(counter.seconds()),
                 );
             }

@@ -142,7 +142,7 @@ impl Storage for WasmStorage {
                     // TODO: remove duplication. "None" branch is identical.
                     self.counters.insert(
                         counter,
-                        counter.max_value() - 1,
+                        counter.max_value() - delta,
                         self.clock.get_current_time() + Duration::from_secs(counter.seconds()),
                     );
                 } else {
@@ -152,7 +152,7 @@ impl Storage for WasmStorage {
             None => {
                 self.counters.insert(
                     counter,
-                    counter.max_value() - 1,
+                    counter.max_value() - delta,
                     self.clock.get_current_time() + Duration::from_secs(counter.seconds()),
                 );
             }
