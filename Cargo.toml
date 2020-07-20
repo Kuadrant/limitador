@@ -29,7 +29,12 @@ tonic-build = "0.2"
 
 [dev-dependencies]
 serial_test = "*"
+criterion = "0.3"
 
 [[bin]]
 name = "ratelimit-server"
 path = "src/server.rs"
+
+[[bench]]
+name = "bench"
+harness = false
