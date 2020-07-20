@@ -30,6 +30,10 @@ impl RateLimiter {
         self.storage.add_limit(limit).map_err(|err| err.into())
     }
 
+    pub fn delete_limit(&mut self, limit: &Limit) -> Result<(), LimitadorError> {
+        self.storage.delete_limit(limit).map_err(|err| err.into())
+    }
+
     pub fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, LimitadorError> {
         self.storage.get_limits(namespace).map_err(|err| err.into())
     }

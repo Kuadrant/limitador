@@ -28,6 +28,27 @@ fn add_a_limit() {
 }
 
 #[test]
+fn delete_limit() {
+    let limit = Limit::new(
+        "test_namespace",
+        10,
+        60,
+        vec!["req.method == GET"],
+        vec!["req.method", "app_id"],
+    );
+
+    let mut rate_limiter = RateLimiter::new();
+    rate_limiter.add_limit(limit.clone()).unwrap();
+
+    rate_limiter.delete_limit(&limit).unwrap();
+
+    assert!(rate_limiter
+        .get_limits("test_namespace")
+        .unwrap()
+        .is_empty())
+}
+
+#[test]
 fn add_several_limits_in_the_same_namespace() {
     let namespace = "test_namespace";
 

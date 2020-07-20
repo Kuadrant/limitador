@@ -44,7 +44,22 @@ impl Storage for RedisStorage {
         Ok(limits)
     }
 
+    fn delete_limit(&mut self, limit: &Limit) -> Result<(), StorageErr> {
+        // TODO: Delete the counters associated with a limit too.
+
+        let mut con = self.client.get_connection()?;
+
+        let set_key = Self::key_for_limits_of_namespace(limit.namespace());
+        let serialized_limit = serde_json::to_string(limit).unwrap();
+
+        con.srem(set_key, serialized_limit)?;
+
+        Ok(())
+    }
+
     fn delete_limits(&mut self, namespace: &str) -> Result<(), StorageErr> {
+        // TODO: delete counters associated with the limits.
+
         let mut con = self.client.get_connection()?;
 
         let set_key = Self::key_for_limits_of_namespace(namespace);
@@ -124,6 +139,20 @@ mod tests {
         let limit = Limit::new(namespace, 10, 60, vec!["x == 10"], vec!["x"]);
         storage.add_limit(limit.clone()).unwrap();
         assert!(storage.get_limits(namespace).unwrap().contains(&limit))
+    }
+
+    #[test]
+    #[serial]
+    fn delete_limit() {
+        clean_db();
+        let namespace = "test_namespace";
+        let mut storage = RedisStorage::default();
+        let limit = Limit::new(namespace, 10, 60, vec!["x == 10"], vec!["y"]);
+        storage.add_limit(limit.clone()).unwrap();
+
+        storage.delete_limit(&limit).unwrap();
+
+        assert!(storage.get_limits(namespace).unwrap().is_empty())
     }
 
     #[test]

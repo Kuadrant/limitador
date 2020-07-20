@@ -37,7 +37,21 @@ impl Storage for InMemoryStorage {
         Ok(limits)
     }
 
+    fn delete_limit(&mut self, limit: &Limit) -> Result<(), StorageErr> {
+        // TODO: delete counters associated with the limit too.
+
+        let namespace = limit.namespace().to_string();
+
+        if let Some(value) = self.limits_for_namespace.get_mut(&namespace) {
+            value.remove(limit);
+        }
+
+        Ok(())
+    }
+
     fn delete_limits(&mut self, namespace: &str) -> Result<(), StorageErr> {
+        // TODO: delete counters associated with the limits.
+
         self.limits_for_namespace.remove(namespace);
         Ok(())
     }
