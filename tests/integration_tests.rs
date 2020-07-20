@@ -28,6 +28,28 @@ fn add_a_limit() {
 }
 
 #[test]
+fn add_limit_without_vars() {
+    let limit = Limit::new(
+        "test_namespace",
+        10,
+        60,
+        vec!["req.method == GET"],
+        Vec::<String>::new(),
+    );
+
+    let mut rate_limiter = RateLimiter::new();
+    rate_limiter.add_limit(limit.clone()).unwrap();
+
+    let mut expected_result = HashSet::new();
+    expected_result.insert(limit);
+
+    assert_eq!(
+        rate_limiter.get_limits("test_namespace").unwrap(),
+        expected_result
+    )
+}
+
+#[test]
 fn delete_limit() {
     let limit = Limit::new(
         "test_namespace",

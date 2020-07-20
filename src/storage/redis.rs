@@ -143,6 +143,17 @@ mod tests {
 
     #[test]
     #[serial]
+    fn add_limit_without_vars() {
+        clean_db();
+        let namespace = "test_namespace";
+        let mut storage = RedisStorage::default();
+        let limit = Limit::new(namespace, 10, 60, vec!["x == 10"], Vec::<String>::new());
+        storage.add_limit(limit.clone()).unwrap();
+        assert!(storage.get_limits(namespace).unwrap().contains(&limit))
+    }
+
+    #[test]
+    #[serial]
     fn delete_limit() {
         clean_db();
         let namespace = "test_namespace";
