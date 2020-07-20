@@ -37,4 +37,5 @@ path = "src/server.rs"
 
 [[bench]]
 name = "bench"
+path = "benches/bench.rs"
 harness = false
