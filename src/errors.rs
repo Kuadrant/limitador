@@ -5,8 +5,6 @@ use thiserror::Error;
 pub enum LimitadorError {
     #[error("error while accessing the limits storage: {0:?}")]
     Storage(String),
-    #[error("missing namespace")]
-    MissingNamespace,
 }
 
 impl From<StorageErr> for LimitadorError {

@@ -1,6 +1,5 @@
 extern crate limitador;
 
-use limitador::errors::LimitadorError;
 use limitador::limit::Limit;
 use limitador::RateLimiter;
 use std::collections::{HashMap, HashSet};
@@ -120,10 +119,10 @@ fn delete_limits_of_a_namespace() {
 
 #[test]
 fn rate_limited() {
+    let namespace = "test_namespace";
     let max_hits = 3;
-
     let limit = Limit::new(
-        "test_namespace",
+        namespace,
         max_hits,
         60,
         vec!["req.method == GET"],
@@ -134,76 +133,55 @@ fn rate_limited() {
     rate_limiter.add_limit(limit.clone()).unwrap();
 
     let mut values: HashMap<String, String> = HashMap::new();
-    values.insert("namespace".to_string(), "test_namespace".to_string());
     values.insert("req.method".to_string(), "GET".to_string());
     values.insert("app_id".to_string(), "test_app_id".to_string());
 
     for _ in 0..max_hits {
-        assert_eq!(false, rate_limiter.is_rate_limited(&values, 1).unwrap());
-        rate_limiter.update_counters(&values, 1).unwrap();
+        assert_eq!(
+            false,
+            rate_limiter.is_rate_limited(namespace, &values, 1).unwrap()
+        );
+        rate_limiter.update_counters(namespace, &values, 1).unwrap();
     }
-    assert_eq!(true, rate_limiter.is_rate_limited(&values, 1).unwrap());
-}
-
-#[test]
-fn rate_limited_returns_err_when_no_namespace() {
-    let rate_limiter = RateLimiter::new();
-
-    let mut values: HashMap<String, String> = HashMap::new();
-    values.insert("some_key".to_string(), "some_value".to_string());
-
     assert_eq!(
-        rate_limiter.is_rate_limited(&values, 1).err().unwrap(),
-        LimitadorError::MissingNamespace
+        true,
+        rate_limiter.is_rate_limited(namespace, &values, 1).unwrap()
     );
 }
 
 #[test]
 fn rate_limited_with_delta_higher_than_one() {
-    let limit = Limit::new(
-        "test_namespace",
-        10,
-        60,
-        vec!["req.method == GET"],
-        vec!["app_id"],
-    );
+    let namespace = "test_namespace";
+    let limit = Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
 
     let mut rate_limiter = RateLimiter::new();
     rate_limiter.add_limit(limit.clone()).unwrap();
 
     let mut values: HashMap<String, String> = HashMap::new();
-    values.insert("namespace".to_string(), "test_namespace".to_string());
     values.insert("req.method".to_string(), "GET".to_string());
     values.insert("app_id".to_string(), "test_app_id".to_string());
 
     // Report 5 hits twice. The limit is 10, so the first limited call should be
     // the third one.
     for _ in 0..2 {
-        assert_eq!(false, rate_limiter.is_rate_limited(&values, 5).unwrap());
-        rate_limiter.update_counters(&values, 5).unwrap();
+        assert_eq!(
+            false,
+            rate_limiter.is_rate_limited(namespace, &values, 5).unwrap()
+        );
+        rate_limiter.update_counters(namespace, &values, 5).unwrap();
     }
-    assert_eq!(true, rate_limiter.is_rate_limited(&values, 1).unwrap());
-}
-
-#[test]
-fn update_counters_returns_err_when_no_namespace() {
-    let mut rate_limiter = RateLimiter::new();
-
-    let mut values: HashMap<String, String> = HashMap::new();
-    values.insert("some_key".to_string(), "some_value".to_string());
-
     assert_eq!(
-        rate_limiter.update_counters(&values, 1).err().unwrap(),
-        LimitadorError::MissingNamespace
+        true,
+        rate_limiter.is_rate_limited(namespace, &values, 1).unwrap()
     );
 }
 
 #[test]
 fn takes_into_account_only_vars_of_the_limits() {
+    let namespace = "test_namespace";
     let max_hits = 3;
-
     let limit = Limit::new(
-        "test_namespace",
+        namespace,
         max_hits,
         60,
         vec!["req.method == GET"],
@@ -214,7 +192,6 @@ fn takes_into_account_only_vars_of_the_limits() {
     rate_limiter.add_limit(limit.clone()).unwrap();
 
     let mut values: HashMap<String, String> = HashMap::new();
-    values.insert("namespace".to_string(), "test_namespace".to_string());
     values.insert("req.method".to_string(), "GET".to_string());
     values.insert("app_id".to_string(), "test_app_id".to_string());
 
@@ -223,18 +200,25 @@ fn takes_into_account_only_vars_of_the_limits() {
         // iteration. It should not affect.
         values.insert("does_not_apply".to_string(), i.to_string());
 
-        assert_eq!(false, rate_limiter.is_rate_limited(&values, 1).unwrap());
-        rate_limiter.update_counters(&values, 1).unwrap();
+        assert_eq!(
+            false,
+            rate_limiter.is_rate_limited(namespace, &values, 1).unwrap()
+        );
+        rate_limiter.update_counters(namespace, &values, 1).unwrap();
     }
-    assert_eq!(true, rate_limiter.is_rate_limited(&values, 1).unwrap());
+    assert_eq!(
+        true,
+        rate_limiter.is_rate_limited(namespace, &values, 1).unwrap()
+    );
 }
 
 #[test]
 fn check_rate_limited_and_update() {
+    let namespace = "test_namespace";
     let max_hits = 3;
 
     let limit = Limit::new(
-        "test_namespace",
+        namespace,
         max_hits,
         60,
         vec!["req.method == GET"],
@@ -245,7 +229,6 @@ fn check_rate_limited_and_update() {
     rate_limiter.add_limit(limit.clone()).unwrap();
 
     let mut values: HashMap<String, String> = HashMap::new();
-    values.insert("namespace".to_string(), "test_namespace".to_string());
     values.insert("req.method".to_string(), "GET".to_string());
     values.insert("app_id".to_string(), "test_app_id".to_string());
 
@@ -253,7 +236,7 @@ fn check_rate_limited_and_update() {
         assert_eq!(
             false,
             rate_limiter
-                .check_rate_limited_and_update(&values, 1)
+                .check_rate_limited_and_update(namespace, &values, 1)
                 .unwrap()
         );
     }
@@ -261,23 +244,7 @@ fn check_rate_limited_and_update() {
     assert_eq!(
         true,
         rate_limiter
-            .check_rate_limited_and_update(&values, 1)
+            .check_rate_limited_and_update(namespace, &values, 1)
             .unwrap()
-    );
-}
-
-#[test]
-fn check_rate_limited_and_update_returns_err_when_no_namespace() {
-    let mut rate_limiter = RateLimiter::new();
-
-    let mut values: HashMap<String, String> = HashMap::new();
-    values.insert("some_key".to_string(), "some_value".to_string());
-
-    assert_eq!(
-        rate_limiter
-            .check_rate_limited_and_update(&values, 1)
-            .err()
-            .unwrap(),
-        LimitadorError::MissingNamespace
     );
 }

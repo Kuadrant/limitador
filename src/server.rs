@@ -54,11 +54,16 @@ impl RateLimitService for MyRateLimiter {
     ) -> Result<Response<RateLimitResponse>, Status> {
         let mut values: HashMap<String, String> = HashMap::new();
         let req = request.into_inner();
-        let domain = req.domain.to_string();
+        let namespace = req.domain;
 
-        // TODO: return error if domain is "".
-
-        values.insert("namespace".to_string(), domain);
+        if namespace.is_empty() {
+            return Ok(Response::new(RateLimitResponse {
+                overall_code: Code::Unknown.into(),
+                statuses: vec![],
+                headers: vec![],
+                request_headers_to_add: vec![],
+            }));
+        }
 
         // TODO: assume one descriptor for now.
         for entry in &req.descriptors[0].entries {
@@ -69,7 +74,7 @@ impl RateLimitService for MyRateLimiter {
             .limiter
             .lock()
             .await
-            .check_rate_limited_and_update(&values, 1);
+            .check_rate_limited_and_update(&namespace, &values, 1);
 
         let resp_code = match is_rate_limited {
             Ok(rate_limited) => {
