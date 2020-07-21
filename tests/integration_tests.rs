@@ -12,7 +12,7 @@ fn add_a_limit() {
         10,
         60,
         vec!["req.method == GET"],
-        vec!["req.method", "app_id"],
+        vec!["app_id"],
     );
 
     let mut rate_limiter = RateLimiter::new();
@@ -56,7 +56,7 @@ fn delete_limit() {
         10,
         60,
         vec!["req.method == GET"],
-        vec!["req.method", "app_id"],
+        vec!["app_id"],
     );
 
     let mut rate_limiter = RateLimiter::new();
@@ -79,16 +79,10 @@ fn add_several_limits_in_the_same_namespace() {
         10,
         60,
         vec!["req.method == POST"],
-        vec!["req.method", "app_id"],
+        vec!["app_id"],
     );
 
-    let limit_2 = Limit::new(
-        namespace,
-        5,
-        60,
-        vec!["req.method == GET"],
-        vec!["req.method", "app_id"],
-    );
+    let limit_2 = Limit::new(namespace, 5, 60, vec!["req.method == GET"], vec!["app_id"]);
 
     let mut rate_limiter = RateLimiter::new();
     rate_limiter.add_limit(limit_1.clone()).unwrap();
@@ -112,15 +106,9 @@ fn delete_limits_of_a_namespace() {
             10,
             60,
             vec!["req.method == POST"],
-            vec!["req.method", "app_id"],
+            vec!["app_id"],
         ),
-        Limit::new(
-            namespace,
-            5,
-            60,
-            vec!["req.method == GET"],
-            vec!["req.method", "app_id"],
-        ),
+        Limit::new(namespace, 5, 60, vec!["req.method == GET"], vec!["app_id"]),
     ]
     .iter()
     .for_each(|limit| rate_limiter.add_limit(limit.clone()).unwrap());
@@ -139,7 +127,7 @@ fn rate_limited() {
         max_hits,
         60,
         vec!["req.method == GET"],
-        vec!["req.method", "app_id"],
+        vec!["app_id"],
     );
 
     let mut rate_limiter = RateLimiter::new();
@@ -219,7 +207,7 @@ fn takes_into_account_only_vars_of_the_limits() {
         max_hits,
         60,
         vec!["req.method == GET"],
-        vec!["req.method", "app_id"],
+        vec!["app_id"],
     );
 
     let mut rate_limiter = RateLimiter::new();
@@ -250,7 +238,7 @@ fn check_rate_limited_and_update() {
         max_hits,
         60,
         vec!["req.method == GET"],
-        vec!["req.method", "app_id"],
+        vec!["app_id"],
     );
 
     let mut rate_limiter = RateLimiter::new();
