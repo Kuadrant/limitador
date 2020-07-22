@@ -6,9 +6,10 @@ edition = "2018"
 
 # We make some features optional to be able to compile for wasm32.
 [features]
-default = ["redis_storage", "envoy_rls"]
+default = ["redis_storage", "envoy_rls", "http_server"]
 redis_storage = ["redis"]
 envoy_rls = ["tokio", "tonic", "prost", "prost-types"]
+http_server = ["actix-web", "actix-rt"]
 
 [dependencies]
 ttl_cache = "0.5"
@@ -23,6 +24,8 @@ tokio = { version = "0.2", features = ["full"], optional = true }
 tonic = { version = "0.2", optional = true }
 prost = { version = "0.6", optional = true }
 prost-types = { version = "0.6", optional = true }
+actix-web = { version = "2.0", optional = true }
+actix-rt = { version = "1.0", optional = true }
 
 [build-dependencies]
 tonic-build = "0.2"
@@ -35,6 +38,10 @@ paste = "0.1"
 [[bin]]
 name = "ratelimit-server"
 path = "src/server.rs"
+
+[[bin]]
+name = "http-server"
+path = "src/http_server.rs"
 
 [[bench]]
 name = "bench"
