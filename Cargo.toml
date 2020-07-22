@@ -30,6 +30,7 @@ tonic-build = "0.2"
 [dev-dependencies]
 serial_test = "*"
 criterion = "0.3"
+paste = "0.1"
 
 [[bin]]
 name = "ratelimit-server"
