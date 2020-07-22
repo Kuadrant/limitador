@@ -101,8 +101,13 @@ impl RateLimiter {
         }
     }
 
-    pub fn get_counters(&mut self, namespace: &str) -> Vec<(Counter, i64, Duration)> {
-        self.storage.get_counters(namespace)
+    pub fn get_counters(
+        &mut self,
+        namespace: &str,
+    ) -> Result<Vec<(Counter, i64, Duration)>, LimitadorError> {
+        self.storage
+            .get_counters(namespace)
+            .map_err(|err| err.into())
     }
 
     fn counters_that_apply(

@@ -34,6 +34,10 @@ impl Counter {
         }
     }
 
+    pub fn limit(&self) -> &Limit {
+        &self.limit
+    }
+
     pub fn max_value(&self) -> i64 {
         self.limit.max_value()
     }
@@ -44,6 +48,10 @@ impl Counter {
 
     pub fn namespace(&self) -> &str {
         self.limit.namespace()
+    }
+
+    pub fn set_variables(&self) -> &HashMap<String, String> {
+        &self.set_variables
     }
 }
 

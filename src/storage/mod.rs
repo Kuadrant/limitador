@@ -20,7 +20,10 @@ pub trait Storage: Sync + Send {
     fn delete_limits(&mut self, namespace: &str) -> Result<(), StorageErr>;
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr>;
     fn update_counter(&mut self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
-    fn get_counters(&mut self, namespace: &str) -> Vec<(Counter, i64, Duration)>;
+    fn get_counters(
+        &mut self,
+        namespace: &str,
+    ) -> Result<Vec<(Counter, i64, Duration)>, StorageErr>;
 }
 
 #[derive(Error, Debug)]

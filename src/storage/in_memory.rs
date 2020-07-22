@@ -2,11 +2,12 @@ use crate::counter::Counter;
 use crate::limit::Limit;
 use crate::storage::{Storage, StorageErr};
 use std::collections::{HashMap, HashSet};
+use std::iter::FromIterator;
 use std::time::Duration;
 use ttl_cache::TtlCache;
 
 pub struct InMemoryStorage {
-    limits_for_namespace: HashMap<String, HashSet<Limit>>,
+    limits_for_namespace: HashMap<String, HashMap<Limit, HashSet<Counter>>>,
     counters: TtlCache<Counter, i64>,
 }
 
@@ -15,12 +16,12 @@ impl Storage for InMemoryStorage {
         let namespace = limit.namespace().to_string();
 
         match self.limits_for_namespace.get_mut(&namespace) {
-            Some(value) => {
-                value.insert(limit);
+            Some(limits) => {
+                limits.insert(limit, HashSet::new());
             }
             None => {
-                let mut limits = HashSet::new();
-                limits.insert(limit);
+                let mut limits = HashMap::new();
+                limits.insert(limit, HashSet::new());
                 self.limits_for_namespace.insert(namespace, limits);
             }
         }
@@ -30,7 +31,7 @@ impl Storage for InMemoryStorage {
 
     fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, StorageErr> {
         let limits = match self.limits_for_namespace.get(namespace) {
-            Some(limits) => limits.clone(),
+            Some(limits) => HashSet::from_iter(limits.keys().cloned()),
             None => HashSet::new(),
         };
 
@@ -38,20 +39,17 @@ impl Storage for InMemoryStorage {
     }
 
     fn delete_limit(&mut self, limit: &Limit) -> Result<(), StorageErr> {
-        // TODO: delete counters associated with the limit too.
+        self.delete_counters_of_limit(limit);
 
-        let namespace = limit.namespace().to_string();
-
-        if let Some(value) = self.limits_for_namespace.get_mut(&namespace) {
-            value.remove(limit);
+        if let Some(counters_by_limit) = self.limits_for_namespace.get_mut(limit.namespace()) {
+            counters_by_limit.remove(limit);
         }
 
         Ok(())
     }
 
     fn delete_limits(&mut self, namespace: &str) -> Result<(), StorageErr> {
-        // TODO: delete counters associated with the limits.
-
+        self.delete_counters_in_namespace(namespace);
         self.limits_for_namespace.remove(namespace);
         Ok(())
     }
@@ -76,14 +74,28 @@ impl Storage for InMemoryStorage {
                     counter.max_value() - delta,
                     Duration::from_secs(counter.seconds()),
                 );
+
+                self.add_counter_limit_association(counter);
             }
         };
 
         Ok(())
     }
 
-    fn get_counters(&mut self, _namespace: &str) -> Vec<(Counter, i64, Duration)> {
-        unimplemented!()
+    fn get_counters(
+        &mut self,
+        namespace: &str,
+    ) -> Result<Vec<(Counter, i64, Duration)>, StorageErr> {
+        let mut res = vec![];
+
+        for counter in self.counters_in_namespace(namespace) {
+            if let Some(counter_val) = self.counters.get(counter) {
+                // TODO: return correct TTL
+                res.push((counter.clone(), *counter_val, Duration::new(0, 0)));
+            }
+        }
+
+        Ok(res)
     }
 }
 
@@ -92,6 +104,42 @@ impl InMemoryStorage {
         InMemoryStorage {
             limits_for_namespace: HashMap::new(),
             counters: TtlCache::new(capacity),
+        }
+    }
+
+    fn counters_in_namespace(&self, namespace: &str) -> HashSet<&Counter> {
+        match self.limits_for_namespace.get(namespace) {
+            Some(counters_by_limit) => HashSet::from_iter(counters_by_limit.values().flatten()),
+            None => HashSet::new(),
+        }
+    }
+
+    fn delete_counters_in_namespace(&mut self, namespace: &str) {
+        if let Some(counters_by_limit) = self.limits_for_namespace.get(namespace) {
+            for counter in counters_by_limit.values().flatten() {
+                self.counters.remove(counter);
+            }
+        }
+    }
+
+    fn delete_counters_of_limit(&mut self, limit: &Limit) {
+        if let Some(counters_by_limit) = self.limits_for_namespace.get(limit.namespace()) {
+            if let Some(counters) = counters_by_limit.get(limit) {
+                for counter in counters.iter() {
+                    self.counters.remove(counter);
+                }
+            }
+        }
+    }
+
+    fn add_counter_limit_association(&mut self, counter: &Counter) {
+        let namespace = counter.limit().namespace();
+
+        if let Some(counters_by_limit) = self.limits_for_namespace.get_mut(namespace) {
+            counters_by_limit
+                .get_mut(counter.limit())
+                .unwrap()
+                .insert(counter.clone());
         }
     }
 }

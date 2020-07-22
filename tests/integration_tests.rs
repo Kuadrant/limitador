@@ -70,6 +70,24 @@ fn delete_limit() {
 }
 
 #[test]
+fn delete_limit_also_deletes_associated_counters() {
+    let namespace = "test_namespace";
+    let limit = Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
+
+    let mut rate_limiter = RateLimiter::new();
+    rate_limiter.add_limit(limit.clone()).unwrap();
+
+    let mut values = HashMap::new();
+    values.insert("req.method".to_string(), "GET".to_string());
+    values.insert("app_id".to_string(), "1".to_string());
+    rate_limiter.update_counters(namespace, &values, 1).unwrap();
+
+    rate_limiter.delete_limit(&limit).unwrap();
+
+    assert!(rate_limiter.get_counters(namespace).unwrap().is_empty())
+}
+
+#[test]
 fn add_several_limits_in_the_same_namespace() {
     let namespace = "test_namespace";
 
@@ -115,6 +133,24 @@ fn delete_limits_of_a_namespace() {
     rate_limiter.delete_limits(namespace).unwrap();
 
     assert!(rate_limiter.get_limits(namespace).unwrap().is_empty())
+}
+
+#[test]
+fn delete_limits_of_a_namespace_also_deletes_counters() {
+    let namespace = "test_namespace";
+    let mut rate_limiter = RateLimiter::new();
+    let limit = Limit::new(namespace, 5, 60, vec!["req.method == GET"], vec!["app_id"]);
+
+    rate_limiter.add_limit(limit).unwrap();
+
+    let mut values = HashMap::new();
+    values.insert("req.method".to_string(), "GET".to_string());
+    values.insert("app_id".to_string(), "1".to_string());
+    rate_limiter.update_counters(namespace, &values, 1).unwrap();
+
+    rate_limiter.delete_limits(namespace).unwrap();
+
+    assert!(rate_limiter.get_counters(namespace).unwrap().is_empty())
 }
 
 #[test]
@@ -247,4 +283,70 @@ fn check_rate_limited_and_update() {
             .check_rate_limited_and_update(namespace, &values, 1)
             .unwrap()
     );
+}
+
+#[test]
+fn get_counters() {
+    let namespace = "test_namespace";
+    let max_hits = 10;
+    let hits_app_1 = 1;
+    let hits_app_2 = 5;
+
+    let limit = Limit::new(
+        namespace,
+        max_hits,
+        60,
+        vec!["req.method == GET"],
+        vec!["app_id"],
+    );
+
+    let mut rate_limiter = RateLimiter::new();
+    rate_limiter.add_limit(limit.clone()).unwrap();
+
+    let mut values = HashMap::new();
+    values.insert("req.method".to_string(), "GET".to_string());
+    values.insert("app_id".to_string(), "1".to_string());
+    rate_limiter
+        .update_counters(namespace, &values, hits_app_1)
+        .unwrap();
+
+    values.insert("app_id".to_string(), "2".to_string());
+    rate_limiter
+        .update_counters(namespace, &values, hits_app_2)
+        .unwrap();
+
+    let counters = rate_limiter.get_counters(namespace).unwrap();
+
+    assert_eq!(counters.len(), 2);
+
+    for counter_data in counters {
+        let app_id = counter_data.0.set_variables().get("app_id").unwrap();
+
+        match app_id.as_str() {
+            "1" => assert_eq!(counter_data.1, max_hits - hits_app_1),
+            "2" => assert_eq!(counter_data.1, max_hits - hits_app_2),
+            _ => panic!("Unexpected app ID"),
+        }
+    }
+}
+
+#[test]
+fn get_counters_can_return_empty_list() {
+    // There's a limit, but no counters. The result should be empty.
+
+    let limit = Limit::new(
+        "test_namespace",
+        10,
+        60,
+        vec!["req.method == GET"],
+        vec!["app_id"],
+    );
+
+    let mut rate_limiter = RateLimiter::new();
+    rate_limiter.add_limit(limit.clone()).unwrap();
+
+    assert!(rate_limiter
+        .get_counters("test_namespace")
+        .unwrap()
+        .is_empty())
 }

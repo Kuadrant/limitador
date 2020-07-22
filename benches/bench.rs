@@ -9,7 +9,13 @@ fn bench_is_rate_limited(c: &mut Criterion) {
     let values = test_values();
 
     c.bench_function("is rate limited", |b| {
-        b.iter(|| black_box(rate_limiter.is_rate_limited(&values, 1).unwrap()))
+        b.iter(|| {
+            black_box(
+                rate_limiter
+                    .is_rate_limited("test_namespace", &values, 1)
+                    .unwrap(),
+            )
+        })
     });
 }
 
@@ -18,7 +24,13 @@ fn bench_update_counters(c: &mut Criterion) {
     let values = test_values();
 
     c.bench_function("update counters", |b| {
-        b.iter(|| black_box(rate_limiter.update_counters(&values, 1).unwrap()));
+        b.iter(|| {
+            black_box(
+                rate_limiter
+                    .update_counters("test_namespace", &values, 1)
+                    .unwrap(),
+            )
+        });
     });
 }
 
@@ -39,7 +51,6 @@ fn test_rate_limiter() -> RateLimiter {
 
 fn test_values() -> HashMap<String, String> {
     let mut values: HashMap<String, String> = HashMap::new();
-    values.insert("namespace".to_string(), "test_namespace".to_string());
     values.insert("req.method".to_string(), "GET".to_string());
     values.insert("app_id".to_string(), "test_app_id".to_string());
     values

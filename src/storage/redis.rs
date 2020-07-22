@@ -65,6 +65,9 @@ impl Storage for RedisStorage {
         let set_key = Self::key_for_limits_of_namespace(namespace);
 
         con.del(set_key)?;
+
+        self.delete_counters_of_namespace(namespace)?;
+
         Ok(())
     }
 
@@ -86,18 +89,43 @@ impl Storage for RedisStorage {
             Some(_val) => con
                 .incr::<String, i64, ()>(counter_key, -delta)
                 .map_err(|e| e.into()),
-            None => con
-                .set_ex::<String, i64, ()>(
+            None => {
+                con.set_ex::<String, i64, ()>(
                     counter_key,
                     counter.max_value() - delta,
                     counter.seconds() as usize,
-                )
-                .map_err(|e| e.into()),
+                )?;
+
+                self.add_counter_limit_association(counter).map_err(|e| e)
+            }
         }
     }
 
-    fn get_counters(&mut self, _namespace: &str) -> Vec<(Counter, i64, Duration)> {
-        unimplemented!()
+    fn get_counters(
+        &mut self,
+        namespace: &str,
+    ) -> Result<Vec<(Counter, i64, Duration)>, StorageErr> {
+        let mut res = vec![];
+
+        let mut con = self.client.get_connection()?;
+
+        for limit in self.get_limits(namespace)? {
+            let counter_keys =
+                con.smembers::<String, HashSet<String>>(Self::key_for_counters_of_limit(&limit))?;
+
+            for counter_key in counter_keys {
+                let counter: Counter = serde_json::from_str(&counter_key).unwrap();
+                let val = match con.get::<String, Option<i64>>(counter_key.clone())? {
+                    Some(val) => val,
+                    None => 0,
+                };
+                let ttl = con.ttl(&counter_key)?;
+
+                res.push((counter, val, Duration::new(ttl, 0)));
+            }
+        }
+
+        Ok(res)
     }
 }
 
@@ -114,6 +142,44 @@ impl RedisStorage {
 
     fn key_for_counter(counter: &Counter) -> String {
         serde_json::to_string(counter).unwrap()
+    }
+
+    fn key_for_counters_of_limit(limit: &Limit) -> String {
+        format!(
+            "counters_of_limit:{}",
+            serde_json::to_string(limit).unwrap()
+        )
+    }
+
+    fn add_counter_limit_association(&mut self, counter: &Counter) -> Result<(), StorageErr> {
+        let mut con = self.client.get_connection()?;
+
+        con.sadd::<String, String, _>(
+            Self::key_for_counters_of_limit(counter.limit()),
+            Self::key_for_counter(counter),
+        )
+        .map_err(|e| e.into())
+    }
+
+    fn delete_counters_of_namespace(&mut self, namespace: &str) -> Result<(), StorageErr> {
+        for limit in self.get_limits(namespace)? {
+            self.delete_counters_associated_with_limit(&limit)?
+        }
+
+        Ok(())
+    }
+
+    fn delete_counters_associated_with_limit(&mut self, limit: &Limit) -> Result<(), StorageErr> {
+        let mut con = self.client.get_connection()?;
+
+        let counter_keys =
+            con.smembers::<String, HashSet<String>>(Self::key_for_counters_of_limit(limit))?;
+
+        for counter_key in counter_keys {
+            con.del(counter_key)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -168,6 +234,27 @@ mod tests {
 
     #[test]
     #[serial]
+    fn delete_limit_also_deletes_associated_counters() {
+        clean_db();
+        let namespace = "test_namespace";
+        let mut storage = RedisStorage::default();
+        let limit = Limit::new(namespace, 10, 60, vec!["x == 1"], vec!["z"]);
+
+        storage.add_limit(limit.clone()).unwrap();
+
+        let mut values = HashMap::new();
+        values.insert("x".to_string(), "1".to_string());
+        values.insert("z".to_string(), "2".to_string());
+        let counter = Counter::new(limit.clone(), values);
+        storage.update_counter(&counter, 1).unwrap();
+
+        storage.delete_limit(&limit).unwrap();
+
+        assert!(storage.get_counters(namespace).unwrap().is_empty())
+    }
+
+    #[test]
+    #[serial]
     fn delete_limits() {
         clean_db();
         let namespace = "test_namespace";
@@ -208,6 +295,27 @@ mod tests {
 
     #[test]
     #[serial]
+    fn delete_limits_of_a_namespace_also_deletes_counters() {
+        clean_db();
+        let namespace = "test_namespace";
+        let mut storage = RedisStorage::default();
+        let limit = Limit::new(namespace, 10, 60, vec!["x == 1"], vec!["z"]);
+
+        storage.add_limit(limit.clone()).unwrap();
+
+        let mut values = HashMap::new();
+        values.insert("x".to_string(), "1".to_string());
+        values.insert("z".to_string(), "2".to_string());
+        let counter = Counter::new(limit.clone(), values);
+        storage.update_counter(&counter, 1).unwrap();
+
+        storage.delete_limits(namespace).unwrap();
+
+        assert!(storage.get_counters(namespace).unwrap().is_empty())
+    }
+
+    #[test]
+    #[serial]
     fn apply_limit() {
         clean_db();
 
@@ -238,6 +346,73 @@ mod tests {
             storage.update_counter(&counter, 1).unwrap();
         }
         assert_eq!(false, storage.is_within_limits(&counter, 1).unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn get_counters() {
+        clean_db();
+
+        let namespace = "test_namespace";
+        let max_hits = 10;
+        let hits_app_1 = 1;
+        let hits_app_2 = 5;
+
+        let limit = Limit::new(
+            namespace,
+            max_hits,
+            60,
+            vec!["req.method == GET"],
+            vec!["app_id"],
+        );
+
+        let mut storage = RedisStorage::default();
+        storage.add_limit(limit.clone()).unwrap();
+
+        let mut values = HashMap::new();
+        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("app_id".to_string(), "1".to_string());
+        let counter_1 = Counter::new(limit.clone(), values.clone());
+        storage.update_counter(&counter_1, hits_app_1).unwrap();
+
+        values.insert("app_id".to_string(), "2".to_string());
+        let counter_2 = Counter::new(limit.clone(), values.clone());
+        storage.update_counter(&counter_2, hits_app_2).unwrap();
+
+        let counters = storage.get_counters(namespace).unwrap();
+
+        assert_eq!(counters.len(), 2);
+
+        for counter_data in counters {
+            let app_id = counter_data.0.set_variables().get("app_id").unwrap();
+
+            match app_id.as_str() {
+                "1" => assert_eq!(counter_data.1, max_hits - hits_app_1),
+                "2" => assert_eq!(counter_data.1, max_hits - hits_app_2),
+                _ => panic!("Unexpected app ID"),
+            }
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn get_counters_can_return_empty_list() {
+        clean_db();
+
+        // There's a limit, but no counters. The result should be empty.
+
+        let limit = Limit::new(
+            "test_namespace",
+            10,
+            60,
+            vec!["req.method == GET"],
+            vec!["app_id"],
+        );
+
+        let mut storage = RedisStorage::default();
+        storage.add_limit(limit.clone()).unwrap();
+
+        assert!(storage.get_counters("test_namespace").unwrap().is_empty());
     }
 
     fn clean_db() {
