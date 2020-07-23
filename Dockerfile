@@ -53,6 +53,7 @@ RUN addgroup -g 1000 limitador \
  && adduser -D -s /bin/sh -u 1000 -G limitador limitador
 
 WORKDIR /home/limitador/bin/
+ENV PATH="/home/limitador/bin:${PATH}"
 
 COPY --from=limitador-build /usr/src/limitador/examples/limits.yaml ../
 COPY --from=limitador-build /usr/src/limitador/target/x86_64-unknown-linux-musl/release/envoy-rls .
@@ -64,4 +65,4 @@ USER limitador
 
 ENV LIMITS_FILE=/home/limitador/limits.yaml
 
-CMD ["./envoy-rls"]
+CMD ["envoy-rls"]
