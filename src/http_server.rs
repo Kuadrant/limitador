@@ -1,5 +1,6 @@
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use limitador::limit::Limit;
+use limitador::storage::redis::RedisStorage;
 use limitador::RateLimiter;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -124,10 +125,15 @@ async fn check_and_report(
 
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
+    let rate_limiter = match env::var("REDIS_URL") {
+        Ok(redis_url) => RateLimiter::new_with_storage(Box::new(RedisStorage::new(&redis_url))),
+        Err(_) => RateLimiter::default(),
+    };
+
     // Internally this uses Arc.
     // Ref: https://docs.rs/actix-web/2.0.0/actix_web/web/struct.Data.html
     let state = web::Data::new(State {
-        limiter: Mutex::new(RateLimiter::default()),
+        limiter: Mutex::new(rate_limiter),
     });
 
     let host = env::var("HOST").unwrap_or_else(|_| String::from("0.0.0.0"));

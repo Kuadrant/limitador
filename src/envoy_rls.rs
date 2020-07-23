@@ -4,6 +4,7 @@ use crate::envoy::service::ratelimit::v2::rate_limit_service_server::{
 };
 use crate::envoy::service::ratelimit::v2::{RateLimitRequest, RateLimitResponse};
 use limitador::limit::Limit;
+use limitador::storage::redis::RedisStorage;
 use limitador::RateLimiter;
 use std::collections::HashMap;
 use std::env;
@@ -26,7 +27,13 @@ impl MyRateLimiter {
                 let f = std::fs::File::open(val).unwrap();
                 let limits: Vec<Limit> = serde_yaml::from_reader(f).unwrap();
 
-                let mut rate_limiter = RateLimiter::new();
+                let mut rate_limiter = match env::var("REDIS_URL") {
+                    Ok(redis_url) => {
+                        RateLimiter::new_with_storage(Box::new(RedisStorage::new(&redis_url)))
+                    }
+                    Err(_) => RateLimiter::default(),
+                };
+
                 for limit in limits {
                     rate_limiter.add_limit(limit).unwrap();
                 }
