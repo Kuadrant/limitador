@@ -58,15 +58,20 @@ mod test {
     test_with_all_storage_impls!(add_several_limits_in_the_same_namespace);
     test_with_all_storage_impls!(delete_limit);
     test_with_all_storage_impls!(delete_limit_also_deletes_associated_counters);
+    test_with_all_storage_impls!(get_limits_returns_empty_if_no_limits_in_namespace);
     test_with_all_storage_impls!(delete_limits_of_a_namespace);
     test_with_all_storage_impls!(delete_limits_does_not_delete_limits_from_other_namespaces);
     test_with_all_storage_impls!(delete_limits_of_a_namespace_also_deletes_counters);
+    test_with_all_storage_impls!(delete_limits_of_an_empty_namespace_does_nothing);
     test_with_all_storage_impls!(rate_limited);
     test_with_all_storage_impls!(rate_limited_with_delta_higher_than_one);
     test_with_all_storage_impls!(takes_into_account_only_vars_of_the_limits);
+    test_with_all_storage_impls!(is_rate_limited_returns_false_when_no_limits_in_namespace);
+    test_with_all_storage_impls!(is_rate_limited_returns_false_when_no_matching_limits);
     test_with_all_storage_impls!(check_rate_limited_and_update);
     test_with_all_storage_impls!(get_counters);
-    test_with_all_storage_impls!(get_counters_can_return_empty_list);
+    test_with_all_storage_impls!(get_counters_returns_empty_when_no_limits_in_namespace);
+    test_with_all_storage_impls!(get_counters_returns_empty_when_no_counters_in_namespace);
 
     fn add_a_limit(rate_limiter: &mut RateLimiter) {
         let limit = Limit::new(
@@ -166,6 +171,13 @@ mod test {
         assert!(rate_limiter.get_counters(namespace).unwrap().is_empty())
     }
 
+    fn get_limits_returns_empty_if_no_limits_in_namespace(rate_limiter: &mut RateLimiter) {
+        assert!(rate_limiter
+            .get_counters("test_namespace")
+            .unwrap()
+            .is_empty())
+    }
+
     fn delete_limits_of_a_namespace(rate_limiter: &mut RateLimiter) {
         let namespace = "test_namespace";
 
@@ -218,6 +230,10 @@ mod test {
         rate_limiter.delete_limits(namespace).unwrap();
 
         assert!(rate_limiter.get_counters(namespace).unwrap().is_empty())
+    }
+
+    fn delete_limits_of_an_empty_namespace_does_nothing(rate_limiter: &mut RateLimiter) {
+        rate_limiter.delete_limits("test_namespace").unwrap()
     }
 
     fn rate_limited(rate_limiter: &mut RateLimiter) {
@@ -309,6 +325,42 @@ mod test {
         );
     }
 
+    fn is_rate_limited_returns_false_when_no_limits_in_namespace(rate_limiter: &mut RateLimiter) {
+        let mut values: HashMap<String, String> = HashMap::new();
+        values.insert("req.method".to_string(), "GET".to_string());
+
+        assert_eq!(
+            rate_limiter
+                .is_rate_limited("test_namespace", &values, 1)
+                .unwrap(),
+            false
+        );
+    }
+
+    fn is_rate_limited_returns_false_when_no_matching_limits(rate_limiter: &mut RateLimiter) {
+        let namespace = "test_namespace";
+
+        let limit = Limit::new(
+            namespace,
+            0, // So reporting 1 more would not be allowed
+            60,
+            vec!["req.method == GET"],
+            vec!["app_id"],
+        );
+
+        rate_limiter.add_limit(limit).unwrap();
+
+        // Notice that does not match because the method is "POST".
+        let mut values: HashMap<String, String> = HashMap::new();
+        values.insert("req.method".to_string(), "POST".to_string());
+        values.insert("app_id".to_string(), "test_app_id".to_string());
+
+        assert_eq!(
+            rate_limiter.is_rate_limited(namespace, &values, 1).unwrap(),
+            false
+        );
+    }
+
     fn check_rate_limited_and_update(rate_limiter: &mut RateLimiter) {
         let namespace = "test_namespace";
         let max_hits = 3;
@@ -387,7 +439,14 @@ mod test {
         }
     }
 
-    fn get_counters_can_return_empty_list(rate_limiter: &mut RateLimiter) {
+    fn get_counters_returns_empty_when_no_limits_in_namespace(rate_limiter: &mut RateLimiter) {
+        assert!(rate_limiter
+            .get_counters("test_namespace")
+            .unwrap()
+            .is_empty())
+    }
+
+    fn get_counters_returns_empty_when_no_counters_in_namespace(rate_limiter: &mut RateLimiter) {
         // There's a limit, but no counters. The result should be empty.
 
         let limit = Limit::new(
