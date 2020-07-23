@@ -36,8 +36,8 @@ criterion = "0.3"
 paste = "0.1"
 
 [[bin]]
-name = "ratelimit-server"
-path = "src/server.rs"
+name = "envoy-rls"
+path = "src/envoy_rls.rs"
 
 [[bin]]
 name = "http-server"

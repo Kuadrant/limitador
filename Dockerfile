@@ -27,7 +27,7 @@ COPY ./Cargo.toml ./Cargo.toml
 RUN mkdir src/
 
 RUN echo "fn main() {println!(\"if you see this, the build broke\")}" > src/main.rs \
- && echo "fn main() {println!(\"if you see this, the build broke\")}" > src/server.rs \
+ && echo "fn main() {println!(\"if you see this, the build broke\")}" > src/envoy_rls.rs \
  && echo "fn main() {println!(\"if you see this, the build broke\")}" > src/http_server.rs
 
 RUN RUSTFLAGS=-Clinker=musl-gcc cargo build --release --target=x86_64-unknown-linux-musl
@@ -35,7 +35,7 @@ RUN RUSTFLAGS=-Clinker=musl-gcc cargo build --release --target=x86_64-unknown-li
 # avoid downloading and compiling all the dependencies when there's a change in
 # our code.
 RUN rm -f target/x86_64-unknown-linux-musl/release/deps/limitador* \
- && rm -f target/x86_64-unknown-linux-musl/release/deps/ratelimit* \
+ && rm -f target/x86_64-unknown-linux-musl/release/deps/envoy_rls* \
  && rm -f target/x86_64-unknown-linux-musl/release/deps/http_server*
 
 COPY . .
@@ -55,13 +55,13 @@ RUN addgroup -g 1000 limitador \
 WORKDIR /home/limitador/bin/
 
 COPY --from=limitador-build /usr/src/limitador/examples/limits.yaml ../
-COPY --from=limitador-build /usr/src/limitador/target/x86_64-unknown-linux-musl/release/ratelimit-server .
+COPY --from=limitador-build /usr/src/limitador/target/x86_64-unknown-linux-musl/release/envoy-rls .
 COPY --from=limitador-build /usr/src/limitador/target/x86_64-unknown-linux-musl/release/http-server .
 
-RUN chown limitador:limitador ratelimit-server http-server
+RUN chown limitador:limitador envoy-rls http-server
 
 USER limitador
 
 ENV LIMITS_FILE=/home/limitador/limits.yaml
 
-CMD ["./ratelimit-server"]
+CMD ["./envoy-rls"]
