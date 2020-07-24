@@ -114,7 +114,7 @@ impl Storage for RedisStorage {
                 con.smembers::<String, HashSet<String>>(Self::key_for_counters_of_limit(&limit))?;
 
             for counter_key in counter_keys {
-                let counter: Counter = serde_json::from_str(&counter_key).unwrap();
+                let counter: Counter = Self::counter_from_counter_key(&counter_key);
                 let val = match con.get::<String, Option<i64>>(counter_key.clone())? {
                     Some(val) => val,
                     None => 0,
@@ -141,7 +141,7 @@ impl RedisStorage {
     }
 
     fn key_for_counter(counter: &Counter) -> String {
-        serde_json::to_string(counter).unwrap()
+        format!("counter:{}", serde_json::to_string(counter).unwrap())
     }
 
     fn key_for_counters_of_limit(limit: &Limit) -> String {
@@ -149,6 +149,11 @@ impl RedisStorage {
             "counters_of_limit:{}",
             serde_json::to_string(limit).unwrap()
         )
+    }
+
+    fn counter_from_counter_key(key: &str) -> Counter {
+        let serialized_counter = key.strip_prefix("counter:").unwrap();
+        serde_json::from_str(serialized_counter).unwrap()
     }
 
     fn add_counter_limit_association(&mut self, counter: &Counter) -> Result<(), StorageErr> {
