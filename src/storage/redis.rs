@@ -45,9 +45,10 @@ impl Storage for RedisStorage {
     }
 
     fn delete_limit(&mut self, limit: &Limit) -> Result<(), StorageErr> {
-        // TODO: Delete the counters associated with a limit too.
-
         let mut con = self.client.get_connection()?;
+
+        self.delete_counters_associated_with_limit(limit)?;
+        con.del(Self::key_for_counters_of_limit(&limit))?;
 
         let set_key = Self::key_for_limits_of_namespace(limit.namespace());
         let serialized_limit = serde_json::to_string(limit).unwrap();
@@ -58,15 +59,16 @@ impl Storage for RedisStorage {
     }
 
     fn delete_limits(&mut self, namespace: &str) -> Result<(), StorageErr> {
-        // TODO: delete counters associated with the limits.
-
         let mut con = self.client.get_connection()?;
 
-        let set_key = Self::key_for_limits_of_namespace(namespace);
-
-        con.del(set_key)?;
-
         self.delete_counters_of_namespace(namespace)?;
+
+        for limit in self.get_limits(namespace)? {
+            con.del(Self::key_for_counters_of_limit(&limit))?;
+        }
+
+        let set_key = Self::key_for_limits_of_namespace(namespace);
+        con.del(set_key)?;
 
         Ok(())
     }
@@ -115,13 +117,18 @@ impl Storage for RedisStorage {
 
             for counter_key in counter_keys {
                 let counter: Counter = Self::counter_from_counter_key(&counter_key);
-                let val = match con.get::<String, Option<i64>>(counter_key.clone())? {
-                    Some(val) => val,
-                    None => 0,
-                };
-                let ttl = con.ttl(&counter_key)?;
 
-                res.push((counter, val, Duration::new(ttl, 0)));
+                // If the key does not exist, it means that the counter expired,
+                // so we don't have to return it.
+                // TODO: we should delete the counter from the set of counters
+                // associated with the limit taking into account that we should
+                // do the "get" + "delete if none" atomically.
+                // This does not cause any bugs, but consumes memory
+                // unnecessarily.
+                if let Some(val) = con.get::<String, Option<i64>>(counter_key.clone())? {
+                    let ttl = con.ttl(&counter_key)?;
+                    res.push((counter, val, Duration::new(ttl, 0)));
+                }
             }
         }
 

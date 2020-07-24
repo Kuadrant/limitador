@@ -43,6 +43,8 @@ mod test {
     use limitador::RateLimiter;
     use serial_test::serial;
     use std::collections::{HashMap, HashSet};
+    use std::thread::sleep;
+    use std::time::Duration;
     use std::time::SystemTime;
 
     // This is only needed for the WASM-compatible storage.
@@ -72,6 +74,7 @@ mod test {
     test_with_all_storage_impls!(get_counters);
     test_with_all_storage_impls!(get_counters_returns_empty_when_no_limits_in_namespace);
     test_with_all_storage_impls!(get_counters_returns_empty_when_no_counters_in_namespace);
+    test_with_all_storage_impls!(get_counters_does_not_return_expired_ones);
 
     fn add_a_limit(rate_limiter: &mut RateLimiter) {
         let limit = Limit::new(
@@ -463,6 +466,31 @@ mod test {
             .get_counters("test_namespace")
             .unwrap()
             .is_empty())
+    }
+
+    fn get_counters_does_not_return_expired_ones(rate_limiter: &mut RateLimiter) {
+        let namespace = "test_namespace";
+        let limit_time = 1;
+
+        let limit = Limit::new(
+            "test_namespace",
+            10,
+            limit_time,
+            vec!["req.method == GET"],
+            vec!["app_id"],
+        );
+
+        rate_limiter.add_limit(limit.clone()).unwrap();
+
+        let mut values = HashMap::new();
+        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("app_id".to_string(), "1".to_string());
+        rate_limiter.update_counters(namespace, &values, 1).unwrap();
+
+        // Give it some extra time to expire
+        sleep(Duration::from_secs(limit_time + 1));
+
+        assert!(rate_limiter.get_counters(namespace).unwrap().is_empty());
     }
 
     fn clean_redis_test_db() {
