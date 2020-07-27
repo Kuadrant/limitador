@@ -2,7 +2,6 @@ use crate::limit::Limit;
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
-use std::time::Duration;
 
 #[derive(Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct Counter {
@@ -14,7 +13,7 @@ pub struct Counter {
     set_variables: HashMap<String, String>,
 
     remaining: Option<i64>,
-    expires_in: Option<Duration>,
+    expires_in_seconds: Option<u64>,
 }
 
 fn ordered_map<S>(value: &HashMap<String, String>, serializer: S) -> Result<S::Ok, S::Error>
@@ -36,7 +35,7 @@ impl Counter {
             limit,
             set_variables: vars,
             remaining: None,
-            expires_in: None,
+            expires_in_seconds: None,
         }
     }
 
@@ -68,12 +67,12 @@ impl Counter {
         self.remaining = Some(remaining)
     }
 
-    pub fn get_expires_in(&self) -> Option<Duration> {
-        self.expires_in
+    pub fn get_expires_in(&self) -> Option<u64> {
+        self.expires_in_seconds
     }
 
-    pub fn set_expires_in(&mut self, expires_in: Duration) {
-        self.expires_in = Some(expires_in)
+    pub fn set_expires_in(&mut self, expires_in_seconds: u64) {
+        self.expires_in_seconds = Some(expires_in_seconds)
     }
 }
 

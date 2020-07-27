@@ -89,7 +89,6 @@ impl Storage for InMemoryStorage {
             if let Some(counter_val) = self.counters.get(counter) {
                 // TODO: return correct TTL
                 let mut counter_with_val = counter.clone();
-                counter_with_val.set_expires_in(Duration::new(0, 0));
                 counter_with_val.set_remaining(*counter_val);
                 res.insert(counter_with_val);
             }

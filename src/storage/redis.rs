@@ -6,7 +6,6 @@ use crate::limit::Limit;
 use crate::storage::{Storage, StorageErr};
 use std::collections::HashSet;
 use std::iter::FromIterator;
-use std::time::Duration;
 
 // TODO: define keys so that all the ones that belong to the same namespace
 // go to the same shard.
@@ -125,7 +124,7 @@ impl Storage for RedisStorage {
                 if let Some(val) = con.get::<String, Option<i64>>(counter_key.clone())? {
                     counter.set_remaining(val);
                     let ttl = con.ttl(&counter_key)?;
-                    counter.set_expires_in(Duration::new(ttl, 0));
+                    counter.set_expires_in(ttl);
 
                     res.insert(counter);
                 }

@@ -176,12 +176,13 @@ impl Storage for WasmStorage {
                     Counter::new(counter.limit().clone(), counter.set_variables().clone());
                 counter_with_val.set_remaining(*value);
                 counter_with_val.set_expires_in(
-                    expires_at.duration_since(SystemTime::UNIX_EPOCH).unwrap()
+                    (expires_at.duration_since(SystemTime::UNIX_EPOCH).unwrap()
                         - self
                             .clock
                             .get_current_time()
                             .duration_since(SystemTime::UNIX_EPOCH)
-                            .unwrap(),
+                            .unwrap())
+                    .as_secs(),
                 );
                 counter_with_val
             })
