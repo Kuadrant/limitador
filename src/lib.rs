@@ -4,7 +4,6 @@ use crate::limit::Limit;
 use crate::storage::in_memory::InMemoryStorage;
 use crate::storage::Storage;
 use std::collections::{HashMap, HashSet};
-use std::time::Duration;
 
 pub mod counter;
 pub mod errors;
@@ -101,10 +100,7 @@ impl RateLimiter {
         }
     }
 
-    pub fn get_counters(
-        &mut self,
-        namespace: &str,
-    ) -> Result<Vec<(Counter, i64, Duration)>, LimitadorError> {
+    pub fn get_counters(&mut self, namespace: &str) -> Result<HashSet<Counter>, LimitadorError> {
         self.storage
             .get_counters(namespace)
             .map_err(|err| err.into())

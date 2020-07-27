@@ -103,11 +103,8 @@ impl Storage for RedisStorage {
         }
     }
 
-    fn get_counters(
-        &mut self,
-        namespace: &str,
-    ) -> Result<Vec<(Counter, i64, Duration)>, StorageErr> {
-        let mut res = vec![];
+    fn get_counters(&mut self, namespace: &str) -> Result<HashSet<Counter>, StorageErr> {
+        let mut res = HashSet::new();
 
         let mut con = self.client.get_connection()?;
 
@@ -116,7 +113,7 @@ impl Storage for RedisStorage {
                 con.smembers::<String, HashSet<String>>(Self::key_for_counters_of_limit(&limit))?;
 
             for counter_key in counter_keys {
-                let counter: Counter = Self::counter_from_counter_key(&counter_key);
+                let mut counter: Counter = Self::counter_from_counter_key(&counter_key);
 
                 // If the key does not exist, it means that the counter expired,
                 // so we don't have to return it.
@@ -126,8 +123,11 @@ impl Storage for RedisStorage {
                 // This does not cause any bugs, but consumes memory
                 // unnecessarily.
                 if let Some(val) = con.get::<String, Option<i64>>(counter_key.clone())? {
+                    counter.set_remaining(val);
                     let ttl = con.ttl(&counter_key)?;
-                    res.push((counter, val, Duration::new(ttl, 0)));
+                    counter.set_expires_in(Duration::new(ttl, 0));
+
+                    res.insert(counter);
                 }
             }
         }

@@ -431,12 +431,13 @@ mod test {
 
         assert_eq!(counters.len(), 2);
 
-        for counter_data in counters {
-            let app_id = counter_data.0.set_variables().get("app_id").unwrap();
+        for counter in counters {
+            let app_id = counter.set_variables().get("app_id").unwrap();
+            let remaining = counter.get_remaining().unwrap();
 
             match app_id.as_str() {
-                "1" => assert_eq!(counter_data.1, max_hits - hits_app_1),
-                "2" => assert_eq!(counter_data.1, max_hits - hits_app_2),
+                "1" => assert_eq!(remaining, max_hits - hits_app_1),
+                "2" => assert_eq!(remaining, max_hits - hits_app_2),
                 _ => panic!("Unexpected app ID"),
             }
         }

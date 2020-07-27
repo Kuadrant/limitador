@@ -82,16 +82,16 @@ impl Storage for InMemoryStorage {
         Ok(())
     }
 
-    fn get_counters(
-        &mut self,
-        namespace: &str,
-    ) -> Result<Vec<(Counter, i64, Duration)>, StorageErr> {
-        let mut res = vec![];
+    fn get_counters(&mut self, namespace: &str) -> Result<HashSet<Counter>, StorageErr> {
+        let mut res = HashSet::new();
 
         for counter in self.counters_in_namespace(namespace) {
             if let Some(counter_val) = self.counters.get(counter) {
                 // TODO: return correct TTL
-                res.push((counter.clone(), *counter_val, Duration::new(0, 0)));
+                let mut counter_with_val = counter.clone();
+                counter_with_val.set_expires_in(Duration::new(0, 0));
+                counter_with_val.set_remaining(*counter_val);
+                res.insert(counter_with_val);
             }
         }
 

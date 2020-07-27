@@ -163,30 +163,31 @@ impl Storage for WasmStorage {
         Ok(())
     }
 
-    fn get_counters(
-        &mut self,
-        namespace: &str,
-    ) -> Result<Vec<(Counter, i64, Duration)>, StorageErr> {
+    fn get_counters(&mut self, namespace: &str) -> Result<HashSet<Counter>, StorageErr> {
         // TODO: optimize to avoid iterating over all of them.
 
-        Ok(self
+        let counters_with_vals: Vec<Counter> = self
             .counters
             .get_all(self.clock.get_current_time())
             .iter()
             .filter(|(counter, _, _)| counter.namespace() == namespace)
             .map(|(counter, value, expires_at)| {
-                (
-                    counter.clone(),
-                    *value,
+                let mut counter_with_val =
+                    Counter::new(counter.limit().clone(), counter.set_variables().clone());
+                counter_with_val.set_remaining(*value);
+                counter_with_val.set_expires_in(
                     expires_at.duration_since(SystemTime::UNIX_EPOCH).unwrap()
                         - self
                             .clock
                             .get_current_time()
                             .duration_since(SystemTime::UNIX_EPOCH)
                             .unwrap(),
-                )
+                );
+                counter_with_val
             })
-            .collect())
+            .collect();
+
+        Ok(HashSet::from_iter(counters_with_vals.iter().cloned()))
     }
 }
 

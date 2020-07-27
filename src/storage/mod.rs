@@ -4,7 +4,6 @@ use ::redis::RedisError;
 use crate::counter::Counter;
 use crate::limit::Limit;
 use std::collections::HashSet;
-use std::time::Duration;
 use thiserror::Error;
 
 pub mod in_memory;
@@ -20,10 +19,7 @@ pub trait Storage: Sync + Send {
     fn delete_limits(&mut self, namespace: &str) -> Result<(), StorageErr>;
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr>;
     fn update_counter(&mut self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
-    fn get_counters(
-        &mut self,
-        namespace: &str,
-    ) -> Result<Vec<(Counter, i64, Duration)>, StorageErr>;
+    fn get_counters(&mut self, namespace: &str) -> Result<HashSet<Counter>, StorageErr>;
 }
 
 #[derive(Error, Debug)]
