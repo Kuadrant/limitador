@@ -3,7 +3,11 @@ use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
 
+#[cfg(feature = "http_server")]
+use paperclip::actix::Apiv2Schema;
+
 #[derive(Eq, Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "http_server", derive(Apiv2Schema))]
 pub struct Counter {
     limit: Limit,
 

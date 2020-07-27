@@ -1,74 +1,135 @@
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{http::StatusCode, ResponseError};
+use actix_web::{App, HttpServer};
+use limitador::counter::Counter;
 use limitador::limit::Limit;
 use limitador::storage::redis::RedisStorage;
 use limitador::RateLimiter;
+use paperclip::actix::{
+    api_v2_errors,
+    api_v2_operation,
+    // use this instead of actix_web::web
+    web::{self, Json},
+    Apiv2Schema,
+    // extension trait for actix_web::App and proc-macro attributes
+    OpenApiExt,
+};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
+use std::fmt;
 use std::sync::Mutex;
 
 struct State {
     limiter: Mutex<RateLimiter>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct AuthRepRequest {
+#[derive(Serialize, Deserialize, Apiv2Schema)]
+struct CheckAndReportInfo {
     namespace: String,
     values: HashMap<String, String>,
     delta: i64,
 }
 
-async fn create_limit(state: web::Data<State>, limit: web::Json<Limit>) -> impl Responder {
-    match state.limiter.lock().unwrap().add_limit(limit.into_inner()) {
-        Ok(_) => HttpResponse::Ok(),
-        Err(_) => HttpResponse::InternalServerError(),
+#[api_v2_errors(429, 500)]
+#[derive(Debug)]
+enum ErrorResponse {
+    TooManyRequests,
+    InternalServerError,
+}
+
+impl fmt::Display for ErrorResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TooManyRequests => write!(f, "Too many requests"),
+            Self::InternalServerError => write!(f, "Internal server error"),
+        }
     }
 }
 
-async fn get_limits(state: web::Data<State>, namespace: web::Path<String>) -> HttpResponse {
+impl ResponseError for ErrorResponse {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Self::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
+            Self::InternalServerError => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+#[api_v2_operation]
+async fn create_limit(
+    state: web::Data<State>,
+    limit: web::Json<Limit>,
+) -> Result<web::Json<()>, ErrorResponse> {
+    match state.limiter.lock().unwrap().add_limit(limit.into_inner()) {
+        Ok(_) => Ok(Json(())),
+        Err(_) => Err(ErrorResponse::InternalServerError),
+    }
+}
+
+#[api_v2_operation]
+async fn get_limits(
+    state: web::Data<State>,
+    namespace: web::Path<String>,
+) -> Result<web::Json<HashSet<Limit>>, ErrorResponse> {
     match state
         .limiter
         .lock()
         .unwrap()
         .get_limits(namespace.into_inner().as_str())
     {
-        Ok(limits) => HttpResponse::Ok().json(limits),
-        Err(_) => HttpResponse::InternalServerError().await.unwrap(),
+        Ok(limits) => Ok(Json(limits)),
+        Err(_) => Err(ErrorResponse::InternalServerError),
     }
 }
 
-async fn delete_limit(state: web::Data<State>, limit: web::Json<Limit>) -> impl Responder {
+#[api_v2_operation]
+async fn delete_limit(
+    state: web::Data<State>,
+    limit: web::Json<Limit>,
+) -> Result<web::Json<()>, ErrorResponse> {
     match state.limiter.lock().unwrap().delete_limit(&limit) {
-        Ok(_) => HttpResponse::Ok(),
-        Err(_) => HttpResponse::InternalServerError(),
+        Ok(_) => Ok(Json(())),
+        Err(_) => Err(ErrorResponse::InternalServerError),
     }
 }
 
-async fn delete_limits(state: web::Data<State>, namespace: web::Path<String>) -> impl Responder {
+#[api_v2_operation]
+async fn delete_limits(
+    state: web::Data<State>,
+    namespace: web::Path<String>,
+) -> Result<web::Json<()>, ErrorResponse> {
     match state
         .limiter
         .lock()
         .unwrap()
         .delete_limits(namespace.into_inner().as_str())
     {
-        Ok(_) => HttpResponse::Ok(),
-        Err(_) => HttpResponse::InternalServerError(),
+        Ok(_) => Ok(Json(())),
+        Err(_) => Err(ErrorResponse::InternalServerError),
     }
 }
 
-async fn get_counters(state: web::Data<State>, namespace: web::Path<String>) -> HttpResponse {
+#[api_v2_operation]
+async fn get_counters(
+    state: web::Data<State>,
+    namespace: web::Path<String>,
+) -> Result<web::Json<HashSet<Counter>>, ErrorResponse> {
     match state
         .limiter
         .lock()
         .unwrap()
         .get_counters(namespace.into_inner().as_str())
     {
-        Ok(counters) => HttpResponse::Ok().json(counters),
-        Err(_) => HttpResponse::InternalServerError().await.unwrap(),
+        Ok(counters) => Ok(Json(counters)),
+        Err(_) => Err(ErrorResponse::InternalServerError),
     }
 }
 
-async fn check(state: web::Data<State>, request: web::Json<AuthRepRequest>) -> impl Responder {
+#[api_v2_operation]
+async fn check(
+    state: web::Data<State>,
+    request: web::Json<CheckAndReportInfo>,
+) -> Result<web::Json<()>, ErrorResponse> {
     match state.limiter.lock().unwrap().is_rate_limited(
         &request.namespace,
         &request.values,
@@ -76,50 +137,49 @@ async fn check(state: web::Data<State>, request: web::Json<AuthRepRequest>) -> i
     ) {
         Ok(rate_limited) => {
             if rate_limited {
-                HttpResponse::TooManyRequests()
+                Err(ErrorResponse::TooManyRequests)
             } else {
-                HttpResponse::Ok()
+                Ok(Json(()))
             }
         }
-        Err(_) => HttpResponse::InternalServerError(),
+        Err(_) => Err(ErrorResponse::InternalServerError),
     }
 }
 
-async fn report(state: web::Data<State>, request: web::Json<AuthRepRequest>) -> impl Responder {
+#[api_v2_operation]
+async fn report(
+    state: web::Data<State>,
+    request: web::Json<CheckAndReportInfo>,
+) -> Result<web::Json<()>, ErrorResponse> {
     match state.limiter.lock().unwrap().update_counters(
         &request.namespace,
         &request.values,
         request.delta,
     ) {
-        Ok(_) => HttpResponse::Ok(),
-        Err(_) => HttpResponse::InternalServerError(),
+        Ok(_) => Ok(Json(())),
+        Err(_) => Err(ErrorResponse::InternalServerError),
     }
 }
 
+#[api_v2_operation]
 async fn check_and_report(
     state: web::Data<State>,
-    request: web::Json<AuthRepRequest>,
-) -> impl Responder {
-    match state.limiter.lock().unwrap().is_rate_limited(
+    request: web::Json<CheckAndReportInfo>,
+) -> Result<web::Json<()>, ErrorResponse> {
+    let rate_limited = state.limiter.lock().unwrap().is_rate_limited(
         &request.namespace,
         &request.values,
         request.delta,
-    ) {
+    );
+    match rate_limited {
         Ok(rate_limited) => {
             if rate_limited {
-                HttpResponse::TooManyRequests()
+                Err(ErrorResponse::TooManyRequests)
             } else {
-                match state.limiter.lock().unwrap().update_counters(
-                    &request.namespace,
-                    &request.values,
-                    request.delta,
-                ) {
-                    Ok(_) => HttpResponse::Ok(),
-                    Err(_) => HttpResponse::InternalServerError(),
-                }
+                report(state, request).await
             }
         }
-        Err(_) => HttpResponse::InternalServerError(),
+        Err(_) => Err(ErrorResponse::InternalServerError),
     }
 }
 
@@ -140,8 +200,13 @@ async fn main() -> std::io::Result<()> {
     let port = env::var("PORT").unwrap_or_else(|_| String::from("8080"));
     let addr = format!("{}:{}", host, port);
 
+    // This uses the paperclip crate to generate an OpenAPI spec.
+    // Ref: https://paperclip.waffles.space/actix-plugin.html
+
     HttpServer::new(move || {
         App::new()
+            .wrap_api()
+            .with_json_spec_at("/api/spec")
             .app_data(state.clone())
             .route("/limits", web::post().to(create_limit))
             .route("/limits", web::delete().to(delete_limit))
@@ -149,8 +214,9 @@ async fn main() -> std::io::Result<()> {
             .route("/limits/{namespace}", web::delete().to(delete_limits))
             .route("/counters/{namespace}", web::get().to(get_counters))
             .route("/check_and_report", web::post().to(check_and_report))
-            .route("/check", web::get().to(check))
+            .route("/check", web::post().to(check))
             .route("/report", web::post().to(report))
+            .build()
     })
     .bind(addr)?
     .run()

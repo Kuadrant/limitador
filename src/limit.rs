@@ -3,7 +3,11 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
 
+#[cfg(feature = "http_server")]
+use paperclip::actix::Apiv2Schema;
+
 #[derive(Eq, Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "http_server", derive(Apiv2Schema))]
 pub struct Limit {
     namespace: String,
     max_value: i64,

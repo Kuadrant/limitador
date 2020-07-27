@@ -9,7 +9,7 @@ edition = "2018"
 default = ["redis_storage", "envoy_rls", "http_server"]
 redis_storage = ["redis"]
 envoy_rls = ["tokio", "tonic", "prost", "prost-types"]
-http_server = ["actix-web", "actix-rt"]
+http_server = ["actix-web", "actix-rt", "paperclip"]
 
 [dependencies]
 ttl_cache = "0.5"
@@ -26,6 +26,7 @@ prost = { version = "0.6", optional = true }
 prost-types = { version = "0.6", optional = true }
 actix-web = { version = "2.0", optional = true }
 actix-rt = { version = "1.0", optional = true }
+paperclip = { version = "0.4", features = ["actix"], optional = true }
 
 [build-dependencies]
 tonic-build = "0.2"
