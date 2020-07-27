@@ -4,32 +4,106 @@
 [![Docker Repository on Quay](https://quay.io/repository/3scale/limitador/status
 "Docker Repository on Quay")](https://quay.io/repository/3scale/limitador)
 
+Limitador is a generic rate-limiter written in Rust. It can be used as a
+library, as an HTTP service, or as a GRPC service that implements the Envoy Rate
+Limit protocol.
+
+- [**Getting started**](#getting-started)
+- [**Limits storage**](#limits-storage)
+- [**Development**](#development)
+- [**License**](#license)
+
 **Status: Experimental**
 
-Limitador is a generic rate-limiter written in Rust. It can be used as a library
-or as a service that implements Envoy's Rate Limit protocol.
+## Getting started
 
-## Run the grpc server
+- [Rust library](#rust-library)
+- [HTTP server](#http-service)
+- [GRPC server for Envoy](#grpc-server-that-implements-envoys-rls)
 
-After cloning the repo:
+### Rust library
+
+Add this to your `Cargo.toml`:
+```toml
+[dependencies]
+limitador = { version = "0.1.0" }
+```
+
+To use limitador in a project that compiles to WASM, there are some features
+that need to be disabled. Add this to your `Cargo.toml` instead:
+```toml
+[dependencies]
+limitador = { version = "0.1.0", default-features = false }
+```
+
+### HTTP service
+
+The OpenAPI spec of the service is [here](docs/http_server_spec.json).
+
+Run with Docker (replace `latest` with the version you want):
+```bash
+docker run --rm --net=host -it quay.io/3scale/limitador:latest http-server
+```
+
+To use Redis, specify the URL with `REDIS_URL`:
+```bash
+docker run -e REDIS_URL=redis://127.0.0.1:6379 --rm --net=host -it quay.io/3scale/limitador:latest http-server
+```
+
+You can also run the service locally. First, update the submodules after cloning
+the repo:
 ```bash
 git submodule update --init
 ```
 
-To run Limitador, you need to provide a YAML file with the limits. There's an
-example file that allows 10 requests per minute and per user_id when the HTTP
-method is "GET" and 5 when it is a "POST":
+Then run:
 ```bash
-LIMITS_FILE=./examples/limits.yaml cargo run --release
+cargo run --release --bin http-server
 ```
 
-There's a minimal Envoy config to try limitador in `examples/envoy.yaml`. The
+You can change the host and port with the `HOST` and `PORT` envs.
+
+### GRPC server that implements Envoy's RLS
+
+To run Limitador, you need to provide a YAML file with the limits. There's an
+[example file](examples/limits.yaml) that allows 10 requests per minute and per
+user_id when the HTTP method is "GET" and 5 when it is a "POST". You can run it
+with Docker (replace `latest` with the version you want):
+```bash
+docker run -e LIMITS_FILE=/home/limitador/my_limits.yaml --rm --net=host -it -v $(pwd)/examples/limits.yaml:/home/limitador/my_limits.yaml:ro quay.io/3scale/limitador:latest envoy-rls
+```
+
+To use Redis, specify the URL with `REDIS_URL`:
+```bash
+docker run -e LIMITS_FILE=/home/limitador/my_limits.yaml -e REDIS_URL=redis://127.0.0.1:6379 --rm --net=host -it -v $(pwd)/examples/limits.yaml:/home/limitador/my_limits.yaml:ro quay.io/3scale/limitador:latest envoy-rls
+```
+
+You can also run the service locally. First, update the submodules after cloning
+the repo:
+```bash
+git submodule update --init
+```
+
+Then run:
+```bash
+LIMITS_FILE=./examples/limits.yaml cargo run --release --bin envoy-rls
+```
+
+There's a minimal Envoy config to try limitador [here](examples/envoy.yaml). The
 config forwards the "userid" header and the request method to Limitador. It
 assumes that there's an upstream API deployed in the port 1323. You can use
 [echo](https://github.com/labstack/echo), for example.
 
+You can change the host and port with the `HOST` and `PORT` envs.
 
-## Develop
+## Limits storage
+
+Limitador can store its limits and counters in memory or in Redis. In memory is
+faster, but the limits are applied per instance. When using Redis, multiple
+instances of limitador can share the same limits, but it's slower.
+
+
+## Development
 
 ### Pull the git submodules
 
@@ -58,11 +132,7 @@ Then, run the tests:
 cargo test
 ```
 
-### WASM
 
-To use limitador from a project that compiles to WASM, there are some features
-that need to be disabled. Add this to your `Cargo.toml`:
-```toml
-[dependencies]
-limitador = { version = "0.1.0", default-features = false }
-```
+## License
+
+[Apache 2.0 License](LICENSE)
