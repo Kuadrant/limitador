@@ -2,6 +2,12 @@
 name = "limitador"
 version = "0.1.0"
 authors = ["David Ortiz <z.david.ortiz@gmail.com>"]
+license = "Apache 2.0"
+description = "Rate limiter."
+homepage = "https://github.com/3scale/limitador"
+repository = "https://github.com/3scale/limitador"
+documentation = "https://github.com/3scale/limitador"
+readme = "README.md"
 edition = "2018"
 
 # We make some features optional to be able to compile for wasm32.
