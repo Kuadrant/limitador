@@ -433,7 +433,7 @@ mod test {
 
         for counter in counters {
             let app_id = counter.set_variables().get("app_id").unwrap();
-            let remaining = counter.get_remaining().unwrap();
+            let remaining = counter.remaining().unwrap();
 
             match app_id.as_str() {
                 "1" => assert_eq!(remaining, max_hits - hits_app_1),

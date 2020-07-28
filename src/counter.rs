@@ -63,7 +63,7 @@ impl Counter {
         &self.set_variables
     }
 
-    pub fn get_remaining(&self) -> Option<i64> {
+    pub fn remaining(&self) -> Option<i64> {
         self.remaining
     }
 
@@ -71,7 +71,7 @@ impl Counter {
         self.remaining = Some(remaining)
     }
 
-    pub fn get_expires_in(&self) -> Option<u64> {
+    pub fn expires_in(&self) -> Option<u64> {
         self.expires_in_seconds
     }
 
