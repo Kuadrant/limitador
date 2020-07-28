@@ -85,7 +85,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(limit.clone()).unwrap();
+        rate_limiter.add_limit(&limit).unwrap();
 
         let mut expected_result = HashSet::new();
         expected_result.insert(limit);
@@ -105,7 +105,7 @@ mod test {
             Vec::<String>::new(),
         );
 
-        rate_limiter.add_limit(limit.clone()).unwrap();
+        rate_limiter.add_limit(&limit).unwrap();
 
         let mut expected_result = HashSet::new();
         expected_result.insert(limit);
@@ -129,8 +129,8 @@ mod test {
 
         let limit_2 = Limit::new(namespace, 5, 60, vec!["req.method == GET"], vec!["app_id"]);
 
-        rate_limiter.add_limit(limit_1.clone()).unwrap();
-        rate_limiter.add_limit(limit_2.clone()).unwrap();
+        rate_limiter.add_limit(&limit_1).unwrap();
+        rate_limiter.add_limit(&limit_2).unwrap();
 
         let mut expected_result = HashSet::new();
         expected_result.insert(limit_1);
@@ -148,7 +148,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(limit.clone()).unwrap();
+        rate_limiter.add_limit(&limit).unwrap();
 
         rate_limiter.delete_limit(&limit).unwrap();
 
@@ -162,7 +162,7 @@ mod test {
         let namespace = "test_namespace";
         let limit = Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
 
-        rate_limiter.add_limit(limit.clone()).unwrap();
+        rate_limiter.add_limit(&limit).unwrap();
 
         let mut values = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());
@@ -195,7 +195,7 @@ mod test {
             Limit::new(namespace, 5, 60, vec!["req.method == GET"], vec!["app_id"]),
         ]
         .iter()
-        .for_each(|limit| rate_limiter.add_limit(limit.clone()).unwrap());
+        .for_each(|limit| rate_limiter.add_limit(&limit).unwrap());
 
         rate_limiter.delete_limits(namespace).unwrap();
 
@@ -207,10 +207,10 @@ mod test {
         let namespace2 = "test_namespace_2";
 
         rate_limiter
-            .add_limit(Limit::new(namespace1, 10, 60, vec!["x == 10"], vec!["z"]))
+            .add_limit(&Limit::new(namespace1, 10, 60, vec!["x == 10"], vec!["z"]))
             .unwrap();
         rate_limiter
-            .add_limit(Limit::new(namespace2, 5, 60, vec!["x == 10"], vec!["z"]))
+            .add_limit(&Limit::new(namespace2, 5, 60, vec!["x == 10"], vec!["z"]))
             .unwrap();
 
         rate_limiter.delete_limits(namespace1).unwrap();
@@ -223,7 +223,7 @@ mod test {
         let namespace = "test_namespace";
         let limit = Limit::new(namespace, 5, 60, vec!["req.method == GET"], vec!["app_id"]);
 
-        rate_limiter.add_limit(limit).unwrap();
+        rate_limiter.add_limit(&limit).unwrap();
 
         let mut values = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());
@@ -250,7 +250,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(limit.clone()).unwrap();
+        rate_limiter.add_limit(&limit).unwrap();
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());
@@ -273,7 +273,7 @@ mod test {
         let namespace = "test_namespace";
         let limit = Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
 
-        rate_limiter.add_limit(limit.clone()).unwrap();
+        rate_limiter.add_limit(&limit).unwrap();
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());
@@ -305,7 +305,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(limit.clone()).unwrap();
+        rate_limiter.add_limit(&limit).unwrap();
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());
@@ -351,7 +351,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(limit).unwrap();
+        rate_limiter.add_limit(&limit).unwrap();
 
         // Notice that does not match because the method is "POST".
         let mut values: HashMap<String, String> = HashMap::new();
@@ -376,7 +376,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(limit.clone()).unwrap();
+        rate_limiter.add_limit(&limit).unwrap();
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());
@@ -413,7 +413,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(limit.clone()).unwrap();
+        rate_limiter.add_limit(&limit).unwrap();
 
         let mut values = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());
@@ -461,7 +461,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(limit.clone()).unwrap();
+        rate_limiter.add_limit(&limit).unwrap();
 
         assert!(rate_limiter
             .get_counters("test_namespace")
@@ -481,7 +481,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(limit.clone()).unwrap();
+        rate_limiter.add_limit(&limit).unwrap();
 
         let mut values = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());

@@ -60,7 +60,7 @@ async fn create_limit(
     state: web::Data<State>,
     limit: web::Json<Limit>,
 ) -> Result<web::Json<()>, ErrorResponse> {
-    match state.limiter.lock().unwrap().add_limit(limit.into_inner()) {
+    match state.limiter.lock().unwrap().add_limit(&limit.into_inner()) {
         Ok(_) => Ok(Json(())),
         Err(_) => Err(ErrorResponse::InternalServerError),
     }

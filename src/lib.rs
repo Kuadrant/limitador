@@ -25,7 +25,7 @@ impl RateLimiter {
         RateLimiter { storage }
     }
 
-    pub fn add_limit(&mut self, limit: Limit) -> Result<(), LimitadorError> {
+    pub fn add_limit(&mut self, limit: &Limit) -> Result<(), LimitadorError> {
         self.storage.add_limit(limit).map_err(|err| err.into())
     }
 

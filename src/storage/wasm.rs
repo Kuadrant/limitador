@@ -78,16 +78,16 @@ pub struct WasmStorage {
 }
 
 impl Storage for WasmStorage {
-    fn add_limit(&mut self, limit: Limit) -> Result<(), StorageErr> {
+    fn add_limit(&mut self, limit: &Limit) -> Result<(), StorageErr> {
         let namespace = limit.namespace().to_string();
 
         match self.limits_for_namespace.get_mut(&namespace) {
             Some(limits) => {
-                limits.insert(limit, HashSet::new());
+                limits.insert(limit.clone(), HashSet::new());
             }
             None => {
                 let mut limits = HashMap::new();
-                limits.insert(limit, HashSet::new());
+                limits.insert(limit.clone(), HashSet::new());
                 self.limits_for_namespace.insert(namespace, limits);
             }
         }

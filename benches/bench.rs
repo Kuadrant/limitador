@@ -44,7 +44,7 @@ fn test_rate_limiter() -> RateLimiter {
     );
 
     let mut rate_limiter = RateLimiter::default();
-    rate_limiter.add_limit(limit).unwrap();
+    rate_limiter.add_limit(&limit).unwrap();
 
     rate_limiter
 }

@@ -35,7 +35,7 @@ impl MyRateLimiter {
                 };
 
                 for limit in limits {
-                    rate_limiter.add_limit(limit).unwrap();
+                    rate_limiter.add_limit(&limit).unwrap();
                 }
 
                 MyRateLimiter {

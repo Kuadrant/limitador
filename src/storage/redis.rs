@@ -19,11 +19,11 @@ pub struct RedisStorage {
 }
 
 impl Storage for RedisStorage {
-    fn add_limit(&mut self, limit: Limit) -> Result<(), StorageErr> {
+    fn add_limit(&mut self, limit: &Limit) -> Result<(), StorageErr> {
         let mut con = self.client.get_connection()?;
 
         let set_key = Self::key_for_limits_of_namespace(limit.namespace());
-        let serialized_limit = serde_json::to_string(&limit).unwrap();
+        let serialized_limit = serde_json::to_string(limit).unwrap();
 
         con.sadd::<String, String, _>(set_key, serialized_limit)?;
         Ok(())
