@@ -38,7 +38,7 @@ paperclip = { version = "0.4", features = ["actix"], optional = true }
 tonic-build = "0.2"
 
 [dev-dependencies]
-serial_test = "*"
+serial_test = "0.4"
 criterion = "0.3"
 paste = "0.1"
 
