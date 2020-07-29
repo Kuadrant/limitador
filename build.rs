@@ -9,7 +9,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ],
             &[
                 "envoy-xds-grpc/data-plane-api",
-                "envoy-xds-grpc/googleapis",
                 "envoy-xds-grpc/protoc-gen-validate",
                 "envoy-xds-grpc/udpa",
             ],

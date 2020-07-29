@@ -15,7 +15,6 @@ RUN rustup target add x86_64-unknown-linux-musl \
 # get Envoy protobufs
 WORKDIR /usr/src/envoy-xds-grpc
 RUN git clone https://github.com/envoyproxy/data-plane-api.git \
- && git clone https://github.com/googleapis/googleapis.git \
  && git clone https://github.com/envoyproxy/protoc-gen-validate.git \
  && git clone https://github.com/cncf/udpa.git
 
