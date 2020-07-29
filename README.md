@@ -50,13 +50,7 @@ To use Redis, specify the URL with `REDIS_URL`:
 docker run -e REDIS_URL=redis://127.0.0.1:6379 --rm --net=host -it quay.io/3scale/limitador:latest http-server
 ```
 
-You can also run the service locally. First, update the submodules after cloning
-the repo:
-```bash
-git submodule update --init
-```
-
-Then run:
+You can also run the service locally:
 ```bash
 cargo run --release --bin http-server
 ```
@@ -78,13 +72,7 @@ To use Redis, specify the URL with `REDIS_URL`:
 docker run -e LIMITS_FILE=/home/limitador/my_limits.yaml -e REDIS_URL=redis://127.0.0.1:6379 --rm --net=host -it -v $(pwd)/examples/limits.yaml:/home/limitador/my_limits.yaml:ro quay.io/3scale/limitador:latest envoy-rls
 ```
 
-You can also run the service locally. First, update the submodules after cloning
-the repo:
-```bash
-git submodule update --init
-```
-
-Then run:
+You can also run the service locally:
 ```bash
 LIMITS_FILE=./examples/limits.yaml cargo run --release --bin envoy-rls
 ```
@@ -104,14 +92,6 @@ instances of limitador can share the same limits, but it's slower.
 
 
 ## Development
-
-### Pull the git submodules
-
-After cloning the repo, pull the git submodules with the Envoy grpc dependencies:
-
-```bash
-git submodule update --init
-```
 
 ### Build
 

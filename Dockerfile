@@ -12,12 +12,6 @@ RUN apt-get update \
 RUN rustup target add x86_64-unknown-linux-musl \
  && rustup component add rustfmt
 
-# get Envoy protobufs
-WORKDIR /usr/src/envoy-xds-grpc
-RUN git clone https://github.com/envoyproxy/data-plane-api.git \
- && git clone https://github.com/envoyproxy/protoc-gen-validate.git \
- && git clone https://github.com/cncf/udpa.git
-
 WORKDIR /usr/src/limitador
 
 COPY ./Cargo.lock ./Cargo.lock

@@ -1,9 +1,0 @@
-[submodule "envoy-xds-grpc/data-plane-api"]
-	path = envoy-xds-grpc/data-plane-api
-	url = https://github.com/envoyproxy/data-plane-api.git
-[submodule "envoy-xds-grpc/protoc-gen-validate"]
-	path = envoy-xds-grpc/protoc-gen-validate
-	url = https://github.com/envoyproxy/protoc-gen-validate.git
-[submodule "envoy-xds-grpc/udpa"]
-	path = envoy-xds-grpc/udpa
-	url = https://github.com/cncf/udpa.git
