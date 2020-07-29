@@ -2,7 +2,7 @@
 name = "limitador"
 version = "0.1.0"
 authors = ["David Ortiz <z.david.ortiz@gmail.com>"]
-license = "Apache 2.0"
+license = "Apache-2.0"
 description = "Rate limiter."
 homepage = "https://github.com/3scale/limitador"
 repository = "https://github.com/3scale/limitador"
