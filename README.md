@@ -27,14 +27,14 @@ Limit protocol.
 Add this to your `Cargo.toml`:
 ```toml
 [dependencies]
-limitador = { version = "0.1.0" }
+limitador = { version = "0.1.1" }
 ```
 
 To use limitador in a project that compiles to WASM, there are some features
 that need to be disabled. Add this to your `Cargo.toml` instead:
 ```toml
 [dependencies]
-limitador = { version = "0.1.0", default-features = false }
+limitador = { version = "0.1.1", default-features = false }
 ```
 
 ### HTTP service
