@@ -1360,6 +1360,7 @@ name = "limitador"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "cfg-if",
  "criterion",
  "futures",
  "paste",
