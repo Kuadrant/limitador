@@ -1266,7 +1266,7 @@ checksum = "a2f02823cf78b754822df5f7f268fb59822e7296276d3e069d8e8cb26a14bd10"
 
 [[package]]
 name = "limitador"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "criterion",
  "paperclip",
