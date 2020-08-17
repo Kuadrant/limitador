@@ -1,0 +1,36 @@
+[package]
+name = "limitador"
+version = "0.1.1"
+authors = ["David Ortiz <z.david.ortiz@gmail.com>"]
+license = "Apache-2.0"
+description = "Rate limiter."
+homepage = "https://github.com/3scale/limitador"
+repository = "https://github.com/3scale/limitador"
+documentation = "https://github.com/3scale/limitador"
+edition = "2018"
+
+# We make some features optional to be able to compile for wasm32.
+[features]
+default = ["redis_storage", "http_server"]
+redis_storage = ["redis"]
+http_server = ["paperclip"]
+
+[dependencies]
+ttl_cache = "0.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+
+# Optional dependencies
+redis = { version = "0.16", optional = true }
+paperclip = { version = "0.4", features = ["actix"], optional = true }
+
+[dev-dependencies]
+serial_test = "0.4"
+criterion = "0.3"
+paste = "0.1"
+
+[[bench]]
+name = "bench"
+path = "benches/bench.rs"
+harness = false

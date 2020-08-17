@@ -1268,23 +1268,39 @@ checksum = "a2f02823cf78b754822df5f7f268fb59822e7296276d3e069d8e8cb26a14bd10"
 name = "limitador"
 version = "0.1.1"
 dependencies = [
- "actix-rt",
- "actix-web",
  "criterion",
  "paperclip",
  "paste",
- "prost",
- "prost-types",
  "redis",
  "serde",
  "serde_json",
- "serde_yaml",
  "serial_test",
  "thiserror",
+ "ttl_cache",
+]
+
+[[package]]
+name = "limitador-envoy-rls"
+version = "0.1.0"
+dependencies = [
+ "limitador",
+ "prost",
+ "prost-types",
+ "serde_yaml",
  "tokio",
  "tonic",
  "tonic-build",
- "ttl_cache",
+]
+
+[[package]]
+name = "limitador-http-server"
+version = "0.1.0"
+dependencies = [
+ "actix-rt",
+ "actix-web",
+ "limitador",
+ "paperclip",
+ "serde",
 ]
 
 [[package]]
