@@ -7,9 +7,6 @@ use crate::storage::{Storage, StorageErr};
 use std::collections::HashSet;
 use std::iter::FromIterator;
 
-// TODO: define keys so that all the ones that belong to the same namespace
-// go to the same shard.
-
 // TODO: try redis-rs async functions.
 
 const DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
@@ -142,24 +139,41 @@ impl RedisStorage {
         }
     }
 
+    // To use Redis cluster and some Redis proxies, all the keys used in a
+    // command or in a pipeline need to be sharded to the same server.
+    // To help with that, Redis uses "hash tags". When a key contains "{" and
+    // "}" only what's inside them is hashed.
+    // To ensure that all the keys involved in a given operation belong to the
+    // same shard, we can shard by namespace.
+    // When there are multiple pairs of "{" and "}" only the first one is taken
+    // into account. Ref: https://redis.io/topics/cluster-spec (key hash tags).
+    // Reminder: in format!(), "{" is escaped with "{{".
+
     fn key_for_limits_of_namespace(namespace: &str) -> String {
-        format!("limits_of_namespace:{}", namespace)
+        format!("limits_of_namespace:{{{}}}", namespace)
     }
 
     fn key_for_counter(counter: &Counter) -> String {
-        format!("counter:{}", serde_json::to_string(counter).unwrap())
+        format!(
+            "namespace:{{{}}},counter:{}",
+            counter.namespace(),
+            serde_json::to_string(counter).unwrap()
+        )
     }
 
     fn key_for_counters_of_limit(limit: &Limit) -> String {
         format!(
-            "counters_of_limit:{}",
+            "namespace:{{{}}},counters_of_limit:{}",
+            limit.namespace(),
             serde_json::to_string(limit).unwrap()
         )
     }
 
     fn counter_from_counter_key(key: &str) -> Counter {
-        let serialized_counter = key.strip_prefix("counter:").unwrap();
-        serde_json::from_str(serialized_counter).unwrap()
+        let counter_prefix = "counter:";
+        let start_pos_counter = key.find(counter_prefix).unwrap() + counter_prefix.len();
+
+        serde_json::from_str(&key[start_pos_counter..]).unwrap()
     }
 
     fn add_counter_limit_association(&mut self, counter: &Counter) -> Result<(), StorageErr> {
