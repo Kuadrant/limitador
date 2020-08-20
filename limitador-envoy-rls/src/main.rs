@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate log;
+
 use crate::envoy::service::ratelimit::v2::rate_limit_response::Code;
 use crate::envoy::service::ratelimit::v2::rate_limit_service_server::{
     RateLimitService, RateLimitServiceServer,
@@ -110,18 +113,20 @@ impl RateLimitService for MyRateLimiter {
 /// is returned, it will cancel the request and return that status to the
 /// client.
 fn intercept(req: Request<()>) -> Result<Request<()>, Status> {
-    println!("Intercepting request: {:?}", req);
+    debug!("Intercepting request: {:?}", req);
     Ok(req)
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::init();
+
     let host = env::var("HOST").unwrap_or_else(|_| String::from("0.0.0.0"));
     let port = env::var("PORT").unwrap_or_else(|_| String::from("50052"));
 
     let addr = format!("{host}:{port}", host = host, port = port).parse()?;
 
-    println!("Listening on {}", addr);
+    info!("Listening on {}", addr);
 
     let rate_limiter = MyRateLimiter::default();
     let svc = RateLimitServiceServer::with_interceptor(rate_limiter, intercept);
