@@ -83,20 +83,27 @@ impl Storage for RedisStorage {
 
         let counter_key = Self::key_for_counter(counter);
 
-        match con.get::<String, Option<i64>>(counter_key.clone())? {
-            Some(_val) => con
-                .incr::<String, i64, ()>(counter_key, -delta)
-                .map_err(|e| e.into()),
-            None => {
-                con.set_ex::<String, i64, ()>(
-                    counter_key,
-                    counter.max_value() - delta,
-                    counter.seconds() as usize,
-                )?;
+        // 1) Sets the counter key if it does not exist.
+        // 2) Decreases the value.
+        // 3) Adds the counter to the set of counters associated with the limit.
+        // We need a MULTI/EXEC (atomic pipeline) to ensure that the key will no
+        // expire between the set and the incr.
+        redis::pipe()
+            .atomic()
+            .cmd("SET")
+            .arg(&counter_key)
+            .arg(counter.max_value())
+            .arg("EX")
+            .arg(counter.seconds())
+            .arg("NX")
+            .incr::<&str, i64>(&counter_key, -delta)
+            .sadd::<&str, &str>(
+                &Self::key_for_counters_of_limit(counter.limit()),
+                &counter_key,
+            )
+            .query(&mut con)?;
 
-                self.add_counter_limit_association(counter).map_err(|e| e)
-            }
-        }
+        Ok(())
     }
 
     fn get_counters(&mut self, namespace: &str) -> Result<HashSet<Counter>, StorageErr> {
@@ -174,16 +181,6 @@ impl RedisStorage {
         let start_pos_counter = key.find(counter_prefix).unwrap() + counter_prefix.len();
 
         serde_json::from_str(&key[start_pos_counter..]).unwrap()
-    }
-
-    fn add_counter_limit_association(&mut self, counter: &Counter) -> Result<(), StorageErr> {
-        let mut con = self.client.get_connection()?;
-
-        con.sadd::<String, String, _>(
-            Self::key_for_counters_of_limit(counter.limit()),
-            Self::key_for_counter(counter),
-        )
-        .map_err(|e| e.into())
     }
 
     fn delete_counters_of_namespace(&mut self, namespace: &str) -> Result<(), StorageErr> {
