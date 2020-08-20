@@ -36,9 +36,9 @@ static_resources:
               "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
               domain: "test_namespace"
               failure_mode_deny: true
+              timeout: 3s
               rate_limit_service:
                 grpc_service:
-                  timeout: { seconds: 3 }
                   envoy_grpc:
                     cluster_name: rate_limit
           - name: envoy.filters.http.router
