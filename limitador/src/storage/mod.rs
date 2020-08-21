@@ -12,6 +12,8 @@ pub mod wasm;
 
 #[cfg(feature = "redis_storage")]
 pub mod redis;
+#[cfg(feature = "redis_storage")]
+pub mod redis_async;
 
 pub trait Storage: Sync + Send {
     fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr>;

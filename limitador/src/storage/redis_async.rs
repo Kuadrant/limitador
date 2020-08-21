@@ -1,9 +1,10 @@
 extern crate redis;
 
-use self::redis::Commands;
 use crate::counter::Counter;
 use crate::limit::Limit;
-use crate::storage::{Storage, StorageErr};
+use crate::storage::{AsyncStorage, StorageErr};
+use async_trait::async_trait;
+use redis::AsyncCommands;
 use std::collections::HashSet;
 use std::iter::FromIterator;
 
@@ -13,28 +14,37 @@ const DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
 // never go over the limits would hurt performance. This implementation
 // sacrifices a bit of accuracy to be more performant.
 
-pub struct RedisStorage {
+// TODO: the code of this implementation is almost identical to the blocking
+// one. The only exception is that the functions defined are "async" and all the
+// calls to the client need to include ".await". We'll need to think about how
+// to remove this duplication.
+
+pub struct AsyncRedisStorage {
     client: redis::Client,
 }
 
-impl Storage for RedisStorage {
-    fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
-        let mut con = self.client.get_connection()?;
+#[async_trait]
+impl AsyncStorage for AsyncRedisStorage {
+    async fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
+        let mut con = self.client.get_async_connection().await?;
 
         let set_key = Self::key_for_limits_of_namespace(limit.namespace());
         let serialized_limit = serde_json::to_string(limit).unwrap();
 
-        con.sadd::<String, String, _>(set_key, serialized_limit)?;
+        con.sadd::<String, String, _>(set_key, serialized_limit)
+            .await?;
+
         Ok(())
     }
 
-    fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, StorageErr> {
-        let mut con = self.client.get_connection()?;
+    async fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, StorageErr> {
+        let mut con = self.client.get_async_connection().await?;
 
         let set_key = Self::key_for_limits_of_namespace(namespace);
 
         let limits: HashSet<Limit> = HashSet::from_iter(
-            con.smembers::<String, HashSet<String>>(set_key)?
+            con.smembers::<String, HashSet<String>>(set_key)
+                .await?
                 .iter()
                 .map(|limit_json| serde_json::from_str(limit_json).unwrap()),
         );
@@ -42,46 +52,49 @@ impl Storage for RedisStorage {
         Ok(limits)
     }
 
-    fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
-        let mut con = self.client.get_connection()?;
+    async fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
+        let mut con = self.client.get_async_connection().await?;
 
-        self.delete_counters_associated_with_limit(limit)?;
-        con.del(Self::key_for_counters_of_limit(&limit))?;
+        self.delete_counters_associated_with_limit(limit).await?;
+        con.del(Self::key_for_counters_of_limit(&limit)).await?;
 
         let set_key = Self::key_for_limits_of_namespace(limit.namespace());
         let serialized_limit = serde_json::to_string(limit).unwrap();
 
-        con.srem(set_key, serialized_limit)?;
+        con.srem(set_key, serialized_limit).await?;
 
         Ok(())
     }
 
-    fn delete_limits(&self, namespace: &str) -> Result<(), StorageErr> {
-        let mut con = self.client.get_connection()?;
+    async fn delete_limits(&self, namespace: &str) -> Result<(), StorageErr> {
+        let mut con = self.client.get_async_connection().await?;
 
-        self.delete_counters_of_namespace(namespace)?;
+        self.delete_counters_of_namespace(namespace).await?;
 
-        for limit in self.get_limits(namespace)? {
-            con.del(Self::key_for_counters_of_limit(&limit))?;
+        for limit in self.get_limits(namespace).await? {
+            con.del(Self::key_for_counters_of_limit(&limit)).await?;
         }
 
         let set_key = Self::key_for_limits_of_namespace(namespace);
-        con.del(set_key)?;
+        con.del(set_key).await?;
 
         Ok(())
     }
 
-    fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
-        let mut con = self.client.get_connection()?;
+    async fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
+        let mut con = self.client.get_async_connection().await?;
 
-        match con.get::<String, Option<i64>>(Self::key_for_counter(counter))? {
+        match con
+            .get::<String, Option<i64>>(Self::key_for_counter(counter))
+            .await?
+        {
             Some(val) => Ok(val - delta >= 0),
             None => Ok(counter.max_value() - delta >= 0),
         }
     }
 
-    fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
-        let mut con = self.client.get_connection()?;
+    async fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
+        let mut con = self.client.get_async_connection().await?;
 
         let counter_key = Self::key_for_counter(counter);
 
@@ -103,25 +116,28 @@ impl Storage for RedisStorage {
                 &Self::key_for_counters_of_limit(counter.limit()),
                 &counter_key,
             )
-            .query(&mut con)?;
+            .query_async(&mut con)
+            .await?;
 
         Ok(())
     }
 
-    fn check_and_update(
+    async fn check_and_update(
         &self,
         counters: &HashSet<&Counter>,
         delta: i64,
     ) -> Result<bool, StorageErr> {
-        let mut con = self.client.get_connection()?;
+        let mut con = self.client.get_async_connection().await?;
 
         let counter_keys: Vec<String> = counters
             .iter()
             .map(|counter| Self::key_for_counter(counter))
             .collect();
 
-        let counter_vals: Vec<Option<i64>> =
-            redis::cmd("MGET").arg(counter_keys).query(&mut con)?;
+        let counter_vals: Vec<Option<i64>> = redis::cmd("MGET")
+            .arg(counter_keys)
+            .query_async(&mut con)
+            .await?;
 
         for (i, counter) in counters.iter().enumerate() {
             match counter_vals[i] {
@@ -140,20 +156,21 @@ impl Storage for RedisStorage {
 
         // TODO: this can be optimized by using pipelines with multiple updates
         for counter in counters {
-            self.update_counter(counter, delta)?
+            self.update_counter(counter, delta).await?
         }
 
         Ok(true)
     }
 
-    fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, StorageErr> {
+    async fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
 
-        let mut con = self.client.get_connection()?;
+        let mut con = self.client.get_async_connection().await?;
 
-        for limit in self.get_limits(namespace)? {
-            let counter_keys =
-                con.smembers::<String, HashSet<String>>(Self::key_for_counters_of_limit(&limit))?;
+        for limit in self.get_limits(namespace).await? {
+            let counter_keys = con
+                .smembers::<String, HashSet<String>>(Self::key_for_counters_of_limit(&limit))
+                .await?;
 
             for counter_key in counter_keys {
                 let mut counter: Counter = Self::counter_from_counter_key(&counter_key);
@@ -165,9 +182,9 @@ impl Storage for RedisStorage {
                 // do the "get" + "delete if none" atomically.
                 // This does not cause any bugs, but consumes memory
                 // unnecessarily.
-                if let Some(val) = con.get::<String, Option<i64>>(counter_key.clone())? {
+                if let Some(val) = con.get::<String, Option<i64>>(counter_key.clone()).await? {
                     counter.set_remaining(val);
-                    let ttl = con.ttl(&counter_key)?;
+                    let ttl = con.ttl(&counter_key).await?;
                     counter.set_expires_in(ttl);
 
                     res.insert(counter);
@@ -179,9 +196,9 @@ impl Storage for RedisStorage {
     }
 }
 
-impl RedisStorage {
-    pub fn new(redis_url: &str) -> RedisStorage {
-        RedisStorage {
+impl AsyncRedisStorage {
+    pub fn new(redis_url: &str) -> AsyncRedisStorage {
+        AsyncRedisStorage {
             client: redis::Client::open(redis_url).unwrap(),
         }
     }
@@ -223,30 +240,31 @@ impl RedisStorage {
         serde_json::from_str(&key[start_pos_counter..]).unwrap()
     }
 
-    fn delete_counters_of_namespace(&self, namespace: &str) -> Result<(), StorageErr> {
-        for limit in self.get_limits(namespace)? {
-            self.delete_counters_associated_with_limit(&limit)?
+    async fn delete_counters_of_namespace(&self, namespace: &str) -> Result<(), StorageErr> {
+        for limit in self.get_limits(namespace).await? {
+            self.delete_counters_associated_with_limit(&limit).await?
         }
 
         Ok(())
     }
 
-    fn delete_counters_associated_with_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
-        let mut con = self.client.get_connection()?;
+    async fn delete_counters_associated_with_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
+        let mut con = self.client.get_async_connection().await?;
 
-        let counter_keys =
-            con.smembers::<String, HashSet<String>>(Self::key_for_counters_of_limit(limit))?;
+        let counter_keys = con
+            .smembers::<String, HashSet<String>>(Self::key_for_counters_of_limit(limit))
+            .await?;
 
         for counter_key in counter_keys {
-            con.del(counter_key)?;
+            con.del(counter_key).await?;
         }
 
         Ok(())
     }
 }
 
-impl Default for RedisStorage {
+impl Default for AsyncRedisStorage {
     fn default() -> Self {
-        RedisStorage::new(DEFAULT_REDIS_URL)
+        AsyncRedisStorage::new(DEFAULT_REDIS_URL)
     }
 }
