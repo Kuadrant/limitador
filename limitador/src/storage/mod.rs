@@ -13,13 +13,13 @@ pub mod wasm;
 pub mod redis;
 
 pub trait Storage: Sync + Send {
-    fn add_limit(&mut self, limit: &Limit) -> Result<(), StorageErr>;
+    fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr>;
     fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, StorageErr>;
-    fn delete_limit(&mut self, limit: &Limit) -> Result<(), StorageErr>;
-    fn delete_limits(&mut self, namespace: &str) -> Result<(), StorageErr>;
+    fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr>;
+    fn delete_limits(&self, namespace: &str) -> Result<(), StorageErr>;
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr>;
-    fn update_counter(&mut self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
-    fn get_counters(&mut self, namespace: &str) -> Result<HashSet<Counter>, StorageErr>;
+    fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
+    fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, StorageErr>;
 }
 
 #[derive(Error, Debug)]

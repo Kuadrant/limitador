@@ -17,10 +17,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fmt;
-use std::sync::Mutex;
 
 struct State {
-    limiter: Mutex<RateLimiter>,
+    limiter: RateLimiter,
 }
 
 #[derive(Serialize, Deserialize, Apiv2Schema)]
@@ -60,7 +59,7 @@ async fn create_limit(
     state: web::Data<State>,
     limit: web::Json<Limit>,
 ) -> Result<web::Json<()>, ErrorResponse> {
-    match state.limiter.lock().unwrap().add_limit(&limit.into_inner()) {
+    match state.limiter.add_limit(&limit.into_inner()) {
         Ok(_) => Ok(Json(())),
         Err(_) => Err(ErrorResponse::InternalServerError),
     }
@@ -71,12 +70,7 @@ async fn get_limits(
     state: web::Data<State>,
     namespace: web::Path<String>,
 ) -> Result<web::Json<HashSet<Limit>>, ErrorResponse> {
-    match state
-        .limiter
-        .lock()
-        .unwrap()
-        .get_limits(namespace.into_inner().as_str())
-    {
+    match state.limiter.get_limits(namespace.into_inner().as_str()) {
         Ok(limits) => Ok(Json(limits)),
         Err(_) => Err(ErrorResponse::InternalServerError),
     }
@@ -87,7 +81,7 @@ async fn delete_limit(
     state: web::Data<State>,
     limit: web::Json<Limit>,
 ) -> Result<web::Json<()>, ErrorResponse> {
-    match state.limiter.lock().unwrap().delete_limit(&limit) {
+    match state.limiter.delete_limit(&limit) {
         Ok(_) => Ok(Json(())),
         Err(_) => Err(ErrorResponse::InternalServerError),
     }
@@ -98,12 +92,7 @@ async fn delete_limits(
     state: web::Data<State>,
     namespace: web::Path<String>,
 ) -> Result<web::Json<()>, ErrorResponse> {
-    match state
-        .limiter
-        .lock()
-        .unwrap()
-        .delete_limits(namespace.into_inner().as_str())
-    {
+    match state.limiter.delete_limits(namespace.into_inner().as_str()) {
         Ok(_) => Ok(Json(())),
         Err(_) => Err(ErrorResponse::InternalServerError),
     }
@@ -114,12 +103,7 @@ async fn get_counters(
     state: web::Data<State>,
     namespace: web::Path<String>,
 ) -> Result<web::Json<HashSet<Counter>>, ErrorResponse> {
-    match state
-        .limiter
-        .lock()
-        .unwrap()
-        .get_counters(namespace.into_inner().as_str())
-    {
+    match state.limiter.get_counters(namespace.into_inner().as_str()) {
         Ok(counters) => Ok(Json(counters)),
         Err(_) => Err(ErrorResponse::InternalServerError),
     }
@@ -130,11 +114,10 @@ async fn check(
     state: web::Data<State>,
     request: web::Json<CheckAndReportInfo>,
 ) -> Result<web::Json<()>, ErrorResponse> {
-    match state.limiter.lock().unwrap().is_rate_limited(
-        &request.namespace,
-        &request.values,
-        request.delta,
-    ) {
+    match state
+        .limiter
+        .is_rate_limited(&request.namespace, &request.values, request.delta)
+    {
         Ok(rate_limited) => {
             if rate_limited {
                 Err(ErrorResponse::TooManyRequests)
@@ -151,11 +134,10 @@ async fn report(
     state: web::Data<State>,
     request: web::Json<CheckAndReportInfo>,
 ) -> Result<web::Json<()>, ErrorResponse> {
-    match state.limiter.lock().unwrap().update_counters(
-        &request.namespace,
-        &request.values,
-        request.delta,
-    ) {
+    match state
+        .limiter
+        .update_counters(&request.namespace, &request.values, request.delta)
+    {
         Ok(_) => Ok(Json(())),
         Err(_) => Err(ErrorResponse::InternalServerError),
     }
@@ -166,11 +148,10 @@ async fn check_and_report(
     state: web::Data<State>,
     request: web::Json<CheckAndReportInfo>,
 ) -> Result<web::Json<()>, ErrorResponse> {
-    let rate_limited = state.limiter.lock().unwrap().is_rate_limited(
-        &request.namespace,
-        &request.values,
-        request.delta,
-    );
+    let rate_limited =
+        state
+            .limiter
+            .is_rate_limited(&request.namespace, &request.values, request.delta);
     match rate_limited {
         Ok(rate_limited) => {
             if rate_limited {
@@ -193,7 +174,7 @@ async fn main() -> std::io::Result<()> {
     // Internally this uses Arc.
     // Ref: https://docs.rs/actix-web/2.0.0/actix_web/web/struct.Data.html
     let state = web::Data::new(State {
-        limiter: Mutex::new(rate_limiter),
+        limiter: rate_limiter,
     });
 
     let host = env::var("HOST").unwrap_or_else(|_| String::from("0.0.0.0"));

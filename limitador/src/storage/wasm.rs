@@ -4,6 +4,7 @@ use crate::storage::{Storage, StorageErr};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::iter::FromIterator;
+use std::sync::RwLock;
 use std::time::{Duration, SystemTime};
 
 // This is a storage implementation that can be compiled to WASM. It is very
@@ -72,23 +73,25 @@ impl<K: Eq + Hash + Clone, V: Copy> Default for Cache<K, V> {
 }
 
 pub struct WasmStorage {
-    limits_for_namespace: HashMap<String, HashMap<Limit, HashSet<Counter>>>,
-    pub counters: Cache<Counter, i64>,
+    limits_for_namespace: RwLock<HashMap<String, HashMap<Limit, HashSet<Counter>>>>,
+    pub counters: RwLock<Cache<Counter, i64>>,
     pub clock: Box<dyn Clock>,
 }
 
 impl Storage for WasmStorage {
-    fn add_limit(&mut self, limit: &Limit) -> Result<(), StorageErr> {
+    fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
         let namespace = limit.namespace().to_string();
 
-        match self.limits_for_namespace.get_mut(&namespace) {
+        let mut limits_for_namespace = self.limits_for_namespace.write().unwrap();
+
+        match limits_for_namespace.get_mut(&namespace) {
             Some(limits) => {
                 limits.insert(limit.clone(), HashSet::new());
             }
             None => {
                 let mut limits = HashMap::new();
                 limits.insert(limit.clone(), HashSet::new());
-                self.limits_for_namespace.insert(namespace, limits);
+                limits_for_namespace.insert(namespace, limits);
             }
         }
 
@@ -96,7 +99,7 @@ impl Storage for WasmStorage {
     }
 
     fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, StorageErr> {
-        let limits = match self.limits_for_namespace.get(namespace) {
+        let limits = match self.limits_for_namespace.read().unwrap().get(namespace) {
             Some(limits) => HashSet::from_iter(limits.keys().cloned()),
             None => HashSet::new(),
         };
@@ -104,24 +107,29 @@ impl Storage for WasmStorage {
         Ok(limits)
     }
 
-    fn delete_limit(&mut self, limit: &Limit) -> Result<(), StorageErr> {
+    fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
         self.delete_counters_of_limit(limit);
 
-        if let Some(counters_by_limit) = self.limits_for_namespace.get_mut(limit.namespace()) {
+        if let Some(counters_by_limit) = self
+            .limits_for_namespace
+            .write()
+            .unwrap()
+            .get_mut(limit.namespace())
+        {
             counters_by_limit.remove(limit);
         }
 
         Ok(())
     }
 
-    fn delete_limits(&mut self, namespace: &str) -> Result<(), StorageErr> {
+    fn delete_limits(&self, namespace: &str) -> Result<(), StorageErr> {
         self.delete_counters_in_namespace(namespace);
-        self.limits_for_namespace.remove(namespace);
+        self.limits_for_namespace.write().unwrap().remove(namespace);
         Ok(())
     }
 
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
-        let within_limits = match self.counters.get(counter) {
+        let within_limits = match self.counters.read().unwrap().get(counter) {
             Some(entry) => {
                 if entry.is_expired(self.clock.get_current_time()) {
                     true
@@ -135,12 +143,14 @@ impl Storage for WasmStorage {
         Ok(within_limits)
     }
 
-    fn update_counter(&mut self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
-        match self.counters.get_mut(counter) {
+    fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
+        let mut counters = self.counters.write().unwrap();
+
+        match counters.get_mut(counter) {
             Some(entry) => {
                 if entry.is_expired(self.clock.get_current_time()) {
                     // TODO: remove duplication. "None" branch is identical.
-                    self.counters.insert(
+                    counters.insert(
                         counter,
                         counter.max_value() - delta,
                         self.clock.get_current_time() + Duration::from_secs(counter.seconds()),
@@ -150,7 +160,7 @@ impl Storage for WasmStorage {
                 }
             }
             None => {
-                self.counters.insert(
+                counters.insert(
                     counter,
                     counter.max_value() - delta,
                     self.clock.get_current_time() + Duration::from_secs(counter.seconds()),
@@ -163,11 +173,13 @@ impl Storage for WasmStorage {
         Ok(())
     }
 
-    fn get_counters(&mut self, namespace: &str) -> Result<HashSet<Counter>, StorageErr> {
+    fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, StorageErr> {
         // TODO: optimize to avoid iterating over all of them.
 
         let counters_with_vals: Vec<Counter> = self
             .counters
+            .write()
+            .unwrap()
             .get_all(self.clock.get_current_time())
             .iter()
             .filter(|(counter, _, _)| counter.namespace() == namespace)
@@ -195,38 +207,53 @@ impl Storage for WasmStorage {
 impl WasmStorage {
     pub fn new(clock: Box<impl Clock + 'static>) -> Self {
         Self {
-            limits_for_namespace: HashMap::new(),
-            counters: Cache::default(),
+            limits_for_namespace: RwLock::new(HashMap::new()),
+            counters: RwLock::new(Cache::default()),
             clock,
         }
     }
 
-    pub fn add_counter(&mut self, counter: &Counter, value: i64, expires_at: SystemTime) {
-        self.counters.insert(counter, value, expires_at);
+    pub fn add_counter(&self, counter: &Counter, value: i64, expires_at: SystemTime) {
+        self.counters
+            .write()
+            .unwrap()
+            .insert(counter, value, expires_at);
     }
 
-    fn delete_counters_in_namespace(&mut self, namespace: &str) {
-        if let Some(counters_by_limit) = self.limits_for_namespace.get(namespace) {
+    fn delete_counters_in_namespace(&self, namespace: &str) {
+        if let Some(counters_by_limit) = self.limits_for_namespace.read().unwrap().get(namespace) {
+            let mut counters = self.counters.write().unwrap();
             for counter in counters_by_limit.values().flatten() {
-                self.counters.remove(counter);
+                counters.remove(counter);
             }
         }
     }
 
-    fn delete_counters_of_limit(&mut self, limit: &Limit) {
-        if let Some(counters_by_limit) = self.limits_for_namespace.get(limit.namespace()) {
-            if let Some(counters) = counters_by_limit.get(limit) {
-                for counter in counters.iter() {
-                    self.counters.remove(counter);
+    fn delete_counters_of_limit(&self, limit: &Limit) {
+        if let Some(counters_by_limit) = self
+            .limits_for_namespace
+            .read()
+            .unwrap()
+            .get(limit.namespace())
+        {
+            if let Some(counters_of_limit) = counters_by_limit.get(limit) {
+                let mut counters = self.counters.write().unwrap();
+                for counter in counters_of_limit {
+                    counters.remove(counter);
                 }
             }
         }
     }
 
-    fn add_counter_limit_association(&mut self, counter: &Counter) {
+    fn add_counter_limit_association(&self, counter: &Counter) {
         let namespace = counter.limit().namespace();
 
-        if let Some(counters_by_limit) = self.limits_for_namespace.get_mut(namespace) {
+        if let Some(counters_by_limit) = self
+            .limits_for_namespace
+            .write()
+            .unwrap()
+            .get_mut(namespace)
+        {
             counters_by_limit
                 .get_mut(counter.limit())
                 .unwrap()

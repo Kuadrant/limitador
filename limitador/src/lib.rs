@@ -154,11 +154,11 @@ impl RateLimiter {
         RateLimiter { storage }
     }
 
-    pub fn add_limit(&mut self, limit: &Limit) -> Result<(), LimitadorError> {
+    pub fn add_limit(&self, limit: &Limit) -> Result<(), LimitadorError> {
         self.storage.add_limit(limit).map_err(|err| err.into())
     }
 
-    pub fn delete_limit(&mut self, limit: &Limit) -> Result<(), LimitadorError> {
+    pub fn delete_limit(&self, limit: &Limit) -> Result<(), LimitadorError> {
         self.storage.delete_limit(limit).map_err(|err| err.into())
     }
 
@@ -166,7 +166,7 @@ impl RateLimiter {
         self.storage.get_limits(namespace).map_err(|err| err.into())
     }
 
-    pub fn delete_limits(&mut self, namespace: &str) -> Result<(), LimitadorError> {
+    pub fn delete_limits(&self, namespace: &str) -> Result<(), LimitadorError> {
         self.storage
             .delete_limits(namespace)
             .map_err(|err| err.into())
@@ -195,7 +195,7 @@ impl RateLimiter {
     }
 
     pub fn update_counters(
-        &mut self,
+        &self,
         namespace: &str,
         values: &HashMap<String, String>,
         delta: i64,
@@ -209,7 +209,7 @@ impl RateLimiter {
     }
 
     pub fn check_rate_limited_and_update(
-        &mut self,
+        &self,
         namespace: &str,
         values: &HashMap<String, String>,
         delta: i64,
@@ -229,7 +229,7 @@ impl RateLimiter {
         }
     }
 
-    pub fn get_counters(&mut self, namespace: &str) -> Result<HashSet<Counter>, LimitadorError> {
+    pub fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, LimitadorError> {
         self.storage
             .get_counters(namespace)
             .map_err(|err| err.into())

@@ -16,7 +16,7 @@ pub struct RedisStorage {
 }
 
 impl Storage for RedisStorage {
-    fn add_limit(&mut self, limit: &Limit) -> Result<(), StorageErr> {
+    fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
         let mut con = self.client.get_connection()?;
 
         let set_key = Self::key_for_limits_of_namespace(limit.namespace());
@@ -40,7 +40,7 @@ impl Storage for RedisStorage {
         Ok(limits)
     }
 
-    fn delete_limit(&mut self, limit: &Limit) -> Result<(), StorageErr> {
+    fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
         let mut con = self.client.get_connection()?;
 
         self.delete_counters_associated_with_limit(limit)?;
@@ -54,7 +54,7 @@ impl Storage for RedisStorage {
         Ok(())
     }
 
-    fn delete_limits(&mut self, namespace: &str) -> Result<(), StorageErr> {
+    fn delete_limits(&self, namespace: &str) -> Result<(), StorageErr> {
         let mut con = self.client.get_connection()?;
 
         self.delete_counters_of_namespace(namespace)?;
@@ -78,7 +78,7 @@ impl Storage for RedisStorage {
         }
     }
 
-    fn update_counter(&mut self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
+    fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
         let mut con = self.client.get_connection()?;
 
         let counter_key = Self::key_for_counter(counter);
@@ -106,7 +106,7 @@ impl Storage for RedisStorage {
         Ok(())
     }
 
-    fn get_counters(&mut self, namespace: &str) -> Result<HashSet<Counter>, StorageErr> {
+    fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
 
         let mut con = self.client.get_connection()?;
@@ -183,7 +183,7 @@ impl RedisStorage {
         serde_json::from_str(&key[start_pos_counter..]).unwrap()
     }
 
-    fn delete_counters_of_namespace(&mut self, namespace: &str) -> Result<(), StorageErr> {
+    fn delete_counters_of_namespace(&self, namespace: &str) -> Result<(), StorageErr> {
         for limit in self.get_limits(namespace)? {
             self.delete_counters_associated_with_limit(&limit)?
         }
@@ -191,7 +191,7 @@ impl RedisStorage {
         Ok(())
     }
 
-    fn delete_counters_associated_with_limit(&mut self, limit: &Limit) -> Result<(), StorageErr> {
+    fn delete_counters_associated_with_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
         let mut con = self.client.get_connection()?;
 
         let counter_keys =

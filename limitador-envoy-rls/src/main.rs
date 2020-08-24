@@ -20,7 +20,7 @@ const LIMITS_FILE_ENV: &str = "LIMITS_FILE";
 include!("envoy.rs");
 
 pub struct MyRateLimiter {
-    limiter: Arc<tokio::sync::Mutex<RateLimiter>>,
+    limiter: Arc<RateLimiter>,
 }
 
 impl MyRateLimiter {
@@ -30,7 +30,7 @@ impl MyRateLimiter {
                 let f = std::fs::File::open(val).unwrap();
                 let limits: Vec<Limit> = serde_yaml::from_reader(f).unwrap();
 
-                let mut rate_limiter = match env::var("REDIS_URL") {
+                let rate_limiter = match env::var("REDIS_URL") {
                     Ok(redis_url) => {
                         RateLimiter::new_with_storage(Box::new(RedisStorage::new(&redis_url)))
                     }
@@ -42,7 +42,7 @@ impl MyRateLimiter {
                 }
 
                 MyRateLimiter {
-                    limiter: Arc::new(tokio::sync::Mutex::new(rate_limiter)),
+                    limiter: Arc::new(rate_limiter),
                 }
             }
             _ => panic!("LIMITS_FILE env not set"),
@@ -82,8 +82,6 @@ impl RateLimitService for MyRateLimiter {
 
         let is_rate_limited = self
             .limiter
-            .lock()
-            .await
             .check_rate_limited_and_update(&namespace, &values, 1);
 
         let resp_code = match is_rate_limited {
