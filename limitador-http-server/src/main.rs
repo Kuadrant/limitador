@@ -148,16 +148,17 @@ async fn check_and_report(
     state: web::Data<State>,
     request: web::Json<CheckAndReportInfo>,
 ) -> Result<web::Json<()>, ErrorResponse> {
-    let rate_limited =
-        state
-            .limiter
-            .is_rate_limited(&request.namespace, &request.values, request.delta);
-    match rate_limited {
-        Ok(rate_limited) => {
-            if rate_limited {
+    let is_rate_limited = state.limiter.check_rate_limited_and_update(
+        &request.namespace,
+        &request.values,
+        request.delta,
+    );
+    match is_rate_limited {
+        Ok(is_rate_limited) => {
+            if is_rate_limited {
                 Err(ErrorResponse::TooManyRequests)
             } else {
-                report(state, request).await
+                Ok(Json(()))
             }
         }
         Err(_) => Err(ErrorResponse::InternalServerError),
