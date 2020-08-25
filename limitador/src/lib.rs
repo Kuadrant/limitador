@@ -133,6 +133,7 @@ use crate::limit::Limit;
 use crate::storage::in_memory::InMemoryStorage;
 use crate::storage::Storage;
 use std::collections::{HashMap, HashSet};
+use std::iter::FromIterator;
 
 pub mod counter;
 pub mod errors;
@@ -214,19 +215,13 @@ impl RateLimiter {
         values: &HashMap<String, String>,
         delta: i64,
     ) -> Result<bool, LimitadorError> {
-        match self.is_rate_limited(namespace, values, delta) {
-            Ok(rate_limited) => {
-                if rate_limited {
-                    Ok(true)
-                } else {
-                    match self.update_counters(namespace, values, delta) {
-                        Ok(_) => Ok(false),
-                        Err(e) => Err(e),
-                    }
-                }
-            }
-            Err(e) => Err(e),
-        }
+        let counters = self.counters_that_apply(namespace, values)?;
+
+        let is_within_limits = self
+            .storage
+            .check_and_update(&HashSet::from_iter(counters.iter()), delta)?;
+
+        Ok(!is_within_limits)
     }
 
     pub fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, LimitadorError> {
