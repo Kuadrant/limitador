@@ -126,6 +126,14 @@
 //! // separate calls, we can issue just one:
 //! rate_limiter.check_rate_limited_and_update("my_namespace", &values_to_report, 1).unwrap();
 //! ```
+//!
+//! # Limits accuracy
+//!
+//! When storing the limits in memory, Limitador guarantees that we'll never go
+//! over the limits defined. However, when using Redis that's not the case. The
+//! Redis driver sacrifices a bit of accuracy when applying the limits to be
+//! more performant.
+//!
 
 use crate::counter::Counter;
 use crate::errors::LimitadorError;

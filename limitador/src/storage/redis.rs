@@ -11,6 +11,10 @@ use std::iter::FromIterator;
 
 const DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
 
+// Note: this implementation does no guarantee exact limits. Ensuring that we
+// never go over the limits would hurt performance. This implementation
+// sacrifices a bit of accuracy to be more performant.
+
 pub struct RedisStorage {
     client: redis::Client,
 }
