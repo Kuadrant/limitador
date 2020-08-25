@@ -129,48 +129,35 @@ impl Storage for WasmStorage {
     }
 
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
-        let within_limits = match self.counters.read().unwrap().get(counter) {
-            Some(entry) => {
-                if entry.is_expired(self.clock.get_current_time()) {
-                    counter.max_value() - delta >= 0
-                } else {
-                    entry.value - delta >= 0
-                }
-            }
-            None => counter.max_value() - delta >= 0,
-        };
-
-        Ok(within_limits)
+        let stored_counters = self.counters.read().unwrap();
+        Ok(self.counter_is_within_limits(counter, stored_counters.get(counter), delta))
     }
 
     fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
         let mut counters = self.counters.write().unwrap();
-
-        match counters.get_mut(counter) {
-            Some(entry) => {
-                if entry.is_expired(self.clock.get_current_time()) {
-                    // TODO: remove duplication. "None" branch is identical.
-                    counters.insert(
-                        counter,
-                        counter.max_value() - delta,
-                        self.clock.get_current_time() + Duration::from_secs(counter.seconds()),
-                    );
-                } else {
-                    entry.value -= delta;
-                }
-            }
-            None => {
-                counters.insert(
-                    counter,
-                    counter.max_value() - delta,
-                    self.clock.get_current_time() + Duration::from_secs(counter.seconds()),
-                );
-
-                self.add_counter_limit_association(counter);
-            }
-        };
-
+        self.insert_or_update_counter(&mut counters, counter, delta);
         Ok(())
+    }
+
+    fn check_and_update(
+        &self,
+        counters: &HashSet<&Counter>,
+        delta: i64,
+    ) -> Result<bool, StorageErr> {
+        // This makes the operator of check + update atomic
+        let mut stored_counters = self.counters.write().unwrap();
+
+        for counter in counters {
+            if !self.counter_is_within_limits(counter, stored_counters.get(counter), delta) {
+                return Ok(false);
+            }
+        }
+
+        for &counter in counters {
+            self.insert_or_update_counter(&mut stored_counters, counter, delta)
+        }
+
+        Ok(true)
     }
 
     fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, StorageErr> {
@@ -258,6 +245,55 @@ impl WasmStorage {
                 .get_mut(counter.limit())
                 .unwrap()
                 .insert(counter.clone());
+        }
+    }
+
+    fn insert_or_update_counter(
+        &self,
+        counters: &mut Cache<Counter, i64>,
+        counter: &Counter,
+        delta: i64,
+    ) {
+        match counters.get_mut(counter) {
+            Some(entry) => {
+                if entry.is_expired(self.clock.get_current_time()) {
+                    // TODO: remove duplication. "None" branch is identical.
+                    counters.insert(
+                        counter,
+                        counter.max_value() - delta,
+                        self.clock.get_current_time() + Duration::from_secs(counter.seconds()),
+                    );
+                } else {
+                    entry.value -= delta;
+                }
+            }
+            None => {
+                counters.insert(
+                    counter,
+                    counter.max_value() - delta,
+                    self.clock.get_current_time() + Duration::from_secs(counter.seconds()),
+                );
+
+                self.add_counter_limit_association(counter);
+            }
+        };
+    }
+
+    fn counter_is_within_limits(
+        &self,
+        counter: &Counter,
+        cache_entry: Option<&CacheEntry<i64>>,
+        delta: i64,
+    ) -> bool {
+        match cache_entry {
+            Some(entry) => {
+                if entry.is_expired(self.clock.get_current_time()) {
+                    counter.max_value() - delta >= 0
+                } else {
+                    entry.value - delta >= 0
+                }
+            }
+            None => counter.max_value() - delta >= 0,
         }
     }
 }

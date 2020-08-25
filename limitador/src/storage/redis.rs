@@ -86,8 +86,8 @@ impl Storage for RedisStorage {
         // 1) Sets the counter key if it does not exist.
         // 2) Decreases the value.
         // 3) Adds the counter to the set of counters associated with the limit.
-        // We need a MULTI/EXEC (atomic pipeline) to ensure that the key will no
-        // expire between the set and the incr.
+        // We need a MULTI/EXEC (atomic pipeline) to ensure that the key will
+        // not expire between the set and the incr.
         redis::pipe()
             .atomic()
             .cmd("SET")
@@ -104,6 +104,44 @@ impl Storage for RedisStorage {
             .query(&mut con)?;
 
         Ok(())
+    }
+
+    fn check_and_update(
+        &self,
+        counters: &HashSet<&Counter>,
+        delta: i64,
+    ) -> Result<bool, StorageErr> {
+        let mut con = self.client.get_connection()?;
+
+        let counter_keys: Vec<String> = counters
+            .iter()
+            .map(|counter| Self::key_for_counter(counter))
+            .collect();
+
+        let counter_vals: Vec<Option<i64>> =
+            redis::cmd("MGET").arg(counter_keys).query(&mut con)?;
+
+        for (i, counter) in counters.iter().enumerate() {
+            match counter_vals[i] {
+                Some(val) => {
+                    if val - delta < 0 {
+                        return Ok(false);
+                    }
+                }
+                None => {
+                    if counter.max_value() - delta < 0 {
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+
+        // TODO: this can be optimized by using pipelines with multiple updates
+        for counter in counters {
+            self.update_counter(counter, delta)?
+        }
+
+        Ok(true)
     }
 
     fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, StorageErr> {
