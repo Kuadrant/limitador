@@ -65,7 +65,7 @@ impl Storage for InMemoryStorage {
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
         let within_limits = match self.counters.read().unwrap().get(counter) {
             Some(value) => *value - delta >= 0,
-            None => true,
+            None => counter.max_value() - delta >= 0,
         };
 
         Ok(within_limits)

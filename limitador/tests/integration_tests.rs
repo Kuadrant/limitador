@@ -67,6 +67,7 @@ mod test {
     test_with_all_storage_impls!(delete_limits_of_an_empty_namespace_does_nothing);
     test_with_all_storage_impls!(rate_limited);
     test_with_all_storage_impls!(rate_limited_with_delta_higher_than_one);
+    test_with_all_storage_impls!(rate_limited_with_delta_higher_than_max);
     test_with_all_storage_impls!(takes_into_account_only_vars_of_the_limits);
     test_with_all_storage_impls!(is_rate_limited_returns_false_when_no_limits_in_namespace);
     test_with_all_storage_impls!(is_rate_limited_returns_false_when_no_matching_limits);
@@ -292,6 +293,28 @@ mod test {
             true,
             rate_limiter.is_rate_limited(namespace, &values, 1).unwrap()
         );
+    }
+
+    fn rate_limited_with_delta_higher_than_max(rate_limiter: &mut RateLimiter) {
+        let max = 10;
+        let namespace = "test_namespace";
+        let limit = Limit::new(
+            namespace,
+            max,
+            60,
+            vec!["req.method == GET"],
+            vec!["app_id"],
+        );
+
+        rate_limiter.add_limit(&limit).unwrap();
+
+        let mut values: HashMap<String, String> = HashMap::new();
+        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("app_id".to_string(), "test_app_id".to_string());
+
+        assert!(rate_limiter
+            .is_rate_limited(namespace, &values, max + 1)
+            .unwrap())
     }
 
     fn takes_into_account_only_vars_of_the_limits(rate_limiter: &mut RateLimiter) {

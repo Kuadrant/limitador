@@ -132,12 +132,12 @@ impl Storage for WasmStorage {
         let within_limits = match self.counters.read().unwrap().get(counter) {
             Some(entry) => {
                 if entry.is_expired(self.clock.get_current_time()) {
-                    true
+                    counter.max_value() - delta >= 0
                 } else {
                     entry.value - delta >= 0
                 }
             }
-            None => true,
+            None => counter.max_value() - delta >= 0,
         };
 
         Ok(within_limits)
