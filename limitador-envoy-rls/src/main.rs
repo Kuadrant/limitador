@@ -7,8 +7,8 @@ use crate::envoy::service::ratelimit::v2::rate_limit_service_server::{
 };
 use crate::envoy::service::ratelimit::v2::{RateLimitRequest, RateLimitResponse};
 use limitador::limit::Limit;
-use limitador::storage::redis::RedisStorage;
-use limitador::RateLimiter;
+use limitador::storage::redis_async::AsyncRedisStorage;
+use limitador::{AsyncRateLimiter, RateLimiter};
 use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;
@@ -19,26 +19,41 @@ const LIMITS_FILE_ENV: &str = "LIMITS_FILE";
 
 include!("envoy.rs");
 
+pub enum Limiter {
+    Blocking(RateLimiter),
+    Async(AsyncRateLimiter),
+}
+
 pub struct MyRateLimiter {
-    limiter: Arc<RateLimiter>,
+    limiter: Arc<Limiter>,
+}
+
+fn new_limiter() -> Limiter {
+    match env::var("REDIS_URL") {
+        // Let's use the async impl. This could be configurable if needed.
+        Ok(redis_url) => {
+            let async_limiter =
+                AsyncRateLimiter::new_with_storage(Box::new(AsyncRedisStorage::new(&redis_url)));
+            Limiter::Async(async_limiter)
+        }
+        Err(_) => Limiter::Blocking(RateLimiter::default()),
+    }
 }
 
 impl MyRateLimiter {
-    pub fn new() -> MyRateLimiter {
+    pub async fn new() -> MyRateLimiter {
         match env::var(LIMITS_FILE_ENV) {
             Ok(val) => {
                 let f = std::fs::File::open(val).unwrap();
                 let limits: Vec<Limit> = serde_yaml::from_reader(f).unwrap();
 
-                let rate_limiter = match env::var("REDIS_URL") {
-                    Ok(redis_url) => {
-                        RateLimiter::new_with_storage(Box::new(RedisStorage::new(&redis_url)))
-                    }
-                    Err(_) => RateLimiter::default(),
-                };
+                let rate_limiter = new_limiter();
 
                 for limit in limits {
-                    rate_limiter.add_limit(&limit).unwrap();
+                    match &rate_limiter {
+                        Limiter::Blocking(limiter) => limiter.add_limit(&limit).unwrap(),
+                        Limiter::Async(limiter) => limiter.add_limit(&limit).await.unwrap(),
+                    }
                 }
 
                 MyRateLimiter {
@@ -47,12 +62,6 @@ impl MyRateLimiter {
             }
             _ => panic!("LIMITS_FILE env not set"),
         }
-    }
-}
-
-impl Default for MyRateLimiter {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -80,11 +89,18 @@ impl RateLimitService for MyRateLimiter {
             values.insert(entry.key.clone(), entry.value.clone());
         }
 
-        let is_rate_limited = self
-            .limiter
-            .check_rate_limited_and_update(&namespace, &values, 1);
+        let is_rate_limited_res = match &*self.limiter {
+            Limiter::Blocking(limiter) => {
+                limiter.check_rate_limited_and_update(&namespace, &values, 1)
+            }
+            Limiter::Async(limiter) => {
+                limiter
+                    .check_rate_limited_and_update(&namespace, &values, 1)
+                    .await
+            }
+        };
 
-        let resp_code = match is_rate_limited {
+        let resp_code = match is_rate_limited_res {
             Ok(rate_limited) => {
                 if rate_limited {
                     Code::OverLimit
@@ -126,7 +142,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Listening on {}", addr);
 
-    let rate_limiter = MyRateLimiter::default();
+    let rate_limiter = MyRateLimiter::new().await;
     let svc = RateLimitServiceServer::with_interceptor(rate_limiter, intercept);
 
     Server::builder().add_service(svc).serve(addr).await?;
