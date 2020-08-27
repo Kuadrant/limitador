@@ -2,6 +2,7 @@ extern crate redis;
 
 use crate::counter::Counter;
 use crate::limit::Limit;
+use crate::storage::redis_keys::*;
 use crate::storage::{AsyncStorage, StorageErr};
 use async_trait::async_trait;
 use redis::AsyncCommands;
@@ -28,7 +29,7 @@ impl AsyncStorage for AsyncRedisStorage {
     async fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
         let mut con = self.client.get_async_connection().await?;
 
-        let set_key = Self::key_for_limits_of_namespace(limit.namespace());
+        let set_key = key_for_limits_of_namespace(limit.namespace());
         let serialized_limit = serde_json::to_string(limit).unwrap();
 
         con.sadd::<String, String, _>(set_key, serialized_limit)
@@ -40,7 +41,7 @@ impl AsyncStorage for AsyncRedisStorage {
     async fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, StorageErr> {
         let mut con = self.client.get_async_connection().await?;
 
-        let set_key = Self::key_for_limits_of_namespace(namespace);
+        let set_key = key_for_limits_of_namespace(namespace);
 
         let limits: HashSet<Limit> = HashSet::from_iter(
             con.smembers::<String, HashSet<String>>(set_key)
@@ -56,9 +57,9 @@ impl AsyncStorage for AsyncRedisStorage {
         let mut con = self.client.get_async_connection().await?;
 
         self.delete_counters_associated_with_limit(limit).await?;
-        con.del(Self::key_for_counters_of_limit(&limit)).await?;
+        con.del(key_for_counters_of_limit(&limit)).await?;
 
-        let set_key = Self::key_for_limits_of_namespace(limit.namespace());
+        let set_key = key_for_limits_of_namespace(limit.namespace());
         let serialized_limit = serde_json::to_string(limit).unwrap();
 
         con.srem(set_key, serialized_limit).await?;
@@ -72,10 +73,10 @@ impl AsyncStorage for AsyncRedisStorage {
         self.delete_counters_of_namespace(namespace).await?;
 
         for limit in self.get_limits(namespace).await? {
-            con.del(Self::key_for_counters_of_limit(&limit)).await?;
+            con.del(key_for_counters_of_limit(&limit)).await?;
         }
 
-        let set_key = Self::key_for_limits_of_namespace(namespace);
+        let set_key = key_for_limits_of_namespace(namespace);
         con.del(set_key).await?;
 
         Ok(())
@@ -85,7 +86,7 @@ impl AsyncStorage for AsyncRedisStorage {
         let mut con = self.client.get_async_connection().await?;
 
         match con
-            .get::<String, Option<i64>>(Self::key_for_counter(counter))
+            .get::<String, Option<i64>>(key_for_counter(counter))
             .await?
         {
             Some(val) => Ok(val - delta >= 0),
@@ -96,7 +97,7 @@ impl AsyncStorage for AsyncRedisStorage {
     async fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
         let mut con = self.client.get_async_connection().await?;
 
-        let counter_key = Self::key_for_counter(counter);
+        let counter_key = key_for_counter(counter);
 
         // 1) Sets the counter key if it does not exist.
         // 2) Decreases the value.
@@ -112,10 +113,7 @@ impl AsyncStorage for AsyncRedisStorage {
             .arg(counter.seconds())
             .arg("NX")
             .incr::<&str, i64>(&counter_key, -delta)
-            .sadd::<&str, &str>(
-                &Self::key_for_counters_of_limit(counter.limit()),
-                &counter_key,
-            )
+            .sadd::<&str, &str>(&key_for_counters_of_limit(counter.limit()), &counter_key)
             .query_async(&mut con)
             .await?;
 
@@ -131,7 +129,7 @@ impl AsyncStorage for AsyncRedisStorage {
 
         let counter_keys: Vec<String> = counters
             .iter()
-            .map(|counter| Self::key_for_counter(counter))
+            .map(|counter| key_for_counter(counter))
             .collect();
 
         let counter_vals: Vec<Option<i64>> = redis::cmd("MGET")
@@ -169,11 +167,11 @@ impl AsyncStorage for AsyncRedisStorage {
 
         for limit in self.get_limits(namespace).await? {
             let counter_keys = con
-                .smembers::<String, HashSet<String>>(Self::key_for_counters_of_limit(&limit))
+                .smembers::<String, HashSet<String>>(key_for_counters_of_limit(&limit))
                 .await?;
 
             for counter_key in counter_keys {
-                let mut counter: Counter = Self::counter_from_counter_key(&counter_key);
+                let mut counter: Counter = counter_from_counter_key(&counter_key);
 
                 // If the key does not exist, it means that the counter expired,
                 // so we don't have to return it.
@@ -203,43 +201,6 @@ impl AsyncRedisStorage {
         }
     }
 
-    // To use Redis cluster and some Redis proxies, all the keys used in a
-    // command or in a pipeline need to be sharded to the same server.
-    // To help with that, Redis uses "hash tags". When a key contains "{" and
-    // "}" only what's inside them is hashed.
-    // To ensure that all the keys involved in a given operation belong to the
-    // same shard, we can shard by namespace.
-    // When there are multiple pairs of "{" and "}" only the first one is taken
-    // into account. Ref: https://redis.io/topics/cluster-spec (key hash tags).
-    // Reminder: in format!(), "{" is escaped with "{{".
-
-    fn key_for_limits_of_namespace(namespace: &str) -> String {
-        format!("limits_of_namespace:{{{}}}", namespace)
-    }
-
-    fn key_for_counter(counter: &Counter) -> String {
-        format!(
-            "namespace:{{{}}},counter:{}",
-            counter.namespace(),
-            serde_json::to_string(counter).unwrap()
-        )
-    }
-
-    fn key_for_counters_of_limit(limit: &Limit) -> String {
-        format!(
-            "namespace:{{{}}},counters_of_limit:{}",
-            limit.namespace(),
-            serde_json::to_string(limit).unwrap()
-        )
-    }
-
-    fn counter_from_counter_key(key: &str) -> Counter {
-        let counter_prefix = "counter:";
-        let start_pos_counter = key.find(counter_prefix).unwrap() + counter_prefix.len();
-
-        serde_json::from_str(&key[start_pos_counter..]).unwrap()
-    }
-
     async fn delete_counters_of_namespace(&self, namespace: &str) -> Result<(), StorageErr> {
         for limit in self.get_limits(namespace).await? {
             self.delete_counters_associated_with_limit(&limit).await?
@@ -252,7 +213,7 @@ impl AsyncRedisStorage {
         let mut con = self.client.get_async_connection().await?;
 
         let counter_keys = con
-            .smembers::<String, HashSet<String>>(Self::key_for_counters_of_limit(limit))
+            .smembers::<String, HashSet<String>>(key_for_counters_of_limit(limit))
             .await?;
 
         for counter_key in counter_keys {

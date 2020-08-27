@@ -3,6 +3,7 @@ extern crate redis;
 use self::redis::Commands;
 use crate::counter::Counter;
 use crate::limit::Limit;
+use crate::storage::redis_keys::*;
 use crate::storage::{Storage, StorageErr};
 use std::collections::HashSet;
 use std::iter::FromIterator;
@@ -21,7 +22,7 @@ impl Storage for RedisStorage {
     fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
         let mut con = self.client.get_connection()?;
 
-        let set_key = Self::key_for_limits_of_namespace(limit.namespace());
+        let set_key = key_for_limits_of_namespace(limit.namespace());
         let serialized_limit = serde_json::to_string(limit).unwrap();
 
         con.sadd::<String, String, _>(set_key, serialized_limit)?;
@@ -31,7 +32,7 @@ impl Storage for RedisStorage {
     fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, StorageErr> {
         let mut con = self.client.get_connection()?;
 
-        let set_key = Self::key_for_limits_of_namespace(namespace);
+        let set_key = key_for_limits_of_namespace(namespace);
 
         let limits: HashSet<Limit> = HashSet::from_iter(
             con.smembers::<String, HashSet<String>>(set_key)?
@@ -46,9 +47,9 @@ impl Storage for RedisStorage {
         let mut con = self.client.get_connection()?;
 
         self.delete_counters_associated_with_limit(limit)?;
-        con.del(Self::key_for_counters_of_limit(&limit))?;
+        con.del(key_for_counters_of_limit(&limit))?;
 
-        let set_key = Self::key_for_limits_of_namespace(limit.namespace());
+        let set_key = key_for_limits_of_namespace(limit.namespace());
         let serialized_limit = serde_json::to_string(limit).unwrap();
 
         con.srem(set_key, serialized_limit)?;
@@ -62,10 +63,10 @@ impl Storage for RedisStorage {
         self.delete_counters_of_namespace(namespace)?;
 
         for limit in self.get_limits(namespace)? {
-            con.del(Self::key_for_counters_of_limit(&limit))?;
+            con.del(key_for_counters_of_limit(&limit))?;
         }
 
-        let set_key = Self::key_for_limits_of_namespace(namespace);
+        let set_key = key_for_limits_of_namespace(namespace);
         con.del(set_key)?;
 
         Ok(())
@@ -74,7 +75,7 @@ impl Storage for RedisStorage {
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
         let mut con = self.client.get_connection()?;
 
-        match con.get::<String, Option<i64>>(Self::key_for_counter(counter))? {
+        match con.get::<String, Option<i64>>(key_for_counter(counter))? {
             Some(val) => Ok(val - delta >= 0),
             None => Ok(counter.max_value() - delta >= 0),
         }
@@ -83,7 +84,7 @@ impl Storage for RedisStorage {
     fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
         let mut con = self.client.get_connection()?;
 
-        let counter_key = Self::key_for_counter(counter);
+        let counter_key = key_for_counter(counter);
 
         // 1) Sets the counter key if it does not exist.
         // 2) Decreases the value.
@@ -99,10 +100,7 @@ impl Storage for RedisStorage {
             .arg(counter.seconds())
             .arg("NX")
             .incr::<&str, i64>(&counter_key, -delta)
-            .sadd::<&str, &str>(
-                &Self::key_for_counters_of_limit(counter.limit()),
-                &counter_key,
-            )
+            .sadd::<&str, &str>(&key_for_counters_of_limit(counter.limit()), &counter_key)
             .query(&mut con)?;
 
         Ok(())
@@ -117,7 +115,7 @@ impl Storage for RedisStorage {
 
         let counter_keys: Vec<String> = counters
             .iter()
-            .map(|counter| Self::key_for_counter(counter))
+            .map(|counter| key_for_counter(counter))
             .collect();
 
         let counter_vals: Vec<Option<i64>> =
@@ -153,10 +151,10 @@ impl Storage for RedisStorage {
 
         for limit in self.get_limits(namespace)? {
             let counter_keys =
-                con.smembers::<String, HashSet<String>>(Self::key_for_counters_of_limit(&limit))?;
+                con.smembers::<String, HashSet<String>>(key_for_counters_of_limit(&limit))?;
 
             for counter_key in counter_keys {
-                let mut counter: Counter = Self::counter_from_counter_key(&counter_key);
+                let mut counter: Counter = counter_from_counter_key(&counter_key);
 
                 // If the key does not exist, it means that the counter expired,
                 // so we don't have to return it.
@@ -186,43 +184,6 @@ impl RedisStorage {
         }
     }
 
-    // To use Redis cluster and some Redis proxies, all the keys used in a
-    // command or in a pipeline need to be sharded to the same server.
-    // To help with that, Redis uses "hash tags". When a key contains "{" and
-    // "}" only what's inside them is hashed.
-    // To ensure that all the keys involved in a given operation belong to the
-    // same shard, we can shard by namespace.
-    // When there are multiple pairs of "{" and "}" only the first one is taken
-    // into account. Ref: https://redis.io/topics/cluster-spec (key hash tags).
-    // Reminder: in format!(), "{" is escaped with "{{".
-
-    fn key_for_limits_of_namespace(namespace: &str) -> String {
-        format!("limits_of_namespace:{{{}}}", namespace)
-    }
-
-    fn key_for_counter(counter: &Counter) -> String {
-        format!(
-            "namespace:{{{}}},counter:{}",
-            counter.namespace(),
-            serde_json::to_string(counter).unwrap()
-        )
-    }
-
-    fn key_for_counters_of_limit(limit: &Limit) -> String {
-        format!(
-            "namespace:{{{}}},counters_of_limit:{}",
-            limit.namespace(),
-            serde_json::to_string(limit).unwrap()
-        )
-    }
-
-    fn counter_from_counter_key(key: &str) -> Counter {
-        let counter_prefix = "counter:";
-        let start_pos_counter = key.find(counter_prefix).unwrap() + counter_prefix.len();
-
-        serde_json::from_str(&key[start_pos_counter..]).unwrap()
-    }
-
     fn delete_counters_of_namespace(&self, namespace: &str) -> Result<(), StorageErr> {
         for limit in self.get_limits(namespace)? {
             self.delete_counters_associated_with_limit(&limit)?
@@ -235,7 +196,7 @@ impl RedisStorage {
         let mut con = self.client.get_connection()?;
 
         let counter_keys =
-            con.smembers::<String, HashSet<String>>(Self::key_for_counters_of_limit(limit))?;
+            con.smembers::<String, HashSet<String>>(key_for_counters_of_limit(limit))?;
 
         for counter_key in counter_keys {
             con.del(counter_key)?;
