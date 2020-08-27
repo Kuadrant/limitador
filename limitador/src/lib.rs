@@ -127,6 +127,48 @@
 //! rate_limiter.check_rate_limited_and_update("my_namespace", &values_to_report, 1).unwrap();
 //! ```
 //!
+//! # Async
+//!
+//! There are two Redis drivers, a blocking one and an async one. To use the
+//! async one, we need to instantiate an "AsyncRateLimiter" with an
+//! "AsyncRedisStorage":
+//!
+//! ```
+//! use limitador::AsyncRateLimiter;
+//! use limitador::storage::redis_async::AsyncRedisStorage;
+//!
+//! // Default redis URL (redis://localhost:6379).
+//! let rate_limiter = AsyncRateLimiter::new_with_storage(Box::new(AsyncRedisStorage::default()));
+//!
+//! // Custom redis URL
+//! let rate_limiter = AsyncRateLimiter::new_with_storage(
+//!     Box::new(AsyncRedisStorage::new("redis://127.0.0.1:7777"))
+//! );
+//! ```
+//!
+//! Both the blocking and the async limiters expose the same functions, so we
+//! can use the async limiter as explained above. For example:
+//!
+//! ```no_run
+//! use limitador::AsyncRateLimiter;
+//! use limitador::limit::Limit;
+//! use limitador::storage::redis_async::AsyncRedisStorage;
+//! let limit = Limit::new(
+//!     "my_namespace",
+//!      10,
+//!      60,
+//!      vec!["req.method == GET"],
+//!      vec!["user_id"],
+//! );
+//!
+//! let redis_storage = AsyncRedisStorage::default();
+//! let mut rate_limiter = AsyncRateLimiter::new_with_storage(Box::new(redis_storage));
+//!
+//! async {
+//!     rate_limiter.add_limit(&limit).await;
+//! };
+//! ```
+//!
 //! # Limits accuracy
 //!
 //! When storing the limits in memory, Limitador guarantees that we'll never go
@@ -139,7 +181,7 @@ use crate::counter::Counter;
 use crate::errors::LimitadorError;
 use crate::limit::Limit;
 use crate::storage::in_memory::InMemoryStorage;
-use crate::storage::Storage;
+use crate::storage::{AsyncStorage, Storage};
 use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 
@@ -150,6 +192,10 @@ pub mod storage;
 
 pub struct RateLimiter {
     storage: Box<dyn Storage>,
+}
+
+pub struct AsyncRateLimiter {
+    storage: Box<dyn AsyncStorage>,
 }
 
 impl RateLimiter {
@@ -258,5 +304,120 @@ impl RateLimiter {
 impl Default for RateLimiter {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// TODO: the code of this implementation is almost identical to the blocking
+// one. The only exception is that the functions defined are "async" and all the
+// calls to the storage need to include ".await". We'll need to think about how
+// to remove this duplication.
+
+impl AsyncRateLimiter {
+    pub fn new_with_storage(storage: Box<dyn AsyncStorage>) -> AsyncRateLimiter {
+        AsyncRateLimiter { storage }
+    }
+
+    pub async fn add_limit(&self, limit: &Limit) -> Result<(), LimitadorError> {
+        self.storage
+            .add_limit(limit)
+            .await
+            .map_err(|err| err.into())
+    }
+
+    pub async fn delete_limit(&self, limit: &Limit) -> Result<(), LimitadorError> {
+        self.storage
+            .delete_limit(limit)
+            .await
+            .map_err(|err| err.into())
+    }
+
+    pub async fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, LimitadorError> {
+        self.storage
+            .get_limits(namespace)
+            .await
+            .map_err(|err| err.into())
+    }
+
+    pub async fn delete_limits(&self, namespace: &str) -> Result<(), LimitadorError> {
+        self.storage
+            .delete_limits(namespace)
+            .await
+            .map_err(|err| err.into())
+    }
+
+    pub async fn is_rate_limited(
+        &self,
+        namespace: &str,
+        values: &HashMap<String, String>,
+        delta: i64,
+    ) -> Result<bool, LimitadorError> {
+        let counters = self.counters_that_apply(namespace, values).await?;
+
+        for counter in counters {
+            match self.storage.is_within_limits(&counter, delta).await {
+                Ok(within_limits) => {
+                    if !within_limits {
+                        return Ok(true);
+                    }
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+
+        Ok(false)
+    }
+
+    pub async fn update_counters(
+        &self,
+        namespace: &str,
+        values: &HashMap<String, String>,
+        delta: i64,
+    ) -> Result<(), LimitadorError> {
+        let counters = self.counters_that_apply(namespace, values).await?;
+
+        for counter in counters {
+            self.storage.update_counter(&counter, delta).await?
+        }
+
+        Ok(())
+    }
+
+    pub async fn check_rate_limited_and_update(
+        &self,
+        namespace: &str,
+        values: &HashMap<String, String>,
+        delta: i64,
+    ) -> Result<bool, LimitadorError> {
+        let counters = self.counters_that_apply(namespace, values).await?;
+
+        let is_within_limits = self
+            .storage
+            .check_and_update(&HashSet::from_iter(counters.iter()), delta)
+            .await?;
+
+        Ok(!is_within_limits)
+    }
+
+    pub async fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, LimitadorError> {
+        self.storage
+            .get_counters(namespace)
+            .await
+            .map_err(|err| err.into())
+    }
+
+    async fn counters_that_apply(
+        &self,
+        namespace: &str,
+        values: &HashMap<String, String>,
+    ) -> Result<Vec<Counter>, LimitadorError> {
+        let limits = self.get_limits(namespace).await?;
+
+        let counters = limits
+            .iter()
+            .filter(|lim| lim.applies(values))
+            .map(|lim| Counter::new(lim.clone(), values.clone()))
+            .collect();
+
+        Ok(counters)
     }
 }
