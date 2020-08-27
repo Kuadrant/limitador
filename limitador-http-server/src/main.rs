@@ -2,8 +2,8 @@ use actix_web::{http::StatusCode, ResponseError};
 use actix_web::{App, HttpServer};
 use limitador::counter::Counter;
 use limitador::limit::Limit;
-use limitador::storage::redis::RedisStorage;
-use limitador::RateLimiter;
+use limitador::storage::redis_async::AsyncRedisStorage;
+use limitador::{AsyncRateLimiter, RateLimiter};
 use paperclip::actix::{
     api_v2_errors,
     api_v2_operation,
@@ -18,8 +18,13 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fmt;
 
+pub enum Limiter {
+    Blocking(RateLimiter),
+    Async(AsyncRateLimiter),
+}
+
 struct State {
-    limiter: RateLimiter,
+    limiter: Limiter,
 }
 
 #[derive(Serialize, Deserialize, Apiv2Schema)]
@@ -59,7 +64,12 @@ async fn create_limit(
     state: web::Data<State>,
     limit: web::Json<Limit>,
 ) -> Result<web::Json<()>, ErrorResponse> {
-    match state.limiter.add_limit(&limit.into_inner()) {
+    let add_result = match &state.limiter {
+        Limiter::Blocking(limiter) => limiter.add_limit(&limit.into_inner()),
+        Limiter::Async(limiter) => limiter.add_limit(&limit.into_inner()).await,
+    };
+
+    match add_result {
         Ok(_) => Ok(Json(())),
         Err(_) => Err(ErrorResponse::InternalServerError),
     }
@@ -70,7 +80,12 @@ async fn get_limits(
     state: web::Data<State>,
     namespace: web::Path<String>,
 ) -> Result<web::Json<HashSet<Limit>>, ErrorResponse> {
-    match state.limiter.get_limits(namespace.into_inner().as_str()) {
+    let get_limits_result = match &state.limiter {
+        Limiter::Blocking(limiter) => limiter.get_limits(namespace.into_inner().as_str()),
+        Limiter::Async(limiter) => limiter.get_limits(namespace.into_inner().as_str()).await,
+    };
+
+    match get_limits_result {
         Ok(limits) => Ok(Json(limits)),
         Err(_) => Err(ErrorResponse::InternalServerError),
     }
@@ -81,7 +96,12 @@ async fn delete_limit(
     state: web::Data<State>,
     limit: web::Json<Limit>,
 ) -> Result<web::Json<()>, ErrorResponse> {
-    match state.limiter.delete_limit(&limit) {
+    let delete_limit_result = match &state.limiter {
+        Limiter::Blocking(limiter) => limiter.delete_limit(&limit),
+        Limiter::Async(limiter) => limiter.delete_limit(&limit).await,
+    };
+
+    match delete_limit_result {
         Ok(_) => Ok(Json(())),
         Err(_) => Err(ErrorResponse::InternalServerError),
     }
@@ -92,7 +112,12 @@ async fn delete_limits(
     state: web::Data<State>,
     namespace: web::Path<String>,
 ) -> Result<web::Json<()>, ErrorResponse> {
-    match state.limiter.delete_limits(namespace.into_inner().as_str()) {
+    let delete_limits_result = match &state.limiter {
+        Limiter::Blocking(limiter) => limiter.delete_limits(namespace.into_inner().as_str()),
+        Limiter::Async(limiter) => limiter.delete_limits(namespace.into_inner().as_str()).await,
+    };
+
+    match delete_limits_result {
         Ok(_) => Ok(Json(())),
         Err(_) => Err(ErrorResponse::InternalServerError),
     }
@@ -103,7 +128,12 @@ async fn get_counters(
     state: web::Data<State>,
     namespace: web::Path<String>,
 ) -> Result<web::Json<HashSet<Counter>>, ErrorResponse> {
-    match state.limiter.get_counters(namespace.into_inner().as_str()) {
+    let get_counters_result = match &state.limiter {
+        Limiter::Blocking(limiter) => limiter.get_counters(namespace.into_inner().as_str()),
+        Limiter::Async(limiter) => limiter.get_counters(namespace.into_inner().as_str()).await,
+    };
+
+    match get_counters_result {
         Ok(counters) => Ok(Json(counters)),
         Err(_) => Err(ErrorResponse::InternalServerError),
     }
@@ -114,10 +144,18 @@ async fn check(
     state: web::Data<State>,
     request: web::Json<CheckAndReportInfo>,
 ) -> Result<web::Json<()>, ErrorResponse> {
-    match state
-        .limiter
-        .is_rate_limited(&request.namespace, &request.values, request.delta)
-    {
+    let is_rate_limited_result = match &state.limiter {
+        Limiter::Blocking(limiter) => {
+            limiter.is_rate_limited(&request.namespace, &request.values, request.delta)
+        }
+        Limiter::Async(limiter) => {
+            limiter
+                .is_rate_limited(&request.namespace, &request.values, request.delta)
+                .await
+        }
+    };
+
+    match is_rate_limited_result {
         Ok(rate_limited) => {
             if rate_limited {
                 Err(ErrorResponse::TooManyRequests)
@@ -134,10 +172,18 @@ async fn report(
     state: web::Data<State>,
     request: web::Json<CheckAndReportInfo>,
 ) -> Result<web::Json<()>, ErrorResponse> {
-    match state
-        .limiter
-        .update_counters(&request.namespace, &request.values, request.delta)
-    {
+    let update_counters_result = match &state.limiter {
+        Limiter::Blocking(limiter) => {
+            limiter.update_counters(&request.namespace, &request.values, request.delta)
+        }
+        Limiter::Async(limiter) => {
+            limiter
+                .update_counters(&request.namespace, &request.values, request.delta)
+                .await
+        }
+    };
+
+    match update_counters_result {
         Ok(_) => Ok(Json(())),
         Err(_) => Err(ErrorResponse::InternalServerError),
     }
@@ -148,12 +194,20 @@ async fn check_and_report(
     state: web::Data<State>,
     request: web::Json<CheckAndReportInfo>,
 ) -> Result<web::Json<()>, ErrorResponse> {
-    let is_rate_limited = state.limiter.check_rate_limited_and_update(
-        &request.namespace,
-        &request.values,
-        request.delta,
-    );
-    match is_rate_limited {
+    let rate_limited_and_update_result = match &state.limiter {
+        Limiter::Blocking(limiter) => limiter.check_rate_limited_and_update(
+            &request.namespace,
+            &request.values,
+            request.delta,
+        ),
+        Limiter::Async(limiter) => {
+            limiter
+                .check_rate_limited_and_update(&request.namespace, &request.values, request.delta)
+                .await
+        }
+    };
+
+    match rate_limited_and_update_result {
         Ok(is_rate_limited) => {
             if is_rate_limited {
                 Err(ErrorResponse::TooManyRequests)
@@ -165,22 +219,29 @@ async fn check_and_report(
     }
 }
 
+fn new_limiter() -> Limiter {
+    match env::var("REDIS_URL") {
+        // Let's use the async impl. This could be configurable if needed.
+        Ok(redis_url) => {
+            let async_limiter =
+                AsyncRateLimiter::new_with_storage(Box::new(AsyncRedisStorage::new(&redis_url)));
+            Limiter::Async(async_limiter)
+        }
+        Err(_) => Limiter::Blocking(RateLimiter::default()),
+    }
+}
+
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
-    let rate_limiter = match env::var("REDIS_URL") {
-        Ok(redis_url) => RateLimiter::new_with_storage(Box::new(RedisStorage::new(&redis_url))),
-        Err(_) => RateLimiter::default(),
-    };
-
-    // Internally this uses Arc.
-    // Ref: https://docs.rs/actix-web/2.0.0/actix_web/web/struct.Data.html
-    let state = web::Data::new(State {
-        limiter: rate_limiter,
-    });
-
     let host = env::var("HOST").unwrap_or_else(|_| String::from("0.0.0.0"));
     let port = env::var("PORT").unwrap_or_else(|_| String::from("8080"));
     let addr = format!("{}:{}", host, port);
+
+    // Internally, web::Data this uses Arc.
+    // Ref: https://docs.rs/actix-web/2.0.0/actix_web/web/struct.Data.html
+    let state = web::Data::new(State {
+        limiter: new_limiter(),
+    });
 
     // This uses the paperclip crate to generate an OpenAPI spec.
     // Ref: https://paperclip.waffles.space/actix-plugin.html
