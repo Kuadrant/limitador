@@ -20,6 +20,8 @@ ttl_cache = "0.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
+futures = "0.3"
+async-trait = "0.1.38"
 
 # Optional dependencies
 redis = { version = "0.17", optional = true }
@@ -29,6 +31,7 @@ paperclip = { version = "0.4", features = ["actix"], optional = true }
 serial_test = "0.4"
 criterion = "0.3"
 paste = "0.1"
+tokio = { version = "0.2", features = ["macros"]} # To be able to use #[tokio::test]
 
 [[bench]]
 name = "bench"
