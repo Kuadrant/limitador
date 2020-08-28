@@ -1300,6 +1300,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "thiserror",
+ "tokio",
  "ttl_cache",
 ]
 
