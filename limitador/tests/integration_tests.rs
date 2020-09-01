@@ -86,6 +86,7 @@ mod test {
     test_with_all_storage_impls!(is_rate_limited_returns_false_when_no_limits_in_namespace);
     test_with_all_storage_impls!(is_rate_limited_returns_false_when_no_matching_limits);
     test_with_all_storage_impls!(check_rate_limited_and_update);
+    test_with_all_storage_impls!(check_rate_limited_and_update_returns_true_if_no_limits_apply);
     test_with_all_storage_impls!(get_counters);
     test_with_all_storage_impls!(get_counters_returns_empty_when_no_limits_in_namespace);
     test_with_all_storage_impls!(get_counters_returns_empty_when_no_counters_in_namespace);
@@ -499,6 +500,29 @@ mod test {
 
         assert_eq!(
             true,
+            rate_limiter
+                .check_rate_limited_and_update(namespace, &values, 1)
+                .await
+                .unwrap()
+        );
+    }
+
+    async fn check_rate_limited_and_update_returns_true_if_no_limits_apply(
+        rate_limiter: &mut TestsLimiter,
+    ) {
+        let namespace = "test_namespace";
+
+        let limit = Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
+
+        rate_limiter.add_limit(&limit).await.unwrap();
+
+        let mut values: HashMap<String, String> = HashMap::new();
+        values.insert("app_id".to_string(), "test_app_id".to_string());
+        // Does not match the limit defined
+        values.insert("req.method".to_string(), "POST".to_string());
+
+        assert_eq!(
+            false,
             rate_limiter
                 .check_rate_limited_and_update(namespace, &values, 1)
                 .await

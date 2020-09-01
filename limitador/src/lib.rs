@@ -271,6 +271,10 @@ impl RateLimiter {
     ) -> Result<bool, LimitadorError> {
         let counters = self.counters_that_apply(namespace, values)?;
 
+        if counters.is_empty() {
+            return Ok(false);
+        }
+
         let is_within_limits = self
             .storage
             .check_and_update(&HashSet::from_iter(counters.iter()), delta)?;
@@ -389,6 +393,10 @@ impl AsyncRateLimiter {
         delta: i64,
     ) -> Result<bool, LimitadorError> {
         let counters = self.counters_that_apply(namespace, values).await?;
+
+        if counters.is_empty() {
+            return Ok(false);
+        }
 
         let is_within_limits = self
             .storage
