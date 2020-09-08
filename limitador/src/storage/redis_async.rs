@@ -20,6 +20,7 @@ const DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
 // calls to the client need to include ".await". We'll need to think about how
 // to remove this duplication.
 
+#[derive(Debug, Clone)]
 pub struct AsyncRedisStorage {
     client: redis::Client,
 }

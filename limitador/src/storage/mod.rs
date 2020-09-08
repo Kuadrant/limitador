@@ -11,9 +11,13 @@ pub mod in_memory;
 pub mod wasm;
 
 #[cfg(feature = "redis_storage")]
+mod batcher;
+#[cfg(feature = "redis_storage")]
 pub mod redis;
 #[cfg(feature = "redis_storage")]
 pub mod redis_async;
+#[cfg(feature = "redis_storage")]
+pub mod redis_cached;
 #[cfg(feature = "redis_storage")]
 mod redis_keys;
 
