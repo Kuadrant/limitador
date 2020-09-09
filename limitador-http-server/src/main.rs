@@ -2,7 +2,7 @@ use actix_web::{http::StatusCode, ResponseError};
 use actix_web::{App, HttpServer};
 use limitador::counter::Counter;
 use limitador::limit::Limit;
-use limitador::storage::redis_async::AsyncRedisStorage;
+use limitador::storage::redis::AsyncRedisStorage;
 use limitador::{AsyncRateLimiter, RateLimiter};
 use paperclip::actix::{
     api_v2_errors,

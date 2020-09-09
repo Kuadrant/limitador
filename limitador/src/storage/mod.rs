@@ -1,6 +1,3 @@
-#[cfg(feature = "redis_storage")]
-use ::redis::RedisError;
-
 use crate::counter::Counter;
 use crate::limit::Limit;
 use async_trait::async_trait;
@@ -11,15 +8,7 @@ pub mod in_memory;
 pub mod wasm;
 
 #[cfg(feature = "redis_storage")]
-mod batcher;
-#[cfg(feature = "redis_storage")]
 pub mod redis;
-#[cfg(feature = "redis_storage")]
-pub mod redis_async;
-#[cfg(feature = "redis_storage")]
-pub mod redis_cached;
-#[cfg(feature = "redis_storage")]
-mod redis_keys;
 
 pub trait Storage: Sync + Send {
     fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr>;
@@ -61,12 +50,5 @@ pub struct StorageErr {
 impl StorageErr {
     pub fn msg(&self) -> &str {
         &self.msg
-    }
-}
-
-#[cfg(feature = "redis_storage")]
-impl From<RedisError> for StorageErr {
-    fn from(e: RedisError) -> Self {
-        StorageErr { msg: e.to_string() }
     }
 }

@@ -1,9 +1,9 @@
 use crate::counter::Counter;
 use crate::limit::Limit;
-use crate::storage::batcher::Batcher;
-use crate::storage::redis::RedisStorage;
-use crate::storage::redis_async::AsyncRedisStorage;
-use crate::storage::redis_keys::*;
+use crate::storage::redis::batcher::Batcher;
+use crate::storage::redis::redis_async::AsyncRedisStorage;
+use crate::storage::redis::redis_keys::*;
+use crate::storage::redis::redis_sync::RedisStorage;
 use crate::storage::Storage;
 use crate::storage::{AsyncStorage, StorageErr};
 use async_trait::async_trait;

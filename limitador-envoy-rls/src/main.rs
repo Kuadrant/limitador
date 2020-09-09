@@ -7,7 +7,7 @@ use crate::envoy::service::ratelimit::v2::rate_limit_service_server::{
 };
 use crate::envoy::service::ratelimit::v2::{RateLimitRequest, RateLimitResponse};
 use limitador::limit::Limit;
-use limitador::storage::redis_async::AsyncRedisStorage;
+use limitador::storage::redis::AsyncRedisStorage;
 use limitador::{AsyncRateLimiter, RateLimiter};
 use std::collections::HashMap;
 use std::env;

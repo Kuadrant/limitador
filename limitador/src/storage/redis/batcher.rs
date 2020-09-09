@@ -1,5 +1,5 @@
 use crate::counter::Counter;
-use crate::storage::redis::RedisStorage;
+use crate::storage::redis::redis_sync::RedisStorage;
 use crate::storage::Storage;
 use std::collections::HashMap;
 use std::sync::Mutex;

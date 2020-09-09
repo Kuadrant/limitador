@@ -52,8 +52,8 @@ mod test {
     use crate::helpers::tests_limiter::*;
     use limitador::limit::Limit;
     use limitador::storage::in_memory::InMemoryStorage;
+    use limitador::storage::redis::AsyncRedisStorage;
     use limitador::storage::redis::RedisStorage;
-    use limitador::storage::redis_async::AsyncRedisStorage;
     use limitador::storage::wasm::WasmStorage;
     use limitador::AsyncRateLimiter;
     use serial_test::serial;

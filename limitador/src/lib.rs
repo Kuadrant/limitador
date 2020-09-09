@@ -135,7 +135,7 @@
 //!
 //! ```
 //! use limitador::AsyncRateLimiter;
-//! use limitador::storage::redis_async::AsyncRedisStorage;
+//! use limitador::storage::redis::AsyncRedisStorage;
 //!
 //! // Default redis URL (redis://localhost:6379).
 //! let rate_limiter = AsyncRateLimiter::new_with_storage(Box::new(AsyncRedisStorage::default()));
@@ -152,7 +152,7 @@
 //! ```no_run
 //! use limitador::AsyncRateLimiter;
 //! use limitador::limit::Limit;
-//! use limitador::storage::redis_async::AsyncRedisStorage;
+//! use limitador::storage::redis::AsyncRedisStorage;
 //! let limit = Limit::new(
 //!     "my_namespace",
 //!      10,
