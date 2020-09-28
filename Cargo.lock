@@ -1369,6 +1369,7 @@ dependencies = [
  "futures",
  "paperclip",
  "paste",
+ "rand",
  "redis",
  "serde",
  "serde_json",
