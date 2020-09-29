@@ -64,6 +64,10 @@ impl<K: Eq + Hash + Clone, V: Copy> Cache<K, V> {
 
         Vec::from_iter(iterator)
     }
+
+    pub fn clear(&mut self) {
+        self.map.clear();
+    }
 }
 
 impl<K: Eq + Hash + Clone, V: Copy> Default for Cache<K, V> {
@@ -188,6 +192,12 @@ impl Storage for WasmStorage {
             .collect();
 
         Ok(HashSet::from_iter(counters_with_vals.iter().cloned()))
+    }
+
+    fn clear(&self) -> Result<(), StorageErr> {
+        self.counters.write().unwrap().clear();
+        self.limits_for_namespace.write().unwrap().clear();
+        Ok(())
     }
 }
 

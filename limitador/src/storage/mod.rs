@@ -23,6 +23,7 @@ pub trait Storage: Sync + Send {
         delta: i64,
     ) -> Result<bool, StorageErr>;
     fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, StorageErr>;
+    fn clear(&self) -> Result<(), StorageErr>;
 }
 
 #[async_trait]
@@ -39,6 +40,7 @@ pub trait AsyncStorage: Sync + Send {
         delta: i64,
     ) -> Result<bool, StorageErr>;
     async fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, StorageErr>;
+    async fn clear(&self) -> Result<(), StorageErr>;
 }
 
 #[derive(Error, Debug)]

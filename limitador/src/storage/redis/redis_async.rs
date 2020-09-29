@@ -193,6 +193,12 @@ impl AsyncStorage for AsyncRedisStorage {
 
         Ok(res)
     }
+
+    async fn clear(&self) -> Result<(), StorageErr> {
+        let mut con = self.client.get_async_connection().await?;
+        redis::cmd("FLUSHDB").query_async(&mut con).await?;
+        Ok(())
+    }
 }
 
 impl AsyncRedisStorage {

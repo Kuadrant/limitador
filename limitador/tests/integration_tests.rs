@@ -14,10 +14,12 @@ macro_rules! test_with_all_storage_impls {
             #[tokio::test]
             #[serial]
             async fn [<$function _with_redis>]() {
+                let storage = RedisStorage::default();
+                storage.clear().unwrap();
                 let rate_limiter = RateLimiter::new_with_storage(
-                    Box::new(RedisStorage::default())
+                    Box::new(storage)
                 );
-                clean_redis_test_db();
+                RedisStorage::default().clear().unwrap();
                 $function(&mut TestsLimiter::new_from_blocking_impl(rate_limiter)).await;
             }
 
@@ -32,10 +34,12 @@ macro_rules! test_with_all_storage_impls {
             #[tokio::test]
             #[serial]
             async fn [<$function _with_async_redis>]() {
+                let storage = AsyncRedisStorage::default();
+                storage.clear().await.unwrap();
                 let rate_limiter = AsyncRateLimiter::new_with_storage(
-                    Box::new(AsyncRedisStorage::default())
+                    Box::new(storage)
                 );
-                clean_redis_test_db();
+                AsyncRedisStorage::default().clear().await.unwrap();
                 $function(&mut TestsLimiter::new_from_async_impl(rate_limiter)).await;
             }
         }
@@ -50,6 +54,8 @@ mod test {
     use self::limitador::storage::wasm::Clock;
     use self::limitador::RateLimiter;
     use crate::helpers::tests_limiter::*;
+    use crate::test::limitador::storage::AsyncStorage;
+    use crate::test::limitador::storage::Storage;
     use limitador::limit::Limit;
     use limitador::storage::in_memory::InMemoryStorage;
     use limitador::storage::redis::AsyncRedisStorage;
@@ -638,11 +644,5 @@ mod test {
             .await
             .unwrap()
             .is_empty());
-    }
-
-    fn clean_redis_test_db() {
-        let redis_client = redis::Client::open("redis://127.0.0.1:6379").unwrap();
-        let mut con = redis_client.get_connection().unwrap();
-        redis::cmd("FLUSHDB").execute(&mut con);
     }
 }
