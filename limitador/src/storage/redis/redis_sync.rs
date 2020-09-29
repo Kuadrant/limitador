@@ -175,6 +175,12 @@ impl Storage for RedisStorage {
 
         Ok(res)
     }
+
+    fn clear(&self) -> Result<(), StorageErr> {
+        let mut con = self.client.get_connection()?;
+        redis::cmd("FLUSHDB").execute(&mut con);
+        Ok(())
+    }
 }
 
 impl RedisStorage {

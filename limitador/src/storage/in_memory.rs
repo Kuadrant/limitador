@@ -113,6 +113,12 @@ impl Storage for InMemoryStorage {
 
         Ok(res)
     }
+
+    fn clear(&self) -> Result<(), StorageErr> {
+        self.counters.write().unwrap().clear();
+        self.limits_for_namespace.write().unwrap().clear();
+        Ok(())
+    }
 }
 
 impl InMemoryStorage {

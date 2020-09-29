@@ -229,6 +229,10 @@ impl AsyncStorage for CachedRedisStorage {
     async fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, StorageErr> {
         self.async_redis_storage.get_counters(namespace).await
     }
+
+    async fn clear(&self) -> Result<(), StorageErr> {
+        self.async_redis_storage.clear().await
+    }
 }
 
 impl CachedRedisStorage {
