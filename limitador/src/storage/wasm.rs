@@ -1,5 +1,5 @@
 use crate::counter::Counter;
-use crate::limit::Limit;
+use crate::limit::{Limit, Namespace};
 use crate::storage::{Storage, StorageErr};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -77,14 +77,14 @@ impl<K: Eq + Hash + Clone, V: Copy> Default for Cache<K, V> {
 }
 
 pub struct WasmStorage {
-    limits_for_namespace: RwLock<HashMap<String, HashMap<Limit, HashSet<Counter>>>>,
+    limits_for_namespace: RwLock<HashMap<Namespace, HashMap<Limit, HashSet<Counter>>>>,
     pub counters: RwLock<Cache<Counter, i64>>,
     pub clock: Box<dyn Clock>,
 }
 
 impl Storage for WasmStorage {
     fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
-        let namespace = limit.namespace().to_string();
+        let namespace = limit.namespace();
 
         let mut limits_for_namespace = self.limits_for_namespace.write().unwrap();
 
@@ -95,14 +95,14 @@ impl Storage for WasmStorage {
             None => {
                 let mut limits = HashMap::new();
                 limits.insert(limit.clone(), HashSet::new());
-                limits_for_namespace.insert(namespace, limits);
+                limits_for_namespace.insert(namespace.clone(), limits);
             }
         }
 
         Ok(())
     }
 
-    fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, StorageErr> {
+    fn get_limits(&self, namespace: &Namespace) -> Result<HashSet<Limit>, StorageErr> {
         let limits = match self.limits_for_namespace.read().unwrap().get(namespace) {
             Some(limits) => HashSet::from_iter(limits.keys().cloned()),
             None => HashSet::new(),
@@ -126,7 +126,7 @@ impl Storage for WasmStorage {
         Ok(())
     }
 
-    fn delete_limits(&self, namespace: &str) -> Result<(), StorageErr> {
+    fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr> {
         self.delete_counters_in_namespace(namespace);
         self.limits_for_namespace.write().unwrap().remove(namespace);
         Ok(())
@@ -164,7 +164,7 @@ impl Storage for WasmStorage {
         Ok(true)
     }
 
-    fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, StorageErr> {
+    fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
         // TODO: optimize to avoid iterating over all of them.
 
         let counters_with_vals: Vec<Counter> = self
@@ -217,7 +217,7 @@ impl WasmStorage {
             .insert(counter, value, expires_at);
     }
 
-    fn delete_counters_in_namespace(&self, namespace: &str) {
+    fn delete_counters_in_namespace(&self, namespace: &Namespace) {
         if let Some(counters_by_limit) = self.limits_for_namespace.read().unwrap().get(namespace) {
             let mut counters = self.counters.write().unwrap();
             for counter in counters_by_limit.values().flatten() {

@@ -179,7 +179,7 @@
 
 use crate::counter::Counter;
 use crate::errors::LimitadorError;
-use crate::limit::Limit;
+use crate::limit::{Limit, Namespace};
 use crate::storage::in_memory::InMemoryStorage;
 use crate::storage::{AsyncStorage, Storage};
 use std::collections::{HashMap, HashSet};
@@ -217,19 +217,24 @@ impl RateLimiter {
         self.storage.delete_limit(limit).map_err(|err| err.into())
     }
 
-    pub fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, LimitadorError> {
-        self.storage.get_limits(namespace).map_err(|err| err.into())
+    pub fn get_limits(
+        &self,
+        namespace: impl Into<Namespace>,
+    ) -> Result<HashSet<Limit>, LimitadorError> {
+        self.storage
+            .get_limits(&namespace.into())
+            .map_err(|err| err.into())
     }
 
-    pub fn delete_limits(&self, namespace: &str) -> Result<(), LimitadorError> {
+    pub fn delete_limits(&self, namespace: impl Into<Namespace>) -> Result<(), LimitadorError> {
         self.storage
-            .delete_limits(namespace)
+            .delete_limits(&namespace.into())
             .map_err(|err| err.into())
     }
 
     pub fn is_rate_limited(
         &self,
-        namespace: &str,
+        namespace: impl Into<Namespace>,
         values: &HashMap<String, String>,
         delta: i64,
     ) -> Result<bool, LimitadorError> {
@@ -251,7 +256,7 @@ impl RateLimiter {
 
     pub fn update_counters(
         &self,
-        namespace: &str,
+        namespace: impl Into<Namespace>,
         values: &HashMap<String, String>,
         delta: i64,
     ) -> Result<(), LimitadorError> {
@@ -265,7 +270,7 @@ impl RateLimiter {
 
     pub fn check_rate_limited_and_update(
         &self,
-        namespace: &str,
+        namespace: impl Into<Namespace>,
         values: &HashMap<String, String>,
         delta: i64,
     ) -> Result<bool, LimitadorError> {
@@ -282,15 +287,18 @@ impl RateLimiter {
         Ok(!is_within_limits)
     }
 
-    pub fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, LimitadorError> {
+    pub fn get_counters(
+        &self,
+        namespace: impl Into<Namespace>,
+    ) -> Result<HashSet<Counter>, LimitadorError> {
         self.storage
-            .get_counters(namespace)
+            .get_counters(&namespace.into())
             .map_err(|err| err.into())
     }
 
     fn counters_that_apply(
         &self,
-        namespace: &str,
+        namespace: impl Into<Namespace>,
         values: &HashMap<String, String>,
     ) -> Result<Vec<Counter>, LimitadorError> {
         let limits = self.get_limits(namespace)?;
@@ -335,23 +343,29 @@ impl AsyncRateLimiter {
             .map_err(|err| err.into())
     }
 
-    pub async fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, LimitadorError> {
+    pub async fn get_limits(
+        &self,
+        namespace: impl Into<Namespace>,
+    ) -> Result<HashSet<Limit>, LimitadorError> {
         self.storage
-            .get_limits(namespace)
+            .get_limits(&namespace.into())
             .await
             .map_err(|err| err.into())
     }
 
-    pub async fn delete_limits(&self, namespace: &str) -> Result<(), LimitadorError> {
+    pub async fn delete_limits(
+        &self,
+        namespace: impl Into<Namespace>,
+    ) -> Result<(), LimitadorError> {
         self.storage
-            .delete_limits(namespace)
+            .delete_limits(&namespace.into())
             .await
             .map_err(|err| err.into())
     }
 
     pub async fn is_rate_limited(
         &self,
-        namespace: &str,
+        namespace: impl Into<Namespace>,
         values: &HashMap<String, String>,
         delta: i64,
     ) -> Result<bool, LimitadorError> {
@@ -373,7 +387,7 @@ impl AsyncRateLimiter {
 
     pub async fn update_counters(
         &self,
-        namespace: &str,
+        namespace: impl Into<Namespace>,
         values: &HashMap<String, String>,
         delta: i64,
     ) -> Result<(), LimitadorError> {
@@ -388,7 +402,7 @@ impl AsyncRateLimiter {
 
     pub async fn check_rate_limited_and_update(
         &self,
-        namespace: &str,
+        namespace: impl Into<Namespace>,
         values: &HashMap<String, String>,
         delta: i64,
     ) -> Result<bool, LimitadorError> {
@@ -406,16 +420,19 @@ impl AsyncRateLimiter {
         Ok(!is_within_limits)
     }
 
-    pub async fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, LimitadorError> {
+    pub async fn get_counters(
+        &self,
+        namespace: impl Into<Namespace>,
+    ) -> Result<HashSet<Counter>, LimitadorError> {
         self.storage
-            .get_counters(namespace)
+            .get_counters(&namespace.into())
             .await
             .map_err(|err| err.into())
     }
 
     async fn counters_that_apply(
         &self,
-        namespace: &str,
+        namespace: impl Into<Namespace>,
         values: &HashMap<String, String>,
     ) -> Result<Vec<Counter>, LimitadorError> {
         let limits = self.get_limits(namespace).await?;

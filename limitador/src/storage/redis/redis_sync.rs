@@ -2,7 +2,7 @@ extern crate redis;
 
 use self::redis::Commands;
 use crate::counter::Counter;
-use crate::limit::Limit;
+use crate::limit::{Limit, Namespace};
 use crate::storage::redis::redis_keys::*;
 use crate::storage::{Storage, StorageErr};
 use std::collections::HashSet;
@@ -29,7 +29,7 @@ impl Storage for RedisStorage {
         Ok(())
     }
 
-    fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, StorageErr> {
+    fn get_limits(&self, namespace: &Namespace) -> Result<HashSet<Limit>, StorageErr> {
         let mut con = self.client.get_connection()?;
 
         let set_key = key_for_limits_of_namespace(namespace);
@@ -57,7 +57,7 @@ impl Storage for RedisStorage {
         Ok(())
     }
 
-    fn delete_limits(&self, namespace: &str) -> Result<(), StorageErr> {
+    fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr> {
         let mut con = self.client.get_connection()?;
 
         self.delete_counters_of_namespace(namespace)?;
@@ -144,7 +144,7 @@ impl Storage for RedisStorage {
         Ok(true)
     }
 
-    fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, StorageErr> {
+    fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
 
         let mut con = self.client.get_connection()?;
@@ -190,7 +190,7 @@ impl RedisStorage {
         }
     }
 
-    fn delete_counters_of_namespace(&self, namespace: &str) -> Result<(), StorageErr> {
+    fn delete_counters_of_namespace(&self, namespace: &Namespace) -> Result<(), StorageErr> {
         for limit in self.get_limits(namespace)? {
             self.delete_counters_associated_with_limit(&limit)?
         }

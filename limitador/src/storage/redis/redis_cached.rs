@@ -1,5 +1,5 @@
 use crate::counter::Counter;
-use crate::limit::Limit;
+use crate::limit::{Limit, Namespace};
 use crate::storage::redis::batcher::Batcher;
 use crate::storage::redis::redis_async::AsyncRedisStorage;
 use crate::storage::redis::redis_keys::*;
@@ -46,7 +46,7 @@ const MAX_TTL_CACHED_COUNTER: Duration = Duration::from_secs(5);
 const TTL_RATIO_CACHED_COUNTER: u64 = 10;
 
 pub struct CachedRedisStorage {
-    cached_limits_by_namespace: Mutex<TtlCache<String, HashSet<Limit>>>,
+    cached_limits_by_namespace: Mutex<TtlCache<Namespace, HashSet<Limit>>>,
     cached_counters: Mutex<CountersCache>,
     batcher_counter_updates: Arc<Mutex<Batcher>>,
     blocking_redis_storage: RedisStorage,
@@ -128,14 +128,14 @@ impl AsyncStorage for CachedRedisStorage {
         self.async_redis_storage.add_limit(limit).await
     }
 
-    async fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, StorageErr> {
+    async fn get_limits(&self, namespace: &Namespace) -> Result<HashSet<Limit>, StorageErr> {
         let mut cached_limits = self.cached_limits_by_namespace.lock().unwrap();
 
         match cached_limits.get_mut(namespace) {
             Some(limits) => Ok(limits.clone()),
             None => {
                 let limits = self.blocking_redis_storage.get_limits(namespace)?;
-                cached_limits.insert(namespace.into(), limits.clone(), DEFAULT_TTL_CACHED_LIMITS);
+                cached_limits.insert(namespace.clone(), limits.clone(), DEFAULT_TTL_CACHED_LIMITS);
                 Ok(limits)
             }
         }
@@ -145,7 +145,7 @@ impl AsyncStorage for CachedRedisStorage {
         self.async_redis_storage.delete_limit(limit).await
     }
 
-    async fn delete_limits(&self, namespace: &str) -> Result<(), StorageErr> {
+    async fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr> {
         self.async_redis_storage.delete_limits(namespace).await
     }
 
@@ -226,7 +226,7 @@ impl AsyncStorage for CachedRedisStorage {
         Ok(true)
     }
 
-    async fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, StorageErr> {
+    async fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
         self.async_redis_storage.get_counters(namespace).await
     }
 

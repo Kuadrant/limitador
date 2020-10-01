@@ -1,4 +1,4 @@
-use crate::limit::Limit;
+use crate::limit::{Limit, Namespace};
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
@@ -55,7 +55,7 @@ impl Counter {
         self.limit.seconds()
     }
 
-    pub fn namespace(&self) -> &str {
+    pub fn namespace(&self) -> &Namespace {
         self.limit.namespace()
     }
 

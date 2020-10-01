@@ -1,7 +1,7 @@
 extern crate redis;
 
 use crate::counter::Counter;
-use crate::limit::Limit;
+use crate::limit::{Limit, Namespace};
 use crate::storage::redis::redis_keys::*;
 use crate::storage::{AsyncStorage, StorageErr};
 use async_trait::async_trait;
@@ -39,7 +39,7 @@ impl AsyncStorage for AsyncRedisStorage {
         Ok(())
     }
 
-    async fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, StorageErr> {
+    async fn get_limits(&self, namespace: &Namespace) -> Result<HashSet<Limit>, StorageErr> {
         let mut con = self.client.get_async_connection().await?;
 
         let set_key = key_for_limits_of_namespace(namespace);
@@ -68,7 +68,7 @@ impl AsyncStorage for AsyncRedisStorage {
         Ok(())
     }
 
-    async fn delete_limits(&self, namespace: &str) -> Result<(), StorageErr> {
+    async fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr> {
         let mut con = self.client.get_async_connection().await?;
 
         self.delete_counters_of_namespace(namespace).await?;
@@ -161,7 +161,7 @@ impl AsyncStorage for AsyncRedisStorage {
         Ok(true)
     }
 
-    async fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, StorageErr> {
+    async fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
 
         let mut con = self.client.get_async_connection().await?;
@@ -208,7 +208,7 @@ impl AsyncRedisStorage {
         }
     }
 
-    async fn delete_counters_of_namespace(&self, namespace: &str) -> Result<(), StorageErr> {
+    async fn delete_counters_of_namespace(&self, namespace: &Namespace) -> Result<(), StorageErr> {
         for limit in self.get_limits(namespace).await? {
             self.delete_counters_associated_with_limit(&limit).await?
         }

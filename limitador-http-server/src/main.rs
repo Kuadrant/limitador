@@ -1,7 +1,7 @@
 use actix_web::{http::StatusCode, ResponseError};
 use actix_web::{App, HttpServer};
 use limitador::counter::Counter;
-use limitador::limit::Limit;
+use limitador::limit::{Limit, Namespace};
 use limitador::storage::redis::AsyncRedisStorage;
 use limitador::{AsyncRateLimiter, RateLimiter};
 use paperclip::actix::{
@@ -29,7 +29,7 @@ struct State {
 
 #[derive(Serialize, Deserialize, Apiv2Schema)]
 struct CheckAndReportInfo {
-    namespace: String,
+    namespace: Namespace,
     values: HashMap<String, String>,
     delta: i64,
 }
@@ -146,11 +146,11 @@ async fn check(
 ) -> Result<web::Json<()>, ErrorResponse> {
     let is_rate_limited_result = match &state.limiter {
         Limiter::Blocking(limiter) => {
-            limiter.is_rate_limited(&request.namespace, &request.values, request.delta)
+            limiter.is_rate_limited(request.namespace.as_ref(), &request.values, request.delta)
         }
         Limiter::Async(limiter) => {
             limiter
-                .is_rate_limited(&request.namespace, &request.values, request.delta)
+                .is_rate_limited(request.namespace.as_ref(), &request.values, request.delta)
                 .await
         }
     };
@@ -174,11 +174,11 @@ async fn report(
 ) -> Result<web::Json<()>, ErrorResponse> {
     let update_counters_result = match &state.limiter {
         Limiter::Blocking(limiter) => {
-            limiter.update_counters(&request.namespace, &request.values, request.delta)
+            limiter.update_counters(request.namespace.as_ref(), &request.values, request.delta)
         }
         Limiter::Async(limiter) => {
             limiter
-                .update_counters(&request.namespace, &request.values, request.delta)
+                .update_counters(request.namespace.as_ref(), &request.values, request.delta)
                 .await
         }
     };
@@ -196,13 +196,17 @@ async fn check_and_report(
 ) -> Result<web::Json<()>, ErrorResponse> {
     let rate_limited_and_update_result = match &state.limiter {
         Limiter::Blocking(limiter) => limiter.check_rate_limited_and_update(
-            &request.namespace,
+            request.namespace.as_ref(),
             &request.values,
             request.delta,
         ),
         Limiter::Async(limiter) => {
             limiter
-                .check_rate_limited_and_update(&request.namespace, &request.values, request.delta)
+                .check_rate_limited_and_update(
+                    request.namespace.as_ref(),
+                    &request.values,
+                    request.delta,
+                )
                 .await
         }
     };

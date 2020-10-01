@@ -1,5 +1,5 @@
 use crate::counter::Counter;
-use crate::limit::Limit;
+use crate::limit::{Limit, Namespace};
 use crate::storage::{Storage, StorageErr};
 use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
@@ -8,13 +8,13 @@ use std::time::Duration;
 use ttl_cache::TtlCache;
 
 pub struct InMemoryStorage {
-    limits_for_namespace: RwLock<HashMap<String, HashMap<Limit, HashSet<Counter>>>>,
+    limits_for_namespace: RwLock<HashMap<Namespace, HashMap<Limit, HashSet<Counter>>>>,
     counters: RwLock<TtlCache<Counter, i64>>,
 }
 
 impl Storage for InMemoryStorage {
     fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
-        let namespace = limit.namespace().to_string();
+        let namespace = limit.namespace();
 
         let mut limits_for_namespace = self.limits_for_namespace.write().unwrap();
 
@@ -25,14 +25,14 @@ impl Storage for InMemoryStorage {
             None => {
                 let mut limits = HashMap::new();
                 limits.insert(limit.clone(), HashSet::new());
-                limits_for_namespace.insert(namespace, limits);
+                limits_for_namespace.insert(namespace.clone(), limits);
             }
         }
 
         Ok(())
     }
 
-    fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, StorageErr> {
+    fn get_limits(&self, namespace: &Namespace) -> Result<HashSet<Limit>, StorageErr> {
         let limits = match self.limits_for_namespace.read().unwrap().get(namespace) {
             Some(limits) => HashSet::from_iter(limits.keys().cloned()),
             None => HashSet::new(),
@@ -56,7 +56,7 @@ impl Storage for InMemoryStorage {
         Ok(())
     }
 
-    fn delete_limits(&self, namespace: &str) -> Result<(), StorageErr> {
+    fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr> {
         self.delete_counters_in_namespace(namespace);
         self.limits_for_namespace.write().unwrap().remove(namespace);
         Ok(())
@@ -99,7 +99,7 @@ impl Storage for InMemoryStorage {
         Ok(true)
     }
 
-    fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, StorageErr> {
+    fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
 
         for counter in self.counters_in_namespace(namespace) {
@@ -129,7 +129,7 @@ impl InMemoryStorage {
         }
     }
 
-    fn counters_in_namespace(&self, namespace: &str) -> HashSet<Counter> {
+    fn counters_in_namespace(&self, namespace: &Namespace) -> HashSet<Counter> {
         let mut res: HashSet<Counter> = HashSet::new();
 
         if let Some(counters_by_limit) = self.limits_for_namespace.read().unwrap().get(namespace) {
@@ -141,7 +141,7 @@ impl InMemoryStorage {
         res
     }
 
-    fn delete_counters_in_namespace(&self, namespace: &str) {
+    fn delete_counters_in_namespace(&self, namespace: &Namespace) {
         if let Some(counters_by_limit) = self.limits_for_namespace.read().unwrap().get(namespace) {
             let mut counters = self.counters.write().unwrap();
             for counter in counters_by_limit.values().flatten() {

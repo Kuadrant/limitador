@@ -1,15 +1,47 @@
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::fmt::Error;
 use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
+use std::str::FromStr;
 
 #[cfg(feature = "http_server")]
 use paperclip::actix::Apiv2Schema;
 
+#[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "http_server", derive(Apiv2Schema))]
+pub struct Namespace(String);
+
+impl FromStr for Namespace {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Namespace, Self::Err> {
+        Ok(Namespace(s.into()))
+    }
+}
+
+impl From<&str> for Namespace {
+    fn from(s: &str) -> Namespace {
+        s.parse().unwrap()
+    }
+}
+
+impl AsRef<str> for Namespace {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl From<String> for Namespace {
+    fn from(s: String) -> Namespace {
+        Namespace(s)
+    }
+}
+
 #[derive(Eq, Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "http_server", derive(Apiv2Schema))]
 pub struct Limit {
-    namespace: String,
+    namespace: Namespace,
     max_value: i64,
     seconds: u64,
 
@@ -31,7 +63,7 @@ where
 
 impl Limit {
     pub fn new(
-        namespace: impl Into<String>,
+        namespace: impl Into<Namespace>,
         max_value: i64,
         seconds: u64,
         conditions: impl IntoIterator<Item = impl Into<String>>,
@@ -46,7 +78,7 @@ impl Limit {
         }
     }
 
-    pub fn namespace(&self) -> &str {
+    pub fn namespace(&self) -> &Namespace {
         &self.namespace
     }
 
@@ -130,7 +162,13 @@ mod tests {
 
     #[test]
     fn limit_applies() {
-        let limit = Limit::new("test_namespace", 10, 60, vec!["x == 5"], vec!["y"]);
+        let limit = Limit::new(
+            Namespace::from("test_namespace"),
+            10,
+            60,
+            vec!["x == 5"],
+            vec!["y"],
+        );
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "5".into());

@@ -9,16 +9,16 @@
 // Reminder: in format!(), "{" is escaped with "{{".
 
 use crate::counter::Counter;
-use crate::limit::Limit;
+use crate::limit::{Limit, Namespace};
 
-pub fn key_for_limits_of_namespace(namespace: &str) -> String {
-    format!("limits_of_namespace:{{{}}}", namespace)
+pub fn key_for_limits_of_namespace(namespace: &Namespace) -> String {
+    format!("limits_of_namespace:{{{}}}", namespace.as_ref())
 }
 
 pub fn key_for_counter(counter: &Counter) -> String {
     format!(
         "namespace:{{{}}},counter:{}",
-        counter.namespace(),
+        counter.namespace().as_ref(),
         serde_json::to_string(counter).unwrap()
     )
 }
@@ -26,7 +26,7 @@ pub fn key_for_counter(counter: &Counter) -> String {
 pub fn key_for_counters_of_limit(limit: &Limit) -> String {
     format!(
         "namespace:{{{}}},counters_of_limit:{}",
-        limit.namespace(),
+        limit.namespace().as_ref(),
         serde_json::to_string(limit).unwrap()
     )
 }
