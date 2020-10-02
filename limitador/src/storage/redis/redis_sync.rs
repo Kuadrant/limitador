@@ -7,6 +7,7 @@ use crate::storage::redis::redis_keys::*;
 use crate::storage::{Storage, StorageErr};
 use std::collections::HashSet;
 use std::iter::FromIterator;
+use std::time::Duration;
 
 const DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
 
@@ -166,7 +167,7 @@ impl Storage for RedisStorage {
                 if let Some(val) = con.get::<String, Option<i64>>(counter_key.clone())? {
                     counter.set_remaining(val);
                     let ttl = con.ttl(&counter_key)?;
-                    counter.set_expires_in(ttl);
+                    counter.set_expires_in(Duration::from_secs(ttl));
 
                     res.insert(counter);
                 }

@@ -62,7 +62,7 @@ impl From<&LimitadorCounter> for Counter {
             limit: lc.limit().into(),
             set_variables: lc.set_variables().clone(),
             remaining: lc.remaining(),
-            expires_in_seconds: lc.expires_in(),
+            expires_in_seconds: lc.expires_in().map(|duration| duration.as_secs()),
         }
     }
 }
