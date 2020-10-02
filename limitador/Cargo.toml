@@ -9,11 +9,10 @@ repository = "https://github.com/3scale/limitador"
 documentation = "https://docs.rs/limitador"
 edition = "2018"
 
-# We make some features optional to be able to compile for wasm32.
+# We make redis optional to be able to compile for wasm32.
 [features]
-default = ["redis_storage", "http_server"]
+default = ["redis_storage"]
 redis_storage = ["redis"]
-http_server = ["paperclip"]
 
 [dependencies]
 ttl_cache = "0.5"
@@ -25,7 +24,6 @@ async-trait = "0.1.38"
 
 # Optional dependencies
 redis = { version = "0.17", optional = true }
-paperclip = { version = "0.4", features = ["actix"], optional = true }
 
 [dev-dependencies]
 serial_test = "0.4"

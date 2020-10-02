@@ -5,11 +5,7 @@ use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
 use std::str::FromStr;
 
-#[cfg(feature = "http_server")]
-use paperclip::actix::Apiv2Schema;
-
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "http_server", derive(Apiv2Schema))]
 pub struct Namespace(String);
 
 impl FromStr for Namespace {
@@ -39,7 +35,6 @@ impl From<String> for Namespace {
 }
 
 #[derive(Eq, Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "http_server", derive(Apiv2Schema))]
 pub struct Limit {
     namespace: Namespace,
     max_value: i64,
@@ -88,6 +83,14 @@ impl Limit {
 
     pub fn seconds(&self) -> u64 {
         self.seconds
+    }
+
+    pub fn conditions(&self) -> HashSet<String> {
+        HashSet::from_iter(self.conditions.iter().map(|cond| cond.into()))
+    }
+
+    pub fn variables(&self) -> HashSet<String> {
+        HashSet::from_iter(self.variables.iter().map(|var| var.into()))
     }
 
     pub fn has_variable(&self, var: &str) -> bool {

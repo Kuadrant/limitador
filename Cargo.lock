@@ -1367,7 +1367,6 @@ dependencies = [
  "async-trait",
  "criterion",
  "futures",
- "paperclip",
  "paste",
  "rand",
  "redis",
