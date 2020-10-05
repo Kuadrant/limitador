@@ -116,6 +116,10 @@ Then, run the tests:
 cargo test
 ```
 
+or you can run tests disabling the "redis storage" feature:
+```bash
+cd limitador; cargo test --no-default-features
+```
 
 ## License
 

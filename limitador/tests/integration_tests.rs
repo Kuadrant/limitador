@@ -11,6 +11,7 @@ macro_rules! test_with_all_storage_impls {
                 $function(&mut TestsLimiter::new_from_blocking_impl(rate_limiter)).await;
             }
 
+            #[cfg(feature = "redis_storage")]
             #[tokio::test]
             #[serial]
             async fn [<$function _with_redis>]() {
@@ -31,6 +32,7 @@ macro_rules! test_with_all_storage_impls {
                 $function(&mut TestsLimiter::new_from_blocking_impl(rate_limiter)).await;
             }
 
+            #[cfg(feature = "redis_storage")]
             #[tokio::test]
             #[serial]
             async fn [<$function _with_async_redis>]() {
@@ -51,18 +53,26 @@ mod helpers;
 #[cfg(test)]
 mod test {
     extern crate limitador;
+
+    // To be able to pass the tests without Redis
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "redis_storage")] {
+            use limitador::storage::redis::AsyncRedisStorage;
+            use limitador::storage::redis::RedisStorage;
+
+            use limitador::AsyncRateLimiter;
+            use serial_test::serial;
+            use crate::test::limitador::storage::AsyncStorage;
+            use crate::test::limitador::storage::Storage;
+        }
+    }
+
     use self::limitador::storage::wasm::Clock;
     use self::limitador::RateLimiter;
     use crate::helpers::tests_limiter::*;
-    use crate::test::limitador::storage::AsyncStorage;
-    use crate::test::limitador::storage::Storage;
     use limitador::limit::Limit;
     use limitador::storage::in_memory::InMemoryStorage;
-    use limitador::storage::redis::AsyncRedisStorage;
-    use limitador::storage::redis::RedisStorage;
     use limitador::storage::wasm::WasmStorage;
-    use limitador::AsyncRateLimiter;
-    use serial_test::serial;
     use std::collections::{HashMap, HashSet};
     use std::thread::sleep;
     use std::time::{Duration, SystemTime};
