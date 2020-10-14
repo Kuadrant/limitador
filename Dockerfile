@@ -31,9 +31,7 @@ RUN RUSTFLAGS=-Clinker=musl-gcc cargo build --release --target=x86_64-unknown-li
 
 # avoid downloading and compiling all the dependencies when there's a change in
 # our code.
-RUN rm -f target/x86_64-unknown-linux-musl/release/deps/limitador* \
- && rm -f target/x86_64-unknown-linux-musl/release/deps/limitador_envoy_rls* \
- && rm -f target/x86_64-unknown-linux-musl/release/deps/limitador_http_server*
+RUN rm -f target/x86_64-unknown-linux-musl/release/deps/limitador*
 
 COPY . .
 
