@@ -67,12 +67,12 @@ To run Limitador, you need to provide a YAML file with the limits. There's an
 per minute and per user_id when the HTTP method is "GET" and 5 when it is a
 "POST". You can run it with Docker (replace `latest` with the version you want):
 ```bash
-docker run -e LIMITS_FILE=/home/limitador/my_limits.yaml --rm --net=host -it -v $(pwd)/examples/limits.yaml:/home/limitador/my_limits.yaml:ro quay.io/3scale/limitador:latest envoy-rls
+docker run -e LIMITS_FILE=/home/limitador/my_limits.yaml --rm --net=host -it -v $(pwd)/limitador-envoy-rls/examples/limits.yaml:/home/limitador/my_limits.yaml:ro quay.io/3scale/limitador:latest envoy-rls
 ```
 
 To use Redis, specify the URL with `REDIS_URL`:
 ```bash
-docker run -e LIMITS_FILE=/home/limitador/my_limits.yaml -e REDIS_URL=redis://127.0.0.1:6379 --rm --net=host -it -v $(pwd)/examples/limits.yaml:/home/limitador/my_limits.yaml:ro quay.io/3scale/limitador:latest envoy-rls
+docker run -e LIMITS_FILE=/home/limitador/my_limits.yaml -e REDIS_URL=redis://127.0.0.1:6379 --rm --net=host -it -v $(pwd)/limitador-envoy-rls/examples/limits.yaml:/home/limitador/my_limits.yaml:ro quay.io/3scale/limitador:latest envoy-rls
 ```
 
 You can also run the service locally:
