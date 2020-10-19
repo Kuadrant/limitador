@@ -71,6 +71,8 @@ impl RateLimitService for MyRateLimiter {
         &self,
         request: Request<RateLimitRequest>,
     ) -> Result<Response<RateLimitResponse>, Status> {
+        debug!("Request received: {:?}", request);
+
         let mut values: HashMap<String, String> = HashMap::new();
         let req = request.into_inner();
         let namespace = req.domain;
@@ -123,14 +125,6 @@ impl RateLimitService for MyRateLimiter {
     }
 }
 
-/// This function will get called on each inbound request, if a `Status`
-/// is returned, it will cancel the request and return that status to the
-/// client.
-fn intercept(req: Request<()>) -> Result<Request<()>, Status> {
-    debug!("Intercepting request: {:?}", req);
-    Ok(req)
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
@@ -143,7 +137,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Listening on {}", addr);
 
     let rate_limiter = MyRateLimiter::new().await;
-    let svc = RateLimitServiceServer::with_interceptor(rate_limiter, intercept);
+    let svc = RateLimitServiceServer::new(rate_limiter);
 
     Server::builder().add_service(svc).serve(addr).await?;
 
