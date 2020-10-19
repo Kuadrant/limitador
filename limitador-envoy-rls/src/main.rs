@@ -112,7 +112,10 @@ impl RateLimitService for MyRateLimiter {
                 }
             }
             // TODO: For now, deny the request if there's an error
-            Err(_) => Code::OverLimit,
+            Err(e) => {
+                error!("Error: {:?}", e);
+                Code::OverLimit
+            }
         };
 
         let reply = RateLimitResponse {
