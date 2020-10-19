@@ -133,17 +133,15 @@
 //! async one, we need to instantiate an "AsyncRateLimiter" with an
 //! "AsyncRedisStorage":
 //!
-//! ```
+//! ```no_run
 //! use limitador::AsyncRateLimiter;
 //! use limitador::storage::redis::AsyncRedisStorage;
 //!
-//! // Default redis URL (redis://localhost:6379).
-//! let rate_limiter = AsyncRateLimiter::new_with_storage(Box::new(AsyncRedisStorage::default()));
-//!
-//! // Custom redis URL
-//! let rate_limiter = AsyncRateLimiter::new_with_storage(
-//!     Box::new(AsyncRedisStorage::new("redis://127.0.0.1:7777"))
-//! );
+//! async {
+//!     let rate_limiter = AsyncRateLimiter::new_with_storage(
+//!         Box::new(AsyncRedisStorage::new("redis://127.0.0.1:7777").await)
+//!     );
+//! };
 //! ```
 //!
 //! Both the blocking and the async limiters expose the same functions, so we
@@ -161,10 +159,10 @@
 //!      vec!["user_id"],
 //! );
 //!
-//! let redis_storage = AsyncRedisStorage::default();
-//! let mut rate_limiter = AsyncRateLimiter::new_with_storage(Box::new(redis_storage));
-//!
 //! async {
+//!     let rate_limiter = AsyncRateLimiter::new_with_storage(
+//!         Box::new(AsyncRedisStorage::new("redis://127.0.0.1:7777").await)
+//!     );
 //!     rate_limiter.add_limit(&limit).await;
 //! };
 //! ```

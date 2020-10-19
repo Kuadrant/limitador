@@ -28,12 +28,13 @@ pub struct MyRateLimiter {
     limiter: Arc<Limiter>,
 }
 
-fn new_limiter() -> Limiter {
+async fn new_limiter() -> Limiter {
     match env::var("REDIS_URL") {
         // Let's use the async impl. This could be configurable if needed.
         Ok(redis_url) => {
-            let async_limiter =
-                AsyncRateLimiter::new_with_storage(Box::new(AsyncRedisStorage::new(&redis_url)));
+            let async_limiter = AsyncRateLimiter::new_with_storage(Box::new(
+                AsyncRedisStorage::new(&redis_url).await,
+            ));
             Limiter::Async(async_limiter)
         }
         Err(_) => Limiter::Blocking(RateLimiter::default()),
@@ -47,7 +48,7 @@ impl MyRateLimiter {
                 let f = std::fs::File::open(val).unwrap();
                 let limits: Vec<Limit> = serde_yaml::from_reader(f).unwrap();
 
-                let rate_limiter = new_limiter();
+                let rate_limiter = new_limiter().await;
 
                 for limit in limits {
                     match &rate_limiter {
