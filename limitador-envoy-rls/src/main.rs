@@ -86,9 +86,10 @@ impl RateLimitService for MyRateLimiter {
             }));
         }
 
-        // TODO: assume one descriptor for now.
-        for entry in &req.descriptors[0].entries {
-            values.insert(entry.key.clone(), entry.value.clone());
+        for descriptor in &req.descriptors {
+            for entry in &descriptor.entries {
+                values.insert(entry.key.clone(), entry.value.clone());
+            }
         }
 
         let is_rate_limited_res = match &*self.limiter {
