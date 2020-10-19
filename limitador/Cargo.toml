@@ -24,7 +24,7 @@ async-trait = "0.1.38"
 cfg-if = "0.1"
 
 # Optional dependencies
-redis = { version = "0.17", optional = true }
+redis = { version = "0.17", optional = true, features = ["connection-manager"] }
 
 [dev-dependencies]
 serial_test = "0.4"
