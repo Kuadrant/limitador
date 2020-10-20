@@ -14,7 +14,7 @@
 //! ```
 //!
 //! To use Redis:
-//! ```
+//! ```no_run
 //! use limitador::RateLimiter;
 //! use limitador::storage::redis::RedisStorage;
 //!

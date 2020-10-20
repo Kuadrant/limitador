@@ -1,27 +1,29 @@
 extern crate redis;
 
-use self::redis::Commands;
+use self::redis::{Commands, ConnectionInfo, ConnectionLike, IntoConnectionInfo, RedisError};
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
 use crate::storage::redis::redis_keys::*;
 use crate::storage::{Storage, StorageErr};
+use r2d2::{ManageConnection, Pool};
 use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::time::Duration;
 
 const DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
+const MAX_REDIS_CONNS: u32 = 20; // TODO: make it configurable
 
 // Note: this implementation does no guarantee exact limits. Ensuring that we
 // never go over the limits would hurt performance. This implementation
 // sacrifices a bit of accuracy to be more performant.
 
 pub struct RedisStorage {
-    client: redis::Client,
+    conn_pool: Pool<RedisConnectionManager>,
 }
 
 impl Storage for RedisStorage {
     fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
-        let mut con = self.client.get_connection()?;
+        let mut con = self.conn_pool.get()?;
 
         let set_key = key_for_limits_of_namespace(limit.namespace());
         let serialized_limit = serde_json::to_string(limit).unwrap();
@@ -31,7 +33,7 @@ impl Storage for RedisStorage {
     }
 
     fn get_limits(&self, namespace: &Namespace) -> Result<HashSet<Limit>, StorageErr> {
-        let mut con = self.client.get_connection()?;
+        let mut con = self.conn_pool.get()?;
 
         let set_key = key_for_limits_of_namespace(namespace);
 
@@ -45,7 +47,7 @@ impl Storage for RedisStorage {
     }
 
     fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
-        let mut con = self.client.get_connection()?;
+        let mut con = self.conn_pool.get()?;
 
         self.delete_counters_associated_with_limit(limit)?;
         con.del(key_for_counters_of_limit(&limit))?;
@@ -59,7 +61,7 @@ impl Storage for RedisStorage {
     }
 
     fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr> {
-        let mut con = self.client.get_connection()?;
+        let mut con = self.conn_pool.get()?;
 
         self.delete_counters_of_namespace(namespace)?;
 
@@ -74,7 +76,7 @@ impl Storage for RedisStorage {
     }
 
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
-        let mut con = self.client.get_connection()?;
+        let mut con = self.conn_pool.get()?;
 
         match con.get::<String, Option<i64>>(key_for_counter(counter))? {
             Some(val) => Ok(val - delta >= 0),
@@ -83,7 +85,7 @@ impl Storage for RedisStorage {
     }
 
     fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
-        let mut con = self.client.get_connection()?;
+        let mut con = self.conn_pool.get()?;
 
         let counter_key = key_for_counter(counter);
 
@@ -102,7 +104,7 @@ impl Storage for RedisStorage {
             .arg("NX")
             .incr::<&str, i64>(&counter_key, -delta)
             .sadd::<&str, &str>(&key_for_counters_of_limit(counter.limit()), &counter_key)
-            .query(&mut con)?;
+            .query(&mut *con)?;
 
         Ok(())
     }
@@ -112,7 +114,7 @@ impl Storage for RedisStorage {
         counters: &HashSet<&Counter>,
         delta: i64,
     ) -> Result<bool, StorageErr> {
-        let mut con = self.client.get_connection()?;
+        let mut con = self.conn_pool.get()?;
 
         let counter_keys: Vec<String> = counters
             .iter()
@@ -120,7 +122,7 @@ impl Storage for RedisStorage {
             .collect();
 
         let counter_vals: Vec<Option<i64>> =
-            redis::cmd("MGET").arg(counter_keys).query(&mut con)?;
+            redis::cmd("MGET").arg(counter_keys).query(&mut *con)?;
 
         for (i, counter) in counters.iter().enumerate() {
             match counter_vals[i] {
@@ -148,7 +150,7 @@ impl Storage for RedisStorage {
     fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
 
-        let mut con = self.client.get_connection()?;
+        let mut con = self.conn_pool.get()?;
 
         for limit in self.get_limits(namespace)? {
             let counter_keys =
@@ -178,17 +180,22 @@ impl Storage for RedisStorage {
     }
 
     fn clear(&self) -> Result<(), StorageErr> {
-        let mut con = self.client.get_connection()?;
-        redis::cmd("FLUSHDB").execute(&mut con);
+        let mut con = self.conn_pool.get()?;
+        redis::cmd("FLUSHDB").execute(&mut *con);
         Ok(())
     }
 }
 
 impl RedisStorage {
     pub fn new(redis_url: &str) -> RedisStorage {
-        RedisStorage {
-            client: redis::Client::open(redis_url).unwrap(),
-        }
+        let conn_manager = RedisConnectionManager::new(redis_url).unwrap();
+        let conn_pool = Pool::builder()
+            .connection_timeout(Duration::from_secs(3))
+            .max_size(MAX_REDIS_CONNS)
+            .build(conn_manager)
+            .unwrap();
+
+        RedisStorage { conn_pool }
     }
 
     fn delete_counters_of_namespace(&self, namespace: &Namespace) -> Result<(), StorageErr> {
@@ -200,7 +207,7 @@ impl RedisStorage {
     }
 
     fn delete_counters_associated_with_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
-        let mut con = self.client.get_connection()?;
+        let mut con = self.conn_pool.get()?;
 
         let counter_keys =
             con.smembers::<String, HashSet<String>>(key_for_counters_of_limit(limit))?;
@@ -210,6 +217,43 @@ impl RedisStorage {
         }
 
         Ok(())
+    }
+}
+
+// The RedisConnectionManager is very similar to the one found in the r2d2_redis
+// crate. That crate has not been updated in a long time and depends on an old
+// version of the Redis crate. That's why I decided not to import it.
+
+#[derive(Debug)]
+pub struct RedisConnectionManager {
+    connection_info: ConnectionInfo,
+}
+
+impl RedisConnectionManager {
+    pub fn new<T: IntoConnectionInfo>(params: T) -> Result<RedisConnectionManager, RedisError> {
+        Ok(RedisConnectionManager {
+            connection_info: params.into_connection_info()?,
+        })
+    }
+}
+
+impl ManageConnection for RedisConnectionManager {
+    type Connection = redis::Connection;
+    type Error = RedisError;
+
+    fn connect(&self) -> Result<Self::Connection, Self::Error> {
+        match redis::Client::open(self.connection_info.clone()) {
+            Ok(client) => client.get_connection(),
+            Err(err) => Err(err),
+        }
+    }
+
+    fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
+        redis::cmd("PING").query(conn)
+    }
+
+    fn has_broken(&self, conn: &mut Self::Connection) -> bool {
+        !conn.is_open()
     }
 }
 

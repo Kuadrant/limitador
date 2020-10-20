@@ -16,3 +16,9 @@ impl From<RedisError> for StorageErr {
         StorageErr { msg: e.to_string() }
     }
 }
+
+impl From<::r2d2::Error> for StorageErr {
+    fn from(e: ::r2d2::Error) -> Self {
+        StorageErr { msg: e.to_string() }
+    }
+}
