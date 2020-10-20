@@ -207,6 +207,10 @@ impl RateLimiter {
         RateLimiter { storage }
     }
 
+    pub fn get_namespaces(&self) -> Result<HashSet<Namespace>, LimitadorError> {
+        self.storage.get_namespaces().map_err(|err| err.into())
+    }
+
     pub fn add_limit(&self, limit: &Limit) -> Result<(), LimitadorError> {
         self.storage.add_limit(limit).map_err(|err| err.into())
     }
@@ -325,6 +329,13 @@ impl Default for RateLimiter {
 impl AsyncRateLimiter {
     pub fn new_with_storage(storage: Box<dyn AsyncStorage>) -> AsyncRateLimiter {
         AsyncRateLimiter { storage }
+    }
+
+    pub async fn get_namespaces(&self) -> Result<HashSet<Namespace>, LimitadorError> {
+        self.storage
+            .get_namespaces()
+            .await
+            .map_err(|err| err.into())
     }
 
     pub async fn add_limit(&self, limit: &Limit) -> Result<(), LimitadorError> {

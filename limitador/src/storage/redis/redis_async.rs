@@ -29,13 +29,29 @@ pub struct AsyncRedisStorage {
 
 #[async_trait]
 impl AsyncStorage for AsyncRedisStorage {
+    async fn get_namespaces(&self) -> Result<HashSet<Namespace>, StorageErr> {
+        let mut con = self.conn_manager.clone();
+
+        let namespaces = con
+            .smembers::<String, HashSet<String>>(key_for_namespaces_set())
+            .await?;
+
+        Ok(HashSet::from_iter(
+            namespaces.iter().map(|ns| Namespace::from(ns.as_ref())),
+        ))
+    }
+
     async fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
         let mut con = self.conn_manager.clone();
 
         let set_key = key_for_limits_of_namespace(limit.namespace());
         let serialized_limit = serde_json::to_string(limit).unwrap();
 
-        con.sadd::<String, String, _>(set_key, serialized_limit)
+        redis::pipe()
+            .atomic()
+            .sadd::<String, String>(set_key, serialized_limit)
+            .sadd::<String, &str>(key_for_namespaces_set(), limit.namespace().as_ref())
+            .query_async(&mut con)
             .await?;
 
         Ok(())
@@ -62,10 +78,23 @@ impl AsyncStorage for AsyncRedisStorage {
         self.delete_counters_associated_with_limit(limit).await?;
         con.del(key_for_counters_of_limit(&limit)).await?;
 
-        let set_key = key_for_limits_of_namespace(limit.namespace());
         let serialized_limit = serde_json::to_string(limit).unwrap();
 
-        con.srem(set_key, serialized_limit).await?;
+        let delete_limit_script = redis::Script::new(
+            "
+            redis.call('srem', KEYS[1], ARGV[1]);
+            if redis.call('scard', KEYS[1]) == 0 then
+                redis.call('srem', KEYS[2], ARGV[2])
+            end",
+        );
+
+        delete_limit_script
+            .key(key_for_limits_of_namespace(limit.namespace()))
+            .key(key_for_namespaces_set())
+            .arg(serialized_limit)
+            .arg(limit.namespace().as_ref())
+            .invoke_async::<_, _>(&mut con)
+            .await?;
 
         Ok(())
     }

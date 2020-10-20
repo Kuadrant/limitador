@@ -1,6 +1,6 @@
 use limitador::counter::Counter;
 use limitador::errors::LimitadorError;
-use limitador::limit::Limit;
+use limitador::limit::{Limit, Namespace};
 use limitador::{AsyncRateLimiter, RateLimiter};
 use std::collections::{HashMap, HashSet};
 
@@ -27,6 +27,13 @@ impl TestsLimiter {
     pub fn new_from_async_impl(limiter: AsyncRateLimiter) -> Self {
         Self {
             limiter_impl: LimiterImpl::Async(limiter),
+        }
+    }
+
+    pub async fn get_namespaces(&self) -> Result<HashSet<Namespace>, LimitadorError> {
+        match &self.limiter_impl {
+            LimiterImpl::Blocking(limiter) => limiter.get_namespaces(),
+            LimiterImpl::Async(limiter) => limiter.get_namespaces().await,
         }
     }
 

@@ -71,6 +71,7 @@ mod test {
     use self::limitador::RateLimiter;
     use crate::helpers::tests_limiter::*;
     use limitador::limit::Limit;
+    use limitador::limit::Namespace;
     use limitador::storage::in_memory::InMemoryStorage;
     use limitador::storage::wasm::WasmStorage;
     use std::collections::{HashMap, HashSet};
@@ -85,6 +86,9 @@ mod test {
         }
     }
 
+    test_with_all_storage_impls!(get_namespaces);
+    test_with_all_storage_impls!(get_namespaces_returns_empty_when_there_arent_any);
+    test_with_all_storage_impls!(get_namespaces_doesnt_return_the_ones_that_no_longer_have_limits);
     test_with_all_storage_impls!(add_a_limit);
     test_with_all_storage_impls!(add_limit_without_vars);
     test_with_all_storage_impls!(add_several_limits_in_the_same_namespace);
@@ -110,6 +114,77 @@ mod test {
 
     // All these functions need to use async/await. That's needed to support
     // both the sync and the async implementations of the rate limiter.
+
+    async fn get_namespaces(rate_limiter: &mut TestsLimiter) {
+        let limits = vec![
+            Limit::new(
+                "first_namespace",
+                10,
+                60,
+                vec!["req.method == GET"],
+                vec!["app_id"],
+            ),
+            Limit::new(
+                "second_namespace",
+                20,
+                60,
+                vec!["req.method == GET"],
+                vec!["app_id"],
+            ),
+        ];
+
+        for limit in limits {
+            rate_limiter.add_limit(&limit).await.unwrap();
+        }
+
+        for ns in ["first_namespace", "second_namespace"].iter() {
+            assert!(rate_limiter
+                .get_namespaces()
+                .await
+                .unwrap()
+                .contains(&Namespace::from(ns.as_ref())));
+        }
+    }
+
+    async fn get_namespaces_returns_empty_when_there_arent_any(rate_limiter: &mut TestsLimiter) {
+        assert!(rate_limiter.get_namespaces().await.unwrap().is_empty())
+    }
+
+    async fn get_namespaces_doesnt_return_the_ones_that_no_longer_have_limits(
+        rate_limiter: &mut TestsLimiter,
+    ) {
+        let lim1 = Limit::new(
+            "first_namespace",
+            10,
+            60,
+            vec!["req.method == GET"],
+            vec!["app_id"],
+        );
+
+        let lim2 = Limit::new(
+            "second_namespace",
+            20,
+            60,
+            vec!["req.method == GET"],
+            vec!["app_id"],
+        );
+
+        for limit in vec![&lim1, &lim2].iter() {
+            rate_limiter.add_limit(limit).await.unwrap();
+        }
+        rate_limiter.delete_limit(&lim2).await.unwrap();
+
+        assert!(rate_limiter
+            .get_namespaces()
+            .await
+            .unwrap()
+            .contains(&Namespace::from("first_namespace")));
+        assert!(!rate_limiter
+            .get_namespaces()
+            .await
+            .unwrap()
+            .contains(&Namespace::from("second_namespace")));
+    }
 
     async fn add_a_limit(rate_limiter: &mut TestsLimiter) {
         let limit = Limit::new(

@@ -123,6 +123,10 @@ impl CountersCache {
 
 #[async_trait]
 impl AsyncStorage for CachedRedisStorage {
+    async fn get_namespaces(&self) -> Result<HashSet<Namespace>, StorageErr> {
+        self.async_redis_storage.get_namespaces().await
+    }
+
     async fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
         self.async_redis_storage.add_limit(limit).await
     }
