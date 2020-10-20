@@ -72,6 +72,23 @@ jobs:
           command: clippy
           args: -- -D warnings
 
+  bench:
+    name: Bench
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: supercharge/redis-github-action@1.1.0
+        with:
+          redis-version: 5
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: bench
+
   wasm-build:
     name: Build for WASM
     runs-on: ubuntu-latest
