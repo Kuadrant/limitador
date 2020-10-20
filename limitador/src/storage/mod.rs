@@ -11,6 +11,7 @@ pub mod wasm;
 pub mod redis;
 
 pub trait Storage: Sync + Send {
+    fn get_namespaces(&self) -> Result<HashSet<Namespace>, StorageErr>;
     fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr>;
     fn get_limits(&self, namespace: &Namespace) -> Result<HashSet<Limit>, StorageErr>;
     fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr>;
@@ -28,6 +29,7 @@ pub trait Storage: Sync + Send {
 
 #[async_trait]
 pub trait AsyncStorage: Sync + Send {
+    async fn get_namespaces(&self) -> Result<HashSet<Namespace>, StorageErr>;
     async fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr>;
     async fn get_limits(&self, namespace: &Namespace) -> Result<HashSet<Limit>, StorageErr>;
     async fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr>;

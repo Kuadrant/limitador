@@ -83,6 +83,12 @@ pub struct WasmStorage {
 }
 
 impl Storage for WasmStorage {
+    fn get_namespaces(&self) -> Result<HashSet<Namespace>, StorageErr> {
+        Ok(HashSet::from_iter(
+            self.limits_for_namespace.read().unwrap().keys().cloned(),
+        ))
+    }
+
     fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
         let namespace = limit.namespace();
 
@@ -114,13 +120,14 @@ impl Storage for WasmStorage {
     fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
         self.delete_counters_of_limit(limit);
 
-        if let Some(counters_by_limit) = self
-            .limits_for_namespace
-            .write()
-            .unwrap()
-            .get_mut(limit.namespace())
-        {
+        let mut limits_for_namespace = self.limits_for_namespace.write().unwrap();
+
+        if let Some(counters_by_limit) = limits_for_namespace.get_mut(limit.namespace()) {
             counters_by_limit.remove(limit);
+
+            if counters_by_limit.is_empty() {
+                limits_for_namespace.remove(limit.namespace());
+            }
         }
 
         Ok(())
