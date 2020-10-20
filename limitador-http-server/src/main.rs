@@ -223,12 +223,13 @@ async fn check_and_report(
     }
 }
 
-fn new_limiter() -> Limiter {
+async fn new_limiter() -> Limiter {
     match env::var("REDIS_URL") {
         // Let's use the async impl. This could be configurable if needed.
         Ok(redis_url) => {
-            let async_limiter =
-                AsyncRateLimiter::new_with_storage(Box::new(AsyncRedisStorage::new(&redis_url)));
+            let async_limiter = AsyncRateLimiter::new_with_storage(Box::new(
+                AsyncRedisStorage::new(&redis_url).await,
+            ));
             Limiter::Async(async_limiter)
         }
         Err(_) => Limiter::Blocking(RateLimiter::default()),
@@ -244,7 +245,7 @@ async fn main() -> std::io::Result<()> {
     // Internally, web::Data this uses Arc.
     // Ref: https://docs.rs/actix-web/2.0.0/actix_web/web/struct.Data.html
     let state = web::Data::new(State {
-        limiter: new_limiter(),
+        limiter: new_limiter().await,
     });
 
     // This uses the paperclip crate to generate an OpenAPI spec.

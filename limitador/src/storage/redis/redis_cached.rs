@@ -37,7 +37,6 @@ use ttl_cache::TtlCache;
 // - Introduce a mechanism to avoid going to Redis to fetch the same counter
 // multiple times when it is not cached.
 
-const DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
 const DEFAULT_FLUSHING_PERIOD: Duration = Duration::from_secs(1);
 const DEFAULT_TTL_CACHED_LIMITS: Duration = Duration::from_secs(10);
 const DEFAULT_MAX_CACHED_NAMESPACES: usize = 1000;
@@ -236,7 +235,7 @@ impl AsyncStorage for CachedRedisStorage {
 }
 
 impl CachedRedisStorage {
-    pub fn new(redis_url: &str) -> CachedRedisStorage {
+    pub async fn new(redis_url: &str) -> CachedRedisStorage {
         let batcher = Arc::new(Mutex::new(Batcher::new(RedisStorage::new(redis_url))));
         let batcher_flusher = batcher.clone();
 
@@ -256,7 +255,7 @@ impl CachedRedisStorage {
             batcher_counter_updates: batcher,
             redis_client: redis::Client::open(redis_url).unwrap(),
             blocking_redis_storage: RedisStorage::new(redis_url),
-            async_redis_storage: AsyncRedisStorage::new(redis_url),
+            async_redis_storage: AsyncRedisStorage::new(redis_url).await,
         }
     }
 
@@ -283,11 +282,5 @@ impl CachedRedisStorage {
         let counter_ttls_secs: Vec<i64> = redis_pipeline.query(redis_con)?;
 
         Ok((counter_vals, counter_ttls_secs))
-    }
-}
-
-impl Default for CachedRedisStorage {
-    fn default() -> Self {
-        CachedRedisStorage::new(DEFAULT_REDIS_URL)
     }
 }
