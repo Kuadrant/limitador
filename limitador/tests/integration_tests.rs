@@ -67,6 +67,7 @@ mod test {
         }
     }
 
+    use self::limitador::counter::Counter;
     use self::limitador::storage::wasm::Clock;
     use self::limitador::RateLimiter;
     use crate::helpers::tests_limiter::*;
@@ -111,6 +112,9 @@ mod test {
     test_with_all_storage_impls!(get_counters_returns_empty_when_no_limits_in_namespace);
     test_with_all_storage_impls!(get_counters_returns_empty_when_no_counters_in_namespace);
     test_with_all_storage_impls!(get_counters_does_not_return_expired_ones);
+    test_with_all_storage_impls!(configure_with_creates_the_given_limits);
+    test_with_all_storage_impls!(configure_with_keeps_the_given_limits_and_counters_if_they_exist);
+    test_with_all_storage_impls!(configure_with_deletes_all_except_the_limits_given);
 
     // All these functions need to use async/await. That's needed to support
     // both the sync and the async implementations of the rate limiter.
@@ -729,5 +733,111 @@ mod test {
             .await
             .unwrap()
             .is_empty());
+    }
+
+    async fn configure_with_creates_the_given_limits(rate_limiter: &mut TestsLimiter) {
+        let first_limit = Limit::new(
+            "first_namespace",
+            10,
+            60,
+            vec!["req.method == GET"],
+            vec!["app_id"],
+        );
+
+        let second_limit = Limit::new(
+            "second_namespace",
+            20,
+            60,
+            vec!["req.method == GET"],
+            vec!["app_id"],
+        );
+
+        rate_limiter
+            .configure_with(vec![first_limit.clone(), second_limit.clone()])
+            .await
+            .unwrap();
+
+        assert!(rate_limiter
+            .get_limits("first_namespace")
+            .await
+            .unwrap()
+            .contains(&first_limit));
+
+        assert!(rate_limiter
+            .get_limits("second_namespace")
+            .await
+            .unwrap()
+            .contains(&second_limit));
+    }
+
+    async fn configure_with_keeps_the_given_limits_and_counters_if_they_exist(
+        rate_limiter: &mut TestsLimiter,
+    ) {
+        let namespace = "test_namespace";
+        let max_value = 10;
+        let hits_to_report = 1;
+
+        let limit = Limit::new(
+            namespace,
+            max_value,
+            60,
+            vec!["req.method == GET"],
+            vec!["app_id"],
+        );
+
+        rate_limiter.add_limit(&limit).await.unwrap();
+
+        let mut values = HashMap::new();
+        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("app_id".to_string(), "1".to_string());
+        rate_limiter
+            .update_counters(namespace, &values, hits_to_report)
+            .await
+            .unwrap();
+
+        rate_limiter
+            .configure_with(vec![limit.clone()])
+            .await
+            .unwrap();
+
+        assert!(rate_limiter
+            .get_limits(namespace)
+            .await
+            .unwrap()
+            .contains(&limit));
+
+        let counters: Vec<Counter> = rate_limiter
+            .get_counters(namespace)
+            .await
+            .unwrap()
+            .drain()
+            .collect();
+
+        assert_eq!(counters.len(), 1);
+        assert_eq!(counters[0].remaining().unwrap(), max_value - hits_to_report);
+    }
+
+    async fn configure_with_deletes_all_except_the_limits_given(rate_limiter: &mut TestsLimiter) {
+        let namespace = "test_namespace";
+
+        let limit_to_be_kept =
+            Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
+
+        let limit_to_be_deleted =
+            Limit::new(namespace, 20, 60, vec!["req.method == GET"], vec!["app_id"]);
+
+        for limit in [&limit_to_be_kept, &limit_to_be_deleted].iter() {
+            rate_limiter.add_limit(limit).await.unwrap();
+        }
+
+        rate_limiter
+            .configure_with(vec![limit_to_be_kept.clone()])
+            .await
+            .unwrap();
+
+        let limits = rate_limiter.get_limits(namespace).await.unwrap();
+
+        assert!(limits.contains(&limit_to_be_kept));
+        assert!(!limits.contains(&limit_to_be_deleted));
     }
 }

@@ -113,4 +113,14 @@ impl TestsLimiter {
             LimiterImpl::Async(limiter) => limiter.get_counters(namespace).await,
         }
     }
+
+    pub async fn configure_with(
+        &self,
+        limits: impl IntoIterator<Item = Limit>,
+    ) -> Result<(), LimitadorError> {
+        match &self.limiter_impl {
+            LimiterImpl::Blocking(limiter) => limiter.configure_with(limits),
+            LimiterImpl::Async(limiter) => limiter.configure_with(limits).await,
+        }
+    }
 }
