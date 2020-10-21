@@ -50,11 +50,9 @@ impl MyRateLimiter {
 
                 let rate_limiter = new_limiter().await;
 
-                for limit in limits {
-                    match &rate_limiter {
-                        Limiter::Blocking(limiter) => limiter.add_limit(&limit).unwrap(),
-                        Limiter::Async(limiter) => limiter.add_limit(&limit).await.unwrap(),
-                    }
+                match &rate_limiter {
+                    Limiter::Blocking(limiter) => limiter.configure_with(limits).unwrap(),
+                    Limiter::Async(limiter) => limiter.configure_with(limits).await.unwrap(),
                 }
 
                 MyRateLimiter {

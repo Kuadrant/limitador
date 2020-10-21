@@ -298,6 +298,40 @@ impl RateLimiter {
             .map_err(|err| err.into())
     }
 
+    // Deletes all the limits stored except the ones received in the params. For
+    // every limit received, if it does not exist, it is created. If it already
+    // exists, its associated counters are not reset.
+    pub fn configure_with(
+        &self,
+        limits: impl IntoIterator<Item = Limit>,
+    ) -> Result<(), LimitadorError> {
+        let limits_to_keep_or_create = classify_limits_by_namespace(limits);
+
+        let namespaces_limits_to_keep_or_create: HashSet<Namespace> =
+            HashSet::from_iter(limits_to_keep_or_create.keys().cloned());
+
+        for namespace in self
+            .get_namespaces()?
+            .union(&namespaces_limits_to_keep_or_create)
+        {
+            let limits_in_namespace = self.get_limits(namespace.clone())?;
+            let limits_to_keep_in_ns: HashSet<Limit> = limits_to_keep_or_create
+                .get(&namespace)
+                .cloned()
+                .unwrap_or_default();
+
+            for limit in limits_in_namespace.difference(&limits_to_keep_in_ns) {
+                self.delete_limit(&limit)?;
+            }
+
+            for limit in limits_to_keep_in_ns.difference(&limits_in_namespace) {
+                self.add_limit(&limit)?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn counters_that_apply(
         &self,
         namespace: impl Into<Namespace>,
@@ -439,6 +473,41 @@ impl AsyncRateLimiter {
             .map_err(|err| err.into())
     }
 
+    // Deletes all the limits stored except the ones received in the params. For
+    // every limit received, if it does not exist, it is created. If it already
+    // exists, its associated counters are not reset.
+    pub async fn configure_with(
+        &self,
+        limits: impl IntoIterator<Item = Limit>,
+    ) -> Result<(), LimitadorError> {
+        let limits_to_keep_or_create = classify_limits_by_namespace(limits);
+
+        let namespaces_limits_to_keep_or_create: HashSet<Namespace> =
+            HashSet::from_iter(limits_to_keep_or_create.keys().cloned());
+
+        for namespace in self
+            .get_namespaces()
+            .await?
+            .union(&namespaces_limits_to_keep_or_create)
+        {
+            let limits_in_namespace = self.get_limits(namespace.clone()).await?;
+            let limits_to_keep_in_ns: HashSet<Limit> = limits_to_keep_or_create
+                .get(&namespace)
+                .cloned()
+                .unwrap_or_default();
+
+            for limit in limits_in_namespace.difference(&limits_to_keep_in_ns) {
+                self.delete_limit(&limit).await?;
+            }
+
+            for limit in limits_to_keep_in_ns.difference(&limits_in_namespace) {
+                self.add_limit(&limit).await?;
+            }
+        }
+
+        Ok(())
+    }
+
     async fn counters_that_apply(
         &self,
         namespace: impl Into<Namespace>,
@@ -454,4 +523,25 @@ impl AsyncRateLimiter {
 
         Ok(counters)
     }
+}
+
+fn classify_limits_by_namespace(
+    limits: impl IntoIterator<Item = Limit>,
+) -> HashMap<Namespace, HashSet<Limit>> {
+    let mut res: HashMap<Namespace, HashSet<Limit>> = HashMap::new();
+
+    for limit in limits {
+        match res.get_mut(limit.namespace()) {
+            Some(limits) => {
+                limits.insert(limit);
+            }
+            None => {
+                let mut set = HashSet::new();
+                set.insert(limit.clone());
+                res.insert(limit.namespace().clone(), set);
+            }
+        }
+    }
+
+    res
 }
