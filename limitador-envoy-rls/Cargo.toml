@@ -10,7 +10,7 @@ edition = "2018"
 [dependencies]
 limitador = { path = "../limitador" }
 tokio = { version = "0.2", features = ["full"] }
-tonic = "0.2"
+tonic = "0.3"
 prost = "0.6"
 prost-types = "0.6"
 serde_yaml = "0.8"
