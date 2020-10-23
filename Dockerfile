@@ -18,14 +18,12 @@ COPY ./Cargo.lock ./Cargo.lock
 COPY ./Cargo.toml ./Cargo.toml
 
 COPY limitador/Cargo.toml ./limitador/Cargo.toml
-COPY limitador-envoy-rls/Cargo.toml ./limitador-envoy-rls/Cargo.toml
-COPY limitador-http-server/Cargo.toml ./limitador-http-server/Cargo.toml
+COPY limitador-server/Cargo.toml ./limitador-server/Cargo.toml
 
-RUN mkdir -p limitador/src limitador-envoy-rls/src limitador-http-server/src
+RUN mkdir -p limitador/src limitador-server/src
 
 RUN echo "fn main() {println!(\"if you see this, the build broke\")}" > limitador/src/main.rs \
- && echo "fn main() {println!(\"if you see this, the build broke\")}" > limitador-envoy-rls/src/main.rs \
- && echo "fn main() {println!(\"if you see this, the build broke\")}" > limitador-http-server/src/main.rs
+ && echo "fn main() {println!(\"if you see this, the build broke\")}" > limitador-server/src/main.rs
 
 RUN RUSTFLAGS=-Clinker=musl-gcc cargo build --release --target=x86_64-unknown-linux-musl
 
@@ -50,14 +48,13 @@ RUN addgroup -g 1000 limitador \
 WORKDIR /home/limitador/bin/
 ENV PATH="/home/limitador/bin:${PATH}"
 
-COPY --from=limitador-build /usr/src/limitador/limitador-envoy-rls/examples/limits.yaml ../
-COPY --from=limitador-build /usr/src/limitador/target/x86_64-unknown-linux-musl/release/limitador-envoy-rls ./envoy-rls
-COPY --from=limitador-build /usr/src/limitador/target/x86_64-unknown-linux-musl/release/limitador-http-server ./http-server
+COPY --from=limitador-build /usr/src/limitador/limitador-server/examples/limits.yaml ../
+COPY --from=limitador-build /usr/src/limitador/target/x86_64-unknown-linux-musl/release/limitador-server ./limitador-server
 
-RUN chown limitador:limitador envoy-rls http-server
+RUN chown limitador:limitador limitador-server
 
 USER limitador
 
 ENV LIMITS_FILE=/home/limitador/limits.yaml
 
-CMD ["envoy-rls"]
+CMD ["limitador-server"]

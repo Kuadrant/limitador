@@ -7,8 +7,10 @@
 "Docker Repository on Quay")](https://quay.io/repository/3scale/limitador)
 
 Limitador is a generic rate-limiter written in Rust. It can be used as a
-library, as an HTTP service, or as a GRPC service that implements the Envoy Rate
-Limit protocol.
+library, or as a service. The service exposes HTTP endpoints to apply and manage
+limits. Limitador can also be used together with Envoy because in a different
+port, it also exposes a grpc service that implements the Envoy Rate Limit
+protocol.
 
 - [**Getting started**](#getting-started)
 - [**Limits storage**](#limits-storage)
@@ -20,8 +22,7 @@ Limit protocol.
 ## Getting started
 
 - [Rust library](#rust-library)
-- [HTTP server](#http-service)
-- [GRPC server for Envoy](#grpc-server-that-implements-envoys-rls)
+- [Server](#server)
 
 ### Rust library
 
@@ -38,55 +39,51 @@ that need to be disabled. Add this to your `Cargo.toml` instead:
 limitador = { version = "0.1.2", default-features = false }
 ```
 
-### HTTP service
-
-The OpenAPI spec of the service is
-[here](limitador-http-server/docs/http_server_spec.json).
+### Server
 
 Run with Docker (replace `latest` with the version you want):
 ```bash
-docker run --rm --net=host -it quay.io/3scale/limitador:latest http-server
+docker run --rm --net=host -it quay.io/3scale/limitador:latest
+```
+
+Run locally:
+```bash
+cargo run --release --bin limitador-server
 ```
 
 To use Redis, specify the URL with `REDIS_URL`:
 ```bash
-docker run -e REDIS_URL=redis://127.0.0.1:6379 --rm --net=host -it quay.io/3scale/limitador:latest http-server
+REDIS_URL=redis://127.0.0.1:6379 cargo run --release --bin limitador-server
 ```
 
-You can also run the service locally:
+By default, limitador starts the HTTP server in `localhost:8081` and the grpc
+service that implements the Envoy Rate Limit protocol in `localhost:50052`. That
+can be configured with these ENVs: `ENVOY_RLS_HOST`, `ENVOY_RLS_PORT`,
+`HTTP_API_HOST`, and `HTTP_API_PORT`.
+
+The OpenAPI spec of the HTTP service is
+[here](limitador-server/docs/http_server_spec.json).
+
+Limitador can be started with a YAML file that has some limits predefined. Keep
+in mind that they can be modified using the HTTP API. There's an [example
+file](limitador-server/examples/limits.yaml) that allows 10 requests per minute
+and per user_id when the HTTP method is "GET" and 5 when it is a "POST". You can
+run it with Docker (replace `latest` with the version you want):
 ```bash
-cargo run --release --bin limitador-http-server
+docker run -e LIMITS_FILE=/home/limitador/my_limits.yaml --rm --net=host -it -v $(pwd)/limitador-server/examples/limits.yaml:/home/limitador/my_limits.yaml:ro quay.io/3scale/limitador:latest
 ```
 
-You can change the host and port with the `HOST` and `PORT` envs.
-
-### GRPC server that implements Envoy's RLS
-
-To run Limitador, you need to provide a YAML file with the limits. There's an
-[example file](limitador-envoy-rls/examples/limits.yaml) that allows 10 requests
-per minute and per user_id when the HTTP method is "GET" and 5 when it is a
-"POST". You can run it with Docker (replace `latest` with the version you want):
+You can also use the YAML file when running locally:
 ```bash
-docker run -e LIMITS_FILE=/home/limitador/my_limits.yaml --rm --net=host -it -v $(pwd)/limitador-envoy-rls/examples/limits.yaml:/home/limitador/my_limits.yaml:ro quay.io/3scale/limitador:latest envoy-rls
+LIMITS_FILE=./limitador-server/examples/limits.yaml cargo run --release --bin limitador-server 
 ```
 
-To use Redis, specify the URL with `REDIS_URL`:
-```bash
-docker run -e LIMITS_FILE=/home/limitador/my_limits.yaml -e REDIS_URL=redis://127.0.0.1:6379 --rm --net=host -it -v $(pwd)/limitador-envoy-rls/examples/limits.yaml:/home/limitador/my_limits.yaml:ro quay.io/3scale/limitador:latest envoy-rls
-```
-
-You can also run the service locally:
-```bash
-LIMITS_FILE=./limitador-envoy-rls/examples/limits.yaml cargo run --release --bin limitador-envoy-rls
-```
-
-There's a minimal Envoy config to try limitador
-[here](limitador-envoy-rls/examples/envoy.yaml). The config forwards the
-"userid" header and the request method to Limitador. It assumes that there's an
-upstream API deployed in the port 1323. You can use
+If you want to use Limitador with Envoy, there's a minimal Envoy config for
+testing purposes [here](limitador-server/examples/envoy.yaml). The config
+forwards the "userid" header and the request method to Limitador. It assumes
+that there's an upstream API deployed in the port 1323. You can use
 [echo](https://github.com/labstack/echo), for example.
 
-You can change the host and port with the `HOST` and `PORT` envs.
 
 ## Limits storage
 

@@ -1382,29 +1382,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "limitador-envoy-rls"
-version = "0.1.0"
-dependencies = [
- "env_logger",
- "limitador",
- "log",
- "prost",
- "prost-types",
- "serde_yaml",
- "tokio",
- "tonic",
- "tonic-build",
-]
-
-[[package]]
-name = "limitador-http-server"
+name = "limitador-server"
 version = "0.1.0"
 dependencies = [
  "actix-rt",
  "actix-web",
+ "env_logger",
  "limitador",
+ "log",
  "paperclip",
+ "prost",
+ "prost-types",
  "serde",
+ "serde_yaml",
+ "tokio",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]
