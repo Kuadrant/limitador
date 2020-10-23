@@ -17,7 +17,7 @@ protocol.
 - [**Development**](#development)
 - [**License**](#license)
 
-**Status: Experimental**
+Limitador is under active development, and its API has not been stabilized yet.
 
 ## Getting started
 
