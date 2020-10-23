@@ -18,7 +18,7 @@ COPY ./Cargo.lock ./Cargo.lock
 COPY ./Cargo.toml ./Cargo.toml
 
 COPY limitador/Cargo.toml ./limitador/Cargo.toml
-COPY limitador-envoy-rls/Cargo.toml ./limitador-envoy-rls/Cargo.toml
+COPY limitador-server/Cargo.toml ./limitador-envoy-rls/Cargo.toml
 COPY limitador-http-server/Cargo.toml ./limitador-http-server/Cargo.toml
 
 RUN mkdir -p limitador/src limitador-envoy-rls/src limitador-http-server/src

@@ -1,5 +1,5 @@
 [package]
-name = "limitador-envoy-rls"
+name = "limitador-server"
 version = "0.1.0"
 authors = ["David Ortiz <z.david.ortiz@gmail.com>"]
 license = "Apache-2.0"
@@ -16,6 +16,10 @@ prost-types = "0.6"
 serde_yaml = "0.8"
 log = "0.4"
 env_logger = "0.7"
+actix-web = { version = "2.0" }
+actix-rt = { version = "1.0" }
+paperclip = { version = "0.4", features = ["actix"] }
+serde = { version = "1.0", features = ["derive"] }
 
 [build-dependencies]
 tonic-build = "0.2"

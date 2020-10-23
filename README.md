@@ -41,7 +41,7 @@ limitador = { version = "0.1.2", default-features = false }
 ### HTTP service
 
 The OpenAPI spec of the service is
-[here](limitador-http-server/docs/http_server_spec.json).
+[here](limitador-server/docs/http_server_spec.json).
 
 Run with Docker (replace `latest` with the version you want):
 ```bash
@@ -63,7 +63,7 @@ You can change the host and port with the `HOST` and `PORT` envs.
 ### GRPC server that implements Envoy's RLS
 
 To run Limitador, you need to provide a YAML file with the limits. There's an
-[example file](limitador-envoy-rls/examples/limits.yaml) that allows 10 requests
+[example file](limitador-server/examples/limits.yaml) that allows 10 requests
 per minute and per user_id when the HTTP method is "GET" and 5 when it is a
 "POST". You can run it with Docker (replace `latest` with the version you want):
 ```bash
@@ -81,7 +81,7 @@ LIMITS_FILE=./limitador-envoy-rls/examples/limits.yaml cargo run --release --bin
 ```
 
 There's a minimal Envoy config to try limitador
-[here](limitador-envoy-rls/examples/envoy.yaml). The config forwards the
+[here](limitador-server/examples/envoy.yaml). The config forwards the
 "userid" header and the request method to Limitador. It assumes that there's an
 upstream API deployed in the port 1323. You can use
 [echo](https://github.com/labstack/echo), for example.
