@@ -72,12 +72,12 @@ impl RateLimitService for MyRateLimiter {
                 // In this case we could return "Code::Unknown" but that's not
                 // very helpful. When envoy receives "Unknown" it simply lets
                 // the request pass and this cannot be configured using the
-                // "failure_mode_allow" attribute, so it's equivalent to
+                // "failure_mode_deny" attribute, so it's equivalent to
                 // returning "Code::Ok". That's why we return an "unavailable"
                 // error here. What envoy does after receiving that kind of
-                // error can be configured with "failure_mode_deny".
-                // The only errors that can happen here have to do with
-                // connecting to the limits storage, which should be temporary.
+                // error can be configured with "failure_mode_deny". The only
+                // errors that can happen here have to do with connecting to the
+                // limits storage, which should be temporary.
                 error!("Error: {:?}", e);
                 return Err(Status::unavailable("Service unavailable"));
             }
