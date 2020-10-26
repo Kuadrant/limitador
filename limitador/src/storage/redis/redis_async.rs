@@ -129,24 +129,32 @@ impl AsyncStorage for AsyncRedisStorage {
     async fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
         let mut con = self.conn_manager.clone();
 
-        let counter_key = key_for_counter(counter);
+        // A MULTI/EXEC does not work, we need a script.
+        // The reason is that in the MULTI/EXEC the key could expire between the
+        // 'SET' and the 'INCRBY', but Redis scripts guarantee that cannot
+        // happen.
 
-        // 1) Sets the counter key if it does not exist.
-        // 2) Decreases the value.
-        // 3) Adds the counter to the set of counters associated with the limit.
-        // We need a MULTI/EXEC (atomic pipeline) to ensure that the key will
-        // not expire between the set and the incr.
-        redis::pipe()
-            .atomic()
-            .cmd("SET")
-            .arg(&counter_key)
+        // KEYS[1]: counter key
+        // KEYS[2]: key that contains the counters that belong to the limit
+        // ARGV[1]: counter max val
+        // ARGV[2]: counter TTL
+        // ARGV[3]: delta
+        let update_counter_script = redis::Script::new(
+            "
+            local set_res = redis.call('set', KEYS[1], ARGV[1], 'EX', ARGV[2], 'NX')
+            redis.call('incrby', KEYS[1], - ARGV[3])
+            if set_res then
+                redis.call('sadd', KEYS[2], KEYS[1])
+            end",
+        );
+
+        update_counter_script
+            .key(key_for_counter(counter))
+            .key(key_for_counters_of_limit(counter.limit()))
             .arg(counter.max_value())
-            .arg("EX")
             .arg(counter.seconds())
-            .arg("NX")
-            .incr::<&str, i64>(&counter_key, -delta)
-            .sadd::<&str, &str>(&key_for_counters_of_limit(counter.limit()), &counter_key)
-            .query_async(&mut con)
+            .arg(delta)
+            .invoke_async::<_, _>(&mut con)
             .await?;
 
         Ok(())
