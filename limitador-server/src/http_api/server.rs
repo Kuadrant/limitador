@@ -38,6 +38,11 @@ impl ResponseError for ErrorResponse {
     }
 }
 
+// Used for health checks
+async fn status() -> web::Json<()> {
+    Json(())
+}
+
 #[api_v2_operation]
 async fn create_limit(
     data: web::Data<Arc<Limiter>>,
@@ -222,6 +227,7 @@ pub async fn run_http_server(address: &str, rate_limiter: Arc<Limiter>) -> std::
             .wrap_api()
             .with_json_spec_at("/api/spec")
             .app_data(data.clone())
+            .route("/status", web::get().to(status))
             .route("/limits", web::post().to(create_limit))
             .route("/limits", web::delete().to(delete_limit))
             .route("/limits/{namespace}", web::get().to(get_limits))
