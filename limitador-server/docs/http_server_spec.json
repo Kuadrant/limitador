@@ -322,6 +322,16 @@
           }
         }
       ]
+    },
+    "/status": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {}
+          }
+        }
+      }
     }
   },
   "info": {
