@@ -5,6 +5,7 @@ mod redis_async;
 mod redis_cached;
 mod redis_keys;
 mod redis_sync;
+mod scripts;
 
 use crate::storage::StorageErr;
 pub use redis_async::AsyncRedisStorage;

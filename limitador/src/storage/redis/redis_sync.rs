@@ -4,6 +4,7 @@ use self::redis::{Commands, ConnectionInfo, ConnectionLike, IntoConnectionInfo, 
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
 use crate::storage::redis::redis_keys::*;
+use crate::storage::redis::scripts::{SCRIPT_DELETE_LIMIT, SCRIPT_UPDATE_COUNTER};
 use crate::storage::{Storage, StorageErr};
 use r2d2::{ManageConnection, Pool};
 use std::collections::HashSet;
@@ -69,15 +70,7 @@ impl Storage for RedisStorage {
 
         let serialized_limit = serde_json::to_string(limit).unwrap();
 
-        let delete_limit_script = redis::Script::new(
-            "
-            redis.call('srem', KEYS[1], ARGV[1]);
-            if redis.call('scard', KEYS[1]) == 0 then
-                redis.call('srem', KEYS[2], ARGV[2])
-            end",
-        );
-
-        delete_limit_script
+        redis::Script::new(SCRIPT_DELETE_LIMIT)
             .key(key_for_limits_of_namespace(limit.namespace()))
             .key(key_for_namespaces_set())
             .arg(serialized_limit)
@@ -114,26 +107,7 @@ impl Storage for RedisStorage {
     fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
         let mut con = self.conn_pool.get()?;
 
-        // A MULTI/EXEC does not work, we need a script.
-        // The reason is that in the MULTI/EXEC the key could expire between the
-        // 'SET' and the 'INCRBY', but Redis scripts guarantee that cannot
-        // happen.
-
-        // KEYS[1]: counter key
-        // KEYS[2]: key that contains the counters that belong to the limit
-        // ARGV[1]: counter max val
-        // ARGV[2]: counter TTL
-        // ARGV[3]: delta
-        let update_counter_script = redis::Script::new(
-            "
-            local set_res = redis.call('set', KEYS[1], ARGV[1], 'EX', ARGV[2], 'NX')
-            redis.call('incrby', KEYS[1], - ARGV[3])
-            if set_res then
-                redis.call('sadd', KEYS[2], KEYS[1])
-            end",
-        );
-
-        update_counter_script
+        redis::Script::new(SCRIPT_UPDATE_COUNTER)
             .key(key_for_counter(counter))
             .key(key_for_counters_of_limit(counter.limit()))
             .arg(counter.max_value())
