@@ -29,14 +29,14 @@ Limitador is under active development, and its API has not been stabilized yet.
 Add this to your `Cargo.toml`:
 ```toml
 [dependencies]
-limitador = { version = "0.1.2" }
+limitador = { version = "0.1.3" }
 ```
 
 To use limitador in a project that compiles to WASM, there are some features
 that need to be disabled. Add this to your `Cargo.toml` instead:
 ```toml
 [dependencies]
-limitador = { version = "0.1.2", default-features = false }
+limitador = { version = "0.1.3", default-features = false }
 ```
 
 ### Server
