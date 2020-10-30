@@ -1398,6 +1398,7 @@ dependencies = [
  "cfg-if 1.0.0",
  "criterion",
  "futures",
+ "lazy_static",
  "paste",
  "prometheus",
  "r2d2",
