@@ -43,6 +43,13 @@ async fn status() -> web::Json<()> {
     Json(())
 }
 
+async fn metrics(data: web::Data<Arc<Limiter>>) -> String {
+    match data.get_ref().as_ref() {
+        Limiter::Blocking(limiter) => limiter.gather_prometheus_metrics(),
+        Limiter::Async(limiter) => limiter.gather_prometheus_metrics(),
+    }
+}
+
 #[api_v2_operation]
 async fn create_limit(
     data: web::Data<Arc<Limiter>>,
@@ -228,6 +235,7 @@ pub async fn run_http_server(address: &str, rate_limiter: Arc<Limiter>) -> std::
             .with_json_spec_at("/api/spec")
             .app_data(data.clone())
             .route("/status", web::get().to(status))
+            .route("/metrics", web::get().to(metrics))
             .route("/limits", web::post().to(create_limit))
             .route("/limits", web::delete().to(delete_limit))
             .route("/limits/{namespace}", web::get().to(get_limits))
