@@ -178,14 +178,21 @@
 use crate::counter::Counter;
 use crate::errors::LimitadorError;
 use crate::limit::{Limit, Namespace};
+use crate::prometheus_metrics::{
+    gather_metrics, incr_authorized_calls, incr_limited_calls, register_metrics,
+};
 use crate::storage::in_memory::InMemoryStorage;
 use crate::storage::{AsyncStorage, Storage};
 use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 
+#[macro_use]
+extern crate lazy_static;
+
 pub mod counter;
 pub mod errors;
 pub mod limit;
+mod prometheus_metrics;
 pub mod storage;
 
 pub struct RateLimiter {
@@ -198,6 +205,8 @@ pub struct AsyncRateLimiter {
 
 impl RateLimiter {
     pub fn new() -> RateLimiter {
+        register_metrics();
+
         RateLimiter {
             storage: Box::new(InMemoryStorage::default()),
         }
@@ -240,12 +249,14 @@ impl RateLimiter {
         values: &HashMap<String, String>,
         delta: i64,
     ) -> Result<bool, LimitadorError> {
-        let counters = self.counters_that_apply(namespace, values)?;
+        let namespace = namespace.into();
+        let counters = self.counters_that_apply(namespace.clone(), values)?;
 
         for counter in counters {
             match self.storage.is_within_limits(&counter, delta) {
                 Ok(within_limits) => {
                     if !within_limits {
+                        incr_limited_calls(&namespace);
                         return Ok(true);
                     }
                 }
@@ -253,6 +264,7 @@ impl RateLimiter {
             }
         }
 
+        incr_authorized_calls(&namespace);
         Ok(false)
     }
 
@@ -276,9 +288,11 @@ impl RateLimiter {
         values: &HashMap<String, String>,
         delta: i64,
     ) -> Result<bool, LimitadorError> {
-        let counters = self.counters_that_apply(namespace, values)?;
+        let namespace = namespace.into();
+        let counters = self.counters_that_apply(namespace.clone(), values)?;
 
         if counters.is_empty() {
+            incr_authorized_calls(&namespace);
             return Ok(false);
         }
 
@@ -286,7 +300,13 @@ impl RateLimiter {
             .storage
             .check_and_update(&HashSet::from_iter(counters.iter()), delta)?;
 
-        Ok(!is_within_limits)
+        if is_within_limits {
+            incr_authorized_calls(&namespace);
+            Ok(false)
+        } else {
+            incr_limited_calls(&namespace);
+            Ok(true)
+        }
     }
 
     pub fn get_counters(
@@ -332,6 +352,10 @@ impl RateLimiter {
         Ok(())
     }
 
+    pub fn gather_prometheus_metrics(&self) -> String {
+        gather_metrics()
+    }
+
     fn counters_that_apply(
         &self,
         namespace: impl Into<Namespace>,
@@ -362,6 +386,8 @@ impl Default for RateLimiter {
 
 impl AsyncRateLimiter {
     pub fn new_with_storage(storage: Box<dyn AsyncStorage>) -> AsyncRateLimiter {
+        register_metrics();
+
         AsyncRateLimiter { storage }
     }
 
@@ -412,12 +438,14 @@ impl AsyncRateLimiter {
         values: &HashMap<String, String>,
         delta: i64,
     ) -> Result<bool, LimitadorError> {
-        let counters = self.counters_that_apply(namespace, values).await?;
+        let namespace = namespace.into();
+        let counters = self.counters_that_apply(namespace.clone(), values).await?;
 
         for counter in counters {
             match self.storage.is_within_limits(&counter, delta).await {
                 Ok(within_limits) => {
                     if !within_limits {
+                        incr_limited_calls(&namespace);
                         return Ok(true);
                     }
                 }
@@ -425,6 +453,7 @@ impl AsyncRateLimiter {
             }
         }
 
+        incr_authorized_calls(&namespace);
         Ok(false)
     }
 
@@ -449,9 +478,11 @@ impl AsyncRateLimiter {
         values: &HashMap<String, String>,
         delta: i64,
     ) -> Result<bool, LimitadorError> {
-        let counters = self.counters_that_apply(namespace, values).await?;
+        let namespace = namespace.into();
+        let counters = self.counters_that_apply(namespace.clone(), values).await?;
 
         if counters.is_empty() {
+            incr_authorized_calls(&namespace);
             return Ok(false);
         }
 
@@ -460,7 +491,13 @@ impl AsyncRateLimiter {
             .check_and_update(&HashSet::from_iter(counters.iter()), delta)
             .await?;
 
-        Ok(!is_within_limits)
+        if is_within_limits {
+            incr_authorized_calls(&namespace);
+            Ok(false)
+        } else {
+            incr_limited_calls(&namespace);
+            Ok(true)
+        }
     }
 
     pub async fn get_counters(
@@ -506,6 +543,10 @@ impl AsyncRateLimiter {
         }
 
         Ok(())
+    }
+
+    pub fn gather_prometheus_metrics(&self) -> String {
+        gather_metrics()
     }
 
     async fn counters_that_apply(
