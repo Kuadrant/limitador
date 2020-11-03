@@ -1,5 +1,5 @@
 use crate::limit::Namespace;
-use prometheus::{Encoder, IntCounterVec, Opts, Registry, TextEncoder};
+use prometheus::{Encoder, IntCounterVec, IntGauge, Opts, Registry, TextEncoder};
 use std::sync::Once;
 
 lazy_static! {
@@ -11,6 +11,10 @@ lazy_static! {
     .unwrap();
     static ref LIMITED_CALLS: IntCounterVec =
         IntCounterVec::new(Opts::new("limited_calls", "Limited calls"), &["namespace"]).unwrap();
+
+    // This can be used as a simple health check
+    static ref LIMITADOR_UP: IntGauge =
+        IntGauge::new("limitador_up", "Limitador is running").unwrap();
 }
 
 static REGISTER_METRICS: Once = Once::new();
@@ -22,6 +26,9 @@ pub fn register_metrics() {
             .unwrap();
 
         REGISTRY.register(Box::new(LIMITED_CALLS.clone())).unwrap();
+        REGISTRY.register(Box::new(LIMITADOR_UP.clone())).unwrap();
+
+        LIMITADOR_UP.set(1);
     })
 }
 
