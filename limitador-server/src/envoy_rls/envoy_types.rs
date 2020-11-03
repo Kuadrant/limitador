@@ -1,16 +1,4 @@
 pub mod envoy {
-    pub mod api {
-        pub mod v2 {
-            pub mod core {
-                include!("protobufs/envoy.api.v2.core.rs");
-            }
-
-            pub mod ratelimit {
-                include!("protobufs/envoy.api.v2.ratelimit.rs");
-            }
-        }
-    }
-
     pub mod config {
         pub mod core {
             pub mod v3 {
@@ -39,9 +27,6 @@ pub mod envoy {
 
     pub mod service {
         pub mod ratelimit {
-            pub mod v2 {
-                include!("protobufs/envoy.service.ratelimit.v2.rs");
-            }
             pub mod v3 {
                 include!("protobufs/envoy.service.ratelimit.v3.rs");
             }

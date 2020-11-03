@@ -1,8 +1,8 @@
-use crate::envoy_rls::server::envoy::service::ratelimit::v2::rate_limit_response::Code;
-use crate::envoy_rls::server::envoy::service::ratelimit::v2::rate_limit_service_server::{
+use crate::envoy_rls::server::envoy::service::ratelimit::v3::rate_limit_response::Code;
+use crate::envoy_rls::server::envoy::service::ratelimit::v3::rate_limit_service_server::{
     RateLimitService, RateLimitServiceServer,
 };
-use crate::envoy_rls::server::envoy::service::ratelimit::v2::{
+use crate::envoy_rls::server::envoy::service::ratelimit::v3::{
     RateLimitRequest, RateLimitResponse,
 };
 use crate::Limiter;
@@ -38,8 +38,8 @@ impl RateLimitService for MyRateLimiter {
             return Ok(Response::new(RateLimitResponse {
                 overall_code: Code::Unknown.into(),
                 statuses: vec![],
-                headers: vec![],
                 request_headers_to_add: vec![],
+                response_headers_to_add: vec![],
             }));
         }
 
@@ -86,8 +86,8 @@ impl RateLimitService for MyRateLimiter {
         let reply = RateLimitResponse {
             overall_code: resp_code.into(),
             statuses: vec![],
-            headers: vec![],
             request_headers_to_add: vec![],
+            response_headers_to_add: vec![],
         };
 
         Ok(Response::new(reply))
@@ -110,8 +110,8 @@ pub async fn run_envoy_rls_server(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::envoy_rls::server::envoy::api::v2::ratelimit::rate_limit_descriptor::Entry;
-    use crate::envoy_rls::server::envoy::api::v2::ratelimit::RateLimitDescriptor;
+    use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::rate_limit_descriptor::Entry;
+    use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::RateLimitDescriptor;
     use limitador::limit::Limit;
     use limitador::RateLimiter;
     use tonic::IntoRequest;
