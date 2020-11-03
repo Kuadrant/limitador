@@ -13,6 +13,9 @@ mod envoy_rls;
 mod http_api;
 
 const LIMITS_FILE_ENV: &str = "LIMITS_FILE";
+const DEFAULT_HOST: &str = "0.0.0.0";
+const DEFAULT_HTTP_API_PORT: u32 = 8080;
+const DEFAULT_ENVOY_RLS_PORT: u32 = 8081;
 
 pub enum Limiter {
     Blocking(RateLimiter),
@@ -56,8 +59,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await);
 
-    let envoy_rls_host = env::var("ENVOY_RLS_HOST").unwrap_or_else(|_| String::from("0.0.0.0"));
-    let envoy_rls_port = env::var("ENVOY_RLS_PORT").unwrap_or_else(|_| String::from("50052"));
+    let envoy_rls_host = env::var("ENVOY_RLS_HOST").unwrap_or_else(|_| String::from(DEFAULT_HOST));
+    let envoy_rls_port =
+        env::var("ENVOY_RLS_PORT").unwrap_or_else(|_| DEFAULT_ENVOY_RLS_PORT.to_string());
     let envoy_rls_address = format!("{}:{}", envoy_rls_host, envoy_rls_port);
     info!("Envoy RLS server starting on {}", envoy_rls_address);
     tokio::spawn(run_envoy_rls_server(
@@ -65,8 +69,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         rate_limiter.clone(),
     ));
 
-    let http_api_host = env::var("HTTP_API_HOST").unwrap_or_else(|_| String::from("0.0.0.0"));
-    let http_api_port = env::var("HTTP_API_PORT").unwrap_or_else(|_| String::from("8081"));
+    let http_api_host = env::var("HTTP_API_HOST").unwrap_or_else(|_| String::from(DEFAULT_HOST));
+    let http_api_port =
+        env::var("HTTP_API_PORT").unwrap_or_else(|_| DEFAULT_HTTP_API_PORT.to_string());
     let http_api_address = format!("{}:{}", http_api_host, http_api_port);
     run_http_server(&http_api_address, rate_limiter.clone()).await?;
 

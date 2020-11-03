@@ -56,8 +56,8 @@ To use Redis, specify the URL with `REDIS_URL`:
 REDIS_URL=redis://127.0.0.1:6379 cargo run --release --bin limitador-server
 ```
 
-By default, limitador starts the HTTP server in `localhost:8081` and the grpc
-service that implements the Envoy Rate Limit protocol in `localhost:50052`. That
+By default, limitador starts the HTTP server in `localhost:8080` and the grpc
+service that implements the Envoy Rate Limit protocol in `localhost:8081`. That
 can be configured with these ENVs: `ENVOY_RLS_HOST`, `ENVOY_RLS_PORT`,
 `HTTP_API_HOST`, and `HTTP_API_PORT`.
 
