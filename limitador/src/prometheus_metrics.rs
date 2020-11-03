@@ -4,13 +4,18 @@ use std::sync::Once;
 
 lazy_static! {
     static ref REGISTRY: Registry = Registry::new();
+
     static ref AUTHORIZED_CALLS: IntCounterVec = IntCounterVec::new(
         Opts::new("authorized_calls", "Authorized calls"),
         &["namespace"]
     )
     .unwrap();
-    static ref LIMITED_CALLS: IntCounterVec =
-        IntCounterVec::new(Opts::new("limited_calls", "Limited calls"), &["namespace"]).unwrap();
+
+    static ref LIMITED_CALLS: IntCounterVec = IntCounterVec::new(
+        Opts::new("limited_calls", "Limited calls"),
+        &["limitador_namespace"],
+    )
+    .unwrap();
 
     // This can be used as a simple health check
     static ref LIMITADOR_UP: IntGauge =
