@@ -106,8 +106,10 @@ mod test {
     test_with_all_storage_impls!(takes_into_account_only_vars_of_the_limits);
     test_with_all_storage_impls!(is_rate_limited_returns_false_when_no_limits_in_namespace);
     test_with_all_storage_impls!(is_rate_limited_returns_false_when_no_matching_limits);
+    test_with_all_storage_impls!(is_rate_limited_applies_limit_if_its_unconditional);
     test_with_all_storage_impls!(check_rate_limited_and_update);
     test_with_all_storage_impls!(check_rate_limited_and_update_returns_true_if_no_limits_apply);
+    test_with_all_storage_impls!(check_rate_limited_and_update_applies_limit_if_its_unconditional);
     test_with_all_storage_impls!(get_counters);
     test_with_all_storage_impls!(get_counters_returns_empty_when_no_limits_in_namespace);
     test_with_all_storage_impls!(get_counters_returns_empty_when_no_counters_in_namespace);
@@ -565,6 +567,28 @@ mod test {
         );
     }
 
+    async fn is_rate_limited_applies_limit_if_its_unconditional(rate_limiter: &mut TestsLimiter) {
+        let namespace = "test_namespace";
+
+        let limit = Limit::new(
+            namespace,
+            0, // So reporting 1 more would not be allowed
+            60,
+            Vec::<String>::new(), // unconditional
+            vec!["app_id"],
+        );
+
+        rate_limiter.add_limit(&limit).await.unwrap();
+
+        let mut values: HashMap<String, String> = HashMap::new();
+        values.insert("app_id".to_string(), "test_app_id".to_string());
+
+        assert!(rate_limiter
+            .is_rate_limited(namespace, &values, 1)
+            .await
+            .unwrap());
+    }
+
     async fn check_rate_limited_and_update(rate_limiter: &mut TestsLimiter) {
         let namespace = "test_namespace";
         let max_hits = 3;
@@ -623,6 +647,30 @@ mod test {
                 .await
                 .unwrap()
         );
+    }
+
+    async fn check_rate_limited_and_update_applies_limit_if_its_unconditional(
+        rate_limiter: &mut TestsLimiter,
+    ) {
+        let namespace = "test_namespace";
+
+        let limit = Limit::new(
+            namespace,
+            0, // So reporting 1 more would not be allowed
+            60,
+            Vec::<String>::new(), // unconditional
+            vec!["app_id"],
+        );
+
+        rate_limiter.add_limit(&limit).await.unwrap();
+
+        let mut values: HashMap<String, String> = HashMap::new();
+        values.insert("app_id".to_string(), "test_app_id".to_string());
+
+        assert!(rate_limiter
+            .check_rate_limited_and_update(namespace, &values, 1)
+            .await
+            .unwrap());
     }
 
     async fn get_counters(rate_limiter: &mut TestsLimiter) {
