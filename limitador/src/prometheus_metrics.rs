@@ -2,18 +2,20 @@ use crate::limit::Namespace;
 use prometheus::{Encoder, IntCounterVec, IntGauge, Opts, Registry, TextEncoder};
 use std::sync::Once;
 
+const NAMESPACE_LABEL: &str = "limitador_namespace";
+
 lazy_static! {
     static ref REGISTRY: Registry = Registry::new();
 
     static ref AUTHORIZED_CALLS: IntCounterVec = IntCounterVec::new(
         Opts::new("authorized_calls", "Authorized calls"),
-        &["namespace"]
+        &[NAMESPACE_LABEL]
     )
     .unwrap();
 
     static ref LIMITED_CALLS: IntCounterVec = IntCounterVec::new(
         Opts::new("limited_calls", "Limited calls"),
-        &["limitador_namespace"],
+        &[NAMESPACE_LABEL],
     )
     .unwrap();
 
