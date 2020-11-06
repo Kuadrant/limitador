@@ -8,7 +8,7 @@ use crate::envoy_rls::server::envoy::service::ratelimit::v3::{
 use crate::Limiter;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tonic::{transport, transport::Server, Request, Response, Status};
+use tonic::{transport::Server, Request, Response, Status};
 
 include!("envoy_types.rs");
 
@@ -102,10 +102,7 @@ impl RateLimitService for MyRateLimiter {
     }
 }
 
-pub async fn run_envoy_rls_server(
-    address: String,
-    limiter: Arc<Limiter>,
-) -> Result<(), transport::Error> {
+pub async fn run_envoy_rls_server(address: String, limiter: Arc<Limiter>) {
     let rate_limiter = MyRateLimiter::new(limiter);
     let svc = RateLimitServiceServer::new(rate_limiter);
 
@@ -113,6 +110,7 @@ pub async fn run_envoy_rls_server(
         .add_service(svc)
         .serve(address.parse().unwrap())
         .await
+        .unwrap()
 }
 
 #[cfg(test)]

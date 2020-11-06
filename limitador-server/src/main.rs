@@ -3,6 +3,7 @@ extern crate log;
 
 use crate::envoy_rls::server::run_envoy_rls_server;
 use crate::http_api::server::run_http_server;
+use futures::join;
 use limitador::limit::Limit;
 use limitador::storage::redis::{AsyncRedisStorage, CachedRedisStorageBuilder};
 use limitador::{AsyncRateLimiter, RateLimiter};
@@ -109,27 +110,38 @@ impl Limiter {
     }
 }
 
-#[actix_rt::main]
+#[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // TODO: Both actix and tonic create N threads (N = number of cpus). Tonic
+    // seems to use only the threads it creates, but Actix uses also the ones
+    // created by Tonic. We'd need to either create just N threads in total and
+    // make both frameworks use them or make Actix use only the threads it
+    // creates. This only happens when using the async redis storage
+    // implementation.
+
     env_logger::init();
 
     let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await);
+
+    let tokio_local = tokio::task::LocalSet::new();
+    let actix_system_handler = actix_rt::System::run_in_tokio("http-server", &tokio_local);
+    let http_api_host = env::var("HTTP_API_HOST").unwrap_or_else(|_| String::from(DEFAULT_HOST));
+    let http_api_port =
+        env::var("HTTP_API_PORT").unwrap_or_else(|_| DEFAULT_HTTP_API_PORT.to_string());
+    let http_api_address = format!("{}:{}", http_api_host, http_api_port);
+    let http_server_handler = run_http_server(&http_api_address, rate_limiter.clone());
 
     let envoy_rls_host = env::var("ENVOY_RLS_HOST").unwrap_or_else(|_| String::from(DEFAULT_HOST));
     let envoy_rls_port =
         env::var("ENVOY_RLS_PORT").unwrap_or_else(|_| DEFAULT_ENVOY_RLS_PORT.to_string());
     let envoy_rls_address = format!("{}:{}", envoy_rls_host, envoy_rls_port);
     info!("Envoy RLS server starting on {}", envoy_rls_address);
-    tokio::spawn(run_envoy_rls_server(
-        envoy_rls_address.to_string(),
-        rate_limiter.clone(),
-    ));
+    let envoy_rls_handler =
+        run_envoy_rls_server(envoy_rls_address.to_string(), rate_limiter.clone());
 
-    let http_api_host = env::var("HTTP_API_HOST").unwrap_or_else(|_| String::from(DEFAULT_HOST));
-    let http_api_port =
-        env::var("HTTP_API_PORT").unwrap_or_else(|_| DEFAULT_HTTP_API_PORT.to_string());
-    let http_api_address = format!("{}:{}", http_api_host, http_api_port);
-    run_http_server(&http_api_address, rate_limiter.clone()).await?;
+    join!(http_server_handler, envoy_rls_handler);
+
+    actix_system_handler.await?;
 
     Ok(())
 }

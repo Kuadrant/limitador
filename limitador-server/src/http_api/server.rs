@@ -1,5 +1,6 @@
 use crate::http_api::request_types::{CheckAndReportInfo, Counter, Limit};
 use crate::Limiter;
+use actix_web::dev::Server;
 use actix_web::{http::StatusCode, ResponseError};
 use actix_web::{App, HttpServer};
 use paperclip::actix::{
@@ -225,7 +226,7 @@ async fn check_and_report(
     }
 }
 
-pub async fn run_http_server(address: &str, rate_limiter: Arc<Limiter>) -> std::io::Result<()> {
+pub async fn run_http_server(address: &str, rate_limiter: Arc<Limiter>) -> Server {
     let data = web::Data::new(rate_limiter);
 
     // This uses the paperclip crate to generate an OpenAPI spec.
@@ -248,9 +249,9 @@ pub async fn run_http_server(address: &str, rate_limiter: Arc<Limiter>) -> std::
             .route("/report", web::post().to(report))
             .build()
     })
-    .bind(address)?
+    .bind(address)
+    .unwrap()
     .run()
-    .await
 }
 
 #[cfg(test)]
