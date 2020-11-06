@@ -1383,6 +1383,7 @@ dependencies = [
  "actix-rt",
  "actix-web",
  "env_logger",
+ "futures",
  "limitador",
  "log",
  "paperclip",
