@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: limitador-config
+  labels:
+    app: limitador
+data:
+  limits.yaml: |
+    ---
+    -
+      namespace: kuard
+      max_value: 1000
+      seconds: 1
+      conditions: []
+      variables:
+        - per_hostname_per_second_burst
