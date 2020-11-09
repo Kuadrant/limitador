@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kuard
+  labels:
+    app: kuard
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: kuard
+  template:
+    metadata:
+      labels:
+        app: kuard
+    spec:
+      containers:
+        - name: kuard
+          image: gcr.io/kuar-demo/kuard-amd64:blue
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+        - name: envoy
+          image: envoyproxy/envoy:v1.16.0
+          command: ["envoy"]
+          args: ["-c", "/etc/envoy.yaml", "--service-node", "kuard", "--service-cluster", "kuard"]
+          ports:
+            - name: envoy-http
+              containerPort: 38080
+              protocol: TCP
+            - name: envoy-metrics
+              containerPort: 9901
+              protocol: TCP
+          volumeMounts:
+          - name: kuard-envoy-config
+            mountPath: /etc/envoy.yaml
+            subPath: envoy.yaml
+      volumes:
+        - name: kuard-envoy-config
+          configMap:
+            name: kuard-envoy-config
