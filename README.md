@@ -15,6 +15,7 @@ protocol.
 - [**Getting started**](#getting-started)
 - [**Limits storage**](#limits-storage)
 - [**Development**](#development)
+- [**Kubernetes**](limitador-server/kubernetes/)
 - [**License**](#license)
 
 Limitador is under active development, and its API has not been stabilized yet.
