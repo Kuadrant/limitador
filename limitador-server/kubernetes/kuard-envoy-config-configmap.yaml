@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kuard-envoy-config
+  labels:
+    app: kuard
+data:
+  envoy.yaml: >
+    static_resources:
+      clusters:
+        - name: kuard
+          connect_timeout: 2s
+          type: STRICT_DNS
+          dns_lookup_family: V4_ONLY
+          lb_policy: ROUND_ROBIN
+          load_assignment:
+            cluster_name: kuard
+            endpoints:
+              - lb_endpoints:
+                  - endpoint:
+                      address:
+                        socket_address: { address: 127.0.0.1, port_value: 8080 }
+        - name: kuard_ratelimit
+          type: STRICT_DNS
+          connect_timeout: 1s
+          dns_lookup_family: V4_ONLY
+          lb_policy: ROUND_ROBIN
+          http2_protocol_options: {}
+          load_assignment:
+            cluster_name: kuard_ratelimit
+            endpoints:
+              - lb_endpoints:
+                  - endpoint:
+                      address:
+                        socket_address: { address: limitador, port_value: 8081 }
+      listeners:
+        - name: http
+          address:
+            socket_address:
+              address: 0.0.0.0
+              port_value: 38080
+          filter_chains:
+            - use_proxy_proto: true
+              filters:
+                - name: envoy.http_connection_manager
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.config.filter.network.http_connection_manager.v2.HttpConnectionManager
+                    use_remote_address: true
+                    access_log:
+                      - name: envoy.access_loggers.file
+                        typed_config:
+                          "@type": type.googleapis.com/envoy.config.accesslog.v2.FileAccessLog
+                          path: "/dev/stdout"
+                    stat_prefix: http
+                    route_config:
+                      name: local_route
+                      virtual_hosts:
+                        - name: kuard
+                          domains: ["*"]
+                          routes:
+                            - { route: { cluster: kuard }, match: { prefix: "/" } }
+                          rate_limits:
+                            - actions:
+                                - request_headers:
+                                    header_name: :authority
+                                    descriptor_key: per_hostname_per_second_burst
+                    http_filters:
+                      - name: envoy.filters.http.ratelimit
+                        typed_config:
+                          "@type": "type.googleapis.com/envoy.config.filter.http.rate_limit.v2.RateLimit"
+                          domain: kuard
+                          failure_mode_deny: false
+                          timeout: 1s
+                          rate_limit_service:
+                            grpc_service:
+                              { envoy_grpc: { cluster_name: kuard_ratelimit } }
+                      - name: envoy.filters.http.router
+    admin:
+      access_log_path: /dev/stdout
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 9901

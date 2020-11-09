@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+spec:
+  selector:
+    matchLabels:
+      statefulset: redis
+  serviceName: redis
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        statefulset: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:6.0
+          ports:
+            - containerPort: 6379
+              name: redis
+          livenessProbe:
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 5
+            exec:
+              command:
+              - redis-cli
+              - ping
+          readinessProbe:
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            successThreshold: 1
+            failureThreshold: 5
+            exec:
+              command:
+              - redis-cli
+              - ping
+          volumeMounts:
+          - name: redis-storage
+            mountPath: /data
+            subPath: data
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-storage
+      spec:
+        volumeMode: Filesystem
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi

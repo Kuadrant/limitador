@@ -1,0 +1,15 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: limitador
+  labels:
+    app: limitador
+spec:
+  podMetricsEndpoints:
+    - interval: 10s
+      path: /metrics
+      port: http
+      scheme: http
+  selector:
+    matchLabels:
+      app: limitador

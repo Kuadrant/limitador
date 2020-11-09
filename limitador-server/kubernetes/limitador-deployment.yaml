@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: limitador
+  labels:
+    app: limitador
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: limitador
+  template:
+    metadata:
+      labels:
+        app: limitador
+    spec:
+      containers:
+        - name: limitador
+          image: quay.io/3scale/limitador:0.2.0
+          imagePullPolicy: Always
+          env:
+            - name: RUST_LOG
+              value: info
+            - name: REDIS_URL
+              value: "redis://redis:6379"
+            - name: LIMITS_FILE
+              value: /home/limitador/limits.yaml
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /status
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 5
+            timeoutSeconds: 2
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /status
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          volumeMounts:
+            - mountPath: /home/limitador/limits.yaml
+              name: runtime-config
+              subPath: limits.yaml
+      volumes:
+        - name: runtime-config
+          configMap:
+            name: limitador-config
