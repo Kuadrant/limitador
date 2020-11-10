@@ -8,14 +8,14 @@ use std::collections::HashMap;
 // defined in the lib but with some modifications to be able to derive
 // Apiv2Schema (needed to generate the OpenAPI specs).
 
-#[derive(Deserialize, Apiv2Schema)]
+#[derive(Debug, Eq, PartialEq, Deserialize, Apiv2Schema)]
 pub struct CheckAndReportInfo {
     pub namespace: String,
     pub values: HashMap<String, String>,
     pub delta: i64,
 }
 
-#[derive(Serialize, Deserialize, Apiv2Schema)]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize, Apiv2Schema)]
 pub struct Limit {
     namespace: String,
     max_value: i64,
@@ -48,7 +48,7 @@ impl Into<LimitadorLimit> for Limit {
     }
 }
 
-#[derive(Serialize, Apiv2Schema)]
+#[derive(Debug, Eq, PartialEq, Serialize, Apiv2Schema)]
 pub struct Counter {
     limit: Limit,
     set_variables: HashMap<String, String>,
