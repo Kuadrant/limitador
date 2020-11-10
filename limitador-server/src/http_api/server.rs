@@ -250,3 +250,165 @@ pub async fn run_http_server(address: &str, rate_limiter: Arc<Limiter>) -> std::
     .run()
     .await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::{test, web};
+    use limitador::limit::Limit as LimitadorLimit;
+    use prost::bytes::Bytes;
+
+    #[actix_rt::test]
+    async fn test_status() {
+        let mut app = test::init_service(App::new().route("/status", web::get().to(status))).await;
+
+        let req = test::TestRequest::with_uri("/status").to_request();
+        let resp = test::call_service(&mut app, req).await;
+
+        assert!(resp.status().is_success());
+    }
+
+    #[actix_rt::test]
+    async fn test_metrics() {
+        let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await);
+        let data = web::Data::new(rate_limiter);
+        let mut app = test::init_service(
+            App::new()
+                .app_data(data.clone())
+                .route("/metrics", web::get().to(metrics)),
+        )
+        .await;
+
+        let req = test::TestRequest::get().uri("/metrics").to_request();
+        let resp = test::read_response(&mut app, req).await;
+
+        assert_eq!(
+            resp,
+            Bytes::from_static(
+                b"\
+                # HELP limitador_up Limitador is running\n\
+                # TYPE limitador_up gauge\n\
+                limitador_up 1\n\
+                "
+            )
+        );
+    }
+
+    #[actix_rt::test]
+    async fn test_limits_create_read_delete() {
+        let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await);
+        let data = web::Data::new(rate_limiter);
+        let mut app = test::init_service(
+            App::new()
+                .app_data(data.clone())
+                .route("/limits", web::post().to(create_limit))
+                .route("/limits", web::delete().to(delete_limit))
+                .route("/limits/{namespace}", web::get().to(get_limits)),
+        )
+        .await;
+
+        let namespace = "test_namespace";
+
+        // Create a limit
+        let limit = Limit::from(&LimitadorLimit::new(
+            namespace,
+            10,
+            60,
+            vec!["req.method == GET"],
+            vec!["app_id"],
+        ));
+        let req = test::TestRequest::post()
+            .uri("/limits")
+            .data(data.clone())
+            .set_json(&limit)
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+        assert!(resp.status().is_success());
+
+        // Read limit created
+        let req = test::TestRequest::get()
+            .uri(&format!("/limits/{}", namespace))
+            .data(data.clone())
+            .to_request();
+        let resp_limits: Vec<Limit> = test::read_response_json(&mut app, req).await;
+        assert_eq!(resp_limits.len(), 1);
+        assert_eq!(*resp_limits.get(0).unwrap(), limit);
+
+        // Delete limit
+        let req = test::TestRequest::delete()
+            .uri("/limits")
+            .data(data.clone())
+            .set_json(&limit)
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+        assert!(resp.status().is_success());
+
+        // Check that the list is now empty
+        let req = test::TestRequest::get()
+            .uri(&format!("/limits/{}", namespace))
+            .data(data.clone())
+            .to_request();
+        let resp_limits: Vec<Limit> = test::read_response_json(&mut app, req).await;
+        assert!(resp_limits.is_empty());
+    }
+
+    #[actix_rt::test]
+    async fn test_delete_all_limits_of_namespace() {
+        let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await);
+        let data = web::Data::new(rate_limiter);
+        let mut app = test::init_service(
+            App::new()
+                .app_data(data.clone())
+                .route("/limits", web::post().to(create_limit))
+                .route("/limits/{namespace}", web::get().to(get_limits))
+                .route("/limits/{namespace}", web::delete().to(delete_limits)),
+        )
+        .await;
+
+        let namespace = "test_namespace";
+
+        // Create several limits
+        let limits = vec![
+            Limit::from(&LimitadorLimit::new(
+                namespace,
+                10,
+                60,
+                vec!["req.method == GET"],
+                vec!["app_id"],
+            )),
+            Limit::from(&LimitadorLimit::new(
+                namespace,
+                5,
+                60,
+                vec!["req.method == POST"],
+                vec!["app_id"],
+            )),
+        ];
+
+        for limit in limits {
+            let req = test::TestRequest::post()
+                .uri("/limits")
+                .data(data.clone())
+                .set_json(&limit)
+                .to_request();
+            let resp = test::call_service(&mut app, req).await;
+            assert!(resp.status().is_success());
+        }
+
+        // Delete all the limits
+        let req = test::TestRequest::delete()
+            .uri(&format!("/limits/{}", namespace))
+            .data(data.clone())
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+        assert!(resp.status().is_success());
+
+        // Check that the list is now empty
+        let req = test::TestRequest::get()
+            .uri(&format!("/limits/{}", namespace))
+            .data(data.clone())
+            .to_request();
+        let resp_limits: Vec<Limit> = test::read_response_json(&mut app, req).await;
+        assert!(resp_limits.is_empty());
+    }
+}
