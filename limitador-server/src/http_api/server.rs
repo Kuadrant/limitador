@@ -256,7 +256,6 @@ mod tests {
     use super::*;
     use actix_web::{test, web};
     use limitador::limit::Limit as LimitadorLimit;
-    use prost::bytes::Bytes;
 
     #[actix_rt::test]
     async fn test_status() {
@@ -281,17 +280,11 @@ mod tests {
 
         let req = test::TestRequest::get().uri("/metrics").to_request();
         let resp = test::read_response(&mut app, req).await;
+        let resp_string = String::from_utf8(resp.to_vec()).unwrap();
 
-        assert_eq!(
-            resp,
-            Bytes::from_static(
-                b"\
-                # HELP limitador_up Limitador is running\n\
-                # TYPE limitador_up gauge\n\
-                limitador_up 1\n\
-                "
-            )
-        );
+        // No need to check the whole output. We just want to make sure that it
+        // returns something with the prometheus format.
+        assert!(resp_string.contains("# HELP limitador_up Limitador is running"));
     }
 
     #[actix_rt::test]
