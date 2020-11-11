@@ -8,7 +8,7 @@ use std::collections::HashMap;
 // defined in the lib but with some modifications to be able to derive
 // Apiv2Schema (needed to generate the OpenAPI specs).
 
-#[derive(Debug, Eq, PartialEq, Deserialize, Apiv2Schema)]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize, Apiv2Schema)]
 pub struct CheckAndReportInfo {
     pub namespace: String,
     pub values: HashMap<String, String>,
