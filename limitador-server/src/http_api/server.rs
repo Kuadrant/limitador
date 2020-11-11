@@ -256,6 +256,14 @@ mod tests {
     use super::*;
     use actix_web::{test, web};
     use limitador::limit::Limit as LimitadorLimit;
+    use std::collections::HashMap;
+
+    // All these tests use the in-memory storage implementation to simplify. We
+    // know that some storage implementations like the Redis one trade
+    // rate-limiting accuracy for performance. That would be a bit more
+    // complicated to test.
+    // Also, the logic behind these endpoints is well tested in the library,
+    // that's why running some simple tests here should be enough.
 
     #[actix_rt::test]
     async fn test_status() {
@@ -403,5 +411,137 @@ mod tests {
             .to_request();
         let resp_limits: Vec<Limit> = test::read_response_json(&mut app, req).await;
         assert!(resp_limits.is_empty());
+    }
+
+    #[actix_rt::test]
+    async fn test_check_and_report() {
+        let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await);
+        let data = web::Data::new(rate_limiter);
+        let mut app = test::init_service(
+            App::new()
+                .app_data(data.clone())
+                .route("/limits", web::post().to(create_limit))
+                .route("/check_and_report", web::post().to(check_and_report)),
+        )
+        .await;
+
+        // Crate a limit with max == 1
+
+        let namespace = "test_namespace";
+
+        let limit = Limit::from(&LimitadorLimit::new(
+            namespace,
+            1,
+            60,
+            vec!["req.method == GET"],
+            vec!["app_id"],
+        ));
+
+        let req = test::TestRequest::post()
+            .uri("/limits")
+            .data(data.clone())
+            .set_json(&limit)
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+        assert!(resp.status().is_success());
+
+        // Prepare values to check
+        let mut values = HashMap::new();
+        values.insert("req.method".into(), "GET".into());
+        values.insert("app_id".into(), "1".into());
+        let info = CheckAndReportInfo {
+            namespace: namespace.into(),
+            values,
+            delta: 1,
+        };
+
+        // The first request should be OK
+        let req = test::TestRequest::post()
+            .uri("/check_and_report")
+            .data(data.clone())
+            .set_json(&info)
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+        assert!(resp.status().is_success());
+
+        // The second request should be rate-limited
+        let req = test::TestRequest::post()
+            .uri("/check_and_report")
+            .data(data.clone())
+            .set_json(&info)
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[actix_rt::test]
+    async fn test_check_and_report_endpoints_separately() {
+        let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await);
+        let data = web::Data::new(rate_limiter);
+        let mut app = test::init_service(
+            App::new()
+                .app_data(data.clone())
+                .route("/limits", web::post().to(create_limit))
+                .route("/check", web::post().to(check))
+                .route("/report", web::post().to(report)),
+        )
+        .await;
+
+        // Crate a limit with max == 1
+
+        let namespace = "test_namespace";
+
+        let limit = Limit::from(&LimitadorLimit::new(
+            namespace,
+            1,
+            60,
+            vec!["req.method == GET"],
+            vec!["app_id"],
+        ));
+
+        let req = test::TestRequest::post()
+            .uri("/limits")
+            .data(data.clone())
+            .set_json(&limit)
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+        assert!(resp.status().is_success());
+
+        // Prepare values to check
+        let mut values = HashMap::new();
+        values.insert("req.method".into(), "GET".into());
+        values.insert("app_id".into(), "1".into());
+        let info = CheckAndReportInfo {
+            namespace: namespace.into(),
+            values,
+            delta: 1,
+        };
+
+        // Without making any requests, check should return OK
+        let req = test::TestRequest::post()
+            .uri("/check")
+            .data(data.clone())
+            .set_json(&info)
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+        assert!(resp.status().is_success());
+
+        // Do the first report
+        let req = test::TestRequest::post()
+            .uri("/report")
+            .data(data.clone())
+            .set_json(&info)
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+        assert!(resp.status().is_success());
+
+        // Should be rate-limited now
+        let req = test::TestRequest::post()
+            .uri("/check")
+            .data(data.clone())
+            .set_json(&info)
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 }
