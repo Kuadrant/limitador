@@ -51,11 +51,11 @@ impl RateLimitService for MyRateLimiter {
 
         let is_rate_limited_res = match &*self.limiter {
             Limiter::Blocking(limiter) => {
-                limiter.check_rate_limited_and_update(namespace, &values, 1)
+                limiter.check_rate_limited_and_update(namespace, &values, req.hits_addend as i64)
             }
             Limiter::Async(limiter) => {
                 limiter
-                    .check_rate_limited_and_update(namespace, &values, 1)
+                    .check_rate_limited_and_update(namespace, &values, req.hits_addend as i64)
                     .await
             }
         };
@@ -270,6 +270,57 @@ mod tests {
             ],
             hits_addend: 1,
         };
+
+        assert_eq!(
+            rate_limiter
+                .should_rate_limit(req.clone().into_request())
+                .await
+                .unwrap()
+                .into_inner()
+                .overall_code,
+            i32::from(Code::OverLimit)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_takes_into_account_the_hits_addend_param() {
+        let namespace = "test_namespace";
+        let limit = Limit::new(namespace, 10, 60, vec!["x == 1"], vec!["y"]);
+
+        let limiter = RateLimiter::default();
+        limiter.add_limit(&limit).unwrap();
+
+        let rate_limiter = MyRateLimiter::new(Arc::new(Limiter::Blocking(limiter)));
+
+        let req = RateLimitRequest {
+            domain: namespace.to_string(),
+            descriptors: vec![RateLimitDescriptor {
+                entries: vec![
+                    Entry {
+                        key: "x".to_string(),
+                        value: "1".to_string(),
+                    },
+                    Entry {
+                        key: "y".to_string(),
+                        value: "1".to_string(),
+                    },
+                ],
+            }],
+            hits_addend: 6,
+        };
+
+        // There's a limit of 10, "hits_addend" is 6, so the first request
+        // should return "Ok" and the second "OverLimit".
+
+        assert_eq!(
+            rate_limiter
+                .should_rate_limit(req.clone().into_request())
+                .await
+                .unwrap()
+                .into_inner()
+                .overall_code,
+            i32::from(Code::Ok)
+        );
 
         assert_eq!(
             rate_limiter
