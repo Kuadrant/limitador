@@ -85,6 +85,8 @@ forwards the "userid" header and the request method to Limitador. It assumes
 that there's an upstream API deployed in the port 1323. You can use
 [echo](https://github.com/labstack/echo), for example.
 
+Limitador has several options that can be configured via ENV. This
+[doc](limitador-server/docs/configuration.md) specifies them.
 
 ## Limits storage
 
