@@ -223,6 +223,10 @@ impl AsyncRedisStorage {
         }
     }
 
+    pub fn new_with_conn_manager(conn_manager: ConnectionManager) -> AsyncRedisStorage {
+        AsyncRedisStorage { conn_manager }
+    }
+
     async fn delete_counters_of_namespace(&self, namespace: &Namespace) -> Result<(), StorageErr> {
         for limit in self.get_limits(namespace).await? {
             self.delete_counters_associated_with_limit(&limit).await?

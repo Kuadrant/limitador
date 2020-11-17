@@ -12,7 +12,7 @@ edition = "2018"
 # We make redis optional to be able to compile for wasm32.
 [features]
 default = ["redis_storage"]
-redis_storage = ["redis", "r2d2"]
+redis_storage = ["redis", "r2d2", "tokio"]
 
 [dependencies]
 ttl_cache = "0.5"
@@ -28,13 +28,13 @@ lazy_static = "1.4"
 # Optional dependencies
 redis = { version = "0.17", optional = true, features = ["connection-manager"] }
 r2d2 = { version = "0.8", optional = true }
+tokio = { version = "0.2", optional = true, features = ["rt-core", "macros", "time"] }
 
 [dev-dependencies]
 serial_test = "0.5"
 criterion = "0.3"
 paste = "1.0"
 rand = "0.7"
-tokio = { version = "0.2", features = ["rt-core", "macros"] } # To be able to use #[tokio::test]
 
 [[bench]]
 name = "bench"
