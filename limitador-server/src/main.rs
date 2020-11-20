@@ -4,10 +4,11 @@ extern crate log;
 use crate::envoy_rls::server::run_envoy_rls_server;
 use crate::http_api::server::run_http_server;
 use limitador::limit::Limit;
-use limitador::storage::redis::AsyncRedisStorage;
+use limitador::storage::redis::{AsyncRedisStorage, CachedRedisStorageBuilder};
 use limitador::{AsyncRateLimiter, RateLimiter};
 use std::env;
 use std::sync::Arc;
+use std::time::Duration;
 
 mod envoy_rls;
 mod http_api;
@@ -16,6 +17,7 @@ const LIMITS_FILE_ENV: &str = "LIMITS_FILE";
 const DEFAULT_HOST: &str = "0.0.0.0";
 const DEFAULT_HTTP_API_PORT: u32 = 8080;
 const DEFAULT_ENVOY_RLS_PORT: u32 = 8081;
+const ENV_OPTION_ENABLED: &str = "1";
 
 pub enum Limiter {
     Blocking(RateLimiter),
@@ -25,19 +27,67 @@ pub enum Limiter {
 impl Limiter {
     pub async fn new() -> Limiter {
         let rate_limiter = match env::var("REDIS_URL") {
-            // Let's use the async impl. This could be configurable if needed.
             Ok(redis_url) => {
-                let async_limiter = AsyncRateLimiter::new_with_storage(Box::new(
-                    AsyncRedisStorage::new(&redis_url).await,
-                ));
-                Limiter::Async(async_limiter)
+                if Self::env_option_is_enabled("REDIS_LOCAL_CACHE_ENABLED") {
+                    Self::limiter_with_redis_and_local_cache(&redis_url).await
+                } else {
+                    // Let's use the async impl. This could be configurable if needed.
+                    Self::limiter_with_async_redis(&redis_url).await
+                }
             }
-            Err(_) => Limiter::Blocking(RateLimiter::default()),
+            Err(_) => Self::default_blocking_limiter(),
         };
 
         rate_limiter.load_limits_from_file().await;
 
         rate_limiter
+    }
+
+    async fn limiter_with_async_redis(redis_url: &str) -> Limiter {
+        let async_limiter =
+            AsyncRateLimiter::new_with_storage(Box::new(AsyncRedisStorage::new(&redis_url).await));
+        Limiter::Async(async_limiter)
+    }
+
+    async fn limiter_with_redis_and_local_cache(redis_url: &str) -> Limiter {
+        // TODO: Not all the options are configurable via ENV. Add them as needed.
+
+        let mut cached_redis_storage = CachedRedisStorageBuilder::new(&redis_url);
+
+        if let Ok(flushing_period_secs) = env::var("REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS") {
+            cached_redis_storage = cached_redis_storage
+                .flushing_period(Duration::from_millis(flushing_period_secs.parse().unwrap()))
+        };
+
+        if let Ok(max_ttl_cached_counters) =
+            env::var("REDIS_LOCAL_CACHE_MAX_TTL_CACHED_COUNTERS_MS")
+        {
+            cached_redis_storage = cached_redis_storage.max_ttl_cached_counters(
+                Duration::from_millis(max_ttl_cached_counters.parse().unwrap()),
+            )
+        }
+
+        if let Ok(ttl_ratio_cached_counters) =
+            env::var("REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS")
+        {
+            cached_redis_storage = cached_redis_storage
+                .ttl_ratio_cached_counters(ttl_ratio_cached_counters.parse().unwrap());
+        }
+
+        let async_limiter =
+            AsyncRateLimiter::new_with_storage(Box::new(cached_redis_storage.build().await));
+        Limiter::Async(async_limiter)
+    }
+
+    fn default_blocking_limiter() -> Limiter {
+        Limiter::Blocking(RateLimiter::default())
+    }
+
+    fn env_option_is_enabled(env_name: &str) -> bool {
+        match env::var(env_name) {
+            Ok(value) => value == ENV_OPTION_ENABLED,
+            Err(_) => false,
+        }
     }
 
     async fn load_limits_from_file(&self) {
