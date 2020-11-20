@@ -70,10 +70,12 @@ impl CountersCache {
     }
 
     pub fn insert(&mut self, counter: Counter, redis_val: Option<i64>, redis_ttl: i64) {
+        let counter_val = Self::value_from_redis_val(redis_val, counter.max_value());
+
         self.cache.insert(
             counter.clone(),
-            Self::value_from_redis_val(redis_val, counter.max_value()),
-            Self::ttl_from_redis_ttl(redis_ttl, counter.seconds()),
+            counter_val,
+            Self::ttl_from_redis_ttl(redis_ttl, counter.seconds(), counter_val),
         );
     }
 
@@ -90,7 +92,7 @@ impl CountersCache {
         }
     }
 
-    fn ttl_from_redis_ttl(redis_ttl: i64, counter_seconds: u64) -> Duration {
+    fn ttl_from_redis_ttl(redis_ttl: i64, counter_seconds: u64, counter_val: i64) -> Duration {
         // Redis returns -2 when the key does not exist. Ref:
         // https://redis.io/commands/ttl
         // This function returns a ttl of the given counter seconds in this
@@ -101,6 +103,14 @@ impl CountersCache {
         } else {
             Duration::from_secs(counter_seconds)
         };
+
+        // If a counter is already at 0, we can cache it for as long as its TTL
+        // is in Redis. This does not depend on the requests received by other
+        // instances of Limitador. No matter what they do, we know that the
+        // counter is not going to recover its quota until it expires in Redis.
+        if counter_val <= 0 {
+            return counter_ttl;
+        }
 
         // Expire the counter in the cache before it expires in Redis.
         // There might be several Limitador instances updating the Redis
