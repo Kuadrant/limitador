@@ -1,6 +1,7 @@
 use ::redis::RedisError;
 
 mod batcher;
+mod counters_cache;
 mod redis_async;
 mod redis_cached;
 mod redis_keys;
