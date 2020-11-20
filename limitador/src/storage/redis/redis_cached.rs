@@ -1,6 +1,7 @@
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
 use crate::storage::redis::batcher::Batcher;
+use crate::storage::redis::counters_cache::CountersCache;
 use crate::storage::redis::redis_async::AsyncRedisStorage;
 use crate::storage::redis::redis_keys::*;
 use crate::storage::{AsyncStorage, StorageErr};
@@ -39,9 +40,6 @@ use ttl_cache::TtlCache;
 const DEFAULT_FLUSHING_PERIOD: Duration = Duration::from_secs(1);
 const DEFAULT_TTL_CACHED_LIMITS: Duration = Duration::from_secs(10);
 const DEFAULT_MAX_CACHED_NAMESPACES: usize = 1000;
-const DEFAULT_MAX_CACHED_COUNTERS: usize = 10000;
-const MAX_TTL_CACHED_COUNTER: Duration = Duration::from_secs(5);
-const TTL_RATIO_CACHED_COUNTER: u64 = 10;
 
 pub struct CachedRedisStorage {
     cached_limits_by_namespace: Mutex<TtlCache<Namespace, HashSet<Limit>>>,
@@ -49,76 +47,6 @@ pub struct CachedRedisStorage {
     batcher_counter_updates: Arc<Mutex<Batcher>>,
     async_redis_storage: AsyncRedisStorage,
     redis_conn_manager: ConnectionManager,
-}
-
-struct CountersCache {
-    cache: TtlCache<Counter, i64>,
-}
-
-impl CountersCache {
-    pub fn new() -> CountersCache {
-        CountersCache {
-            cache: TtlCache::new(DEFAULT_MAX_CACHED_COUNTERS),
-        }
-    }
-
-    pub fn get(&self, counter: &Counter) -> Option<i64> {
-        match self.cache.get(counter) {
-            Some(val) => Some(*val),
-            None => None,
-        }
-    }
-
-    pub fn insert(&mut self, counter: Counter, redis_val: Option<i64>, redis_ttl: i64) {
-        self.cache.insert(
-            counter.clone(),
-            Self::value_from_redis_val(redis_val, counter.max_value()),
-            Self::ttl_from_redis_ttl(redis_ttl, counter.seconds()),
-        );
-    }
-
-    pub fn decrease_by(&mut self, counter: &Counter, delta: i64) {
-        if let Some(val) = self.cache.get_mut(counter) {
-            *val -= delta
-        };
-    }
-
-    fn value_from_redis_val(redis_val: Option<i64>, counter_max: i64) -> i64 {
-        match redis_val {
-            Some(val) => val,
-            None => counter_max,
-        }
-    }
-
-    fn ttl_from_redis_ttl(redis_ttl: i64, counter_seconds: u64) -> Duration {
-        // Redis returns -2 when the key does not exist. Ref:
-        // https://redis.io/commands/ttl
-        // This function returns a ttl of the given counter seconds in this
-        // case.
-
-        let counter_ttl = if redis_ttl >= 0 {
-            Duration::from_secs(redis_ttl as u64)
-        } else {
-            Duration::from_secs(counter_seconds)
-        };
-
-        // Expire the counter in the cache before it expires in Redis.
-        // There might be several Limitador instances updating the Redis
-        // counter. The tradeoff is as follows: the shorter the TTL in the
-        // cache, the sooner we'll take into account those updates coming from
-        // other instances. If the TTL in the cache is long, there will be less
-        // accesses to Redis, so latencies will be better. However, it'll be
-        // easier to go over the limits defined, because not taking into account
-        // updates from other Limitador instances.
-        let mut res =
-            Duration::from_millis(counter_ttl.as_millis() as u64 / TTL_RATIO_CACHED_COUNTER);
-
-        if res > MAX_TTL_CACHED_COUNTER {
-            res = MAX_TTL_CACHED_COUNTER;
-        }
-
-        res
-    }
 }
 
 #[async_trait]
