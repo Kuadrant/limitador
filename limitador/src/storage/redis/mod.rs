@@ -11,6 +11,7 @@ mod scripts;
 use crate::storage::StorageErr;
 pub use redis_async::AsyncRedisStorage;
 pub use redis_cached::CachedRedisStorage;
+pub use redis_cached::CachedRedisStorageBuilder;
 pub use redis_sync::RedisStorage;
 
 impl From<RedisError> for StorageErr {

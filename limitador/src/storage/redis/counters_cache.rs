@@ -2,21 +2,62 @@ use crate::counter::Counter;
 use std::time::Duration;
 use ttl_cache::TtlCache;
 
-const DEFAULT_MAX_CACHED_COUNTERS: usize = 10000;
-const MAX_TTL_CACHED_COUNTER: Duration = Duration::from_secs(5);
-const TTL_RATIO_CACHED_COUNTER: u64 = 10;
+pub const DEFAULT_MAX_CACHED_COUNTERS: usize = 10000;
+pub const DEFAULT_MAX_TTL_CACHED_COUNTERS: Duration = Duration::from_secs(5);
+pub const DEFAULT_TTL_RATIO_CACHED_COUNTERS: u64 = 10;
 
 pub struct CountersCache {
+    max_ttl_cached_counters: Duration,
+    ttl_ratio_cached_counters: u64,
     cache: TtlCache<Counter, i64>,
 }
 
-impl CountersCache {
-    pub fn new() -> CountersCache {
-        CountersCache {
-            cache: TtlCache::new(DEFAULT_MAX_CACHED_COUNTERS),
+pub struct CountersCacheBuilder {
+    max_cached_counters: usize,
+    max_ttl_cached_counters: Duration,
+    ttl_ratio_cached_counters: u64,
+}
+
+impl CountersCacheBuilder {
+    pub fn new() -> CountersCacheBuilder {
+        CountersCacheBuilder {
+            max_cached_counters: DEFAULT_MAX_CACHED_COUNTERS,
+            max_ttl_cached_counters: DEFAULT_MAX_TTL_CACHED_COUNTERS,
+            ttl_ratio_cached_counters: DEFAULT_TTL_RATIO_CACHED_COUNTERS,
         }
     }
 
+    pub fn max_cached_counters(mut self, max_cached_counters: usize) -> CountersCacheBuilder {
+        self.max_cached_counters = max_cached_counters;
+        self
+    }
+
+    pub fn max_ttl_cached_counter(
+        mut self,
+        max_ttl_cached_counter: Duration,
+    ) -> CountersCacheBuilder {
+        self.max_ttl_cached_counters = max_ttl_cached_counter;
+        self
+    }
+
+    pub fn ttl_ratio_cached_counter(
+        mut self,
+        ttl_ratio_cached_counter: u64,
+    ) -> CountersCacheBuilder {
+        self.ttl_ratio_cached_counters = ttl_ratio_cached_counter;
+        self
+    }
+
+    pub fn build(&self) -> CountersCache {
+        CountersCache {
+            max_ttl_cached_counters: self.max_ttl_cached_counters,
+            ttl_ratio_cached_counters: self.ttl_ratio_cached_counters,
+            cache: TtlCache::new(self.max_cached_counters),
+        }
+    }
+}
+
+impl CountersCache {
     pub fn get(&self, counter: &Counter) -> Option<i64> {
         match self.cache.get(counter) {
             Some(val) => Some(*val),
@@ -30,7 +71,7 @@ impl CountersCache {
         self.cache.insert(
             counter.clone(),
             counter_val,
-            Self::ttl_from_redis_ttl(redis_ttl, counter.seconds(), counter_val),
+            self.ttl_from_redis_ttl(redis_ttl, counter.seconds(), counter_val),
         );
     }
 
@@ -47,7 +88,12 @@ impl CountersCache {
         }
     }
 
-    fn ttl_from_redis_ttl(redis_ttl: i64, counter_seconds: u64, counter_val: i64) -> Duration {
+    fn ttl_from_redis_ttl(
+        &self,
+        redis_ttl: i64,
+        counter_seconds: u64,
+        counter_val: i64,
+    ) -> Duration {
         // Redis returns -2 when the key does not exist. Ref:
         // https://redis.io/commands/ttl
         // This function returns a ttl of the given counter seconds in this
@@ -76,10 +122,10 @@ impl CountersCache {
         // easier to go over the limits defined, because not taking into account
         // updates from other Limitador instances.
         let mut res =
-            Duration::from_millis(counter_ttl.as_millis() as u64 / TTL_RATIO_CACHED_COUNTER);
+            Duration::from_millis(counter_ttl.as_millis() as u64 / self.ttl_ratio_cached_counters);
 
-        if res > MAX_TTL_CACHED_COUNTER {
-            res = MAX_TTL_CACHED_COUNTER;
+        if res > self.max_ttl_cached_counters {
+            res = self.max_ttl_cached_counters;
         }
 
         res
