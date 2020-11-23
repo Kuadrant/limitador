@@ -49,6 +49,7 @@ pub struct CachedRedisStorage {
     batcher_counter_updates: Arc<Mutex<Batcher>>,
     async_redis_storage: AsyncRedisStorage,
     redis_conn_manager: ConnectionManager,
+    batching_is_enabled: bool,
 }
 
 #[async_trait]
@@ -146,11 +147,15 @@ impl AsyncStorage for CachedRedisStorage {
         for counter in counters {
             cached_counters.decrease_by(counter, delta);
 
-            self.batcher_counter_updates
-                .lock()
-                .await
-                .add_counter(counter, delta)
-                .await;
+            if self.batching_is_enabled {
+                self.batcher_counter_updates
+                    .lock()
+                    .await
+                    .add_counter(counter, delta)
+                    .await;
+            } else {
+                self.update_counter(counter, delta).await?
+            }
         }
 
         Ok(true)
@@ -171,7 +176,7 @@ impl CachedRedisStorage {
             redis_url,
             DEFAULT_MAX_CACHED_NAMESPACES,
             DEFAULT_TTL_CACHED_LIMITS,
-            DEFAULT_FLUSHING_PERIOD,
+            Some(DEFAULT_FLUSHING_PERIOD),
             DEFAULT_MAX_CACHED_COUNTERS,
             DEFAULT_MAX_TTL_CACHED_COUNTERS,
             DEFAULT_TTL_RATIO_CACHED_COUNTERS,
@@ -183,7 +188,7 @@ impl CachedRedisStorage {
         redis_url: &str,
         max_cached_namespaces: usize,
         ttl_cached_limits: Duration,
-        flushing_period: Duration,
+        flushing_period: Option<Duration>,
         max_cached_counters: usize,
         ttl_cached_counters: Duration,
         ttl_ratio_cached_counters: u64,
@@ -197,17 +202,19 @@ impl CachedRedisStorage {
             AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone());
 
         let batcher = Arc::new(Mutex::new(Batcher::new(async_redis_storage.clone())));
-        let batcher_flusher = batcher.clone();
-        tokio::spawn(async move {
-            loop {
-                let time_start = Instant::now();
-                batcher_flusher.lock().await.flush().await;
-                let sleep_time = flushing_period
-                    .checked_sub(time_start.elapsed())
-                    .unwrap_or_else(|| Duration::from_secs(0));
-                tokio::time::delay_for(sleep_time).await;
-            }
-        });
+        if let Some(flushing_period) = flushing_period {
+            let batcher_flusher = batcher.clone();
+            tokio::spawn(async move {
+                loop {
+                    let time_start = Instant::now();
+                    batcher_flusher.lock().await.flush().await;
+                    let sleep_time = flushing_period
+                        .checked_sub(time_start.elapsed())
+                        .unwrap_or_else(|| Duration::from_secs(0));
+                    tokio::time::delay_for(sleep_time).await;
+                }
+            });
+        }
 
         let cached_counters = CountersCacheBuilder::new()
             .max_cached_counters(max_cached_counters)
@@ -222,6 +229,7 @@ impl CachedRedisStorage {
             batcher_counter_updates: batcher,
             redis_conn_manager,
             async_redis_storage,
+            batching_is_enabled: flushing_period.is_some(),
         }
     }
 
@@ -257,7 +265,7 @@ pub struct CachedRedisStorageBuilder {
     redis_url: String,
     max_cached_namespaces: usize,
     ttl_cached_limits: Duration,
-    flushing_period: Duration,
+    flushing_period: Option<Duration>,
     max_cached_counters: usize,
     max_ttl_cached_counters: Duration,
     ttl_ratio_cached_counters: u64,
@@ -269,7 +277,7 @@ impl CachedRedisStorageBuilder {
             redis_url: redis_url.to_string(),
             max_cached_namespaces: DEFAULT_MAX_CACHED_NAMESPACES,
             ttl_cached_limits: DEFAULT_TTL_CACHED_LIMITS,
-            flushing_period: DEFAULT_FLUSHING_PERIOD,
+            flushing_period: Some(DEFAULT_FLUSHING_PERIOD),
             max_cached_counters: DEFAULT_MAX_CACHED_COUNTERS,
             max_ttl_cached_counters: DEFAULT_MAX_TTL_CACHED_COUNTERS,
             ttl_ratio_cached_counters: DEFAULT_TTL_RATIO_CACHED_COUNTERS,
@@ -289,7 +297,10 @@ impl CachedRedisStorageBuilder {
         self
     }
 
-    pub fn flushing_period(mut self, flushing_period: Duration) -> CachedRedisStorageBuilder {
+    pub fn flushing_period(
+        mut self,
+        flushing_period: Option<Duration>,
+    ) -> CachedRedisStorageBuilder {
         self.flushing_period = flushing_period;
         self
     }

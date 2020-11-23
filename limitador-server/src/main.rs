@@ -55,8 +55,14 @@ impl Limiter {
         let mut cached_redis_storage = CachedRedisStorageBuilder::new(&redis_url);
 
         if let Ok(flushing_period_secs) = env::var("REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS") {
-            cached_redis_storage = cached_redis_storage
-                .flushing_period(Duration::from_millis(flushing_period_secs.parse().unwrap()))
+            let parsed_flushing_period: i64 = flushing_period_secs.parse().unwrap();
+
+            if parsed_flushing_period < 0 {
+                cached_redis_storage = cached_redis_storage.flushing_period(None)
+            } else {
+                cached_redis_storage = cached_redis_storage
+                    .flushing_period(Some(Duration::from_millis(parsed_flushing_period as u64)))
+            }
         };
 
         if let Ok(max_ttl_cached_counters) =
