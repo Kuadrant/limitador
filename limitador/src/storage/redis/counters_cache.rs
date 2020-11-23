@@ -67,12 +67,11 @@ impl CountersCache {
 
     pub fn insert(&mut self, counter: Counter, redis_val: Option<i64>, redis_ttl: i64) {
         let counter_val = Self::value_from_redis_val(redis_val, counter.max_value());
+        let counter_ttl = self.ttl_from_redis_ttl(redis_ttl, counter.seconds(), counter_val);
 
-        self.cache.insert(
-            counter.clone(),
-            counter_val,
-            self.ttl_from_redis_ttl(redis_ttl, counter.seconds(), counter_val),
-        );
+        if counter_ttl > Duration::from_secs(0) {
+            self.cache.insert(counter, counter_val, counter_ttl);
+        }
     }
 
     pub fn decrease_by(&mut self, counter: &Counter, delta: i64) {
