@@ -7,6 +7,7 @@ use crate::storage::redis::counters_cache::{
 };
 use crate::storage::redis::redis_async::AsyncRedisStorage;
 use crate::storage::redis::redis_keys::*;
+use crate::storage::redis::scripts::VALUES_AND_TTLS;
 use crate::storage::{AsyncStorage, StorageErr};
 use async_trait::async_trait;
 use redis::aio::ConnectionManager;
@@ -242,20 +243,24 @@ impl CachedRedisStorage {
             .map(|counter| key_for_counter(counter))
             .collect();
 
-        let counter_vals: Vec<Option<i64>> = redis::cmd("MGET")
-            .arg(counter_keys.clone())
-            .query_async(&mut redis_con.clone())
-            .await?;
-
-        let mut redis_pipeline = redis::pipe();
-        redis_pipeline.atomic();
+        let script = redis::Script::new(VALUES_AND_TTLS);
+        let mut script_invocation = script.prepare_invoke();
 
         for counter_key in counter_keys {
-            redis_pipeline.cmd("TTL").arg(counter_key);
+            script_invocation.key(counter_key);
         }
 
-        let counter_ttls_secs: Vec<i64> =
-            redis_pipeline.query_async(&mut redis_con.clone()).await?;
+        let script_res: Vec<Option<i64>> = script_invocation
+            .invoke_async::<_, _>(&mut redis_con.clone())
+            .await?;
+
+        let mut counter_vals: Vec<Option<i64>> = vec![];
+        let mut counter_ttls_secs: Vec<i64> = vec![];
+
+        for val_ttl_pair in script_res.chunks(2) {
+            counter_vals.push(val_ttl_pair[0]);
+            counter_ttls_secs.push(val_ttl_pair[1].unwrap());
+        }
 
         Ok((counter_vals, counter_ttls_secs))
     }
