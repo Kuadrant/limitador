@@ -34,8 +34,6 @@ use ttl_cache::TtlCache;
 // by tuning the constants below.
 //
 // Future improvements:
-// - We shouldn't just cache the remaining of the counter. We should take into
-// account that there might be other instances running.
 // - Introduce a mechanism to avoid going to Redis to fetch the same counter
 // multiple times when it is not cached.
 
@@ -96,6 +94,10 @@ impl AsyncStorage for CachedRedisStorage {
             .await
     }
 
+    // Notice that this method does not guarantee 100% accuracy when applying the
+    // limits. In order to do so, we'd need to run this whole function
+    // atomically, but that'd be too slow.
+    // This function trades accuracy for speed.
     async fn check_and_update(
         &self,
         counters: &HashSet<&Counter>,
@@ -106,16 +108,18 @@ impl AsyncStorage for CachedRedisStorage {
         let mut not_cached: Vec<&Counter> = vec![];
 
         // Check cached counters
-        let mut cached_counters = self.cached_counters.lock().await;
-        for counter in counters {
-            match cached_counters.get(counter) {
-                Some(val) => {
-                    if val - delta < 0 {
-                        return Ok(false);
+        {
+            let cached_counters = self.cached_counters.lock().await;
+            for counter in counters {
+                match cached_counters.get(counter) {
+                    Some(val) => {
+                        if val - delta < 0 {
+                            return Ok(false);
+                        }
                     }
-                }
-                None => {
-                    not_cached.push(counter);
+                    None => {
+                        not_cached.push(counter);
+                    }
                 }
             }
         }
@@ -134,13 +138,16 @@ impl AsyncStorage for CachedRedisStorage {
             let ttl_margin =
                 Duration::from_millis((Instant::now() - time_start_get_ttl).as_millis() as u64);
 
-            for (i, &counter) in not_cached.iter().enumerate() {
-                cached_counters.insert(
-                    counter.clone(),
-                    counter_vals[i],
-                    counter_ttls_secs[i],
-                    ttl_margin,
-                );
+            {
+                let mut cached_counters = self.cached_counters.lock().await;
+                for (i, &counter) in not_cached.iter().enumerate() {
+                    cached_counters.insert(
+                        counter.clone(),
+                        counter_vals[i],
+                        counter_ttls_secs[i],
+                        ttl_margin,
+                    );
+                }
             }
 
             for (i, counter) in not_cached.iter().enumerate() {
@@ -159,16 +166,22 @@ impl AsyncStorage for CachedRedisStorage {
             }
         }
 
-        for counter in counters {
-            cached_counters.decrease_by(counter, delta);
+        // Update cached values
+        {
+            let mut cached_counters = self.cached_counters.lock().await;
+            for counter in counters {
+                cached_counters.decrease_by(counter, delta);
+            }
+        }
 
-            if self.batching_is_enabled {
-                self.batcher_counter_updates
-                    .lock()
-                    .await
-                    .add_counter(counter, delta)
-                    .await;
-            } else {
+        // Batch or update depending on configuration
+        if self.batching_is_enabled {
+            let batcher = self.batcher_counter_updates.lock().await;
+            for counter in counters {
+                batcher.add_counter(counter, delta).await
+            }
+        } else {
+            for counter in counters {
                 self.update_counter(counter, delta).await?
             }
         }
