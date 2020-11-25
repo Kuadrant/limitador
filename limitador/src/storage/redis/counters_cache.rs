@@ -65,12 +65,19 @@ impl CountersCache {
         }
     }
 
-    pub fn insert(&mut self, counter: Counter, redis_val: Option<i64>, redis_ttl: i64) {
+    pub fn insert(
+        &mut self,
+        counter: Counter,
+        redis_val: Option<i64>,
+        redis_ttl: i64,
+        ttl_margin: Duration,
+    ) {
         let counter_val = Self::value_from_redis_val(redis_val, counter.max_value());
         let counter_ttl = self.ttl_from_redis_ttl(redis_ttl, counter.seconds(), counter_val);
-
-        if counter_ttl > Duration::from_secs(0) {
-            self.cache.insert(counter, counter_val, counter_ttl);
+        if let Some(ttl) = counter_ttl.checked_sub(ttl_margin) {
+            if ttl > Duration::from_secs(0) {
+                self.cache.insert(counter, counter_val, ttl);
+            }
         }
     }
 

@@ -122,11 +122,25 @@ impl AsyncStorage for CachedRedisStorage {
 
         // Fetch non-cached counters, cache them, and check them
         if !not_cached.is_empty() {
+            let time_start_get_ttl = Instant::now();
+
             let (counter_vals, counter_ttls_secs) =
                 Self::values_with_ttls(&not_cached, &mut con).await?;
 
+            // Some time could have passed from the moment we got the TTL from Redis.
+            // This margin is not exact, because we don't know exactly the
+            // moment that Redis returned a particular TTL, but this
+            // approximation should be good enough.
+            let ttl_margin =
+                Duration::from_millis((Instant::now() - time_start_get_ttl).as_millis() as u64);
+
             for (i, &counter) in not_cached.iter().enumerate() {
-                cached_counters.insert(counter.clone(), counter_vals[i], counter_ttls_secs[i]);
+                cached_counters.insert(
+                    counter.clone(),
+                    counter_vals[i],
+                    counter_ttls_secs[i],
+                    ttl_margin,
+                );
             }
 
             for (i, counter) in not_cached.iter().enumerate() {
