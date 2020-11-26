@@ -137,3 +137,130 @@ impl CountersCache {
         res
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::limit::Limit;
+    use std::collections::HashMap;
+
+    #[test]
+    fn get_existing_counter() {
+        let mut values = HashMap::new();
+        values.insert("app_id".to_string(), "1".to_string());
+        let counter = Counter::new(
+            Limit::new(
+                "test_namespace",
+                10,
+                60,
+                vec!["req.method == POST"],
+                vec!["app_id"],
+            ),
+            values,
+        );
+
+        let mut cache = CountersCacheBuilder::new().build();
+        cache.insert(counter.clone(), Some(10), 10, Duration::from_secs(0));
+
+        assert!(cache.get(&counter).is_some());
+    }
+
+    #[test]
+    fn get_non_existing_counter() {
+        let mut values = HashMap::new();
+        values.insert("app_id".to_string(), "1".to_string());
+        let counter = Counter::new(
+            Limit::new(
+                "test_namespace",
+                10,
+                60,
+                vec!["req.method == POST"],
+                vec!["app_id"],
+            ),
+            values,
+        );
+
+        let cache = CountersCacheBuilder::new().build();
+
+        assert!(cache.get(&counter).is_none());
+    }
+
+    #[test]
+    fn insert_saves_the_given_value_when_is_some() {
+        let max_val = 10;
+        let current_value = max_val / 2;
+        let mut values = HashMap::new();
+        values.insert("app_id".to_string(), "1".to_string());
+        let counter = Counter::new(
+            Limit::new(
+                "test_namespace",
+                max_val,
+                60,
+                vec!["req.method == POST"],
+                vec!["app_id"],
+            ),
+            values,
+        );
+
+        let mut cache = CountersCacheBuilder::new().build();
+        cache.insert(
+            counter.clone(),
+            Some(current_value),
+            10,
+            Duration::from_secs(0),
+        );
+
+        assert_eq!(cache.get(&counter).unwrap(), current_value);
+    }
+
+    #[test]
+    fn insert_saves_max_value_when_redis_val_is_none() {
+        let max_val = 10;
+        let mut values = HashMap::new();
+        values.insert("app_id".to_string(), "1".to_string());
+        let counter = Counter::new(
+            Limit::new(
+                "test_namespace",
+                max_val,
+                60,
+                vec!["req.method == POST"],
+                vec!["app_id"],
+            ),
+            values,
+        );
+
+        let mut cache = CountersCacheBuilder::new().build();
+        cache.insert(counter.clone(), None, 10, Duration::from_secs(0));
+
+        assert_eq!(cache.get(&counter).unwrap(), max_val);
+    }
+
+    #[test]
+    fn decrease_by() {
+        let current_val = 10;
+        let decrease_by = 8;
+        let mut values = HashMap::new();
+        values.insert("app_id".to_string(), "1".to_string());
+        let counter = Counter::new(
+            Limit::new(
+                "test_namespace",
+                current_val,
+                60,
+                vec!["req.method == POST"],
+                vec!["app_id"],
+            ),
+            values,
+        );
+
+        let mut cache = CountersCacheBuilder::new().build();
+        cache.insert(
+            counter.clone(),
+            Some(current_val),
+            10,
+            Duration::from_secs(0),
+        );
+        cache.decrease_by(&counter, decrease_by);
+
+        assert_eq!(cache.get(&counter).unwrap(), current_val - decrease_by);
+    }
+}
