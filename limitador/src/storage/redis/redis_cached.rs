@@ -1,9 +1,13 @@
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
 use crate::storage::redis::batcher::Batcher;
-use crate::storage::redis::counters_cache::CountersCache;
+use crate::storage::redis::counters_cache::{
+    CountersCache, CountersCacheBuilder, DEFAULT_MAX_CACHED_COUNTERS,
+    DEFAULT_MAX_TTL_CACHED_COUNTERS, DEFAULT_TTL_RATIO_CACHED_COUNTERS,
+};
 use crate::storage::redis::redis_async::AsyncRedisStorage;
 use crate::storage::redis::redis_keys::*;
+use crate::storage::redis::scripts::VALUES_AND_TTLS;
 use crate::storage::{AsyncStorage, StorageErr};
 use async_trait::async_trait;
 use redis::aio::ConnectionManager;
@@ -30,10 +34,6 @@ use ttl_cache::TtlCache;
 // by tuning the constants below.
 //
 // Future improvements:
-// - The TTLs, the flushing period, and the max number of cached elements should
-// be configurable.
-// - We shouldn't just cache the remaining of the counter. We should take into
-// account that there might be other instances running.
 // - Introduce a mechanism to avoid going to Redis to fetch the same counter
 // multiple times when it is not cached.
 
@@ -43,10 +43,12 @@ const DEFAULT_MAX_CACHED_NAMESPACES: usize = 1000;
 
 pub struct CachedRedisStorage {
     cached_limits_by_namespace: Mutex<TtlCache<Namespace, HashSet<Limit>>>,
+    ttl_cached_limits: Duration,
     cached_counters: Mutex<CountersCache>,
     batcher_counter_updates: Arc<Mutex<Batcher>>,
     async_redis_storage: AsyncRedisStorage,
     redis_conn_manager: ConnectionManager,
+    batching_is_enabled: bool,
 }
 
 #[async_trait]
@@ -66,7 +68,7 @@ impl AsyncStorage for CachedRedisStorage {
             Some(limits) => Ok(limits.clone()),
             None => {
                 let limits = self.async_redis_storage.get_limits(namespace).await?;
-                cached_limits.insert(namespace.clone(), limits.clone(), DEFAULT_TTL_CACHED_LIMITS);
+                cached_limits.insert(namespace.clone(), limits.clone(), self.ttl_cached_limits);
                 Ok(limits)
             }
         }
@@ -92,6 +94,10 @@ impl AsyncStorage for CachedRedisStorage {
             .await
     }
 
+    // Notice that this method does not guarantee 100% accuracy when applying the
+    // limits. In order to do so, we'd need to run this whole function
+    // atomically, but that'd be too slow.
+    // This function trades accuracy for speed.
     async fn check_and_update(
         &self,
         counters: &HashSet<&Counter>,
@@ -102,27 +108,46 @@ impl AsyncStorage for CachedRedisStorage {
         let mut not_cached: Vec<&Counter> = vec![];
 
         // Check cached counters
-        let mut cached_counters = self.cached_counters.lock().await;
-        for counter in counters {
-            match cached_counters.get(counter) {
-                Some(val) => {
-                    if val - delta < 0 {
-                        return Ok(false);
+        {
+            let cached_counters = self.cached_counters.lock().await;
+            for counter in counters {
+                match cached_counters.get(counter) {
+                    Some(val) => {
+                        if val - delta < 0 {
+                            return Ok(false);
+                        }
                     }
-                }
-                None => {
-                    not_cached.push(counter);
+                    None => {
+                        not_cached.push(counter);
+                    }
                 }
             }
         }
 
         // Fetch non-cached counters, cache them, and check them
         if !not_cached.is_empty() {
+            let time_start_get_ttl = Instant::now();
+
             let (counter_vals, counter_ttls_secs) =
                 Self::values_with_ttls(&not_cached, &mut con).await?;
 
-            for (i, &counter) in not_cached.iter().enumerate() {
-                cached_counters.insert(counter.clone(), counter_vals[i], counter_ttls_secs[i]);
+            // Some time could have passed from the moment we got the TTL from Redis.
+            // This margin is not exact, because we don't know exactly the
+            // moment that Redis returned a particular TTL, but this
+            // approximation should be good enough.
+            let ttl_margin =
+                Duration::from_millis((Instant::now() - time_start_get_ttl).as_millis() as u64);
+
+            {
+                let mut cached_counters = self.cached_counters.lock().await;
+                for (i, &counter) in not_cached.iter().enumerate() {
+                    cached_counters.insert(
+                        counter.clone(),
+                        counter_vals[i],
+                        counter_ttls_secs[i],
+                        ttl_margin,
+                    );
+                }
             }
 
             for (i, counter) in not_cached.iter().enumerate() {
@@ -141,14 +166,24 @@ impl AsyncStorage for CachedRedisStorage {
             }
         }
 
-        for counter in counters {
-            cached_counters.decrease_by(counter, delta);
+        // Update cached values
+        {
+            let mut cached_counters = self.cached_counters.lock().await;
+            for counter in counters {
+                cached_counters.decrease_by(counter, delta);
+            }
+        }
 
-            self.batcher_counter_updates
-                .lock()
-                .await
-                .add_counter(counter, delta)
-                .await;
+        // Batch or update depending on configuration
+        if self.batching_is_enabled {
+            let batcher = self.batcher_counter_updates.lock().await;
+            for counter in counters {
+                batcher.add_counter(counter, delta).await
+            }
+        } else {
+            for counter in counters {
+                self.update_counter(counter, delta).await?
+            }
         }
 
         Ok(true)
@@ -165,6 +200,27 @@ impl AsyncStorage for CachedRedisStorage {
 
 impl CachedRedisStorage {
     pub async fn new(redis_url: &str) -> CachedRedisStorage {
+        Self::new_with_options(
+            redis_url,
+            DEFAULT_MAX_CACHED_NAMESPACES,
+            DEFAULT_TTL_CACHED_LIMITS,
+            Some(DEFAULT_FLUSHING_PERIOD),
+            DEFAULT_MAX_CACHED_COUNTERS,
+            DEFAULT_MAX_TTL_CACHED_COUNTERS,
+            DEFAULT_TTL_RATIO_CACHED_COUNTERS,
+        )
+        .await
+    }
+
+    async fn new_with_options(
+        redis_url: &str,
+        max_cached_namespaces: usize,
+        ttl_cached_limits: Duration,
+        flushing_period: Option<Duration>,
+        max_cached_counters: usize,
+        ttl_cached_counters: Duration,
+        ttl_ratio_cached_counters: u64,
+    ) -> CachedRedisStorage {
         let redis_conn_manager =
             ConnectionManager::new(ConnectionInfo::from_str(redis_url).unwrap())
                 .await
@@ -174,24 +230,34 @@ impl CachedRedisStorage {
             AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone());
 
         let batcher = Arc::new(Mutex::new(Batcher::new(async_redis_storage.clone())));
-        let batcher_flusher = batcher.clone();
-        tokio::spawn(async move {
-            loop {
-                let time_start = Instant::now();
-                batcher_flusher.lock().await.flush().await;
-                let sleep_time = DEFAULT_FLUSHING_PERIOD
-                    .checked_sub(time_start.elapsed())
-                    .unwrap_or_else(|| Duration::from_secs(0));
-                tokio::time::delay_for(sleep_time).await;
-            }
-        });
+        if let Some(flushing_period) = flushing_period {
+            let batcher_flusher = batcher.clone();
+            tokio::spawn(async move {
+                loop {
+                    let time_start = Instant::now();
+                    batcher_flusher.lock().await.flush().await;
+                    let sleep_time = flushing_period
+                        .checked_sub(time_start.elapsed())
+                        .unwrap_or_else(|| Duration::from_secs(0));
+                    tokio::time::delay_for(sleep_time).await;
+                }
+            });
+        }
+
+        let cached_counters = CountersCacheBuilder::new()
+            .max_cached_counters(max_cached_counters)
+            .max_ttl_cached_counter(ttl_cached_counters)
+            .ttl_ratio_cached_counter(ttl_ratio_cached_counters)
+            .build();
 
         CachedRedisStorage {
-            cached_limits_by_namespace: Mutex::new(TtlCache::new(DEFAULT_MAX_CACHED_NAMESPACES)),
-            cached_counters: Mutex::new(CountersCache::new()),
+            cached_limits_by_namespace: Mutex::new(TtlCache::new(max_cached_namespaces)),
+            ttl_cached_limits,
+            cached_counters: Mutex::new(cached_counters),
             batcher_counter_updates: batcher,
             redis_conn_manager,
             async_redis_storage,
+            batching_is_enabled: flushing_period.is_some(),
         }
     }
 
@@ -204,21 +270,104 @@ impl CachedRedisStorage {
             .map(|counter| key_for_counter(counter))
             .collect();
 
-        let counter_vals: Vec<Option<i64>> = redis::cmd("MGET")
-            .arg(counter_keys.clone())
-            .query_async(&mut redis_con.clone())
-            .await?;
-
-        let mut redis_pipeline = redis::pipe();
-        redis_pipeline.atomic();
+        let script = redis::Script::new(VALUES_AND_TTLS);
+        let mut script_invocation = script.prepare_invoke();
 
         for counter_key in counter_keys {
-            redis_pipeline.cmd("TTL").arg(counter_key);
+            script_invocation.key(counter_key);
         }
 
-        let counter_ttls_secs: Vec<i64> =
-            redis_pipeline.query_async(&mut redis_con.clone()).await?;
+        let script_res: Vec<Option<i64>> = script_invocation
+            .invoke_async::<_, _>(&mut redis_con.clone())
+            .await?;
+
+        let mut counter_vals: Vec<Option<i64>> = vec![];
+        let mut counter_ttls_secs: Vec<i64> = vec![];
+
+        for val_ttl_pair in script_res.chunks(2) {
+            counter_vals.push(val_ttl_pair[0]);
+            counter_ttls_secs.push(val_ttl_pair[1].unwrap());
+        }
 
         Ok((counter_vals, counter_ttls_secs))
+    }
+}
+
+pub struct CachedRedisStorageBuilder {
+    redis_url: String,
+    max_cached_namespaces: usize,
+    ttl_cached_limits: Duration,
+    flushing_period: Option<Duration>,
+    max_cached_counters: usize,
+    max_ttl_cached_counters: Duration,
+    ttl_ratio_cached_counters: u64,
+}
+
+impl CachedRedisStorageBuilder {
+    pub fn new(redis_url: &str) -> CachedRedisStorageBuilder {
+        CachedRedisStorageBuilder {
+            redis_url: redis_url.to_string(),
+            max_cached_namespaces: DEFAULT_MAX_CACHED_NAMESPACES,
+            ttl_cached_limits: DEFAULT_TTL_CACHED_LIMITS,
+            flushing_period: Some(DEFAULT_FLUSHING_PERIOD),
+            max_cached_counters: DEFAULT_MAX_CACHED_COUNTERS,
+            max_ttl_cached_counters: DEFAULT_MAX_TTL_CACHED_COUNTERS,
+            ttl_ratio_cached_counters: DEFAULT_TTL_RATIO_CACHED_COUNTERS,
+        }
+    }
+
+    pub fn max_cached_namespaces(
+        mut self,
+        max_cached_namespaces: usize,
+    ) -> CachedRedisStorageBuilder {
+        self.max_cached_namespaces = max_cached_namespaces;
+        self
+    }
+
+    pub fn ttl_cached_limits(mut self, ttl_cached_limits: Duration) -> CachedRedisStorageBuilder {
+        self.ttl_cached_limits = ttl_cached_limits;
+        self
+    }
+
+    pub fn flushing_period(
+        mut self,
+        flushing_period: Option<Duration>,
+    ) -> CachedRedisStorageBuilder {
+        self.flushing_period = flushing_period;
+        self
+    }
+
+    pub fn max_cached_counters(mut self, max_cached_counters: usize) -> CachedRedisStorageBuilder {
+        self.max_cached_counters = max_cached_counters;
+        self
+    }
+
+    pub fn max_ttl_cached_counters(
+        mut self,
+        max_ttl_cached_counters: Duration,
+    ) -> CachedRedisStorageBuilder {
+        self.max_ttl_cached_counters = max_ttl_cached_counters;
+        self
+    }
+
+    pub fn ttl_ratio_cached_counters(
+        mut self,
+        ttl_ratio_cached_counters: u64,
+    ) -> CachedRedisStorageBuilder {
+        self.ttl_ratio_cached_counters = ttl_ratio_cached_counters;
+        self
+    }
+
+    pub async fn build(self) -> CachedRedisStorage {
+        CachedRedisStorage::new_with_options(
+            &self.redis_url,
+            self.max_cached_namespaces,
+            self.ttl_cached_limits,
+            self.flushing_period,
+            self.max_cached_counters,
+            self.max_ttl_cached_counters,
+            self.ttl_ratio_cached_counters,
+        )
+        .await
     }
 }

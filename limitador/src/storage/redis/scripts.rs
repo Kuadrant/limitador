@@ -13,18 +13,32 @@
 // ARGV[2]: counter TTL
 // ARGV[3]: delta
 pub const SCRIPT_UPDATE_COUNTER: &str = "
-            local set_res = redis.call('set', KEYS[1], ARGV[1], 'EX', ARGV[2], 'NX')
-            redis.call('incrby', KEYS[1], - ARGV[3])
-            if set_res then
-                redis.call('sadd', KEYS[2], KEYS[1])
-            end";
+    local set_res = redis.call('set', KEYS[1], ARGV[1], 'EX', ARGV[2], 'NX')
+    redis.call('incrby', KEYS[1], - ARGV[3])
+    if set_res then
+        redis.call('sadd', KEYS[2], KEYS[1])
+    end";
 
 // KEYS[1]: key with limits of namespace
 // KEYS[2]: key with set of all namespaces
 // ARGV[1]: limit
 // ARGV[2]: namespace of the limit
 pub const SCRIPT_DELETE_LIMIT: &str = "
-            redis.call('srem', KEYS[1], ARGV[1])
-            if redis.call('scard', KEYS[1]) == 0 then
-                redis.call('srem', KEYS[2], ARGV[2])
-            end";
+    redis.call('srem', KEYS[1], ARGV[1])
+    if redis.call('scard', KEYS[1]) == 0 then
+        redis.call('srem', KEYS[2], ARGV[2])
+    end
+";
+
+// KEYS: the function returns the value and TTL for these keys
+// The first position of the list returned contains the value of KEYS[1], the
+// second position contains its TTL. The third position contains the value of
+// KEYS[2] and the fourth its TTL, and so on.
+pub const VALUES_AND_TTLS: &str = "
+    local res = {}
+    for _, key in ipairs(KEYS) do
+        table.insert(res, redis.call('get', key))
+        table.insert(res, redis.call('ttl', key))
+    end
+    return res
+";
