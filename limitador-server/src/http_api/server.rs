@@ -39,10 +39,12 @@ impl ResponseError for ErrorResponse {
 }
 
 // Used for health checks
+#[api_v2_operation]
 async fn status() -> web::Json<()> {
     Json(())
 }
 
+#[api_v2_operation]
 async fn metrics(data: web::Data<Arc<Limiter>>) -> String {
     match data.get_ref().as_ref() {
         Limiter::Blocking(limiter) => limiter.gather_prometheus_metrics(),
