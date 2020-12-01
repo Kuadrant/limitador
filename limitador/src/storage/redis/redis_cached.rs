@@ -128,7 +128,7 @@ impl AsyncStorage for CachedRedisStorage {
         if !not_cached.is_empty() {
             let time_start_get_ttl = Instant::now();
 
-            let (counter_vals, counter_ttls_secs) =
+            let (counter_vals, counter_ttls_msecs) =
                 Self::values_with_ttls(&not_cached, &mut con).await?;
 
             // Some time could have passed from the moment we got the TTL from Redis.
@@ -144,7 +144,7 @@ impl AsyncStorage for CachedRedisStorage {
                     cached_counters.insert(
                         counter.clone(),
                         counter_vals[i],
-                        counter_ttls_secs[i],
+                        counter_ttls_msecs[i],
                         ttl_margin,
                     );
                 }
@@ -282,14 +282,14 @@ impl CachedRedisStorage {
             .await?;
 
         let mut counter_vals: Vec<Option<i64>> = vec![];
-        let mut counter_ttls_secs: Vec<i64> = vec![];
+        let mut counter_ttls_msecs: Vec<i64> = vec![];
 
         for val_ttl_pair in script_res.chunks(2) {
             counter_vals.push(val_ttl_pair[0]);
-            counter_ttls_secs.push(val_ttl_pair[1].unwrap());
+            counter_ttls_msecs.push(val_ttl_pair[1].unwrap());
         }
 
-        Ok((counter_vals, counter_ttls_secs))
+        Ok((counter_vals, counter_ttls_msecs))
     }
 }
 

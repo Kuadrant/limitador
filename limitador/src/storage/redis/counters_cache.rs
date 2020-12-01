@@ -69,11 +69,11 @@ impl CountersCache {
         &mut self,
         counter: Counter,
         redis_val: Option<i64>,
-        redis_ttl: i64,
+        redis_ttl_ms: i64,
         ttl_margin: Duration,
     ) {
         let counter_val = Self::value_from_redis_val(redis_val, counter.max_value());
-        let counter_ttl = self.ttl_from_redis_ttl(redis_ttl, counter.seconds(), counter_val);
+        let counter_ttl = self.ttl_from_redis_ttl(redis_ttl_ms, counter.seconds(), counter_val);
         if let Some(ttl) = counter_ttl.checked_sub(ttl_margin) {
             if ttl > Duration::from_secs(0) {
                 self.cache.insert(counter, counter_val, ttl);
@@ -96,7 +96,7 @@ impl CountersCache {
 
     fn ttl_from_redis_ttl(
         &self,
-        redis_ttl: i64,
+        redis_ttl_ms: i64,
         counter_seconds: u64,
         counter_val: i64,
     ) -> Duration {
@@ -105,8 +105,8 @@ impl CountersCache {
         // This function returns a ttl of the given counter seconds in this
         // case.
 
-        let counter_ttl = if redis_ttl >= 0 {
-            Duration::from_secs(redis_ttl as u64)
+        let counter_ttl = if redis_ttl_ms >= 0 {
+            Duration::from_millis(redis_ttl_ms as u64)
         } else {
             Duration::from_secs(counter_seconds)
         };
