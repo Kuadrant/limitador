@@ -30,7 +30,7 @@ pub const SCRIPT_DELETE_LIMIT: &str = "
     end
 ";
 
-// KEYS: the function returns the value and TTL for these keys
+// KEYS: the function returns the value and TTL (in ms) for these keys
 // The first position of the list returned contains the value of KEYS[1], the
 // second position contains its TTL. The third position contains the value of
 // KEYS[2] and the fourth its TTL, and so on.
@@ -38,7 +38,7 @@ pub const VALUES_AND_TTLS: &str = "
     local res = {}
     for _, key in ipairs(KEYS) do
         table.insert(res, redis.call('get', key))
-        table.insert(res, redis.call('ttl', key))
+        table.insert(res, redis.call('pttl', key))
     end
     return res
 ";
