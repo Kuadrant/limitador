@@ -1,35 +1,38 @@
+#[path = "protobufs"]
 pub mod envoy {
+    #[path = "."]
     pub mod config {
+        #[path = "."]
         pub mod core {
-            pub mod v3 {
-                include!("protobufs/envoy.config.core.v3.rs");
-            }
+            #[path = "envoy.config.core.v3.rs"]
+            pub mod v3;
         }
     }
 
+    #[path = "."]
     pub mod extensions {
+        #[path = "."]
         pub mod common {
+            #[path = "."]
             pub mod ratelimit {
-                pub mod v3 {
-                    include!("protobufs/envoy.extensions.common.ratelimit.v3.rs");
-                }
+                #[path = "envoy.extensions.common.ratelimit.v3.rs"]
+                pub mod v3;
             }
         }
     }
 
+    #[path = "."]
     pub mod r#type {
-        include!("protobufs/envoy.r#type.rs");
-
-        pub mod v3 {
-            include!("protobufs/envoy.r#type.v3.rs");
-        }
+        #[path = "envoy.r#type.v3.rs"]
+        pub mod v3;
     }
 
+    #[path = "."]
     pub mod service {
+        #[path = "."]
         pub mod ratelimit {
-            pub mod v3 {
-                include!("protobufs/envoy.service.ratelimit.v3.rs");
-            }
+            #[path = "envoy.service.ratelimit.v3.rs"]
+            pub mod v3;
         }
     }
 }
