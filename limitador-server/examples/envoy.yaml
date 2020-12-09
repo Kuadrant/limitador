@@ -38,6 +38,7 @@ static_resources:
               failure_mode_deny: true
               timeout: 3s
               rate_limit_service:
+                "transport_api_version": "v3"
                 grpc_service:
                   envoy_grpc:
                     cluster_name: rate_limit

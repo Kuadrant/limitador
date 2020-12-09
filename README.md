@@ -10,7 +10,7 @@ Limitador is a generic rate-limiter written in Rust. It can be used as a
 library, or as a service. The service exposes HTTP endpoints to apply and manage
 limits. Limitador can also be used together with Envoy because in a different
 port, it also exposes a grpc service that implements the Envoy Rate Limit
-protocol.
+protocol (v3).
 
 - [**Getting started**](#getting-started)
 - [**Limits storage**](#limits-storage)
