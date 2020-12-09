@@ -28,27 +28,3 @@ pub struct VersioningAnnotation {
     #[prost(string, tag = "1")]
     pub previous_message_type: std::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct MigrateAnnotation {
-    /// Rename the message/enum/enum value in next version.
-    #[prost(string, tag = "1")]
-    pub rename: std::string::String,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FieldMigrateAnnotation {
-    /// Rename the field in next version.
-    #[prost(string, tag = "1")]
-    pub rename: std::string::String,
-    /// Add the field to a named oneof in next version. If this already exists, the
-    /// field will join its siblings under the oneof, otherwise a new oneof will be
-    /// created with the given name.
-    #[prost(string, tag = "2")]
-    pub oneof_promotion: std::string::String,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FileMigrateAnnotation {
-    /// Move all types in the file to another package, this implies changing proto
-    /// file path.
-    #[prost(string, tag = "2")]
-    pub move_to_package: std::string::String,
-}
