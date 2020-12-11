@@ -42,14 +42,14 @@ data:
           filter_chains:
             - use_proxy_proto: true
               filters:
-                - name: envoy.http_connection_manager
+                - name: envoy.filters.network.http_connection_manager
                   typed_config:
-                    "@type": type.googleapis.com/envoy.config.filter.network.http_connection_manager.v2.HttpConnectionManager
+                    "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                     use_remote_address: true
                     access_log:
                       - name: envoy.access_loggers.file
                         typed_config:
-                          "@type": type.googleapis.com/envoy.config.accesslog.v2.FileAccessLog
+                          "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
                           path: "/dev/stdout"
                     stat_prefix: http
                     route_config:
@@ -67,11 +67,12 @@ data:
                     http_filters:
                       - name: envoy.filters.http.ratelimit
                         typed_config:
-                          "@type": "type.googleapis.com/envoy.config.filter.http.rate_limit.v2.RateLimit"
+                          "@type": "type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit"
                           domain: kuard
                           failure_mode_deny: false
                           timeout: 1s
                           rate_limit_service:
+                            transport_api_version: V3
                             grpc_service:
                               { envoy_grpc: { cluster_name: kuard_ratelimit } }
                       - name: envoy.filters.http.router
