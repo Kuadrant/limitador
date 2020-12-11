@@ -17,7 +17,7 @@ spec:
       containers:
         - name: limitador
           image: quay.io/3scale/limitador:0.3.0
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           env:
             - name: RUST_LOG
               value: info
