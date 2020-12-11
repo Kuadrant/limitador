@@ -103,3 +103,15 @@ jobs:
         with:
           command: build
           args: --target=wasm32-unknown-unknown --no-default-features --lib --manifest-path ./limitador/Cargo.toml
+
+  kind:
+    name: Try in kind (Kubernetes in Docker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - uses: engineerd/setup-kind@v0.5.0
+      - run: |
+          ./limitador-server/script/kind-setup.sh
+          ips=$(kubectl get nodes -lkubernetes.io/hostname!=kind-control-plane -ojsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}')
+          port=$(kubectl -n default get service kuard -ojsonpath='{.spec.ports[?(@.name=="envoy-http")].nodePort}')
+          curl "http://${ips[0]}:${port}"
