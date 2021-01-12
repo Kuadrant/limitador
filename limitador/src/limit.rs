@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Error;
 use std::hash::{Hash, Hasher};
-use std::iter::FromIterator;
 use std::str::FromStr;
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
@@ -68,8 +67,8 @@ impl Limit {
             namespace: namespace.into(),
             max_value,
             seconds,
-            conditions: HashSet::from_iter(conditions.into_iter().map(|cond| cond.into())),
-            variables: HashSet::from_iter(variables.into_iter().map(|var| var.into())),
+            conditions: conditions.into_iter().map(|cond| cond.into()).collect(),
+            variables: variables.into_iter().map(|var| var.into()).collect(),
         }
     }
 
@@ -86,11 +85,11 @@ impl Limit {
     }
 
     pub fn conditions(&self) -> HashSet<String> {
-        HashSet::from_iter(self.conditions.iter().map(|cond| cond.into()))
+        self.conditions.iter().map(|cond| cond.into()).collect()
     }
 
     pub fn variables(&self) -> HashSet<String> {
-        HashSet::from_iter(self.variables.iter().map(|var| var.into()))
+        self.variables.iter().map(|var| var.into()).collect()
     }
 
     pub fn has_variable(&self, var: &str) -> bool {
