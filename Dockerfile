@@ -55,6 +55,4 @@ RUN chown limitador:limitador limitador-server
 
 USER limitador
 
-ENV LIMITS_FILE=/home/limitador/limits.yaml
-
 CMD ["limitador-server"]
