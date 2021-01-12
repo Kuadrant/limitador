@@ -2,7 +2,6 @@ use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
 use crate::storage::{Storage, StorageErr};
 use std::collections::{HashMap, HashSet};
-use std::iter::FromIterator;
 use std::sync::RwLock;
 use std::time::Duration;
 use ttl_cache::TtlCache;
@@ -14,9 +13,13 @@ pub struct InMemoryStorage {
 
 impl Storage for InMemoryStorage {
     fn get_namespaces(&self) -> Result<HashSet<Namespace>, StorageErr> {
-        Ok(HashSet::from_iter(
-            self.limits_for_namespace.read().unwrap().keys().cloned(),
-        ))
+        Ok(self
+            .limits_for_namespace
+            .read()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect())
     }
 
     fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
@@ -40,7 +43,7 @@ impl Storage for InMemoryStorage {
 
     fn get_limits(&self, namespace: &Namespace) -> Result<HashSet<Limit>, StorageErr> {
         let limits = match self.limits_for_namespace.read().unwrap().get(namespace) {
-            Some(limits) => HashSet::from_iter(limits.keys().cloned()),
+            Some(limits) => limits.keys().cloned().collect(),
             None => HashSet::new(),
         };
 

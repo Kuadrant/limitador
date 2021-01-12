@@ -10,7 +10,6 @@ use crate::storage::{AsyncStorage, StorageErr};
 use async_trait::async_trait;
 use redis::AsyncCommands;
 use std::collections::HashSet;
-use std::iter::FromIterator;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -37,9 +36,10 @@ impl AsyncStorage for AsyncRedisStorage {
             .smembers::<String, HashSet<String>>(key_for_namespaces_set())
             .await?;
 
-        Ok(HashSet::from_iter(
-            namespaces.iter().map(|ns| Namespace::from(ns.as_ref())),
-        ))
+        Ok(namespaces
+            .iter()
+            .map(|ns| Namespace::from(ns.as_ref()))
+            .collect())
     }
 
     async fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
@@ -63,12 +63,12 @@ impl AsyncStorage for AsyncRedisStorage {
 
         let set_key = key_for_limits_of_namespace(namespace);
 
-        let limits: HashSet<Limit> = HashSet::from_iter(
-            con.smembers::<String, HashSet<String>>(set_key)
-                .await?
-                .iter()
-                .map(|limit_json| serde_json::from_str(limit_json).unwrap()),
-        );
+        let limits: HashSet<Limit> = con
+            .smembers::<String, HashSet<String>>(set_key)
+            .await?
+            .iter()
+            .map(|limit_json| serde_json::from_str(limit_json).unwrap())
+            .collect();
 
         Ok(limits)
     }

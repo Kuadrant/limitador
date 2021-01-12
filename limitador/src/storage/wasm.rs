@@ -3,7 +3,6 @@ use crate::limit::{Limit, Namespace};
 use crate::storage::{Storage, StorageErr};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-use std::iter::FromIterator;
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime};
 
@@ -56,13 +55,11 @@ impl<K: Eq + Hash + Clone, V: Copy> Cache<K, V> {
     }
 
     pub fn get_all(&mut self, current_time: SystemTime) -> Vec<(K, V, SystemTime)> {
-        let iterator = self
-            .map
+        self.map
             .iter()
             .filter(|(_key, cache_entry)| !cache_entry.is_expired(current_time))
-            .map(|(key, cache_entry)| (key.clone(), cache_entry.value, cache_entry.expires_at));
-
-        Vec::from_iter(iterator)
+            .map(|(key, cache_entry)| (key.clone(), cache_entry.value, cache_entry.expires_at))
+            .collect()
     }
 
     pub fn clear(&mut self) {
@@ -84,9 +81,13 @@ pub struct WasmStorage {
 
 impl Storage for WasmStorage {
     fn get_namespaces(&self) -> Result<HashSet<Namespace>, StorageErr> {
-        Ok(HashSet::from_iter(
-            self.limits_for_namespace.read().unwrap().keys().cloned(),
-        ))
+        Ok(self
+            .limits_for_namespace
+            .read()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect())
     }
 
     fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
@@ -110,7 +111,7 @@ impl Storage for WasmStorage {
 
     fn get_limits(&self, namespace: &Namespace) -> Result<HashSet<Limit>, StorageErr> {
         let limits = match self.limits_for_namespace.read().unwrap().get(namespace) {
-            Some(limits) => HashSet::from_iter(limits.keys().cloned()),
+            Some(limits) => limits.keys().cloned().collect(),
             None => HashSet::new(),
         };
 
@@ -197,7 +198,7 @@ impl Storage for WasmStorage {
             })
             .collect();
 
-        Ok(HashSet::from_iter(counters_with_vals.iter().cloned()))
+        Ok(counters_with_vals.iter().cloned().collect())
     }
 
     fn clear(&self) -> Result<(), StorageErr> {

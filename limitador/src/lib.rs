@@ -184,7 +184,6 @@ use crate::prometheus_metrics::{
 use crate::storage::in_memory::InMemoryStorage;
 use crate::storage::{AsyncStorage, Storage};
 use std::collections::{HashMap, HashSet};
-use std::iter::FromIterator;
 
 #[macro_use]
 extern crate lazy_static;
@@ -298,7 +297,7 @@ impl RateLimiter {
 
         let is_within_limits = self
             .storage
-            .check_and_update(&HashSet::from_iter(counters.iter()), delta)?;
+            .check_and_update(&counters.iter().collect(), delta)?;
 
         if is_within_limits {
             incr_authorized_calls(&namespace);
@@ -328,7 +327,7 @@ impl RateLimiter {
         let limits_to_keep_or_create = classify_limits_by_namespace(limits);
 
         let namespaces_limits_to_keep_or_create: HashSet<Namespace> =
-            HashSet::from_iter(limits_to_keep_or_create.keys().cloned());
+            limits_to_keep_or_create.keys().cloned().collect();
 
         for namespace in self
             .get_namespaces()?
@@ -488,7 +487,7 @@ impl AsyncRateLimiter {
 
         let is_within_limits = self
             .storage
-            .check_and_update(&HashSet::from_iter(counters.iter()), delta)
+            .check_and_update(&counters.iter().collect(), delta)
             .await?;
 
         if is_within_limits {
@@ -520,7 +519,7 @@ impl AsyncRateLimiter {
         let limits_to_keep_or_create = classify_limits_by_namespace(limits);
 
         let namespaces_limits_to_keep_or_create: HashSet<Namespace> =
-            HashSet::from_iter(limits_to_keep_or_create.keys().cloned());
+            limits_to_keep_or_create.keys().cloned().collect();
 
         for namespace in self
             .get_namespaces()

@@ -8,7 +8,6 @@ use crate::storage::redis::scripts::{SCRIPT_DELETE_LIMIT, SCRIPT_UPDATE_COUNTER}
 use crate::storage::{Storage, StorageErr};
 use r2d2::{ManageConnection, Pool};
 use std::collections::HashSet;
-use std::iter::FromIterator;
 use std::time::Duration;
 
 const DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
@@ -28,9 +27,10 @@ impl Storage for RedisStorage {
 
         let namespaces = con.smembers::<String, HashSet<String>>(key_for_namespaces_set())?;
 
-        Ok(HashSet::from_iter(
-            namespaces.iter().map(|ns| Namespace::from(ns.as_ref())),
-        ))
+        Ok(namespaces
+            .iter()
+            .map(|ns| Namespace::from(ns.as_ref()))
+            .collect())
     }
 
     fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
@@ -53,11 +53,11 @@ impl Storage for RedisStorage {
 
         let set_key = key_for_limits_of_namespace(namespace);
 
-        let limits: HashSet<Limit> = HashSet::from_iter(
-            con.smembers::<String, HashSet<String>>(set_key)?
-                .iter()
-                .map(|limit_json| serde_json::from_str(limit_json).unwrap()),
-        );
+        let limits: HashSet<Limit> = con
+            .smembers::<String, HashSet<String>>(set_key)?
+            .iter()
+            .map(|limit_json| serde_json::from_str(limit_json).unwrap())
+            .collect();
 
         Ok(limits)
     }
