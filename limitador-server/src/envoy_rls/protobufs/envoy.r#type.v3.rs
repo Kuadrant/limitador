@@ -22,6 +22,7 @@ pub struct FractionalPercent {
     #[prost(enumeration = "fractional_percent::DenominatorType", tag = "2")]
     pub denominator: i32,
 }
+/// Nested message and enum types in `FractionalPercent`.
 pub mod fractional_percent {
     /// Fraction percentages support several fixed denominator values.
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
