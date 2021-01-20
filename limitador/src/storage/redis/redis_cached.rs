@@ -237,7 +237,7 @@ impl CachedRedisStorage {
                     let sleep_time = flushing_period
                         .checked_sub(time_start.elapsed())
                         .unwrap_or_else(|| Duration::from_secs(0));
-                    tokio::time::delay_for(sleep_time).await;
+                    tokio::time::sleep(sleep_time).await;
                 }
             });
         }
