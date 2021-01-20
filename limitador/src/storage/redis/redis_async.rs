@@ -1,7 +1,7 @@
 extern crate redis;
 
 use self::redis::aio::ConnectionManager;
-use self::redis::ConnectionInfo;
+use self::redis::Client;
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
 use crate::storage::redis::redis_keys::*;
@@ -10,7 +10,6 @@ use crate::storage::{AsyncStorage, StorageErr};
 use async_trait::async_trait;
 use redis::AsyncCommands;
 use std::collections::HashSet;
-use std::str::FromStr;
 use std::time::Duration;
 
 // Note: this implementation does no guarantee exact limits. Ensuring that we
@@ -217,7 +216,7 @@ impl AsyncStorage for AsyncRedisStorage {
 impl AsyncRedisStorage {
     pub async fn new(redis_url: &str) -> AsyncRedisStorage {
         AsyncRedisStorage {
-            conn_manager: ConnectionManager::new(ConnectionInfo::from_str(redis_url).unwrap())
+            conn_manager: ConnectionManager::new(Client::open(redis_url).unwrap())
                 .await
                 .unwrap(),
         }
