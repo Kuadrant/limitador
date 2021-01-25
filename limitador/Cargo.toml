@@ -15,26 +15,26 @@ default = ["redis_storage"]
 redis_storage = ["redis", "r2d2", "tokio"]
 
 [dependencies]
-ttl_cache = "^0.5"
-serde = { version = "^1", features = ["derive"] }
-serde_json = "^1"
-thiserror = "^1"
-futures = "^0.3"
-async-trait = "^0.1"
-cfg-if = "^1"
-prometheus = "^0.11"
-lazy_static = "^1.4"
+ttl_cache = "0.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+futures = "0.3"
+async-trait = "0.1.41"
+cfg-if = "1.0"
+prometheus = "0.10"
+lazy_static = "1.4"
 
 # Optional dependencies
-redis = { version = "^0.19", optional = true, features = ["connection-manager", "tokio-comp"] }
-r2d2 = { version = "^0.8", optional = true }
-tokio = { version = "^1", optional = true, features = ["rt", "macros", "time"] }
+redis = { version = "0.17", optional = true, features = ["connection-manager"] }
+r2d2 = { version = "0.8", optional = true }
+tokio = { version = "0.2", optional = true, features = ["rt-core", "macros", "time"] }
 
 [dev-dependencies]
-serial_test = "^0.5"
-criterion = "^0.3"
-paste = "^1"
-rand = "^0.8"
+serial_test = "0.5"
+criterion = "0.3"
+paste = "1.0"
+rand = "0.7"
 
 [[bench]]
 name = "bench"
