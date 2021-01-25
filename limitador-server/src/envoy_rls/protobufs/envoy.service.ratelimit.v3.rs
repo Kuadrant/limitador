@@ -10,12 +10,12 @@ pub struct RateLimitRequest {
     /// All rate limit requests must specify a domain. This enables the configuration to be per
     /// application without fear of overlap. E.g., "envoy".
     #[prost(string, tag = "1")]
-    pub domain: ::prost::alloc::string::String,
+    pub domain: std::string::String,
     /// All rate limit requests must specify at least one RateLimitDescriptor. Each descriptor is
     /// processed by the service (see below). If any of the descriptors are over limit, the entire
     /// request is considered to be over limit.
     #[prost(message, repeated, tag = "2")]
-    pub descriptors: ::prost::alloc::vec::Vec<
+    pub descriptors: ::std::vec::Vec<
         super::super::super::extensions::common::ratelimit::v3::RateLimitDescriptor,
     >,
     /// Rate limit requests can optionally specify the number of hits a request adds to the matched
@@ -34,24 +34,22 @@ pub struct RateLimitResponse {
     /// in the RateLimitRequest. This can be used by the caller to determine which individual
     /// descriptors failed and/or what the currently configured limits are for all of them.
     #[prost(message, repeated, tag = "2")]
-    pub statuses: ::prost::alloc::vec::Vec<rate_limit_response::DescriptorStatus>,
+    pub statuses: ::std::vec::Vec<rate_limit_response::DescriptorStatus>,
     /// A list of headers to add to the response
     #[prost(message, repeated, tag = "3")]
     pub response_headers_to_add:
-        ::prost::alloc::vec::Vec<super::super::super::config::core::v3::HeaderValue>,
+        ::std::vec::Vec<super::super::super::config::core::v3::HeaderValue>,
     /// A list of headers to add to the request when forwarded
     #[prost(message, repeated, tag = "4")]
-    pub request_headers_to_add:
-        ::prost::alloc::vec::Vec<super::super::super::config::core::v3::HeaderValue>,
+    pub request_headers_to_add: ::std::vec::Vec<super::super::super::config::core::v3::HeaderValue>,
 }
-/// Nested message and enum types in `RateLimitResponse`.
 pub mod rate_limit_response {
     /// Defines an actual rate limit in terms of requests per unit of time and the unit itself.
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct RateLimit {
         /// A name or description of this limit.
         #[prost(string, tag = "3")]
-        pub name: ::prost::alloc::string::String,
+        pub name: std::string::String,
         /// The number of requests per unit of time.
         #[prost(uint32, tag = "1")]
         pub requests_per_unit: u32,
@@ -59,7 +57,6 @@ pub mod rate_limit_response {
         #[prost(enumeration = "rate_limit::Unit", tag = "2")]
         pub unit: i32,
     }
-    /// Nested message and enum types in `RateLimit`.
     pub mod rate_limit {
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
         #[repr(i32)]
@@ -83,7 +80,7 @@ pub mod rate_limit_response {
         pub code: i32,
         /// The current limit as configured by the server. Useful for debugging, etc.
         #[prost(message, optional, tag = "2")]
-        pub current_limit: ::core::option::Option<RateLimit>,
+        pub current_limit: ::std::option::Option<RateLimit>,
         /// The limit remaining in the current time unit.
         #[prost(uint32, tag = "3")]
         pub limit_remaining: u32,
@@ -177,6 +174,7 @@ pub mod rate_limit_service_server {
         ) -> Result<tonic::Response<super::RateLimitResponse>, tonic::Status>;
     }
     #[derive(Debug)]
+    #[doc(hidden)]
     pub struct RateLimitServiceServer<T: RateLimitService> {
         inner: _Inner<T>,
     }
@@ -221,7 +219,7 @@ pub mod rate_limit_service_server {
                             request: tonic::Request<super::RateLimitRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
-                            let fut = async move { (*inner).should_rate_limit(request).await };
+                            let fut = async move { inner.should_rate_limit(request).await };
                             Box::pin(fut)
                         }
                     }
@@ -245,7 +243,6 @@ pub mod rate_limit_service_server {
                     Ok(http::Response::builder()
                         .status(200)
                         .header("grpc-status", "12")
-                        .header("content-type", "application/grpc")
                         .body(tonic::body::BoxBody::empty())
                         .unwrap())
                 }),

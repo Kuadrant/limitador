@@ -8,7 +8,7 @@ pub struct SocketOption {
     /// An optional name to give this socket option for debugging, etc.
     /// Uniqueness is not required and no special meaning is assumed.
     #[prost(string, tag = "1")]
-    pub description: ::prost::alloc::string::String,
+    pub description: std::string::String,
     /// Corresponding to the level value passed to setsockopt, such as IPPROTO_TCP
     #[prost(int64, tag = "2")]
     pub level: i64,
@@ -20,9 +20,8 @@ pub struct SocketOption {
     #[prost(enumeration = "socket_option::SocketState", tag = "6")]
     pub state: i32,
     #[prost(oneof = "socket_option::Value", tags = "4, 5")]
-    pub value: ::core::option::Option<socket_option::Value>,
+    pub value: ::std::option::Option<socket_option::Value>,
 }
-/// Nested message and enum types in `SocketOption`.
 pub mod socket_option {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
@@ -41,7 +40,7 @@ pub mod socket_option {
         IntValue(i64),
         /// Otherwise it's a byte buffer.
         #[prost(bytes, tag = "5")]
-        BufValue(::prost::alloc::vec::Vec<u8>),
+        BufValue(std::vec::Vec<u8>),
     }
 }
 // [#protodoc-title: Network addresses]
@@ -53,7 +52,7 @@ pub struct Pipe {
     /// Paths starting with '@' will result in an error in environments other than
     /// Linux.
     #[prost(string, tag = "1")]
-    pub path: ::prost::alloc::string::String,
+    pub path: std::string::String,
     /// The mode for the Pipe. Not applicable for abstract sockets.
     #[prost(uint32, tag = "2")]
     pub mode: u32,
@@ -75,14 +74,14 @@ pub struct SocketAddress {
     /// (*STRICT_DNS* or *LOGICAL_DNS* clusters). Address resolution can be customized
     /// via :ref:`resolver_name <envoy_api_field_config.core.v3.SocketAddress.resolver_name>`.
     #[prost(string, tag = "2")]
-    pub address: ::prost::alloc::string::String,
+    pub address: std::string::String,
     /// The name of the custom resolver. This must have been registered with Envoy. If
     /// this is empty, a context dependent default applies. If the address is a concrete
     /// IP address, no resolution will occur. If address is a hostname this
     /// should be set for resolution other than DNS. Specifying a custom resolver with
     /// *STRICT_DNS* or *LOGICAL_DNS* will generate an error at runtime.
     #[prost(string, tag = "5")]
-    pub resolver_name: ::prost::alloc::string::String,
+    pub resolver_name: std::string::String,
     /// When binding to an IPv6 address above, this enables `IPv4 compatibility
     /// <https://tools.ietf.org/html/rfc3493#page-11>`_. Binding to ``::`` will
     /// allow both IPv4 and IPv6 connections, with peer IPv4 addresses mapped into
@@ -90,9 +89,8 @@ pub struct SocketAddress {
     #[prost(bool, tag = "6")]
     pub ipv4_compat: bool,
     #[prost(oneof = "socket_address::PortSpecifier", tags = "3, 4")]
-    pub port_specifier: ::core::option::Option<socket_address::PortSpecifier>,
+    pub port_specifier: ::std::option::Option<socket_address::PortSpecifier>,
 }
-/// Nested message and enum types in `SocketAddress`.
 pub mod socket_address {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
@@ -108,7 +106,7 @@ pub mod socket_address {
         /// <envoy_api_field_config.core.v3.SocketAddress.resolver_name>` is specified below and the
         /// named resolver is capable of named port resolution.
         #[prost(string, tag = "4")]
-        NamedPort(::prost::alloc::string::String),
+        NamedPort(std::string::String),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -117,22 +115,22 @@ pub struct TcpKeepalive {
     /// the connection is dead. Default is to use the OS level configuration (unless
     /// overridden, Linux defaults to 9.)
     #[prost(message, optional, tag = "1")]
-    pub keepalive_probes: ::core::option::Option<u32>,
+    pub keepalive_probes: ::std::option::Option<u32>,
     /// The number of seconds a connection needs to be idle before keep-alive probes
     /// start being sent. Default is to use the OS level configuration (unless
     /// overridden, Linux defaults to 7200s (i.e., 2 hours.)
     #[prost(message, optional, tag = "2")]
-    pub keepalive_time: ::core::option::Option<u32>,
+    pub keepalive_time: ::std::option::Option<u32>,
     /// The number of seconds between keep-alive probes. Default is to use the OS
     /// level configuration (unless overridden, Linux defaults to 75s.)
     #[prost(message, optional, tag = "3")]
-    pub keepalive_interval: ::core::option::Option<u32>,
+    pub keepalive_interval: ::std::option::Option<u32>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BindConfig {
     /// The address to bind to when creating a socket.
     #[prost(message, optional, tag = "1")]
-    pub source_address: ::core::option::Option<SocketAddress>,
+    pub source_address: ::std::option::Option<SocketAddress>,
     /// Whether to set the *IP_FREEBIND* option when creating the socket. When this
     /// flag is set to true, allows the :ref:`source_address
     /// <envoy_api_field_config.cluster.v3.UpstreamBindConfig.source_address>` to be an IP address
@@ -141,11 +139,11 @@ pub struct BindConfig {
     /// flag is not set (default), the socket is not modified, i.e. the option is
     /// neither enabled nor disabled.
     #[prost(message, optional, tag = "2")]
-    pub freebind: ::core::option::Option<bool>,
+    pub freebind: ::std::option::Option<bool>,
     /// Additional socket options that may not be present in Envoy source code or
     /// precompiled binaries.
     #[prost(message, repeated, tag = "3")]
-    pub socket_options: ::prost::alloc::vec::Vec<SocketOption>,
+    pub socket_options: ::std::vec::Vec<SocketOption>,
 }
 /// Addresses specify either a logical or physical address and port, which are
 /// used to tell Envoy where to bind/listen, connect to upstream and find
@@ -153,9 +151,8 @@ pub struct BindConfig {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Address {
     #[prost(oneof = "address::Address", tags = "1, 2")]
-    pub address: ::core::option::Option<address::Address>,
+    pub address: ::std::option::Option<address::Address>,
 }
-/// Nested message and enum types in `Address`.
 pub mod address {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Address {
@@ -171,10 +168,10 @@ pub mod address {
 pub struct CidrRange {
     /// IPv4 or IPv6 address, e.g. ``192.0.0.0`` or ``2001:db8::``.
     #[prost(string, tag = "1")]
-    pub address_prefix: ::prost::alloc::string::String,
+    pub address_prefix: std::string::String,
     /// Length of prefix, e.g. 0, 32.
     #[prost(message, optional, tag = "2")]
-    pub prefix_len: ::core::option::Option<u32>,
+    pub prefix_len: ::std::option::Option<u32>,
 }
 // [#protodoc-title: Backoff Strategy]
 
@@ -185,14 +182,14 @@ pub struct BackoffStrategy {
     /// be greater than zero and less than or equal to :ref:`max_interval
     /// <envoy_api_field_config.core.v3.BackoffStrategy.max_interval>`.
     #[prost(message, optional, tag = "1")]
-    pub base_interval: ::core::option::Option<::prost_types::Duration>,
+    pub base_interval: ::std::option::Option<::prost_types::Duration>,
     /// Specifies the maximum interval between retries. This parameter is optional,
     /// but must be greater than or equal to the :ref:`base_interval
     /// <envoy_api_field_config.core.v3.BackoffStrategy.base_interval>` if set. The default
     /// is 10 times the :ref:`base_interval
     /// <envoy_api_field_config.core.v3.BackoffStrategy.base_interval>`.
     #[prost(message, optional, tag = "2")]
-    pub max_interval: ::core::option::Option<::prost_types::Duration>,
+    pub max_interval: ::std::option::Option<::prost_types::Duration>,
 }
 // [#protodoc-title: HTTP Service URI ]
 
@@ -208,18 +205,17 @@ pub struct HttpUri {
     ///    uri: https://www.googleapis.com/oauth2/v1/certs
     ///
     #[prost(string, tag = "1")]
-    pub uri: ::prost::alloc::string::String,
+    pub uri: std::string::String,
     /// Sets the maximum duration in milliseconds that a response can take to arrive upon request.
     #[prost(message, optional, tag = "3")]
-    pub timeout: ::core::option::Option<::prost_types::Duration>,
+    pub timeout: ::std::option::Option<::prost_types::Duration>,
     /// Specify how `uri` is to be fetched. Today, this requires an explicit
     /// cluster, but in the future we may support dynamic cluster creation or
     /// inline DNS resolution. See `issue
     /// <https://github.com/envoyproxy/envoy/issues/1606>`_.
     #[prost(oneof = "http_uri::HttpUpstreamType", tags = "2")]
-    pub http_upstream_type: ::core::option::Option<http_uri::HttpUpstreamType>,
+    pub http_upstream_type: ::std::option::Option<http_uri::HttpUpstreamType>,
 }
-/// Nested message and enum types in `HttpUri`.
 pub mod http_uri {
     /// Specify how `uri` is to be fetched. Today, this requires an explicit
     /// cluster, but in the future we may support dynamic cluster creation or
@@ -237,7 +233,7 @@ pub mod http_uri {
         ///    cluster: jwks_cluster
         ///
         #[prost(string, tag = "2")]
-        Cluster(::prost::alloc::string::String),
+        Cluster(std::string::String),
     }
 }
 /// Identifies location of where either Envoy runs or where upstream hosts run.
@@ -245,7 +241,7 @@ pub mod http_uri {
 pub struct Locality {
     /// Region this :ref:`zone <envoy_api_field_config.core.v3.Locality.zone>` belongs to.
     #[prost(string, tag = "1")]
-    pub region: ::prost::alloc::string::String,
+    pub region: std::string::String,
     /// Defines the local service zone where Envoy is running. Though optional, it
     /// should be set if discovery service routing is used and the discovery
     /// service exposes :ref:`zone data <envoy_api_field_config.endpoint.v3.LocalityLbEndpoints.locality>`,
@@ -255,12 +251,12 @@ pub struct Locality {
     /// on AWS, `Zone <https://cloud.google.com/compute/docs/regions-zones/>`_ on
     /// GCP, etc.
     #[prost(string, tag = "2")]
-    pub zone: ::prost::alloc::string::String,
+    pub zone: std::string::String,
     /// When used for locality of upstream hosts, this field further splits zone
     /// into smaller chunks of sub-zones so they can be load balanced
     /// independently.
     #[prost(string, tag = "3")]
-    pub sub_zone: ::prost::alloc::string::String,
+    pub sub_zone: std::string::String,
 }
 /// BuildVersion combines SemVer version of extension with free-form build information
 /// (i.e. 'alpha', 'private-build') as a set of strings.
@@ -268,11 +264,11 @@ pub struct Locality {
 pub struct BuildVersion {
     /// SemVer version of extension.
     #[prost(message, optional, tag = "1")]
-    pub version: ::core::option::Option<super::super::super::r#type::v3::SemanticVersion>,
+    pub version: ::std::option::Option<super::super::super::r#type::v3::SemanticVersion>,
     /// Free-form build information.
     /// Envoy defines several well known keys in the source/common/common/version.h file
     #[prost(message, optional, tag = "2")]
-    pub metadata: ::core::option::Option<::prost_types::Struct>,
+    pub metadata: ::std::option::Option<::prost_types::Struct>,
 }
 /// Version and identification for an Envoy extension.
 /// [#next-free-field: 6]
@@ -281,24 +277,24 @@ pub struct Extension {
     /// This is the name of the Envoy filter as specified in the Envoy
     /// configuration, e.g. envoy.filters.http.router, com.acme.widget.
     #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
+    pub name: std::string::String,
     /// Category of the extension.
     /// Extension category names use reverse DNS notation. For instance "envoy.filters.listener"
     /// for Envoy's built-in listener filters or "com.acme.filters.http" for HTTP filters from
     /// acme.com vendor.
     /// [#comment:TODO(yanavlasov): Link to the doc with existing envoy category names.]
     #[prost(string, tag = "2")]
-    pub category: ::prost::alloc::string::String,
+    pub category: std::string::String,
     /// [#not-implemented-hide:] Type descriptor of extension configuration proto.
     /// [#comment:TODO(yanavlasov): Link to the doc with existing configuration protos.]
     /// [#comment:TODO(yanavlasov): Add tests when PR #9391 lands.]
     #[prost(string, tag = "3")]
-    pub type_descriptor: ::prost::alloc::string::String,
+    pub type_descriptor: std::string::String,
     /// The version is a property of the extension and maintained independently
     /// of other extensions and the Envoy API.
     /// This field is not set when extension did not provide version information.
     #[prost(message, optional, tag = "4")]
-    pub version: ::core::option::Option<BuildVersion>,
+    pub version: ::std::option::Option<BuildVersion>,
     /// Indicates that the extension is present but was disabled via dynamic configuration.
     #[prost(bool, tag = "5")]
     pub disabled: bool,
@@ -316,7 +312,7 @@ pub struct Node {
     /// <arch_overview_tracing>`, either in this message or via
     /// :option:`--service-node`.
     #[prost(string, tag = "1")]
-    pub id: ::prost::alloc::string::String,
+    pub id: std::string::String,
     /// Defines the local service cluster name where Envoy is running. Though
     /// optional, it should be set if any of the following features are used:
     /// :ref:`statsd <arch_overview_statistics>`, :ref:`health check cluster
@@ -330,45 +326,44 @@ pub struct Node {
     /// <arch_overview_tracing>`, either in this message or via
     /// :option:`--service-cluster`.
     #[prost(string, tag = "2")]
-    pub cluster: ::prost::alloc::string::String,
+    pub cluster: std::string::String,
     /// Opaque metadata extending the node identifier. Envoy will pass this
     /// directly to the management server.
     #[prost(message, optional, tag = "3")]
-    pub metadata: ::core::option::Option<::prost_types::Struct>,
+    pub metadata: ::std::option::Option<::prost_types::Struct>,
     /// Locality specifying where the Envoy instance is running.
     #[prost(message, optional, tag = "4")]
-    pub locality: ::core::option::Option<Locality>,
+    pub locality: ::std::option::Option<Locality>,
     /// Free-form string that identifies the entity requesting config.
     /// E.g. "envoy" or "grpc"
     #[prost(string, tag = "6")]
-    pub user_agent_name: ::prost::alloc::string::String,
+    pub user_agent_name: std::string::String,
     /// List of extensions and their versions supported by the node.
     #[prost(message, repeated, tag = "9")]
-    pub extensions: ::prost::alloc::vec::Vec<Extension>,
+    pub extensions: ::std::vec::Vec<Extension>,
     /// Client feature support list. These are well known features described
     /// in the Envoy API repository for a given major version of an API. Client features
     /// use reverse DNS naming scheme, for example `com.acme.feature`.
     /// See :ref:`the list of features <client_features>` that xDS client may
     /// support.
     #[prost(string, repeated, tag = "10")]
-    pub client_features: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    pub client_features: ::std::vec::Vec<std::string::String>,
     /// Known listening ports on the node as a generic hint to the management server
     /// for filtering :ref:`listeners <config_listeners>` to be returned. For example,
     /// if there is a listener bound to port 80, the list can optionally contain the
     /// SocketAddress `(0.0.0.0,80)`. The field is optional and just a hint.
     #[prost(message, repeated, tag = "11")]
-    pub listening_addresses: ::prost::alloc::vec::Vec<Address>,
+    pub listening_addresses: ::std::vec::Vec<Address>,
     #[prost(oneof = "node::UserAgentVersionType", tags = "7, 8")]
-    pub user_agent_version_type: ::core::option::Option<node::UserAgentVersionType>,
+    pub user_agent_version_type: ::std::option::Option<node::UserAgentVersionType>,
 }
-/// Nested message and enum types in `Node`.
 pub mod node {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum UserAgentVersionType {
         /// Free-form string that identifies the version of the entity requesting config.
         /// E.g. "1.12.2" or "abcd1234", or "SpecialEnvoyBuild"
         #[prost(string, tag = "7")]
-        UserAgentVersion(::prost::alloc::string::String),
+        UserAgentVersion(std::string::String),
         /// Structured version of the entity requesting config.
         #[prost(message, tag = "8")]
         UserAgentBuildVersion(super::BuildVersion),
@@ -401,8 +396,7 @@ pub struct Metadata {
     /// Key is the reverse DNS filter name, e.g. com.acme.widget. The envoy.*
     /// namespace is reserved for Envoy's built-in filters.
     #[prost(map = "string, message", tag = "1")]
-    pub filter_metadata:
-        ::std::collections::HashMap<::prost::alloc::string::String, ::prost_types::Struct>,
+    pub filter_metadata: ::std::collections::HashMap<std::string::String, ::prost_types::Struct>,
 }
 /// Runtime derived uint32 with a default when not specified.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -412,7 +406,7 @@ pub struct RuntimeUInt32 {
     pub default_value: u32,
     /// Runtime key to get value for comparison. This value is used if defined.
     #[prost(string, tag = "3")]
-    pub runtime_key: ::prost::alloc::string::String,
+    pub runtime_key: std::string::String,
 }
 /// Runtime derived double with a default when not specified.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -422,70 +416,69 @@ pub struct RuntimeDouble {
     pub default_value: f64,
     /// Runtime key to get value for comparison. This value is used if defined.
     #[prost(string, tag = "2")]
-    pub runtime_key: ::prost::alloc::string::String,
+    pub runtime_key: std::string::String,
 }
 /// Runtime derived bool with a default when not specified.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RuntimeFeatureFlag {
     /// Default value if runtime value is not available.
     #[prost(message, optional, tag = "1")]
-    pub default_value: ::core::option::Option<bool>,
+    pub default_value: ::std::option::Option<bool>,
     /// Runtime key to get value for comparison. This value is used if defined. The boolean value must
     /// be represented via its
     /// `canonical JSON encoding <https://developers.google.com/protocol-buffers/docs/proto3#json>`_.
     #[prost(string, tag = "2")]
-    pub runtime_key: ::prost::alloc::string::String,
+    pub runtime_key: std::string::String,
 }
 /// Header name/value pair.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HeaderValue {
     /// Header name.
     #[prost(string, tag = "1")]
-    pub key: ::prost::alloc::string::String,
+    pub key: std::string::String,
     /// Header value.
     ///
     /// The same :ref:`format specifier <config_access_log_format>` as used for
     /// :ref:`HTTP access logging <config_access_log>` applies here, however
     /// unknown header values are replaced with the empty string instead of `-`.
     #[prost(string, tag = "2")]
-    pub value: ::prost::alloc::string::String,
+    pub value: std::string::String,
 }
 /// Header name/value pair plus option to control append behavior.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HeaderValueOption {
     /// Header name/value pair that this option applies to.
     #[prost(message, optional, tag = "1")]
-    pub header: ::core::option::Option<HeaderValue>,
+    pub header: ::std::option::Option<HeaderValue>,
     /// Should the value be appended? If true (default), the value is appended to
     /// existing values.
     #[prost(message, optional, tag = "2")]
-    pub append: ::core::option::Option<bool>,
+    pub append: ::std::option::Option<bool>,
 }
 /// Wrapper for a set of headers.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HeaderMap {
     #[prost(message, repeated, tag = "1")]
-    pub headers: ::prost::alloc::vec::Vec<HeaderValue>,
+    pub headers: ::std::vec::Vec<HeaderValue>,
 }
 /// Data source consisting of either a file or an inline value.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DataSource {
     #[prost(oneof = "data_source::Specifier", tags = "1, 2, 3")]
-    pub specifier: ::core::option::Option<data_source::Specifier>,
+    pub specifier: ::std::option::Option<data_source::Specifier>,
 }
-/// Nested message and enum types in `DataSource`.
 pub mod data_source {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Specifier {
         /// Local filesystem data source.
         #[prost(string, tag = "1")]
-        Filename(::prost::alloc::string::String),
+        Filename(std::string::String),
         /// Bytes inlined in the configuration.
         #[prost(bytes, tag = "2")]
-        InlineBytes(::prost::alloc::vec::Vec<u8>),
+        InlineBytes(std::vec::Vec<u8>),
         /// String inlined in the configuration.
         #[prost(string, tag = "3")]
-        InlineString(::prost::alloc::string::String),
+        InlineString(std::string::String),
     }
 }
 /// The message specifies the retry policy of remote data source when fetching fails.
@@ -495,32 +488,31 @@ pub struct RetryPolicy {
     /// This parameter is optional, in which case the default base interval is 1000 milliseconds. The
     /// default maximum interval is 10 times the base interval.
     #[prost(message, optional, tag = "1")]
-    pub retry_back_off: ::core::option::Option<BackoffStrategy>,
+    pub retry_back_off: ::std::option::Option<BackoffStrategy>,
     /// Specifies the allowed number of retries. This parameter is optional and
     /// defaults to 1.
     #[prost(message, optional, tag = "2")]
-    pub num_retries: ::core::option::Option<u32>,
+    pub num_retries: ::std::option::Option<u32>,
 }
 /// The message specifies how to fetch data from remote and how to verify it.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RemoteDataSource {
     /// The HTTP URI to fetch the remote data.
     #[prost(message, optional, tag = "1")]
-    pub http_uri: ::core::option::Option<HttpUri>,
+    pub http_uri: ::std::option::Option<HttpUri>,
     /// SHA256 string for verifying data.
     #[prost(string, tag = "2")]
-    pub sha256: ::prost::alloc::string::String,
+    pub sha256: std::string::String,
     /// Retry policy for fetching remote data.
     #[prost(message, optional, tag = "3")]
-    pub retry_policy: ::core::option::Option<RetryPolicy>,
+    pub retry_policy: ::std::option::Option<RetryPolicy>,
 }
 /// Async data source which support async data fetch.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AsyncDataSource {
     #[prost(oneof = "async_data_source::Specifier", tags = "1, 2")]
-    pub specifier: ::core::option::Option<async_data_source::Specifier>,
+    pub specifier: ::std::option::Option<async_data_source::Specifier>,
 }
-/// Nested message and enum types in `AsyncDataSource`.
 pub mod async_data_source {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Specifier {
@@ -541,13 +533,12 @@ pub struct TransportSocket {
     /// The name of the transport socket to instantiate. The name must match a supported transport
     /// socket implementation.
     #[prost(string, tag = "1")]
-    pub name: ::prost::alloc::string::String,
+    pub name: std::string::String,
     /// Implementation specific configuration which depends on the implementation being instantiated.
     /// See the supported transport socket implementations for further documentation.
     #[prost(oneof = "transport_socket::ConfigType", tags = "3")]
-    pub config_type: ::core::option::Option<transport_socket::ConfigType>,
+    pub config_type: ::std::option::Option<transport_socket::ConfigType>,
 }
-/// Nested message and enum types in `TransportSocket`.
 pub mod transport_socket {
     /// Implementation specific configuration which depends on the implementation being instantiated.
     /// See the supported transport socket implementations for further documentation.
@@ -571,10 +562,10 @@ pub mod transport_socket {
 pub struct RuntimeFractionalPercent {
     /// Default value if the runtime value's for the numerator/denominator keys are not available.
     #[prost(message, optional, tag = "1")]
-    pub default_value: ::core::option::Option<super::super::super::r#type::v3::FractionalPercent>,
+    pub default_value: ::std::option::Option<super::super::super::r#type::v3::FractionalPercent>,
     /// Runtime key for a YAML representation of a FractionalPercent.
     #[prost(string, tag = "2")]
-    pub runtime_key: ::prost::alloc::string::String,
+    pub runtime_key: std::string::String,
 }
 /// Identifies a specific ControlPlane instance that Envoy is connected to.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -583,7 +574,7 @@ pub struct ControlPlane {
     /// of control plane. This can be used to identify which control plane instance,
     /// the Envoy is connected to.
     #[prost(string, tag = "1")]
-    pub identifier: ::prost::alloc::string::String,
+    pub identifier: std::string::String,
 }
 // [#protodoc-title: Common types]
 

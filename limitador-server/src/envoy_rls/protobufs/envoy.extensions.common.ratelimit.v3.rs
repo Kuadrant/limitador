@@ -45,17 +45,16 @@
 pub struct RateLimitDescriptor {
     /// Descriptor entries.
     #[prost(message, repeated, tag = "1")]
-    pub entries: ::prost::alloc::vec::Vec<rate_limit_descriptor::Entry>,
+    pub entries: ::std::vec::Vec<rate_limit_descriptor::Entry>,
 }
-/// Nested message and enum types in `RateLimitDescriptor`.
 pub mod rate_limit_descriptor {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Entry {
         /// Descriptor key.
         #[prost(string, tag = "1")]
-        pub key: ::prost::alloc::string::String,
+        pub key: std::string::String,
         /// Descriptor value.
         #[prost(string, tag = "2")]
-        pub value: ::prost::alloc::string::String,
+        pub value: std::string::String,
     }
 }
