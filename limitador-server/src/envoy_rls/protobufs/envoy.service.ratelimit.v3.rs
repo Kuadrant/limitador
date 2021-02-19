@@ -58,7 +58,9 @@ pub mod rate_limit_response {
         pub unit: i32,
     }
     pub mod rate_limit {
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+        #[derive(
+            Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
+        )]
         #[repr(i32)]
         pub enum Unit {
             /// The time unit is not known.
