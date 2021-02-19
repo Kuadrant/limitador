@@ -8,9 +8,8 @@
 
 Limitador is a generic rate-limiter written in Rust. It can be used as a
 library, or as a service. The service exposes HTTP endpoints to apply and manage
-limits. Limitador can also be used together with Envoy because in a different
-port, it also exposes a grpc service that implements the Envoy Rate Limit
-protocol (v3).
+limits. Limitador can be used with Envoy because it also exposes a grpc service, on a different
+port, that implements the Envoy Rate Limit protocol (v3).
 
 - [**Getting started**](#getting-started)
 - [**Limits storage**](#limits-storage)
@@ -82,7 +81,7 @@ LIMITS_FILE=./limitador-server/examples/limits.yaml cargo run --release --bin li
 If you want to use Limitador with Envoy, there's a minimal Envoy config for
 testing purposes [here](limitador-server/examples/envoy.yaml). The config
 forwards the "userid" header and the request method to Limitador. It assumes
-that there's an upstream API deployed in the port 1323. You can use
+that there's an upstream API deployed on port 1323. You can use
 [echo](https://github.com/labstack/echo), for example.
 
 Limitador has several options that can be configured via ENV. This
@@ -90,7 +89,7 @@ Limitador has several options that can be configured via ENV. This
 
 ## Limits storage
 
-Limitador can store its limits and counters in memory or in Redis. In memory is
+Limitador can store its limits and counters in-memory or in Redis. In-memory is
 faster, but the limits are applied per instance. When using Redis, multiple
 instances of limitador can share the same limits, but it's slower.
 
