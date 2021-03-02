@@ -40,7 +40,7 @@ RUN cargo build --release --target=x86_64-unknown-linux-musl
 # Run Stage
 # ------------------------------------------------------------------------------
 
-FROM alpine:3.12
+FROM alpine:3.13
 
 RUN addgroup -g 1000 limitador \
  && adduser -D -s /bin/sh -u 1000 -G limitador limitador
