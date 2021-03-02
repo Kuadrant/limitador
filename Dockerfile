@@ -4,7 +4,7 @@
 # Build Stage
 # ------------------------------------------------------------------------------
 
-FROM rust:1.45 as limitador-build
+FROM rust:1.50 as limitador-build
 
 RUN apt-get update \
  && apt-get install musl-tools -y
@@ -25,7 +25,7 @@ RUN mkdir -p limitador/src limitador-server/src
 RUN echo "fn main() {println!(\"if you see this, the build broke\")}" > limitador/src/main.rs \
  && echo "fn main() {println!(\"if you see this, the build broke\")}" > limitador-server/src/main.rs
 
-RUN RUSTFLAGS=-Clinker=musl-gcc cargo build --release --target=x86_64-unknown-linux-musl
+RUN cargo build --release --target=x86_64-unknown-linux-musl
 
 # avoid downloading and compiling all the dependencies when there's a change in
 # our code.
@@ -33,7 +33,7 @@ RUN rm -f target/x86_64-unknown-linux-musl/release/deps/limitador*
 
 COPY . .
 
-RUN RUSTFLAGS=-Clinker=musl-gcc cargo build --release --target=x86_64-unknown-linux-musl
+RUN cargo build --release --target=x86_64-unknown-linux-musl
 
 
 # ------------------------------------------------------------------------------
