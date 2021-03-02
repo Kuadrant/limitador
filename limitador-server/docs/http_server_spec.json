@@ -2,6 +2,7 @@
   "swagger": "2.0",
   "definitions": {
     "CheckAndReportInfo": {
+      "type": "object",
       "properties": {
         "delta": {
           "type": "integer",
@@ -24,12 +25,14 @@
       ]
     },
     "Counter": {
+      "type": "object",
       "properties": {
         "expires_in_seconds": {
           "type": "integer",
           "format": "int64"
         },
         "limit": {
+          "type": "object",
           "properties": {
             "conditions": {
               "type": "array",
@@ -40,6 +43,9 @@
             "max_value": {
               "type": "integer",
               "format": "int64"
+            },
+            "name": {
+              "type": "string"
             },
             "namespace": {
               "type": "string"
@@ -80,6 +86,7 @@
       ]
     },
     "Limit": {
+      "type": "object",
       "properties": {
         "conditions": {
           "type": "array",
@@ -90,6 +97,9 @@
         "max_value": {
           "type": "integer",
           "format": "int64"
+        },
+        "name": {
+          "type": "string"
         },
         "namespace": {
           "type": "string"
@@ -128,18 +138,18 @@
           "500": {
             "description": "Internal Server Error"
           }
-        }
-      },
-      "parameters": [
-        {
-          "in": "body",
-          "name": "body",
-          "required": true,
-          "schema": {
-            "$ref": "#/definitions/CheckAndReportInfo"
+        },
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CheckAndReportInfo"
+            }
           }
-        }
-      ]
+        ]
+      }
     },
     "/check_and_report": {
       "post": {
@@ -154,18 +164,18 @@
           "500": {
             "description": "Internal Server Error"
           }
-        }
-      },
-      "parameters": [
-        {
-          "in": "body",
-          "name": "body",
-          "required": true,
-          "schema": {
-            "$ref": "#/definitions/CheckAndReportInfo"
+        },
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CheckAndReportInfo"
+            }
           }
-        }
-      ]
+        ]
+      }
     },
     "/counters/{namespace}": {
       "get": {
@@ -185,16 +195,16 @@
           "500": {
             "description": "Internal Server Error"
           }
-        }
-      },
-      "parameters": [
-        {
-          "in": "path",
-          "name": "namespace",
-          "required": true,
-          "type": "string"
-        }
-      ]
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "namespace",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      }
     },
     "/limits": {
       "post": {
@@ -209,7 +219,17 @@
           "500": {
             "description": "Internal Server Error"
           }
-        }
+        },
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Limit"
+            }
+          }
+        ]
       },
       "delete": {
         "responses": {
@@ -234,17 +254,7 @@
             }
           }
         ]
-      },
-      "parameters": [
-        {
-          "in": "body",
-          "name": "body",
-          "required": true,
-          "schema": {
-            "$ref": "#/definitions/Limit"
-          }
-        }
-      ]
+      }
     },
     "/limits/{namespace}": {
       "get": {
@@ -264,7 +274,15 @@
           "500": {
             "description": "Internal Server Error"
           }
-        }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "namespace",
+            "required": true,
+            "type": "string"
+          }
+        ]
       },
       "delete": {
         "responses": {
@@ -287,15 +305,7 @@
             "type": "string"
           }
         ]
-      },
-      "parameters": [
-        {
-          "in": "path",
-          "name": "namespace",
-          "required": true,
-          "type": "string"
-        }
-      ]
+      }
     },
     "/report": {
       "post": {
@@ -310,18 +320,18 @@
           "500": {
             "description": "Internal Server Error"
           }
-        }
-      },
-      "parameters": [
-        {
-          "in": "body",
-          "name": "body",
-          "required": true,
-          "schema": {
-            "$ref": "#/definitions/CheckAndReportInfo"
+        },
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CheckAndReportInfo"
+            }
           }
-        }
-      ]
+        ]
+      }
     },
     "/status": {
       "get": {
