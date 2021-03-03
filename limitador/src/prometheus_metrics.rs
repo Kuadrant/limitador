@@ -3,6 +3,26 @@ use prometheus::{Encoder, IntCounterVec, IntGauge, Opts, Registry, TextEncoder};
 
 const NAMESPACE_LABEL: &str = "limitador_namespace";
 
+struct Metric {
+    name: String,
+    description: String,
+}
+
+lazy_static! {
+    static ref AUTHORIZED_CALLS: Metric = Metric {
+        name: "authorized_calls".into(),
+        description: "Authorized calls".into(),
+    };
+    static ref LIMITED_CALLS: Metric = Metric {
+        name: "limited_calls".into(),
+        description: "Limited calls".into(),
+    };
+    static ref LIMITADOR_UP: Metric = Metric { // Can be used as a simple health check
+        name: "limitador_up".into(),
+        description: "Limitador is running".into(),
+    };
+}
+
 pub struct PrometheusMetrics {
     registry: Registry,
     authorized_calls: IntCounterVec,
@@ -13,30 +33,30 @@ impl PrometheusMetrics {
     pub fn new() -> Self {
         let labels = vec![NAMESPACE_LABEL];
 
-        let authorized_calls =
-            IntCounterVec::new(Opts::new("authorized_calls", "Authorized calls"), &labels).unwrap();
-
-        let limited_calls =
-            IntCounterVec::new(Opts::new("limited_calls", "Limited calls"), &labels).unwrap();
-
-        // Can be used as a simple health check
-        let limitador_up = IntGauge::new("limitador_up", "Limitador is running").unwrap();
+        let authorized_calls_counter = Self::authorized_calls_counter(&labels);
+        let limited_calls_counter = Self::limited_calls_counter(&labels);
+        let limitador_up_gauge = Self::limitador_up_gauge();
 
         let registry = Registry::new();
 
         registry
-            .register(Box::new(authorized_calls.clone()))
+            .register(Box::new(authorized_calls_counter.clone()))
             .unwrap();
 
-        registry.register(Box::new(limited_calls.clone())).unwrap();
-        registry.register(Box::new(limitador_up.clone())).unwrap();
+        registry
+            .register(Box::new(limited_calls_counter.clone()))
+            .unwrap();
 
-        limitador_up.set(1);
+        registry
+            .register(Box::new(limitador_up_gauge.clone()))
+            .unwrap();
+
+        limitador_up_gauge.set(1);
 
         Self {
             registry,
-            authorized_calls,
-            limited_calls,
+            authorized_calls: authorized_calls_counter,
+            limited_calls: limited_calls_counter,
         }
     }
 
@@ -60,5 +80,25 @@ impl PrometheusMetrics {
             .unwrap();
 
         String::from_utf8(buffer).unwrap()
+    }
+
+    fn authorized_calls_counter(labels: &[&str]) -> IntCounterVec {
+        IntCounterVec::new(
+            Opts::new(&AUTHORIZED_CALLS.name, &AUTHORIZED_CALLS.description),
+            &labels,
+        )
+        .unwrap()
+    }
+
+    fn limited_calls_counter(labels: &[&str]) -> IntCounterVec {
+        IntCounterVec::new(
+            Opts::new(&LIMITED_CALLS.name, &LIMITED_CALLS.description),
+            &labels,
+        )
+        .unwrap()
+    }
+
+    fn limitador_up_gauge() -> IntGauge {
+        IntGauge::new(&LIMITADOR_UP.name, &LIMITADOR_UP.description).unwrap()
     }
 }
