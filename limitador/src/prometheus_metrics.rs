@@ -102,3 +102,83 @@ impl PrometheusMetrics {
         IntGauge::new(&LIMITADOR_UP.name, &LIMITADOR_UP.description).unwrap()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shows_authorized_calls_by_namespace() {
+        let prometheus_metrics = PrometheusMetrics::new();
+
+        let namespaces_with_auth_counts = [
+            (Namespace::from("some_namespace"), 2),
+            (Namespace::from("another_namespace"), 3),
+        ];
+
+        namespaces_with_auth_counts
+            .iter()
+            .for_each(|(namespace, auth_count)| {
+                for _ in 0..*auth_count {
+                    prometheus_metrics.incr_authorized_calls(namespace)
+                }
+            });
+
+        let metrics_output = prometheus_metrics.gather_metrics();
+
+        namespaces_with_auth_counts
+            .iter()
+            .for_each(|(namespace, auth_count)| {
+                assert!(metrics_output.contains(&formatted_counter(
+                    &AUTHORIZED_CALLS.name,
+                    *auth_count,
+                    namespace
+                )));
+            });
+    }
+
+    #[test]
+    fn shows_limited_calls_by_namespace() {
+        let prometheus_metrics = PrometheusMetrics::new();
+
+        let namespaces_with_limited_counts = [
+            (Namespace::from("some_namespace"), 2),
+            (Namespace::from("another_namespace"), 3),
+        ];
+
+        namespaces_with_limited_counts
+            .iter()
+            .for_each(|(namespace, limited_count)| {
+                for _ in 0..*limited_count {
+                    prometheus_metrics.incr_limited_calls(namespace)
+                }
+            });
+
+        let metrics_output = prometheus_metrics.gather_metrics();
+
+        namespaces_with_limited_counts
+            .iter()
+            .for_each(|(namespace, limited_count)| {
+                assert!(metrics_output.contains(&formatted_counter(
+                    &LIMITED_CALLS.name,
+                    *limited_count,
+                    namespace
+                )));
+            });
+    }
+
+    #[test]
+    fn shows_limitador_up_set_to_1() {
+        let metrics_output = PrometheusMetrics::new().gather_metrics();
+        assert!(metrics_output.contains("limitador_up 1"))
+    }
+
+    fn formatted_counter(name: &str, count: i32, namespace: &Namespace) -> String {
+        format!(
+            "{}{{limitador_namespace=\"{}\"}} {}",
+            name,
+            namespace.as_ref(),
+            count,
+        )
+    }
+}
