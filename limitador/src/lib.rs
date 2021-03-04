@@ -180,7 +180,7 @@ use crate::errors::LimitadorError;
 use crate::limit::{Limit, Namespace};
 use crate::prometheus_metrics::PrometheusMetrics;
 use crate::storage::in_memory::InMemoryStorage;
-use crate::storage::{AsyncStorage, Storage};
+use crate::storage::{AsyncStorage, Authorization, Storage};
 use std::collections::{HashMap, HashSet};
 
 #[macro_use]
@@ -298,16 +298,20 @@ impl RateLimiter {
             return Ok(false);
         }
 
-        let is_within_limits = self
+        let check_result = self
             .storage
             .check_and_update(&counters.iter().collect(), delta)?;
 
-        if is_within_limits {
-            self.prometheus_metrics.incr_authorized_calls(&namespace);
-            Ok(false)
-        } else {
-            self.prometheus_metrics.incr_limited_calls(&namespace, None); // TODO: send limit name
-            Ok(true)
+        match check_result {
+            Authorization::Ok => {
+                self.prometheus_metrics.incr_authorized_calls(&namespace);
+                Ok(false)
+            }
+            Authorization::Limited(c) => {
+                self.prometheus_metrics
+                    .incr_limited_calls(&namespace, c.limit().name());
+                Ok(true)
+            }
         }
     }
 
@@ -490,17 +494,21 @@ impl AsyncRateLimiter {
             return Ok(false);
         }
 
-        let is_within_limits = self
+        let check_result = self
             .storage
             .check_and_update(&counters.iter().collect(), delta)
             .await?;
 
-        if is_within_limits {
-            self.prometheus_metrics.incr_authorized_calls(&namespace);
-            Ok(false)
-        } else {
-            self.prometheus_metrics.incr_limited_calls(&namespace, None); // TODO: send limit name
-            Ok(true)
+        match check_result {
+            Authorization::Ok => {
+                self.prometheus_metrics.incr_authorized_calls(&namespace);
+                Ok(false)
+            }
+            Authorization::Limited(c) => {
+                self.prometheus_metrics
+                    .incr_limited_calls(&namespace, c.limit().name());
+                Ok(true)
+            }
         }
     }
 
