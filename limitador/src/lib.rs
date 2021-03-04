@@ -257,7 +257,8 @@ impl RateLimiter {
             match self.storage.is_within_limits(&counter, delta) {
                 Ok(within_limits) => {
                     if !within_limits {
-                        self.prometheus_metrics.incr_limited_calls(&namespace);
+                        self.prometheus_metrics
+                            .incr_limited_calls(&namespace, counter.limit().name());
                         return Ok(true);
                     }
                 }
@@ -305,7 +306,7 @@ impl RateLimiter {
             self.prometheus_metrics.incr_authorized_calls(&namespace);
             Ok(false)
         } else {
-            self.prometheus_metrics.incr_limited_calls(&namespace);
+            self.prometheus_metrics.incr_limited_calls(&namespace, None); // TODO: send limit name
             Ok(true)
         }
     }
@@ -447,7 +448,8 @@ impl AsyncRateLimiter {
             match self.storage.is_within_limits(&counter, delta).await {
                 Ok(within_limits) => {
                     if !within_limits {
-                        self.prometheus_metrics.incr_limited_calls(&namespace);
+                        self.prometheus_metrics
+                            .incr_limited_calls(&namespace, counter.limit().name());
                         return Ok(true);
                     }
                 }
@@ -497,7 +499,7 @@ impl AsyncRateLimiter {
             self.prometheus_metrics.incr_authorized_calls(&namespace);
             Ok(false)
         } else {
-            self.prometheus_metrics.incr_limited_calls(&namespace);
+            self.prometheus_metrics.incr_limited_calls(&namespace, None); // TODO: send limit name
             Ok(true)
         }
     }
