@@ -202,6 +202,81 @@ pub struct AsyncRateLimiter {
     prometheus_metrics: PrometheusMetrics,
 }
 
+pub struct RateLimiterBuilder {
+    storage: Box<dyn Storage>,
+    prometheus_limit_name_labels_enabled: bool,
+}
+
+impl RateLimiterBuilder {
+    pub fn new() -> Self {
+        Self {
+            storage: Box::new(InMemoryStorage::default()),
+            prometheus_limit_name_labels_enabled: false,
+        }
+    }
+
+    pub fn storage(mut self, storage: Box<dyn Storage>) -> Self {
+        self.storage = storage;
+        self
+    }
+
+    pub fn with_prometheus_limit_name_labels(mut self) -> Self {
+        self.prometheus_limit_name_labels_enabled = true;
+        self
+    }
+
+    pub fn build(self) -> RateLimiter {
+        let prometheus_metrics = if self.prometheus_limit_name_labels_enabled {
+            PrometheusMetrics::new_with_counters_by_limit_name()
+        } else {
+            PrometheusMetrics::new()
+        };
+
+        RateLimiter {
+            storage: self.storage,
+            prometheus_metrics,
+        }
+    }
+}
+
+impl Default for RateLimiterBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub struct AsyncRateLimiterBuilder {
+    storage: Box<dyn AsyncStorage>,
+    prometheus_limit_name_labels_enabled: bool,
+}
+
+impl AsyncRateLimiterBuilder {
+    pub fn new(storage: Box<dyn AsyncStorage>) -> Self {
+        Self {
+            storage,
+            prometheus_limit_name_labels_enabled: false,
+        }
+    }
+
+    pub fn with_prometheus_limit_name_labels(mut self) -> Self {
+        self.prometheus_limit_name_labels_enabled = true;
+        self
+    }
+
+    pub fn build(self) -> AsyncRateLimiter {
+        let prometheus_metrics = if self.prometheus_limit_name_labels_enabled {
+            PrometheusMetrics::new_with_counters_by_limit_name()
+        } else {
+            PrometheusMetrics::new()
+        };
+
+        AsyncRateLimiter {
+            storage: self.storage,
+            prometheus_metrics,
+        }
+    }
+}
+
 impl RateLimiter {
     pub fn new() -> RateLimiter {
         RateLimiter {
