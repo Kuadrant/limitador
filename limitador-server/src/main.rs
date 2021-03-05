@@ -4,8 +4,9 @@ extern crate log;
 use crate::envoy_rls::server::run_envoy_rls_server;
 use crate::http_api::server::run_http_server;
 use limitador::limit::Limit;
-use limitador::storage::redis::{AsyncRedisStorage, CachedRedisStorageBuilder};
-use limitador::{AsyncRateLimiter, RateLimiter};
+use limitador::storage::redis::{AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder};
+use limitador::storage::AsyncStorage;
+use limitador::{AsyncRateLimiter, AsyncRateLimiterBuilder, RateLimiter, RateLimiterBuilder};
 use std::env;
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,6 +15,7 @@ mod envoy_rls;
 mod http_api;
 
 const LIMITS_FILE_ENV: &str = "LIMITS_FILE";
+const LIMIT_NAME_IN_PROMETHEUS_LABELS_ENV: &str = "LIMIT_NAME_IN_PROMETHEUS_LABELS";
 const DEFAULT_HOST: &str = "0.0.0.0";
 const DEFAULT_HTTP_API_PORT: u32 = 8080;
 const DEFAULT_ENVOY_RLS_PORT: u32 = 8081;
@@ -28,14 +30,26 @@ impl Limiter {
     pub async fn new() -> Limiter {
         let rate_limiter = match env::var("REDIS_URL") {
             Ok(redis_url) => {
-                if Self::env_option_is_enabled("REDIS_LOCAL_CACHE_ENABLED") {
-                    Self::limiter_with_redis_and_local_cache(&redis_url).await
-                } else {
-                    // Let's use the async impl. This could be configurable if needed.
-                    Self::limiter_with_async_redis(&redis_url).await
+                let storage = Self::storage_using_redis(&redis_url).await;
+                let mut rate_limiter_builder = AsyncRateLimiterBuilder::new(storage);
+
+                if Self::env_option_is_enabled(LIMIT_NAME_IN_PROMETHEUS_LABELS_ENV) {
+                    rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
                 }
+
+                Limiter::Async(rate_limiter_builder.build())
             }
-            Err(_) => Self::default_blocking_limiter(),
+            Err(_) => {
+                // Default to in-memory storage implementation
+
+                let mut rate_limiter_builder = RateLimiterBuilder::new();
+
+                if Self::env_option_is_enabled(LIMIT_NAME_IN_PROMETHEUS_LABELS_ENV) {
+                    rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
+                }
+
+                Limiter::Blocking(rate_limiter_builder.build())
+            }
         };
 
         rate_limiter.load_limits_from_file().await;
@@ -43,13 +57,20 @@ impl Limiter {
         rate_limiter
     }
 
-    async fn limiter_with_async_redis(redis_url: &str) -> Limiter {
-        let async_limiter =
-            AsyncRateLimiter::new_with_storage(Box::new(AsyncRedisStorage::new(&redis_url).await));
-        Limiter::Async(async_limiter)
+    async fn storage_using_redis(redis_url: &str) -> Box<dyn AsyncStorage> {
+        if Self::env_option_is_enabled("REDIS_LOCAL_CACHE_ENABLED") {
+            Box::new(Self::storage_using_redis_and_local_cache(&redis_url).await)
+        } else {
+            // Let's use the async impl. This could be configurable if needed.
+            Box::new(Self::storage_using_async_redis(&redis_url).await)
+        }
     }
 
-    async fn limiter_with_redis_and_local_cache(redis_url: &str) -> Limiter {
+    async fn storage_using_async_redis(redis_url: &str) -> AsyncRedisStorage {
+        AsyncRedisStorage::new(&redis_url).await
+    }
+
+    async fn storage_using_redis_and_local_cache(redis_url: &str) -> CachedRedisStorage {
         // TODO: Not all the options are configurable via ENV. Add them as needed.
 
         let mut cached_redis_storage = CachedRedisStorageBuilder::new(&redis_url);
@@ -80,13 +101,7 @@ impl Limiter {
                 .ttl_ratio_cached_counters(ttl_ratio_cached_counters.parse().unwrap());
         }
 
-        let async_limiter =
-            AsyncRateLimiter::new_with_storage(Box::new(cached_redis_storage.build().await));
-        Limiter::Async(async_limiter)
-    }
-
-    fn default_blocking_limiter() -> Limiter {
-        Limiter::Blocking(RateLimiter::default())
+        cached_redis_storage.build().await
     }
 
     fn env_option_is_enabled(env_name: &str) -> bool {

@@ -20,6 +20,7 @@ pub struct Limit {
     namespace: String,
     max_value: i64,
     seconds: u64,
+    name: Option<String>,
     conditions: Vec<String>,
     variables: Vec<String>,
 }
@@ -30,6 +31,7 @@ impl From<&LimitadorLimit> for Limit {
             namespace: ll.namespace().as_ref().to_string(),
             max_value: ll.max_value(),
             seconds: ll.seconds(),
+            name: ll.name().map(|name| name.to_string()),
             conditions: ll.conditions().into_iter().collect(),
             variables: ll.variables().into_iter().collect(),
         }
@@ -38,13 +40,19 @@ impl From<&LimitadorLimit> for Limit {
 
 impl Into<LimitadorLimit> for Limit {
     fn into(self) -> LimitadorLimit {
-        LimitadorLimit::new(
+        let mut limitador_limit = LimitadorLimit::new(
             self.namespace.as_str(),
             self.max_value,
             self.seconds,
             self.conditions,
             self.variables,
-        )
+        );
+
+        if let Some(name) = self.name {
+            limitador_limit.set_name(name)
+        }
+
+        limitador_limit
     }
 }
 
