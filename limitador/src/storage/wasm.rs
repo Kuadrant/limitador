@@ -1,6 +1,6 @@
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
-use crate::storage::{Storage, StorageErr};
+use crate::storage::{Authorization, Storage, StorageErr};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::sync::RwLock;
@@ -151,17 +151,17 @@ impl Storage for WasmStorage {
         Ok(())
     }
 
-    fn check_and_update(
+    fn check_and_update<'c>(
         &self,
-        counters: &HashSet<&Counter>,
+        counters: &HashSet<&'c Counter>,
         delta: i64,
-    ) -> Result<bool, StorageErr> {
+    ) -> Result<Authorization<'c>, StorageErr> {
         // This makes the operator of check + update atomic
         let mut stored_counters = self.counters.write().unwrap();
 
         for counter in counters {
             if !self.counter_is_within_limits(counter, stored_counters.get(counter), delta) {
-                return Ok(false);
+                return Ok(Authorization::Limited(counter));
             }
         }
 
@@ -169,7 +169,7 @@ impl Storage for WasmStorage {
             self.insert_or_update_counter(&mut stored_counters, counter, delta)
         }
 
-        Ok(true)
+        Ok(Authorization::Ok)
     }
 
     fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {

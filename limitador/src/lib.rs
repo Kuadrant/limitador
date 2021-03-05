@@ -180,7 +180,7 @@ use crate::errors::LimitadorError;
 use crate::limit::{Limit, Namespace};
 use crate::prometheus_metrics::PrometheusMetrics;
 use crate::storage::in_memory::InMemoryStorage;
-use crate::storage::{AsyncStorage, Storage};
+use crate::storage::{AsyncStorage, Authorization, Storage};
 use std::collections::{HashMap, HashSet};
 
 #[macro_use]
@@ -200,6 +200,81 @@ pub struct RateLimiter {
 pub struct AsyncRateLimiter {
     storage: Box<dyn AsyncStorage>,
     prometheus_metrics: PrometheusMetrics,
+}
+
+pub struct RateLimiterBuilder {
+    storage: Box<dyn Storage>,
+    prometheus_limit_name_labels_enabled: bool,
+}
+
+impl RateLimiterBuilder {
+    pub fn new() -> Self {
+        Self {
+            storage: Box::new(InMemoryStorage::default()),
+            prometheus_limit_name_labels_enabled: false,
+        }
+    }
+
+    pub fn storage(mut self, storage: Box<dyn Storage>) -> Self {
+        self.storage = storage;
+        self
+    }
+
+    pub fn with_prometheus_limit_name_labels(mut self) -> Self {
+        self.prometheus_limit_name_labels_enabled = true;
+        self
+    }
+
+    pub fn build(self) -> RateLimiter {
+        let prometheus_metrics = if self.prometheus_limit_name_labels_enabled {
+            PrometheusMetrics::new_with_counters_by_limit_name()
+        } else {
+            PrometheusMetrics::new()
+        };
+
+        RateLimiter {
+            storage: self.storage,
+            prometheus_metrics,
+        }
+    }
+}
+
+impl Default for RateLimiterBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub struct AsyncRateLimiterBuilder {
+    storage: Box<dyn AsyncStorage>,
+    prometheus_limit_name_labels_enabled: bool,
+}
+
+impl AsyncRateLimiterBuilder {
+    pub fn new(storage: Box<dyn AsyncStorage>) -> Self {
+        Self {
+            storage,
+            prometheus_limit_name_labels_enabled: false,
+        }
+    }
+
+    pub fn with_prometheus_limit_name_labels(mut self) -> Self {
+        self.prometheus_limit_name_labels_enabled = true;
+        self
+    }
+
+    pub fn build(self) -> AsyncRateLimiter {
+        let prometheus_metrics = if self.prometheus_limit_name_labels_enabled {
+            PrometheusMetrics::new_with_counters_by_limit_name()
+        } else {
+            PrometheusMetrics::new()
+        };
+
+        AsyncRateLimiter {
+            storage: self.storage,
+            prometheus_metrics,
+        }
+    }
 }
 
 impl RateLimiter {
@@ -257,7 +332,8 @@ impl RateLimiter {
             match self.storage.is_within_limits(&counter, delta) {
                 Ok(within_limits) => {
                     if !within_limits {
-                        self.prometheus_metrics.incr_limited_calls(&namespace);
+                        self.prometheus_metrics
+                            .incr_limited_calls(&namespace, counter.limit().name());
                         return Ok(true);
                     }
                 }
@@ -297,16 +373,20 @@ impl RateLimiter {
             return Ok(false);
         }
 
-        let is_within_limits = self
+        let check_result = self
             .storage
             .check_and_update(&counters.iter().collect(), delta)?;
 
-        if is_within_limits {
-            self.prometheus_metrics.incr_authorized_calls(&namespace);
-            Ok(false)
-        } else {
-            self.prometheus_metrics.incr_limited_calls(&namespace);
-            Ok(true)
+        match check_result {
+            Authorization::Ok => {
+                self.prometheus_metrics.incr_authorized_calls(&namespace);
+                Ok(false)
+            }
+            Authorization::Limited(c) => {
+                self.prometheus_metrics
+                    .incr_limited_calls(&namespace, c.limit().name());
+                Ok(true)
+            }
         }
     }
 
@@ -447,7 +527,8 @@ impl AsyncRateLimiter {
             match self.storage.is_within_limits(&counter, delta).await {
                 Ok(within_limits) => {
                     if !within_limits {
-                        self.prometheus_metrics.incr_limited_calls(&namespace);
+                        self.prometheus_metrics
+                            .incr_limited_calls(&namespace, counter.limit().name());
                         return Ok(true);
                     }
                 }
@@ -488,17 +569,21 @@ impl AsyncRateLimiter {
             return Ok(false);
         }
 
-        let is_within_limits = self
+        let check_result = self
             .storage
             .check_and_update(&counters.iter().collect(), delta)
             .await?;
 
-        if is_within_limits {
-            self.prometheus_metrics.incr_authorized_calls(&namespace);
-            Ok(false)
-        } else {
-            self.prometheus_metrics.incr_limited_calls(&namespace);
-            Ok(true)
+        match check_result {
+            Authorization::Ok => {
+                self.prometheus_metrics.incr_authorized_calls(&namespace);
+                Ok(false)
+            }
+            Authorization::Limited(c) => {
+                self.prometheus_metrics
+                    .incr_limited_calls(&namespace, c.limit().name());
+                Ok(true)
+            }
         }
     }
 

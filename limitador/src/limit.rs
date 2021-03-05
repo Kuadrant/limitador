@@ -38,6 +38,7 @@ pub struct Limit {
     namespace: Namespace,
     max_value: i64,
     seconds: u64,
+    name: Option<String>,
 
     // Need to sort to generate the same object when using the JSON as a key or
     // value in Redis.
@@ -67,6 +68,7 @@ impl Limit {
             namespace: namespace.into(),
             max_value,
             seconds,
+            name: None,
             conditions: conditions.into_iter().map(|cond| cond.into()).collect(),
             variables: variables.into_iter().map(|var| var.into()).collect(),
         }
@@ -82,6 +84,14 @@ impl Limit {
 
     pub fn seconds(&self) -> u64 {
         self.seconds
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub fn set_name(&mut self, name: String) {
+        self.name = Some(name)
     }
 
     pub fn conditions(&self) -> HashSet<String> {
@@ -127,6 +137,7 @@ impl Hash for Limit {
         self.namespace.hash(state);
         self.max_value.hash(state);
         self.seconds.hash(state);
+        self.name.hash(state);
 
         let mut encoded_conditions = self
             .conditions
@@ -153,6 +164,7 @@ impl PartialEq for Limit {
         self.namespace == other.namespace
             && self.max_value == other.max_value
             && self.seconds == other.seconds
+            && self.name == other.name
             && self.conditions == other.conditions
             && self.variables == other.variables
     }
@@ -161,6 +173,22 @@ impl PartialEq for Limit {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn limit_can_have_an_optional_name() {
+        let mut limit = Limit::new(
+            Namespace::from("test_namespace"),
+            10,
+            60,
+            vec!["x == 5"],
+            vec!["y"],
+        );
+        assert!(limit.name.is_none());
+
+        let name = "Test Limit";
+        limit.set_name(name.to_string());
+        assert_eq!(name, limit.name.unwrap())
+    }
 
     #[test]
     fn limit_applies() {

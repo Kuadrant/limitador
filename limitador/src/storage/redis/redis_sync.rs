@@ -5,7 +5,7 @@ use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
 use crate::storage::redis::redis_keys::*;
 use crate::storage::redis::scripts::{SCRIPT_DELETE_LIMIT, SCRIPT_UPDATE_COUNTER};
-use crate::storage::{Storage, StorageErr};
+use crate::storage::{Authorization, Storage, StorageErr};
 use r2d2::{ManageConnection, Pool};
 use std::collections::HashSet;
 use std::time::Duration;
@@ -118,11 +118,11 @@ impl Storage for RedisStorage {
         Ok(())
     }
 
-    fn check_and_update(
+    fn check_and_update<'c>(
         &self,
-        counters: &HashSet<&Counter>,
+        counters: &HashSet<&'c Counter>,
         delta: i64,
-    ) -> Result<bool, StorageErr> {
+    ) -> Result<Authorization<'c>, StorageErr> {
         let mut con = self.conn_pool.get()?;
 
         let counter_keys: Vec<String> = counters
@@ -137,12 +137,12 @@ impl Storage for RedisStorage {
             match counter_vals[i] {
                 Some(val) => {
                     if val - delta < 0 {
-                        return Ok(false);
+                        return Ok(Authorization::Limited(counter));
                     }
                 }
                 None => {
                     if counter.max_value() - delta < 0 {
-                        return Ok(false);
+                        return Ok(Authorization::Limited(counter));
                     }
                 }
             }
@@ -153,7 +153,7 @@ impl Storage for RedisStorage {
             self.update_counter(counter, delta)?
         }
 
-        Ok(true)
+        Ok(Authorization::Ok)
     }
 
     fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {

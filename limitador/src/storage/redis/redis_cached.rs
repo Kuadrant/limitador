@@ -8,7 +8,7 @@ use crate::storage::redis::counters_cache::{
 use crate::storage::redis::redis_async::AsyncRedisStorage;
 use crate::storage::redis::redis_keys::*;
 use crate::storage::redis::scripts::VALUES_AND_TTLS;
-use crate::storage::{AsyncStorage, StorageErr};
+use crate::storage::{AsyncStorage, Authorization, StorageErr};
 use async_trait::async_trait;
 use redis::aio::ConnectionManager;
 use redis::ConnectionInfo;
@@ -98,11 +98,11 @@ impl AsyncStorage for CachedRedisStorage {
     // limits. In order to do so, we'd need to run this whole function
     // atomically, but that'd be too slow.
     // This function trades accuracy for speed.
-    async fn check_and_update(
+    async fn check_and_update<'c>(
         &self,
-        counters: &HashSet<&Counter>,
+        counters: &HashSet<&'c Counter>,
         delta: i64,
-    ) -> Result<bool, StorageErr> {
+    ) -> Result<Authorization<'c>, StorageErr> {
         let mut con = self.redis_conn_manager.clone();
 
         let mut not_cached: Vec<&Counter> = vec![];
@@ -114,7 +114,7 @@ impl AsyncStorage for CachedRedisStorage {
                 match cached_counters.get(counter) {
                     Some(val) => {
                         if val - delta < 0 {
-                            return Ok(false);
+                            return Ok(Authorization::Limited(counter));
                         }
                     }
                     None => {
@@ -154,12 +154,12 @@ impl AsyncStorage for CachedRedisStorage {
                 match counter_vals[i] {
                     Some(val) => {
                         if val - delta < 0 {
-                            return Ok(false);
+                            return Ok(Authorization::Limited(counter));
                         }
                     }
                     None => {
                         if counter.max_value() - delta < 0 {
-                            return Ok(false);
+                            return Ok(Authorization::Limited(counter));
                         }
                     }
                 }
@@ -186,7 +186,7 @@ impl AsyncStorage for CachedRedisStorage {
             }
         }
 
-        Ok(true)
+        Ok(Authorization::Ok)
     }
 
     async fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {

@@ -6,7 +6,7 @@ use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
 use crate::storage::redis::redis_keys::*;
 use crate::storage::redis::scripts::{SCRIPT_DELETE_LIMIT, SCRIPT_UPDATE_COUNTER};
-use crate::storage::{AsyncStorage, StorageErr};
+use crate::storage::{AsyncStorage, Authorization, StorageErr};
 use async_trait::async_trait;
 use redis::AsyncCommands;
 use std::collections::HashSet;
@@ -134,11 +134,11 @@ impl AsyncStorage for AsyncRedisStorage {
         Ok(())
     }
 
-    async fn check_and_update(
+    async fn check_and_update<'c>(
         &self,
-        counters: &HashSet<&Counter>,
+        counters: &HashSet<&'c Counter>,
         delta: i64,
-    ) -> Result<bool, StorageErr> {
+    ) -> Result<Authorization<'c>, StorageErr> {
         let mut con = self.conn_manager.clone();
 
         let counter_keys: Vec<String> = counters
@@ -155,12 +155,12 @@ impl AsyncStorage for AsyncRedisStorage {
             match counter_vals[i] {
                 Some(val) => {
                     if val - delta < 0 {
-                        return Ok(false);
+                        return Ok(Authorization::Limited(counter));
                     }
                 }
                 None => {
                     if counter.max_value() - delta < 0 {
-                        return Ok(false);
+                        return Ok(Authorization::Limited(counter));
                     }
                 }
             }
@@ -171,7 +171,7 @@ impl AsyncStorage for AsyncRedisStorage {
             self.update_counter(counter, delta).await?
         }
 
-        Ok(true)
+        Ok(Authorization::Ok)
     }
 
     async fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
