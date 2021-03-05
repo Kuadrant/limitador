@@ -42,6 +42,15 @@ boots.
 - Format: file path.
 
 
+## LIMIT_NAME_IN_PROMETHEUS_LABELS
+
+- Enables using limit names as labels in Prometheus metrics. This is disabled by
+default because for a few limits it should be fine, but it could become a
+problem when defining lots of limits. See the caution note in the Prometheus
+docs: https://prometheus.io/docs/practices/naming/#labels
+- Optional. Disabled by default.
+- Format: set to "1" to enable.
+
 ## REDIS_LOCAL_CACHE_ENABLED
 
 - Enables a storage implementation that uses Redis, but also caches some data in
