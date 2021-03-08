@@ -2,6 +2,23 @@
 
 Notable changes to the Limitador server will be tracked in this document.
 
+## 0.4.0 - 2021-03-08
+
+### Added
+
+- Option to classify limited calls by limit name. This option is disabled by
+default and can be enabled with the `LIMIT_NAME_IN_PROMETHEUS_LABELS` env
+[#26](https://github.com/3scale-labs/limitador/pull/26).
+
+### Changed
+
+- Updated build image to rust v1.5.0 and run image to alpine v3.13
+[#23](https://github.com/3scale-labs/limitador/pull/23).
+- Limitador no longer load any limits by default. This was only done for testing
+purposes, and we forgot to change it
+[#10](https://github.com/3scale-labs/limitador/pull/10).
+
+
 ## 0.3.0 - 2020-12-09
 
 ### Added
