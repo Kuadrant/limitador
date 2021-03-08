@@ -1,6 +1,6 @@
 # Limitador
 
-![Github Workflow](https://github.com/3scale/limitador/workflows/Rust/badge.svg)
+![Github Workflow](https://github.com/3scale-labs/limitador/workflows/Rust/badge.svg)
 [![docs.rs](https://docs.rs/limitador/badge.svg)](https://docs.rs/limitador)
 [![Crates.io](https://img.shields.io/crates/v/limitador)](https://crates.io/crates/limitador)
 [![Docker Repository on Quay](https://quay.io/repository/3scale/limitador/status
