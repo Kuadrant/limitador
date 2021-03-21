@@ -17,7 +17,10 @@ pub mod envoy {
             #[path = "."]
             pub mod ratelimit {
                 pub mod v3 {
-                    include!(concat!(env!("OUT_DIR"), "/envoy.extensions.common.ratelimit.v3.rs"));
+                    include!(concat!(
+                        env!("OUT_DIR"),
+                        "/envoy.extensions.common.ratelimit.v3.rs"
+                    ));
                 }
             }
         }
