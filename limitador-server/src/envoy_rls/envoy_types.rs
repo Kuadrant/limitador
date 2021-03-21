@@ -4,8 +4,9 @@ pub mod envoy {
     pub mod config {
         #[path = "."]
         pub mod core {
-            #[path = "envoy.config.core.v3.rs"]
-            pub mod v3;
+            pub mod v3 {
+                include!(concat!(env!("OUT_DIR"), "/envoy.config.core.v3.rs"));
+            }
         }
     }
 
@@ -15,24 +16,27 @@ pub mod envoy {
         pub mod common {
             #[path = "."]
             pub mod ratelimit {
-                #[path = "envoy.extensions.common.ratelimit.v3.rs"]
-                pub mod v3;
+                pub mod v3 {
+                    include!(concat!(env!("OUT_DIR"), "/envoy.extensions.common.ratelimit.v3.rs"));
+                }
             }
         }
     }
 
     #[path = "."]
     pub mod r#type {
-        #[path = "envoy.r#type.v3.rs"]
-        pub mod v3;
+        pub mod v3 {
+            include!(concat!(env!("OUT_DIR"), "/envoy.r#type.v3.rs"));
+        }
     }
 
     #[path = "."]
     pub mod service {
         #[path = "."]
         pub mod ratelimit {
-            #[path = "envoy.service.ratelimit.v3.rs"]
-            pub mod v3;
+            pub mod v3 {
+                include!(concat!(env!("OUT_DIR"), "/envoy.service.ratelimit.v3.rs"));
+            }
         }
     }
 }
