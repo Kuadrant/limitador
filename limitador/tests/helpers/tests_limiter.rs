@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 
 enum LimiterImpl {
     Blocking(RateLimiter),
+    #[allow(dead_code)] // dead when no "redis_storage"
     Async(AsyncRateLimiter),
 }
 
@@ -24,6 +25,7 @@ impl TestsLimiter {
         }
     }
 
+    #[allow(dead_code)] // dead when no "redis_storage"
     pub fn new_from_async_impl(limiter: AsyncRateLimiter) -> Self {
         Self {
             limiter_impl: LimiterImpl::Async(limiter),
