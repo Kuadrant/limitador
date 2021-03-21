@@ -271,3 +271,19 @@ impl Default for RedisStorage {
         RedisStorage::new(DEFAULT_REDIS_URL)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::storage::redis::RedisStorage;
+
+    #[test]
+    fn create_default() {
+        let _ = RedisStorage::default();
+    }
+
+    #[test]
+    #[ignore]
+    fn create_storage_with_custom_url() {
+        let _r = RedisStorage::new("redis://127.0.0.1:7777");
+    }
+}
