@@ -284,6 +284,6 @@ mod test {
     #[test]
     #[ignore]
     fn create_storage_with_custom_url() {
-        let _r = RedisStorage::new("redis://127.0.0.1:7777");
+        let _r = RedisStorage::new("redis://127.0.0.1:6379");
     }
 }
