@@ -15,6 +15,8 @@
 //!
 //! To use Redis:
 //! ```no_run
+//! #[cfg(feature = "redis_storage")]
+//! # {
 //! use limitador::RateLimiter;
 //! use limitador::storage::redis::RedisStorage;
 //!
@@ -25,6 +27,7 @@
 //! let rate_limiter = RateLimiter::new_with_storage(
 //!     Box::new(RedisStorage::new("redis://127.0.0.1:7777"))
 //! );
+//! # }
 //! ```
 //!
 //! # Limits
@@ -133,7 +136,9 @@
 //! async one, we need to instantiate an "AsyncRateLimiter" with an
 //! "AsyncRedisStorage":
 //!
-//! ```no_run
+//! ```
+//! #[cfg(feature = "redis_storage")]
+//! # {
 //! use limitador::AsyncRateLimiter;
 //! use limitador::storage::redis::AsyncRedisStorage;
 //!
@@ -142,12 +147,15 @@
 //!         Box::new(AsyncRedisStorage::new("redis://127.0.0.1:7777").await)
 //!     );
 //! };
+//! # }
 //! ```
 //!
 //! Both the blocking and the async limiters expose the same functions, so we
 //! can use the async limiter as explained above. For example:
 //!
-//! ```no_run
+//! ```
+//! #[cfg(feature = "redis_storage")]
+//! # {
 //! use limitador::AsyncRateLimiter;
 //! use limitador::limit::Limit;
 //! use limitador::storage::redis::AsyncRedisStorage;
@@ -165,6 +173,7 @@
 //!     );
 //!     rate_limiter.add_limit(&limit).await;
 //! };
+//! # }
 //! ```
 //!
 //! # Limits accuracy
