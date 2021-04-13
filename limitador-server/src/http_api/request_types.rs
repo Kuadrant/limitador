@@ -38,17 +38,17 @@ impl From<&LimitadorLimit> for Limit {
     }
 }
 
-impl Into<LimitadorLimit> for Limit {
-    fn into(self) -> LimitadorLimit {
+impl From<Limit> for LimitadorLimit {
+    fn from(limit: Limit) -> Self {
         let mut limitador_limit = LimitadorLimit::new(
-            self.namespace.as_str(),
-            self.max_value,
-            self.seconds,
-            self.conditions,
-            self.variables,
+            limit.namespace.as_str(),
+            limit.max_value,
+            limit.seconds,
+            limit.conditions,
+            limit.variables,
         );
 
-        if let Some(name) = self.name {
+        if let Some(name) = limit.name {
             limitador_limit.set_name(name)
         }
 
