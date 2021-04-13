@@ -303,7 +303,7 @@ mod test {
 
     async fn get_limits_returns_empty_if_no_limits_in_namespace(rate_limiter: &mut TestsLimiter) {
         assert!(rate_limiter
-            .get_counters("test_namespace")
+            .get_limits("test_namespace")
             .await
             .unwrap()
             .is_empty())
