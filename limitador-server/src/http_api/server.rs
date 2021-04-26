@@ -132,9 +132,9 @@ async fn get_counters(
     match get_counters_result {
         Ok(counters) => {
             let mut resp_counters: Vec<Counter> = vec![];
-            counters.iter().for_each(|c| {
+            for c in &counters {
                 resp_counters.push(c.into());
-            });
+            }
             Ok(Json(resp_counters))
         }
         Err(_) => Err(ErrorResponse::InternalServerError),
