@@ -59,11 +59,11 @@ impl RateLimitService for MyRateLimiter {
 
         let is_rate_limited_res = match &*self.limiter {
             Limiter::Blocking(limiter) => {
-                limiter.check_rate_limited_and_update(namespace, &values, hits_addend as i64)
+                limiter.check_rate_limited_and_update(namespace, &values, i64::from(hits_addend))
             }
             Limiter::Async(limiter) => {
                 limiter
-                    .check_rate_limited_and_update(namespace, &values, hits_addend as i64)
+                    .check_rate_limited_and_update(namespace, &values, i64::from(hits_addend))
                     .await
             }
         };
