@@ -24,6 +24,8 @@ async-trait = "0.1.41"
 cfg-if = "1.0"
 prometheus = "0.10"
 lazy_static = "1.4"
+infinispan = "0.1"
+reqwest = "0.10"
 
 # Optional dependencies
 redis = { version = "0.17", optional = true, features = ["connection-manager"] }
