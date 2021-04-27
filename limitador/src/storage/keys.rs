@@ -8,6 +8,10 @@
 // into account. Ref: https://redis.io/topics/cluster-spec (key hash tags).
 // Reminder: in format!(), "{" is escaped with "{{".
 
+// Note: keep in mind that what's described above is the default in Redis, when
+// reusing this module for other storage implementations make sure that using
+// "{}" for sharding applies.
+
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
 

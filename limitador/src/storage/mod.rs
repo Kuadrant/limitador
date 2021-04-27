@@ -10,6 +10,8 @@ pub mod wasm;
 #[cfg(feature = "redis_storage")]
 pub mod redis;
 
+mod keys;
+
 pub enum Authorization<'c> {
     Ok,
     Limited(&'c Counter), // First counter found over the limits

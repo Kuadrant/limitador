@@ -1,12 +1,12 @@
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
+use crate::storage::keys::*;
 use crate::storage::redis::batcher::Batcher;
 use crate::storage::redis::counters_cache::{
     CountersCache, CountersCacheBuilder, DEFAULT_MAX_CACHED_COUNTERS,
     DEFAULT_MAX_TTL_CACHED_COUNTERS, DEFAULT_TTL_RATIO_CACHED_COUNTERS,
 };
 use crate::storage::redis::redis_async::AsyncRedisStorage;
-use crate::storage::redis::redis_keys::*;
 use crate::storage::redis::scripts::VALUES_AND_TTLS;
 use crate::storage::{AsyncStorage, Authorization, StorageErr};
 use async_trait::async_trait;
