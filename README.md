@@ -32,7 +32,7 @@ Add this to your `Cargo.toml`:
 limitador = { version = "0.2.0" }
 ```
 
-To use limitador in a project that compiles to WASM, there are some features
+To use Limitador in a project that compiles to WASM, there are some features
 that need to be disabled. Add this to your `Cargo.toml` instead:
 ```toml
 [dependencies]
@@ -56,7 +56,7 @@ To use Redis, specify the URL with `REDIS_URL`:
 REDIS_URL=redis://127.0.0.1:6379 cargo run --release --bin limitador-server
 ```
 
-By default, limitador starts the HTTP server in `localhost:8080` and the grpc
+By default, Limitador starts the HTTP server in `localhost:8080` and the grpc
 service that implements the Envoy Rate Limit protocol in `localhost:8081`. That
 can be configured with these ENVs: `ENVOY_RLS_HOST`, `ENVOY_RLS_PORT`,
 `HTTP_API_HOST`, and `HTTP_API_PORT`.
@@ -91,7 +91,7 @@ Limitador has several options that can be configured via ENV. This
 
 Limitador can store its limits and counters in-memory or in Redis. In-memory is
 faster, but the limits are applied per instance. When using Redis, multiple
-instances of limitador can share the same limits, but it's slower.
+instances of Limitador can share the same limits, but it's slower.
 
 
 ## Development
@@ -106,7 +106,7 @@ cargo build
 
 Some tests need a redis deployed in `localhost:6379`. You can run it in Docker with:
 ```bash
-docker run --rm --net=host -it redis
+docker run --rm -p 6379:6379 -it redis
 ```
 
 Then, run the tests:
