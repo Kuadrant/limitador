@@ -14,7 +14,7 @@ port, that implements the Envoy Rate Limit protocol (v3).
 - [**Getting started**](#getting-started)
 - [**Limits storage**](#limits-storage)
 - [**Development**](#development)
-- [**Kubernetes**](limitador-server/kubernetes/)
+- [**Kubernetes**](limitador-server/kubernetes)
 - [**License**](#license)
 
 Limitador is under active development, and its API has not been stabilized yet.
@@ -107,6 +107,10 @@ cargo build
 Some tests need a redis deployed in `localhost:6379`. You can run it in Docker with:
 ```bash
 docker run --rm --net=host -it redis
+```
+on MacOS invoke Docker thus:
+```bash
+docker run --rm -p 6379:6379 -it redis
 ```
 
 Then, run the tests:
