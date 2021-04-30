@@ -45,6 +45,7 @@ macro_rules! test_with_all_storage_impls {
                 $function(&mut TestsLimiter::new_from_async_impl(rate_limiter)).await;
             }
 
+            #[cfg(feature = "infinispan_storage")]
             #[tokio::test]
             #[serial]
             async fn [<$function _with_infinispan>]() {
@@ -80,6 +81,12 @@ mod test {
         }
     }
 
+    cfg_if::cfg_if! {
+       if #[cfg(feature = "infinispan_storage")] {
+           use limitador::storage::infinispan::InfinispanStorage;
+       }
+    }
+
     use self::limitador::counter::Counter;
     use self::limitador::storage::wasm::Clock;
     use self::limitador::RateLimiter;
@@ -87,7 +94,6 @@ mod test {
     use limitador::limit::Limit;
     use limitador::limit::Namespace;
     use limitador::storage::in_memory::InMemoryStorage;
-    use limitador::storage::infinispan::InfinispanStorage;
     use limitador::storage::wasm::WasmStorage;
     use std::collections::{HashMap, HashSet};
     use std::thread::sleep;

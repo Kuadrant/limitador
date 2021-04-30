@@ -10,6 +10,7 @@ pub mod wasm;
 #[cfg(feature = "redis_storage")]
 pub mod redis;
 
+#[cfg(feature = "infinispan_storage")]
 pub mod infinispan;
 
 mod keys;
