@@ -10,6 +10,8 @@ pub mod wasm;
 #[cfg(feature = "redis_storage")]
 pub mod redis;
 
+pub mod infinispan;
+
 mod keys;
 
 pub enum Authorization<'c> {
