@@ -44,6 +44,19 @@ macro_rules! test_with_all_storage_impls {
                 AsyncRedisStorage::new("redis://127.0.0.1:6379").await.clear().await.unwrap();
                 $function(&mut TestsLimiter::new_from_async_impl(rate_limiter)).await;
             }
+
+            #[tokio::test]
+            #[serial]
+            async fn [<$function _with_infinispan>]() {
+                let storage = InfinispanStorage::new(
+                    "http://127.0.0.1:11222", "username", "password"
+                ).await;
+                storage.clear().await.unwrap();
+                let rate_limiter = AsyncRateLimiter::new_with_storage(
+                    Box::new(storage)
+                );
+                $function(&mut TestsLimiter::new_from_async_impl(rate_limiter)).await;
+            }
         }
     };
 }
@@ -74,6 +87,7 @@ mod test {
     use limitador::limit::Limit;
     use limitador::limit::Namespace;
     use limitador::storage::in_memory::InMemoryStorage;
+    use limitador::storage::infinispan::InfinispanStorage;
     use limitador::storage::wasm::WasmStorage;
     use std::collections::{HashMap, HashSet};
     use std::thread::sleep;
