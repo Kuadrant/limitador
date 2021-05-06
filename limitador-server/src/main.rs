@@ -4,57 +4,79 @@ extern crate log;
 use crate::envoy_rls::server::run_envoy_rls_server;
 use crate::http_api::server::run_http_server;
 use limitador::limit::Limit;
+use limitador::storage::infinispan::InfinispanStorage;
 use limitador::storage::redis::{AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder};
 use limitador::storage::AsyncStorage;
 use limitador::{AsyncRateLimiter, AsyncRateLimiterBuilder, RateLimiter, RateLimiterBuilder};
-use std::env;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{env, process};
+use thiserror::Error;
+use url::Url;
 
 mod envoy_rls;
 mod http_api;
 
 const LIMITS_FILE_ENV: &str = "LIMITS_FILE";
 const LIMIT_NAME_IN_PROMETHEUS_LABELS_ENV: &str = "LIMIT_NAME_IN_PROMETHEUS_LABELS";
+const REDIS_URL_ENV: &str = "REDIS_URL";
+const INFINISPAN_URL_ENV: &str = "INFINISPAN_URL";
 const DEFAULT_HOST: &str = "0.0.0.0";
 const DEFAULT_HTTP_API_PORT: u32 = 8080;
 const DEFAULT_ENVOY_RLS_PORT: u32 = 8081;
 const ENV_OPTION_ENABLED: &str = "1";
+
+#[derive(Error, Debug)]
+pub enum LimitadorServerError {
+    #[error("please set either the Redis or the Infinispan URL, but not both")]
+    IncompatibleStorages,
+}
 
 pub enum Limiter {
     Blocking(RateLimiter),
     Async(AsyncRateLimiter),
 }
 
+enum StorageType {
+    Redis { url: String },
+    Infinispan { url: String },
+    InMemory,
+}
+
 impl Limiter {
-    pub async fn new() -> Limiter {
-        let rate_limiter = match env::var("REDIS_URL") {
-            Ok(redis_url) => {
-                let storage = Self::storage_using_redis(&redis_url).await;
-                let mut rate_limiter_builder = AsyncRateLimiterBuilder::new(storage);
-
-                if Self::env_option_is_enabled(LIMIT_NAME_IN_PROMETHEUS_LABELS_ENV) {
-                    rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
-                }
-
-                Limiter::Async(rate_limiter_builder.build())
-            }
-            Err(_) => {
-                // Default to in-memory storage implementation
-
-                let mut rate_limiter_builder = RateLimiterBuilder::new();
-
-                if Self::env_option_is_enabled(LIMIT_NAME_IN_PROMETHEUS_LABELS_ENV) {
-                    rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
-                }
-
-                Limiter::Blocking(rate_limiter_builder.build())
-            }
+    pub async fn new() -> Result<Limiter, LimitadorServerError> {
+        let rate_limiter = match Self::storage_type()? {
+            StorageType::Redis { url } => Self::redis_limiter(&url).await,
+            StorageType::Infinispan { url } => Self::infinispan_limiter(&url).await,
+            StorageType::InMemory => Self::in_memory_limiter(),
         };
 
         rate_limiter.load_limits_from_file().await;
 
-        rate_limiter
+        Ok(rate_limiter)
+    }
+
+    fn storage_type() -> Result<StorageType, LimitadorServerError> {
+        let redis_url = env::var(REDIS_URL_ENV);
+        let infinispan_url = env::var(INFINISPAN_URL_ENV);
+
+        match (redis_url, infinispan_url) {
+            (Ok(_), Ok(_)) => Err(LimitadorServerError::IncompatibleStorages),
+            (Ok(url), Err(_)) => Ok(StorageType::Redis { url }),
+            (Err(_), Ok(url)) => Ok(StorageType::Infinispan { url }),
+            _ => Ok(StorageType::InMemory),
+        }
+    }
+
+    async fn redis_limiter(url: &str) -> Limiter {
+        let storage = Self::storage_using_redis(url).await;
+        let mut rate_limiter_builder = AsyncRateLimiterBuilder::new(storage);
+
+        if Self::env_option_is_enabled(LIMIT_NAME_IN_PROMETHEUS_LABELS_ENV) {
+            rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
+        }
+
+        Limiter::Async(rate_limiter_builder.build())
     }
 
     async fn storage_using_redis(redis_url: &str) -> Box<dyn AsyncStorage> {
@@ -104,6 +126,40 @@ impl Limiter {
         cached_redis_storage.build().await
     }
 
+    async fn infinispan_limiter(url: &str) -> Limiter {
+        let parsed_url = Url::parse(url).unwrap();
+        let storage = Box::new(
+            InfinispanStorage::new(
+                &format!(
+                    "{}://{}:{}",
+                    parsed_url.scheme(),
+                    parsed_url.host_str().unwrap(),
+                    parsed_url.port().unwrap().to_string(),
+                ),
+                parsed_url.username(),
+                parsed_url.password().unwrap_or_default(),
+            )
+            .await,
+        );
+        let mut rate_limiter_builder = AsyncRateLimiterBuilder::new(storage);
+
+        if Self::env_option_is_enabled(LIMIT_NAME_IN_PROMETHEUS_LABELS_ENV) {
+            rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
+        }
+
+        Limiter::Async(rate_limiter_builder.build())
+    }
+
+    fn in_memory_limiter() -> Limiter {
+        let mut rate_limiter_builder = RateLimiterBuilder::new();
+
+        if Self::env_option_is_enabled(LIMIT_NAME_IN_PROMETHEUS_LABELS_ENV) {
+            rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
+        }
+
+        Limiter::Blocking(rate_limiter_builder.build())
+    }
+
     fn env_option_is_enabled(env_name: &str) -> bool {
         match env::var(env_name) {
             Ok(value) => value == ENV_OPTION_ENABLED,
@@ -128,7 +184,13 @@ impl Limiter {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
-    let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await);
+    let rate_limiter: Arc<Limiter> = match Limiter::new().await {
+        Ok(limiter) => Arc::new(limiter),
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            process::exit(1)
+        }
+    };
 
     let envoy_rls_host = env::var("ENVOY_RLS_HOST").unwrap_or_else(|_| String::from(DEFAULT_HOST));
     let envoy_rls_port =
