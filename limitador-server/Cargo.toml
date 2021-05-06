@@ -10,12 +10,14 @@ edition = "2018"
 [dependencies]
 limitador = { path = "../limitador", features = ['infinispan_storage'] }
 tokio = { version = "0.2", features = ["full"] }
+thiserror = "1.0"
 tonic = "0.3"
 prost = "0.6"
 prost-types = "0.6"
 serde_yaml = "0.8"
 log = "0.4"
 env_logger = "0.8"
+url = "2.2"
 actix-web = "3"
 actix-rt = "1"
 paperclip = { version = "0.5", features = ["actix"] }

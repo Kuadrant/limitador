@@ -1464,9 +1464,11 @@ dependencies = [
  "prost-types",
  "serde",
  "serde_yaml",
+ "thiserror",
  "tokio",
  "tonic",
  "tonic-build",
+ "url",
 ]
 
 [[package]]
