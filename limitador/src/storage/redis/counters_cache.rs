@@ -59,10 +59,7 @@ impl CountersCacheBuilder {
 
 impl CountersCache {
     pub fn get(&self, counter: &Counter) -> Option<i64> {
-        match self.cache.get(counter) {
-            Some(val) => Some(*val),
-            None => None,
-        }
+        self.cache.get(counter).copied()
     }
 
     pub fn insert(
