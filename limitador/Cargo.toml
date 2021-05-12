@@ -11,7 +11,7 @@ edition = "2018"
 
 # We make redis and infinispan optional to be able to compile for wasm32.
 [features]
-default = ["redis_storage", "infinispan_storage"]
+default = ["redis_storage"]
 redis_storage = ["redis", "r2d2", "tokio"]
 infinispan_storage = ["infinispan", "reqwest"]
 
