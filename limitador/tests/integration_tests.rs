@@ -44,6 +44,20 @@ macro_rules! test_with_all_storage_impls {
                 AsyncRedisStorage::new("redis://127.0.0.1:6379").await.clear().await.unwrap();
                 $function(&mut TestsLimiter::new_from_async_impl(rate_limiter)).await;
             }
+
+            #[cfg(feature = "infinispan_storage")]
+            #[tokio::test]
+            #[serial]
+            async fn [<$function _with_infinispan>]() {
+                let storage = InfinispanStorage::new(
+                    "http://127.0.0.1:11222", "username", "password"
+                ).await;
+                storage.clear().await.unwrap();
+                let rate_limiter = AsyncRateLimiter::new_with_storage(
+                    Box::new(storage)
+                );
+                $function(&mut TestsLimiter::new_from_async_impl(rate_limiter)).await;
+            }
         }
     };
 }
@@ -65,6 +79,12 @@ mod test {
             use crate::test::limitador::storage::AsyncStorage;
             use crate::test::limitador::storage::Storage;
         }
+    }
+
+    cfg_if::cfg_if! {
+       if #[cfg(feature = "infinispan_storage")] {
+           use limitador::storage::infinispan::InfinispanStorage;
+       }
     }
 
     use self::limitador::counter::Counter;

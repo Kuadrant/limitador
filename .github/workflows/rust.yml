@@ -26,6 +26,14 @@ jobs:
   test:
     name: Test Suite
     runs-on: ubuntu-latest
+    services:
+      infinispan:
+        image: infinispan/server:11.0.9.Final
+        ports:
+          - 11222:11222
+        env:
+          USER: username
+          PASS: password
     steps:
       - uses: actions/checkout@v2
       - uses: supercharge/redis-github-action@1.1.0
@@ -39,6 +47,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
+          args: --all-features
 
   fmt:
     name: Rustfmt
@@ -70,7 +79,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: -- -D warnings
+          args: --all-features -- -D warnings
 
   bench:
     name: Bench

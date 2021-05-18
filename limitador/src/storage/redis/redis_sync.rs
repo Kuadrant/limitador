@@ -3,7 +3,7 @@ extern crate redis;
 use self::redis::{Commands, ConnectionInfo, ConnectionLike, IntoConnectionInfo, RedisError};
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
-use crate::storage::redis::redis_keys::*;
+use crate::storage::keys::*;
 use crate::storage::redis::scripts::{SCRIPT_DELETE_LIMIT, SCRIPT_UPDATE_COUNTER};
 use crate::storage::{Authorization, Storage, StorageErr};
 use r2d2::{ManageConnection, Pool};

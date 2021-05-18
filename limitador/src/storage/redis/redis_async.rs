@@ -4,7 +4,7 @@ use self::redis::aio::ConnectionManager;
 use self::redis::ConnectionInfo;
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
-use crate::storage::redis::redis_keys::*;
+use crate::storage::keys::*;
 use crate::storage::redis::scripts::{SCRIPT_DELETE_LIMIT, SCRIPT_UPDATE_COUNTER};
 use crate::storage::{AsyncStorage, Authorization, StorageErr};
 use async_trait::async_trait;

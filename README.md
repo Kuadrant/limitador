@@ -120,6 +120,13 @@ or you can run tests disabling the "redis storage" feature:
 cd limitador; cargo test --no-default-features
 ```
 
+Limitador also offers experimental support for Infinispan as a storage for the
+limits and counters. It's under a feature not enabled by default. To build with it and test it:
+```bash
+cargo build --features=infinispan_storage
+cargo test --features=infinispan_storage
+```
+
 ## License
 
 [Apache 2.0 License](LICENSE)

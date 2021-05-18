@@ -9,10 +9,11 @@ repository = "https://github.com/3scale-labs/limitador"
 documentation = "https://docs.rs/limitador"
 edition = "2018"
 
-# We make redis optional to be able to compile for wasm32.
+# We make redis and infinispan optional to be able to compile for wasm32.
 [features]
 default = ["redis_storage"]
 redis_storage = ["redis", "r2d2", "tokio"]
+infinispan_storage = ["infinispan", "reqwest", "openssl"]
 
 [dependencies]
 ttl_cache = "0.5"
@@ -29,6 +30,11 @@ lazy_static = "1.4"
 redis = { version = "0.17", optional = true, features = ["connection-manager"] }
 r2d2 = { version = "0.8", optional = true }
 tokio = { version = "0.2", optional = true, features = ["rt-core", "macros", "time"] }
+infinispan = { version = "0.1", optional = true }
+reqwest = { version = "0.10", optional = true }
+
+# reqwest dependency. Needed here to avoid problems when compiling
+openssl = { version = "0.10.34", optional = true, features = ["vendored"] }
 
 [dev-dependencies]
 serial_test = "0.5"
