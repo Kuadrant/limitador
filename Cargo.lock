@@ -1306,9 +1306,9 @@ dependencies = [
 
 [[package]]
 name = "infinispan"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7902811a7297306b68a314cb9754bec7f1a3836c2048561ac5f5a2174544b5a5"
+checksum = "3de3024babdcbb9928214d1870b41711a7cfa49c1483468874e0c3d881315bed"
 dependencies = [
  "base64 0.13.0",
  "http",
