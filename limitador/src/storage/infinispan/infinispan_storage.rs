@@ -1,6 +1,7 @@
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
 use crate::storage::infinispan::counters::CounterOpts;
+use crate::storage::infinispan::response::response_to_string;
 use crate::storage::infinispan::{counters, sets};
 use crate::storage::keys::*;
 use crate::storage::{AsyncStorage, Authorization, StorageErr};
@@ -194,21 +195,12 @@ impl AsyncStorage for InfinispanStorage {
     }
 
     async fn clear(&self) -> Result<(), StorageErr> {
-        // TODO: Flush the cache instead of deleting and re-creating. There
-        // isn't a way to do this using the infinispan client for now.
-        //
-        // TODO: delete all counters (they don't belong to any Infinispan
-        // cache). There isn't a way to do this using the client for now.
-
         let _ = self
             .infinispan
-            .run(&request::caches::delete(INFINISPAN_LIMITS_CACHE_NAME))
+            .run(&request::caches::clear(INFINISPAN_LIMITS_CACHE_NAME))
             .await?;
 
-        let _ = self
-            .infinispan
-            .run(&request::caches::create_local(INFINISPAN_LIMITS_CACHE_NAME))
-            .await?;
+        let _ = self.delete_all_counters().await?;
 
         Ok(())
     }
@@ -242,6 +234,22 @@ impl InfinispanStorage {
     async fn delete_counters_associated_with_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
         for counter_key in self.counter_keys_of_limit(&limit).await? {
             counters::delete(&self.infinispan, INFINISPAN_LIMITS_CACHE_NAME, &counter_key).await?
+        }
+
+        Ok(())
+    }
+
+    async fn delete_all_counters(&self) -> Result<(), StorageErr> {
+        let resp = self.infinispan.run(&request::counters::list()).await?;
+
+        let counter_names: HashSet<String> =
+            serde_json::from_str(&response_to_string(resp).await).unwrap();
+
+        for counter_name in counter_names {
+            let _ = self
+                .infinispan
+                .run(&request::counters::delete(counter_name))
+                .await?;
         }
 
         Ok(())

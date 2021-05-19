@@ -30,7 +30,7 @@ lazy_static = "1.4"
 redis = { version = "0.17", optional = true, features = ["connection-manager"] }
 r2d2 = { version = "0.8", optional = true }
 tokio = { version = "0.2", optional = true, features = ["rt-core", "macros", "time"] }
-infinispan = { version = "0.1", optional = true }
+infinispan = { version = "0.2", optional = true }
 reqwest = { version = "0.10", optional = true }
 
 # reqwest dependency. Needed here to avoid problems when compiling
