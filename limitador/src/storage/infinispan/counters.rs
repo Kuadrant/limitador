@@ -74,20 +74,20 @@ pub async fn decrement_by(
         .await?;
 
     if response.status() == 404 {
-        // TODO: we could use "reset" here, but it's not implemented in the
-        // client yet. So for now, delete and create.
-        let _ = infinispan
-            .run(&request::counters::delete(&counter_key))
+        let reset_resp = infinispan
+            .run(&request::counters::reset(&counter_key))
             .await?;
 
-        // TODO: the type of counter and its attributes should be configurable.
-        // For now let's use "weak" counters with default attributes.
-        let _ = infinispan
-            .run(
-                &request::counters::create_weak(&counter_key)
-                    .with_value(create_counter_opts.initial_value - delta),
-            )
-            .await?;
+        if reset_resp.status() == 404 {
+            // TODO: the type of counter and its attributes should be configurable.
+            // For now let's use "weak" counters with default attributes.
+            let _ = infinispan
+                .run(
+                    &request::counters::create_weak(&counter_key)
+                        .with_value(create_counter_opts.initial_value - delta),
+                )
+                .await?;
+        }
 
         let _ = infinispan
             .run(
