@@ -279,7 +279,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_metrics() {
-        let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await);
+        let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
         let data = web::Data::new(rate_limiter);
         let mut app = test::init_service(
             App::new()
@@ -299,7 +299,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_limits_create_read_delete() {
-        let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await);
+        let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
         let data = web::Data::new(rate_limiter);
         let mut app = test::init_service(
             App::new()
@@ -357,7 +357,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_create_limit_with_name() {
-        let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await);
+        let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
         let data = web::Data::new(rate_limiter);
         let mut app = test::init_service(
             App::new()
@@ -396,7 +396,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_delete_all_limits_of_namespace() {
-        let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await);
+        let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
         let data = web::Data::new(rate_limiter);
         let mut app = test::init_service(
             App::new()
@@ -456,7 +456,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_check_and_report() {
-        let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await);
+        let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
         let data = web::Data::new(rate_limiter);
         let mut app = test::init_service(
             App::new()
@@ -517,7 +517,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_check_and_report_endpoints_separately() {
-        let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await);
+        let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
         let data = web::Data::new(rate_limiter);
         let mut app = test::init_service(
             App::new()

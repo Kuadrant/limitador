@@ -31,6 +31,15 @@ variables:
 - Format: integer.
 
 
+## INFINISPAN_URL
+
+- Infinispan URL. Required only when you want to use Infinispan to store the
+  limits.
+- Optional. By default, Limitador stores the limits in memory and does not
+  require Infinispan.
+- Format: URL like `http://username:password@127.0.0.1:11222`.
+
+
 ## LIMITS_FILE
 
 - YAML file that contains the limits to create when limitador boots. If the
@@ -117,7 +126,7 @@ when "REDIS_LOCAL_CACHE_ENABLED" == 1.
 
 ## REDIS_URL
 
-- Redis URL. Required only when you want to use a Redis to store the limits.
+- Redis URL. Required only when you want to use Redis to store the limits.
 - Optional. By default, Limitador stores the limits in memory and does not
 require Redis.
 - Format: URL like "redis://127.0.0.1:6379".
