@@ -7,6 +7,7 @@ mod sets;
 use crate::storage::StorageErr;
 use infinispan::errors::InfinispanError;
 pub use infinispan_storage::InfinispanStorage;
+pub use infinispan_storage::InfinispanStorageBuilder;
 
 impl From<reqwest::Error> for StorageErr {
     fn from(e: reqwest::Error) -> Self {

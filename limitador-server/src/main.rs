@@ -4,7 +4,7 @@ extern crate log;
 use crate::envoy_rls::server::run_envoy_rls_server;
 use crate::http_api::server::run_http_server;
 use limitador::limit::Limit;
-use limitador::storage::infinispan::InfinispanStorage;
+use limitador::storage::infinispan::InfinispanStorageBuilder;
 use limitador::storage::redis::{AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder};
 use limitador::storage::AsyncStorage;
 use limitador::{AsyncRateLimiter, AsyncRateLimiterBuilder, RateLimiter, RateLimiterBuilder};
@@ -129,7 +129,7 @@ impl Limiter {
     async fn infinispan_limiter(url: &str) -> Limiter {
         let parsed_url = Url::parse(url).unwrap();
         let storage = Box::new(
-            InfinispanStorage::new(
+            InfinispanStorageBuilder::new(
                 &format!(
                     "{}://{}:{}",
                     parsed_url.scheme(),
@@ -139,6 +139,7 @@ impl Limiter {
                 parsed_url.username(),
                 parsed_url.password().unwrap_or_default(),
             )
+            .build()
             .await,
         );
         let mut rate_limiter_builder = AsyncRateLimiterBuilder::new(storage);
