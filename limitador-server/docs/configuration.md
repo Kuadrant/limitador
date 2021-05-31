@@ -31,6 +31,16 @@ variables:
 - Format: integer.
 
 
+## INFINISPAN_CACHE_NAME
+
+- The name of the Infinispan cache that Limitador will use to store limits and
+counters. This variable applies only when [INFINISPAN_URL](#infinispan_url) is
+set.
+- Optional. By default, Limitador creates a cache called "limitador" and
+configured as "local".
+- Format: string.
+
+
 ## INFINISPAN_URL
 
 - Infinispan URL. Required only when you want to use Infinispan to store the
