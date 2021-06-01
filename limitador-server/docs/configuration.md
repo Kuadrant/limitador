@@ -41,6 +41,14 @@ configured as "local".
 - Format: string.
 
 
+## INFINISPAN_COUNTERS_CONSISTENCY
+
+- Defines the consistency mode for the Infinispan counters created by Limitador.
+This variable applies only when [INFINISPAN_URL](#infinispan_url) is set.
+- Optional. Defaults to "strong".
+- Format: "strong" or "weak".
+
+
 ## INFINISPAN_URL
 
 - Infinispan URL. Required only when you want to use Infinispan to store the
