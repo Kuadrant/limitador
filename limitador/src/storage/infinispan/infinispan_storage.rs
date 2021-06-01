@@ -1,6 +1,6 @@
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
-use crate::storage::infinispan::counters::CounterOpts;
+use crate::storage::infinispan::counters::{Consistency, CounterOpts};
 use crate::storage::infinispan::response::response_to_string;
 use crate::storage::infinispan::{counters, sets};
 use crate::storage::keys::*;
@@ -17,6 +17,7 @@ const DEFAULT_INFINISPAN_LIMITS_CACHE_NAME: &str = "limitador";
 pub struct InfinispanStorage {
     infinispan: Infinispan,
     cache_name: String,
+    counters_consistency: Consistency,
 }
 
 pub struct InfinispanStorageBuilder {
@@ -24,6 +25,7 @@ pub struct InfinispanStorageBuilder {
     username: String,
     password: String,
     cache_name: Option<String>,
+    counters_consistency: Option<Consistency>,
 }
 
 #[async_trait]
@@ -138,7 +140,11 @@ impl AsyncStorage for InfinispanStorage {
             &self.cache_name,
             &counter_key,
             delta,
-            &CounterOpts::new(counter.max_value(), Duration::from_secs(counter.seconds())),
+            &CounterOpts::new(
+                counter.max_value(),
+                Duration::from_secs(counter.seconds()),
+                self.counters_consistency,
+            ),
         )
         .await?;
 
@@ -215,6 +221,7 @@ impl InfinispanStorage {
         username: &str,
         password: &str,
         cache_name: Option<String>,
+        counters_consistency: Consistency,
     ) -> InfinispanStorage {
         let infinispan = Infinispan::new(url, username, password);
 
@@ -222,6 +229,7 @@ impl InfinispanStorage {
             Some(cache_name) => InfinispanStorage {
                 infinispan,
                 cache_name,
+                counters_consistency,
             },
             None => {
                 let cache_name = DEFAULT_INFINISPAN_LIMITS_CACHE_NAME;
@@ -234,6 +242,7 @@ impl InfinispanStorage {
                 InfinispanStorage {
                     infinispan,
                     cache_name: cache_name.into(),
+                    counters_consistency,
                 }
             }
         }
@@ -310,6 +319,7 @@ impl InfinispanStorageBuilder {
             username: username.into(),
             password: password.into(),
             cache_name: None,
+            counters_consistency: None,
         }
     }
 
@@ -318,7 +328,19 @@ impl InfinispanStorageBuilder {
         self
     }
 
+    pub fn counters_consistency(mut self, counters_consistency: Consistency) -> Self {
+        self.counters_consistency = Some(counters_consistency);
+        self
+    }
+
     pub async fn build(self) -> InfinispanStorage {
-        InfinispanStorage::new(&self.url, &self.username, &self.password, self.cache_name).await
+        InfinispanStorage::new(
+            &self.url,
+            &self.username,
+            &self.password,
+            self.cache_name,
+            self.counters_consistency.unwrap_or(Consistency::Strong),
+        )
+        .await
     }
 }

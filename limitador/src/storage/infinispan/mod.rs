@@ -5,6 +5,7 @@ mod response;
 mod sets;
 
 use crate::storage::StorageErr;
+pub use counters::Consistency;
 use infinispan::errors::InfinispanError;
 pub use infinispan_storage::InfinispanStorage;
 pub use infinispan_storage::InfinispanStorageBuilder;

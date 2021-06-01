@@ -17,16 +17,49 @@
 use crate::storage::infinispan::response::response_to_string;
 use infinispan::errors::InfinispanError;
 use infinispan::{request, Infinispan};
+use std::convert::TryFrom;
 use std::time::Duration;
+use thiserror::Error;
+
+#[derive(Copy, Clone)]
+pub enum Consistency {
+    Weak,
+    Strong,
+}
+
+#[derive(Error, Debug)]
+#[error("invalid consistency mode: {mode}")]
+pub struct InvalidConsistencyErr {
+    mode: String,
+}
+
+impl TryFrom<String> for Consistency {
+    type Error = InvalidConsistencyErr;
+
+    fn try_from(mut value: String) -> Result<Self, Self::Error> {
+        value.make_ascii_lowercase();
+
+        match value.as_str() {
+            "weak" => Ok(Consistency::Weak),
+            "strong" => Ok(Consistency::Strong),
+            _ => Err(InvalidConsistencyErr { mode: value }),
+        }
+    }
+}
 
 pub struct CounterOpts {
     initial_value: i64,
     ttl: Duration,
+    consistency: Consistency,
 }
 
 impl CounterOpts {
-    pub fn new(initial_value: i64, ttl: Duration) -> Self {
-        CounterOpts { initial_value, ttl }
+    pub fn new(initial_value: i64, ttl: Duration, consistency: Consistency) -> Self {
+        CounterOpts {
+            initial_value,
+            ttl,
+            consistency,
+        }
     }
 }
 
@@ -79,13 +112,13 @@ pub async fn decrement_by(
             .await?;
 
         if reset_resp.status() == 404 {
-            // TODO: the type of counter and its attributes should be configurable.
-            // For now let's use "weak" counters with default attributes.
+            let create_req = match &create_counter_opts.consistency {
+                Consistency::Weak => request::counters::create_weak(&counter_key),
+                Consistency::Strong => request::counters::create_strong(&counter_key),
+            };
+
             let _ = infinispan
-                .run(
-                    &request::counters::create_weak(&counter_key)
-                        .with_value(create_counter_opts.initial_value - delta),
-                )
+                .run(&create_req.with_value(create_counter_opts.initial_value - delta))
                 .await?;
         }
 
