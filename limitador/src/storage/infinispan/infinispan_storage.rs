@@ -12,10 +12,18 @@ use infinispan::Infinispan;
 use std::collections::HashSet;
 use std::time::Duration;
 
-const INFINISPAN_LIMITS_CACHE_NAME: &str = "limits";
+const DEFAULT_INFINISPAN_LIMITS_CACHE_NAME: &str = "limitador";
 
 pub struct InfinispanStorage {
     infinispan: Infinispan,
+    cache_name: String,
+}
+
+pub struct InfinispanStorageBuilder {
+    url: String,
+    username: String,
+    password: String,
+    cache_name: Option<String>,
 }
 
 #[async_trait]
@@ -62,7 +70,7 @@ impl AsyncStorage for InfinispanStorage {
         let _ = self
             .infinispan
             .run(&request::entries::delete(
-                INFINISPAN_LIMITS_CACHE_NAME,
+                &self.cache_name,
                 key_for_counters_of_limit(&limit),
             ))
             .await?;
@@ -94,7 +102,7 @@ impl AsyncStorage for InfinispanStorage {
             let _ = self
                 .infinispan
                 .run(&request::entries::delete(
-                    INFINISPAN_LIMITS_CACHE_NAME,
+                    &self.cache_name,
                     key_for_counters_of_limit(&limit),
                 ))
                 .await?;
@@ -103,7 +111,7 @@ impl AsyncStorage for InfinispanStorage {
         let _ = self
             .infinispan
             .run(&request::entries::delete(
-                INFINISPAN_LIMITS_CACHE_NAME,
+                &self.cache_name,
                 key_for_limits_of_namespace(namespace),
             ))
             .await?;
@@ -114,8 +122,7 @@ impl AsyncStorage for InfinispanStorage {
     async fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
         let counter_key = key_for_counter(counter);
         let counter_val =
-            counters::get_value(&self.infinispan, INFINISPAN_LIMITS_CACHE_NAME, &counter_key)
-                .await?;
+            counters::get_value(&self.infinispan, &self.cache_name, &counter_key).await?;
 
         match counter_val {
             Some(val) => Ok(val - delta >= 0),
@@ -128,7 +135,7 @@ impl AsyncStorage for InfinispanStorage {
 
         let counter_created = counters::decrement_by(
             &self.infinispan,
-            INFINISPAN_LIMITS_CACHE_NAME,
+            &self.cache_name,
             &counter_key,
             delta,
             &CounterOpts::new(counter.max_value(), Duration::from_secs(counter.seconds())),
@@ -167,12 +174,8 @@ impl AsyncStorage for InfinispanStorage {
 
         for limit in self.get_limits(namespace).await? {
             for counter_key in self.counter_keys_of_limit(&limit).await? {
-                let counter_val = counters::get_value(
-                    &self.infinispan,
-                    INFINISPAN_LIMITS_CACHE_NAME,
-                    &counter_key,
-                )
-                .await?;
+                let counter_val =
+                    counters::get_value(&self.infinispan, &self.cache_name, &counter_key).await?;
 
                 // If the key does not exist, it means that the counter expired,
                 // so we don't have to return it.
@@ -197,7 +200,7 @@ impl AsyncStorage for InfinispanStorage {
     async fn clear(&self) -> Result<(), StorageErr> {
         let _ = self
             .infinispan
-            .run(&request::caches::clear(INFINISPAN_LIMITS_CACHE_NAME))
+            .run(&request::caches::clear(&self.cache_name))
             .await?;
 
         let _ = self.delete_all_counters().await?;
@@ -207,20 +210,33 @@ impl AsyncStorage for InfinispanStorage {
 }
 
 impl InfinispanStorage {
-    pub async fn new(url: &str, username: &str, password: &str) -> InfinispanStorage {
+    pub async fn new(
+        url: &str,
+        username: &str,
+        password: &str,
+        cache_name: Option<String>,
+    ) -> InfinispanStorage {
         let infinispan = Infinispan::new(url, username, password);
 
-        // TODO: the cache type and its attributes should be configurable. For
-        // now, we use the "local" type with the default attributes.
-        //
-        // TODO: check if this recreates everything or does not do anything when
-        // it already exists.
-        let _ = infinispan
-            .run(&request::caches::create_local(INFINISPAN_LIMITS_CACHE_NAME))
-            .await
-            .unwrap();
+        match cache_name {
+            Some(cache_name) => InfinispanStorage {
+                infinispan,
+                cache_name,
+            },
+            None => {
+                let cache_name = DEFAULT_INFINISPAN_LIMITS_CACHE_NAME;
 
-        InfinispanStorage { infinispan }
+                let _ = infinispan
+                    .run(&request::caches::create_local(&cache_name))
+                    .await
+                    .unwrap();
+
+                InfinispanStorage {
+                    infinispan,
+                    cache_name: cache_name.into(),
+                }
+            }
+        }
     }
 
     async fn delete_counters_of_namespace(&self, namespace: &Namespace) -> Result<(), StorageErr> {
@@ -233,7 +249,7 @@ impl InfinispanStorage {
 
     async fn delete_counters_associated_with_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
         for counter_key in self.counter_keys_of_limit(&limit).await? {
-            counters::delete(&self.infinispan, INFINISPAN_LIMITS_CACHE_NAME, &counter_key).await?
+            counters::delete(&self.infinispan, &self.cache_name, &counter_key).await?
         }
 
         Ok(())
@@ -263,7 +279,7 @@ impl InfinispanStorage {
     }
 
     async fn get_set(&self, set_key: impl AsRef<str>) -> Result<HashSet<String>, InfinispanError> {
-        sets::get(&self.infinispan, INFINISPAN_LIMITS_CACHE_NAME, set_key).await
+        sets::get(&self.infinispan, &self.cache_name, set_key).await
     }
 
     async fn add_to_set(
@@ -271,13 +287,7 @@ impl InfinispanStorage {
         set_key: impl Into<String>,
         element: impl Into<String>,
     ) -> Result<(), StorageErr> {
-        sets::add(
-            &self.infinispan,
-            INFINISPAN_LIMITS_CACHE_NAME,
-            set_key,
-            element,
-        )
-        .await
+        sets::add(&self.infinispan, &self.cache_name, set_key, element).await
     }
 
     async fn delete_from_set(
@@ -285,12 +295,30 @@ impl InfinispanStorage {
         set_key: impl Into<String>,
         element: impl Into<String>,
     ) -> Result<HashSet<String>, StorageErr> {
-        sets::delete(
-            &self.infinispan,
-            INFINISPAN_LIMITS_CACHE_NAME,
-            set_key,
-            element,
-        )
-        .await
+        sets::delete(&self.infinispan, &self.cache_name, set_key, element).await
+    }
+}
+
+impl InfinispanStorageBuilder {
+    pub fn new(
+        url: impl Into<String>,
+        username: impl Into<String>,
+        password: impl Into<String>,
+    ) -> Self {
+        Self {
+            url: url.into(),
+            username: username.into(),
+            password: password.into(),
+            cache_name: None,
+        }
+    }
+
+    pub fn cache_name(mut self, cache_name: impl Into<String>) -> Self {
+        self.cache_name = Some(cache_name.into());
+        self
+    }
+
+    pub async fn build(self) -> InfinispanStorage {
+        InfinispanStorage::new(&self.url, &self.username, &self.password, self.cache_name).await
     }
 }

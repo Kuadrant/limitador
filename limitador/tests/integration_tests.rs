@@ -49,9 +49,9 @@ macro_rules! test_with_all_storage_impls {
             #[tokio::test]
             #[serial]
             async fn [<$function _with_infinispan>]() {
-                let storage = InfinispanStorage::new(
+                let storage = InfinispanStorageBuilder::new(
                     "http://127.0.0.1:11222", "username", "password"
-                ).await;
+                ).build().await;
                 storage.clear().await.unwrap();
                 let rate_limiter = AsyncRateLimiter::new_with_storage(
                     Box::new(storage)
@@ -83,7 +83,7 @@ mod test {
 
     cfg_if::cfg_if! {
        if #[cfg(feature = "infinispan_storage")] {
-           use limitador::storage::infinispan::InfinispanStorage;
+           use limitador::storage::infinispan::InfinispanStorageBuilder;
        }
     }
 

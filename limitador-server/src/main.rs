@@ -4,7 +4,7 @@ extern crate log;
 use crate::envoy_rls::server::run_envoy_rls_server;
 use crate::http_api::server::run_http_server;
 use limitador::limit::Limit;
-use limitador::storage::infinispan::InfinispanStorage;
+use limitador::storage::infinispan::InfinispanStorageBuilder;
 use limitador::storage::redis::{AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder};
 use limitador::storage::AsyncStorage;
 use limitador::{AsyncRateLimiter, AsyncRateLimiterBuilder, RateLimiter, RateLimiterBuilder};
@@ -21,6 +21,7 @@ const LIMITS_FILE_ENV: &str = "LIMITS_FILE";
 const LIMIT_NAME_IN_PROMETHEUS_LABELS_ENV: &str = "LIMIT_NAME_IN_PROMETHEUS_LABELS";
 const REDIS_URL_ENV: &str = "REDIS_URL";
 const INFINISPAN_URL_ENV: &str = "INFINISPAN_URL";
+const INFINISPAN_CACHE_NAME_ENV: &str = "INFINISPAN_CACHE_NAME";
 const DEFAULT_HOST: &str = "0.0.0.0";
 const DEFAULT_HTTP_API_PORT: u32 = 8080;
 const DEFAULT_ENVOY_RLS_PORT: u32 = 8081;
@@ -128,20 +129,24 @@ impl Limiter {
 
     async fn infinispan_limiter(url: &str) -> Limiter {
         let parsed_url = Url::parse(url).unwrap();
-        let storage = Box::new(
-            InfinispanStorage::new(
-                &format!(
-                    "{}://{}:{}",
-                    parsed_url.scheme(),
-                    parsed_url.host_str().unwrap(),
-                    parsed_url.port().unwrap().to_string(),
-                ),
-                parsed_url.username(),
-                parsed_url.password().unwrap_or_default(),
-            )
-            .await,
+
+        let builder = InfinispanStorageBuilder::new(
+            &format!(
+                "{}://{}:{}",
+                parsed_url.scheme(),
+                parsed_url.host_str().unwrap(),
+                parsed_url.port().unwrap().to_string(),
+            ),
+            parsed_url.username(),
+            parsed_url.password().unwrap_or_default(),
         );
-        let mut rate_limiter_builder = AsyncRateLimiterBuilder::new(storage);
+
+        let storage = match env::var(INFINISPAN_CACHE_NAME_ENV) {
+            Ok(cache_name) => builder.cache_name(cache_name).build().await,
+            Err(_) => builder.build().await,
+        };
+
+        let mut rate_limiter_builder = AsyncRateLimiterBuilder::new(Box::new(storage));
 
         if Self::env_option_is_enabled(LIMIT_NAME_IN_PROMETHEUS_LABELS_ENV) {
             rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
