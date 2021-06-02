@@ -4,10 +4,11 @@ extern crate log;
 use crate::envoy_rls::server::run_envoy_rls_server;
 use crate::http_api::server::run_http_server;
 use limitador::limit::Limit;
-use limitador::storage::infinispan::InfinispanStorageBuilder;
+use limitador::storage::infinispan::{Consistency, InfinispanStorageBuilder};
 use limitador::storage::redis::{AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder};
 use limitador::storage::AsyncStorage;
 use limitador::{AsyncRateLimiter, AsyncRateLimiterBuilder, RateLimiter, RateLimiterBuilder};
+use std::convert::TryInto;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{env, process};
@@ -22,6 +23,7 @@ const LIMIT_NAME_IN_PROMETHEUS_LABELS_ENV: &str = "LIMIT_NAME_IN_PROMETHEUS_LABE
 const REDIS_URL_ENV: &str = "REDIS_URL";
 const INFINISPAN_URL_ENV: &str = "INFINISPAN_URL";
 const INFINISPAN_CACHE_NAME_ENV: &str = "INFINISPAN_CACHE_NAME";
+const INFINISPAN_COUNTERS_CONSISTENCY_ENV: &str = "INFINISPAN_COUNTERS_CONSISTENCY";
 const DEFAULT_HOST: &str = "0.0.0.0";
 const DEFAULT_HTTP_API_PORT: u32 = 8080;
 const DEFAULT_ENVOY_RLS_PORT: u32 = 8081;
@@ -130,7 +132,7 @@ impl Limiter {
     async fn infinispan_limiter(url: &str) -> Limiter {
         let parsed_url = Url::parse(url).unwrap();
 
-        let builder = InfinispanStorageBuilder::new(
+        let mut builder = InfinispanStorageBuilder::new(
             &format!(
                 "{}://{}:{}",
                 parsed_url.scheme(),
@@ -140,6 +142,21 @@ impl Limiter {
             parsed_url.username(),
             parsed_url.password().unwrap_or_default(),
         );
+
+        let consistency: Option<Consistency> = match env::var(INFINISPAN_COUNTERS_CONSISTENCY_ENV) {
+            Ok(env_value) => match env_value.try_into() {
+                Ok(consistency) => Some(consistency),
+                Err(_) => {
+                    eprintln!("Invalid consistency mode, will apply the default");
+                    None
+                }
+            },
+            Err(_) => None,
+        };
+
+        if let Some(consistency) = consistency {
+            builder = builder.counters_consistency(consistency);
+        }
 
         let storage = match env::var(INFINISPAN_CACHE_NAME_ENV) {
             Ok(cache_name) => builder.cache_name(cache_name).build().await,
