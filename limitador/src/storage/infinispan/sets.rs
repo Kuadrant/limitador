@@ -134,5 +134,5 @@ async fn delete_from_set(
             .await?;
     }
 
-    return Ok(set);
+    Ok(set)
 }
