@@ -10,7 +10,7 @@ CLUSTER_NAME=limitador
 LIMITADOR_NAMESPACE=default
 
 kind delete cluster --name ${CLUSTER_NAME}
-kind create cluster --name ${CLUSTER_NAME}
+kind create cluster --name ${CLUSTER_NAME} --config "${SCRIPT_DIR}"/kind-cluster.yaml
 
 # Deploy Redis
 kubectl -n ${LIMITADOR_NAMESPACE} apply -f "${SCRIPT_DIR}"/../kubernetes/redis-service.yaml
