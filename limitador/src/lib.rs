@@ -364,7 +364,7 @@ impl RateLimiter {
 
         counters
             .iter()
-            .try_for_each(|counter| self.storage.update_counter(&counter, delta))
+            .try_for_each(|counter| self.storage.update_counter(counter, delta))
             .map_err(|err| err.into())
     }
 
@@ -426,16 +426,16 @@ impl RateLimiter {
         {
             let limits_in_namespace = self.get_limits(namespace.clone())?;
             let limits_to_keep_in_ns: HashSet<Limit> = limits_to_keep_or_create
-                .get(&namespace)
+                .get(namespace)
                 .cloned()
                 .unwrap_or_default();
 
             for limit in limits_in_namespace.difference(&limits_to_keep_in_ns) {
-                self.delete_limit(&limit)?;
+                self.delete_limit(limit)?;
             }
 
             for limit in limits_to_keep_in_ns.difference(&limits_in_namespace) {
-                self.add_limit(&limit)?;
+                self.add_limit(limit)?;
             }
         }
 
@@ -625,16 +625,16 @@ impl AsyncRateLimiter {
         {
             let limits_in_namespace = self.get_limits(namespace.clone()).await?;
             let limits_to_keep_in_ns: HashSet<Limit> = limits_to_keep_or_create
-                .get(&namespace)
+                .get(namespace)
                 .cloned()
                 .unwrap_or_default();
 
             for limit in limits_in_namespace.difference(&limits_to_keep_in_ns) {
-                self.delete_limit(&limit).await?;
+                self.delete_limit(limit).await?;
             }
 
             for limit in limits_to_keep_in_ns.difference(&limits_in_namespace) {
-                self.add_limit(&limit).await?;
+                self.add_limit(limit).await?;
             }
         }
 

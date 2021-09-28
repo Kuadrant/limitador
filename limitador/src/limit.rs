@@ -110,7 +110,7 @@ impl Limit {
         let all_conditions_apply = self
             .conditions
             .iter()
-            .all(|cond| Self::condition_applies(&cond, values));
+            .all(|cond| Self::condition_applies(cond, values));
 
         let all_vars_are_set = self.variables.iter().all(|var| values.contains_key(var));
 

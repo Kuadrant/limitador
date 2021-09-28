@@ -77,7 +77,7 @@ impl AsyncStorage for AsyncRedisStorage {
         let mut con = self.conn_manager.clone();
 
         self.delete_counters_associated_with_limit(limit).await?;
-        con.del(key_for_counters_of_limit(&limit)).await?;
+        con.del(key_for_counters_of_limit(limit)).await?;
 
         let serialized_limit = serde_json::to_string(limit).unwrap();
 
