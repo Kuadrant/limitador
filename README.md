@@ -1,6 +1,6 @@
 # Limitador
 
-![Github Workflow](https://github.com/3scale-labs/limitador/workflows/Rust/badge.svg)
+[![Limitador GH Workflow](https://github.com/Kuadrant/limitador/actions/workflows/rust.yml/badge.svg)](https://github.com/Kuadrant/limitador/actions/workflows/rust.yml)
 [![docs.rs](https://docs.rs/limitador/badge.svg)](https://docs.rs/limitador)
 [![Crates.io](https://img.shields.io/crates/v/limitador)](https://crates.io/crates/limitador)
 [![Docker Repository on Quay](https://quay.io/repository/3scale/limitador/status
@@ -75,7 +75,7 @@ docker run -e LIMITS_FILE=/home/limitador/my_limits.yaml --rm --net=host -it -v 
 
 You can also use the YAML file when running locally:
 ```bash
-LIMITS_FILE=./limitador-server/examples/limits.yaml cargo run --release --bin limitador-server 
+LIMITS_FILE=./limitador-server/examples/limits.yaml cargo run --release --bin limitador-server
 ```
 
 If you want to use Limitador with Envoy, there's a minimal Envoy config for
