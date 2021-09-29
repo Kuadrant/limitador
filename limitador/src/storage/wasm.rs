@@ -38,11 +38,11 @@ impl<K: Eq + Hash + Clone, V: Copy> Cache<K, V> {
     }
 
     pub fn get(&self, key: &K) -> Option<&CacheEntry<V>> {
-        self.map.get(&key)
+        self.map.get(key)
     }
 
     pub fn get_mut(&mut self, key: &K) -> Option<&mut CacheEntry<V>> {
-        self.map.get_mut(&key)
+        self.map.get_mut(key)
     }
 
     pub fn insert(&mut self, key: &K, value: V, expires_at: SystemTime) {
@@ -95,7 +95,7 @@ impl Storage for WasmStorage {
 
         let mut limits_for_namespace = self.limits_for_namespace.write().unwrap();
 
-        match limits_for_namespace.get_mut(&namespace) {
+        match limits_for_namespace.get_mut(namespace) {
             Some(limits) => {
                 limits.insert(limit.clone(), HashSet::new());
             }

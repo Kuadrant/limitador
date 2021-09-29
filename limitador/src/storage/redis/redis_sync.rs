@@ -66,7 +66,7 @@ impl Storage for RedisStorage {
         let mut con = self.conn_pool.get()?;
 
         self.delete_counters_associated_with_limit(limit)?;
-        con.del(key_for_counters_of_limit(&limit))?;
+        con.del(key_for_counters_of_limit(limit))?;
 
         let serialized_limit = serde_json::to_string(limit).unwrap();
 

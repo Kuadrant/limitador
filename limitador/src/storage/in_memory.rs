@@ -27,7 +27,7 @@ impl Storage for InMemoryStorage {
 
         let mut limits_for_namespace = self.limits_for_namespace.write().unwrap();
 
-        match limits_for_namespace.get_mut(&namespace) {
+        match limits_for_namespace.get_mut(namespace) {
             Some(limits) => {
                 limits.insert(limit.clone(), HashSet::new());
             }

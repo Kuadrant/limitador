@@ -73,7 +73,7 @@ impl AsyncStorage for InfinispanStorage {
             .infinispan
             .run(&request::entries::delete(
                 &self.cache_name,
-                key_for_counters_of_limit(&limit),
+                key_for_counters_of_limit(limit),
             ))
             .await?;
 
@@ -257,7 +257,7 @@ impl InfinispanStorage {
     }
 
     async fn delete_counters_associated_with_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
-        for counter_key in self.counter_keys_of_limit(&limit).await? {
+        for counter_key in self.counter_keys_of_limit(limit).await? {
             counters::delete(&self.infinispan, &self.cache_name, &counter_key).await?
         }
 
@@ -284,7 +284,7 @@ impl InfinispanStorage {
         &self,
         limit: &Limit,
     ) -> Result<HashSet<String>, InfinispanError> {
-        self.get_set(key_for_counters_of_limit(&limit)).await
+        self.get_set(key_for_counters_of_limit(limit)).await
     }
 
     async fn get_set(&self, set_key: impl AsRef<str>) -> Result<HashSet<String>, InfinispanError> {
