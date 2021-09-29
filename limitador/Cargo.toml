@@ -4,8 +4,8 @@ version = "0.2.0"
 authors = ["David Ortiz <z.david.ortiz@gmail.com>"]
 license = "Apache-2.0"
 description = "Rate limiter."
-homepage = "https://github.com/3scale-labs/limitador"
-repository = "https://github.com/3scale-labs/limitador"
+homepage = "https://github.com/kuadrant/limitador"
+repository = "https://github.com/kuadrant/limitador"
 documentation = "https://docs.rs/limitador"
 edition = "2018"
 
