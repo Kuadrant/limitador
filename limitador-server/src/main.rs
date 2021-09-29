@@ -84,21 +84,21 @@ impl Limiter {
 
     async fn storage_using_redis(redis_url: &str) -> Box<dyn AsyncStorage> {
         if Self::env_option_is_enabled("REDIS_LOCAL_CACHE_ENABLED") {
-            Box::new(Self::storage_using_redis_and_local_cache(&redis_url).await)
+            Box::new(Self::storage_using_redis_and_local_cache(redis_url).await)
         } else {
             // Let's use the async impl. This could be configurable if needed.
-            Box::new(Self::storage_using_async_redis(&redis_url).await)
+            Box::new(Self::storage_using_async_redis(redis_url).await)
         }
     }
 
     async fn storage_using_async_redis(redis_url: &str) -> AsyncRedisStorage {
-        AsyncRedisStorage::new(&redis_url).await
+        AsyncRedisStorage::new(redis_url).await
     }
 
     async fn storage_using_redis_and_local_cache(redis_url: &str) -> CachedRedisStorage {
         // TODO: Not all the options are configurable via ENV. Add them as needed.
 
-        let mut cached_redis_storage = CachedRedisStorageBuilder::new(&redis_url);
+        let mut cached_redis_storage = CachedRedisStorageBuilder::new(redis_url);
 
         if let Ok(flushing_period_secs) = env::var("REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS") {
             let parsed_flushing_period: i64 = flushing_period_secs.parse().unwrap();
