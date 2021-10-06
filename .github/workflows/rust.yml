@@ -1,3 +1,4 @@
+---
 name: Limitador
 
 on:
@@ -7,6 +8,8 @@ on:
   pull_request:
     branches:
       - '*'
+  schedule:
+    - cron: '5 4 * * *'
 
 jobs:
   check:
