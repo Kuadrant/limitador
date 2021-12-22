@@ -3,10 +3,13 @@ name = "limitador"
 version = "0.2.0"
 authors = ["David Ortiz <z.david.ortiz@gmail.com>"]
 license = "Apache-2.0"
-description = "Rate limiter."
+keywords = ["rate-limiting", "rate", "limiter"]
+categories = ["web-programming"]
+description = "Rate limiting library"
 homepage = "https://github.com/kuadrant/limitador"
 repository = "https://github.com/kuadrant/limitador"
 documentation = "https://docs.rs/limitador"
+readme = "README.md"
 edition = "2021"
 
 # We make redis and infinispan optional to be able to compile for wasm32.

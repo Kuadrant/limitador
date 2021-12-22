@@ -3,6 +3,13 @@ name = "limitador-server"
 version = "0.4.0"
 authors = ["David Ortiz <z.david.ortiz@gmail.com>"]
 license = "Apache-2.0"
+keywords = ["rate-limiting", "rate", "limiter", "envoy", "rls"]
+categories = ["web-programming"]
+description = "Rate limiting service that integrates with Envoy's RLS protocol"
+homepage = "https://github.com/kuadrant/limitador"
+repository = "https://github.com/kuadrant/limitador"
+documentation = "https://docs.rs/limitador"
+readme = "README.md"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
