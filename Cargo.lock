@@ -727,7 +727,7 @@ dependencies = [
  "clap",
  "criterion-plot",
  "csv",
- "itertools 0.10.3",
+ "itertools",
  "lazy_static",
  "num-traits",
  "oorandom",
@@ -749,7 +749,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d00996de9f2f7559f7f4dc286073197f83e92256a59ed395f9aac01fe717da57"
 dependencies = [
  "cast",
- "itertools 0.10.3",
+ "itertools",
 ]
 
 [[package]]
@@ -1423,15 +1423,6 @@ checksum = "68f2d64f2edebec4ce84ad108148e67e1064789bee435edc5b60ad398714a3a9"
 
 [[package]]
 name = "itertools"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "284f18f85651fe11e8a991b2adb42cb078325c996ed026d994719efcfca1d54b"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
 version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a9a9d19fa1e79b6215ff29b9d6880b706147f16e9b1dbb1e4e5947b5b02bc5e3"
@@ -1833,12 +1824,12 @@ dependencies = [
 
 [[package]]
 name = "paperclip"
-version = "0.5.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cc445ec12c9ce0ba673cfda392c4aaea27bc5e26fa3e7bd2689386208f00f7b"
+checksum = "dae420c972d8aa793ef8f179dba06aedcbcb4f924fe09d8cddebb73ea4f0c0ab"
 dependencies = [
  "anyhow",
- "itertools 0.9.0",
+ "itertools",
  "once_cell",
  "paperclip-actix",
  "paperclip-core",
@@ -1855,9 +1846,9 @@ dependencies = [
 
 [[package]]
 name = "paperclip-actix"
-version = "0.3.0"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f3d2788500bb13c5b0d453e2225e38ed7369f630a14adade8840fee12ee41e5"
+checksum = "dde6ef3bdf773e80e3afeaded697397d3ebd794885c53f481c3ede1aea263731"
 dependencies = [
  "actix-service",
  "actix-web",
@@ -1871,9 +1862,9 @@ dependencies = [
 
 [[package]]
 name = "paperclip-core"
-version = "0.3.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b82c73e73209604585f3c8e3eb3c1f386ddc521d5311047d2de25a88a91f3613"
+checksum = "f83e598ac88b6bd499309669217ec6b1511f843de818d2a9b66e747424552daf"
 dependencies = [
  "actix-web",
  "mime",
@@ -1890,9 +1881,9 @@ dependencies = [
 
 [[package]]
 name = "paperclip-macros"
-version = "0.4.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c526435a3b0cbc5145d3aa6d66fd32adf987b9f588ace873c01ed2bc6e23f451"
+checksum = "c0f28bb5ce3045e59663eb5a31ede3c855a1092e698439ecc4608ae36d3d3fe3"
 dependencies = [
  "heck",
  "http",
@@ -2151,7 +2142,7 @@ checksum = "62941722fb675d463659e49c4f3fe1fe792ff24fe5bbaa9c08cd3b98a1c354f5"
 dependencies = [
  "bytes 1.1.0",
  "heck",
- "itertools 0.10.3",
+ "itertools",
  "lazy_static",
  "log",
  "multimap",
@@ -2170,7 +2161,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9cc1a3263e07e0bf68e96268f37665207b49560d98739662cdfaae215c720fe"
 dependencies = [
  "anyhow",
- "itertools 0.10.3",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn",
@@ -2761,15 +2752,15 @@ checksum = "213701ba3370744dcd1a12960caa4843b3d68b4d1c0a5d575e0d65b2ee9d16c0"
 
 [[package]]
 name = "strum"
-version = "0.19.5"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b89a286a7e3b5720b9a477b23253bc50debac207c8d21505f8e70b36792f11b5"
+checksum = "f7ac893c7d471c8a21f31cfe213ec4f6d9afeed25537c772e08ef3f005f8729e"
 
 [[package]]
 name = "strum_macros"
-version = "0.19.4"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e61bb0be289045cb80bfce000512e32d09f8337e54c186725da381377ad1f8d5"
+checksum = "339f799d8b549e3744c7ac7feb216383e4005d94bdb22561b3ab8f3b808ae9fb"
 dependencies = [
  "heck",
  "proc-macro2",
