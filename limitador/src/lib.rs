@@ -184,6 +184,10 @@
 //! more performant.
 //!
 
+#![deny(clippy::all, clippy::cargo)]
+// TODO this needs review to reduce the bloat pulled in by dependencies
+#![allow(clippy::multiple_crate_versions)]
+
 use crate::counter::Counter;
 use crate::errors::LimitadorError;
 use crate::limit::{Limit, Namespace};
