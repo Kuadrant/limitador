@@ -22,6 +22,7 @@ pub struct FractionalPercent {
     #[prost(enumeration = "fractional_percent::DenominatorType", tag = "2")]
     pub denominator: i32,
 }
+/// Nested message and enum types in `FractionalPercent`.
 pub mod fractional_percent {
     /// Fraction percentages support several fixed denominator values.
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -43,7 +44,7 @@ pub mod fractional_percent {
 }
 // [#protodoc-title: Semantic Version]
 
-/// Envoy uses SemVer (https://semver.org/). Major/minor versions indicate
+/// Envoy uses SemVer (<https://semver.org/>). Major/minor versions indicate
 /// expected behaviors and APIs, the patch version field is used only
 /// for security fixes and can be generally ignored.
 #[derive(Clone, PartialEq, ::prost::Message)]
