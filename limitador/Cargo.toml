@@ -20,14 +20,14 @@ infinispan_storage = ["infinispan", "reqwest", "openssl"]
 
 [dependencies]
 ttl_cache = "0.5"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-thiserror = "1.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
 futures = "0.3"
-async-trait = "0.1.41"
-cfg-if = "1.0"
+async-trait = "0.1"
+cfg-if = "1"
 prometheus = "0.10"
-lazy_static = "1.4"
+lazy_static = "1"
 
 # Optional dependencies
 redis = { version = "0.17", optional = true, features = ["connection-manager"] }
@@ -46,7 +46,7 @@ openssl = { version = "0.10.34", optional = true, features = ["vendored"] }
 [dev-dependencies]
 serial_test = "0.5"
 criterion = "0.3"
-paste = "1.0"
+paste = "1"
 rand = "0.7"
 tokio = { version = "0.2", features = [
     "rt-core",
