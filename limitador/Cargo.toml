@@ -7,7 +7,7 @@ description = "Rate limiter."
 homepage = "https://github.com/kuadrant/limitador"
 repository = "https://github.com/kuadrant/limitador"
 documentation = "https://docs.rs/limitador"
-edition = "2018"
+edition = "2021"
 
 # We make redis and infinispan optional to be able to compile for wasm32.
 [features]
