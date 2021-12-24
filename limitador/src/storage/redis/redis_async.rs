@@ -217,9 +217,11 @@ impl AsyncStorage for AsyncRedisStorage {
 impl AsyncRedisStorage {
     pub async fn new(redis_url: &str) -> AsyncRedisStorage {
         AsyncRedisStorage {
-            conn_manager: ConnectionManager::new(ConnectionInfo::from_str(redis_url).unwrap())
-                .await
-                .unwrap(),
+            conn_manager: ConnectionManager::new(
+                redis::Client::open(ConnectionInfo::from_str(redis_url).unwrap()).unwrap(),
+            )
+            .await
+            .unwrap(),
         }
     }
 
