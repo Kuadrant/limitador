@@ -289,7 +289,7 @@ mod tests {
         .await;
 
         let req = test::TestRequest::get().uri("/metrics").to_request();
-        let resp = test::read_response(&mut app, req).await;
+        let resp = test::call_and_read_body(&mut app, req).await;
         let resp_string = String::from_utf8(resp.to_vec()).unwrap();
 
         // No need to check the whole output. We just want to make sure that it
@@ -333,7 +333,7 @@ mod tests {
             .uri(&format!("/limits/{}", namespace))
             .data(data.clone())
             .to_request();
-        let resp_limits: Vec<Limit> = test::read_response_json(&mut app, req).await;
+        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&mut app, req).await;
         assert_eq!(resp_limits.len(), 1);
         assert_eq!(*resp_limits.get(0).unwrap(), limit);
 
@@ -351,7 +351,7 @@ mod tests {
             .uri(&format!("/limits/{}", namespace))
             .data(data.clone())
             .to_request();
-        let resp_limits: Vec<Limit> = test::read_response_json(&mut app, req).await;
+        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&mut app, req).await;
         assert!(resp_limits.is_empty());
     }
 
@@ -389,7 +389,7 @@ mod tests {
             .uri(&format!("/limits/{}", namespace))
             .data(data.clone())
             .to_request();
-        let resp_limits: Vec<Limit> = test::read_response_json(&mut app, req).await;
+        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&mut app, req).await;
         assert_eq!(resp_limits.len(), 1);
         assert_eq!(*resp_limits.get(0).unwrap(), limit);
     }
@@ -450,7 +450,7 @@ mod tests {
             .uri(&format!("/limits/{}", namespace))
             .data(data.clone())
             .to_request();
-        let resp_limits: Vec<Limit> = test::read_response_json(&mut app, req).await;
+        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&mut app, req).await;
         assert!(resp_limits.is_empty());
     }
 
