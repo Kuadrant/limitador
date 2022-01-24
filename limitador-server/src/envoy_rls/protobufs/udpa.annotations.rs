@@ -26,5 +26,5 @@ pub struct VersioningAnnotation {
     /// udpa.foo.v3alpha.Foo and it was previously udpa.bar.v2.Bar. This
     /// information is consumed by UDPA via proto descriptors.
     #[prost(string, tag = "1")]
-    pub previous_message_type: std::string::String,
+    pub previous_message_type: ::prost::alloc::string::String,
 }

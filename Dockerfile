@@ -4,7 +4,7 @@
 # Build Stage
 # ------------------------------------------------------------------------------
 
-FROM rust:1.52 as limitador-build
+FROM rust:1.58 as limitador-build
 
 RUN apt-get update \
  && apt-get install musl-tools -y

@@ -221,10 +221,11 @@ impl CachedRedisStorage {
         ttl_cached_counters: Duration,
         ttl_ratio_cached_counters: u64,
     ) -> CachedRedisStorage {
-        let redis_conn_manager =
-            ConnectionManager::new(ConnectionInfo::from_str(redis_url).unwrap())
-                .await
-                .unwrap();
+        let redis_conn_manager = ConnectionManager::new(
+            redis::Client::open(ConnectionInfo::from_str(redis_url).unwrap()).unwrap(),
+        )
+        .await
+        .unwrap();
 
         let async_redis_storage =
             AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone());
@@ -239,7 +240,7 @@ impl CachedRedisStorage {
                     let sleep_time = flushing_period
                         .checked_sub(time_start.elapsed())
                         .unwrap_or_else(|| Duration::from_secs(0));
-                    tokio::time::delay_for(sleep_time).await;
+                    tokio::time::sleep(sleep_time).await;
                 }
             });
         }

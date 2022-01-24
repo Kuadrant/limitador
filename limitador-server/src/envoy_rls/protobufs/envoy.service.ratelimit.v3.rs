@@ -10,12 +10,12 @@ pub struct RateLimitRequest {
     /// All rate limit requests must specify a domain. This enables the configuration to be per
     /// application without fear of overlap. E.g., "envoy".
     #[prost(string, tag = "1")]
-    pub domain: std::string::String,
+    pub domain: ::prost::alloc::string::String,
     /// All rate limit requests must specify at least one RateLimitDescriptor. Each descriptor is
     /// processed by the service (see below). If any of the descriptors are over limit, the entire
     /// request is considered to be over limit.
     #[prost(message, repeated, tag = "2")]
-    pub descriptors: ::std::vec::Vec<
+    pub descriptors: ::prost::alloc::vec::Vec<
         super::super::super::extensions::common::ratelimit::v3::RateLimitDescriptor,
     >,
     /// Rate limit requests can optionally specify the number of hits a request adds to the matched
@@ -34,22 +34,24 @@ pub struct RateLimitResponse {
     /// in the RateLimitRequest. This can be used by the caller to determine which individual
     /// descriptors failed and/or what the currently configured limits are for all of them.
     #[prost(message, repeated, tag = "2")]
-    pub statuses: ::std::vec::Vec<rate_limit_response::DescriptorStatus>,
+    pub statuses: ::prost::alloc::vec::Vec<rate_limit_response::DescriptorStatus>,
     /// A list of headers to add to the response
     #[prost(message, repeated, tag = "3")]
     pub response_headers_to_add:
-        ::std::vec::Vec<super::super::super::config::core::v3::HeaderValue>,
+        ::prost::alloc::vec::Vec<super::super::super::config::core::v3::HeaderValue>,
     /// A list of headers to add to the request when forwarded
     #[prost(message, repeated, tag = "4")]
-    pub request_headers_to_add: ::std::vec::Vec<super::super::super::config::core::v3::HeaderValue>,
+    pub request_headers_to_add:
+        ::prost::alloc::vec::Vec<super::super::super::config::core::v3::HeaderValue>,
 }
+/// Nested message and enum types in `RateLimitResponse`.
 pub mod rate_limit_response {
     /// Defines an actual rate limit in terms of requests per unit of time and the unit itself.
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct RateLimit {
         /// A name or description of this limit.
         #[prost(string, tag = "3")]
-        pub name: std::string::String,
+        pub name: ::prost::alloc::string::String,
         /// The number of requests per unit of time.
         #[prost(uint32, tag = "1")]
         pub requests_per_unit: u32,
@@ -57,6 +59,7 @@ pub mod rate_limit_response {
         #[prost(enumeration = "rate_limit::Unit", tag = "2")]
         pub unit: i32,
     }
+    /// Nested message and enum types in `RateLimit`.
     pub mod rate_limit {
         #[derive(
             Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
@@ -82,7 +85,7 @@ pub mod rate_limit_response {
         pub code: i32,
         /// The current limit as configured by the server. Useful for debugging, etc.
         #[prost(message, optional, tag = "2")]
-        pub current_limit: ::std::option::Option<RateLimit>,
+        pub current_limit: ::core::option::Option<RateLimit>,
         /// The limit remaining in the current time unit.
         #[prost(uint32, tag = "3")]
         pub limit_remaining: u32,
@@ -100,8 +103,9 @@ pub mod rate_limit_response {
 }
 #[doc = r" Generated client implementations."]
 pub mod rate_limit_service_client {
-    #![allow(unused_variables, dead_code, missing_docs)]
+    #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
+    #[derive(Debug, Clone)]
     pub struct RateLimitServiceClient<T> {
         inner: tonic::client::Grpc<T>,
     }
@@ -119,17 +123,43 @@ pub mod rate_limit_service_client {
     impl<T> RateLimitServiceClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
-        T::ResponseBody: Body + HttpBody + Send + 'static,
+        T::ResponseBody: Body + Send + 'static,
         T::Error: Into<StdError>,
-        <T::ResponseBody as HttpBody>::Error: Into<StdError> + Send,
+        <T::ResponseBody as Body>::Error: Into<StdError> + Send,
     {
         pub fn new(inner: T) -> Self {
             let inner = tonic::client::Grpc::new(inner);
             Self { inner }
         }
-        pub fn with_interceptor(inner: T, interceptor: impl Into<tonic::Interceptor>) -> Self {
-            let inner = tonic::client::Grpc::with_interceptor(inner, interceptor);
-            Self { inner }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> RateLimitServiceClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + Send + Sync,
+        {
+            RateLimitServiceClient::new(InterceptedService::new(inner, interceptor))
+        }
+        #[doc = r" Compress requests with `gzip`."]
+        #[doc = r""]
+        #[doc = r" This requires the server to support it otherwise it might respond with an"]
+        #[doc = r" error."]
+        pub fn send_gzip(mut self) -> Self {
+            self.inner = self.inner.send_gzip();
+            self
+        }
+        #[doc = r" Enable decompressing responses with `gzip`."]
+        pub fn accept_gzip(mut self) -> Self {
+            self.inner = self.inner.accept_gzip();
+            self
         }
         #[doc = " Determine whether rate limiting should take place."]
         pub async fn should_rate_limit(
@@ -149,22 +179,10 @@ pub mod rate_limit_service_client {
             self.inner.unary(request.into_request(), path, codec).await
         }
     }
-    impl<T: Clone> Clone for RateLimitServiceClient<T> {
-        fn clone(&self) -> Self {
-            Self {
-                inner: self.inner.clone(),
-            }
-        }
-    }
-    impl<T> std::fmt::Debug for RateLimitServiceClient<T> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "RateLimitServiceClient {{ ... }}")
-        }
-    }
 }
 #[doc = r" Generated server implementations."]
 pub mod rate_limit_service_server {
-    #![allow(unused_variables, dead_code, missing_docs)]
+    #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
     #[doc = "Generated trait containing gRPC methods that should be implemented for use with RateLimitServiceServer."]
     #[async_trait]
@@ -176,27 +194,33 @@ pub mod rate_limit_service_server {
         ) -> Result<tonic::Response<super::RateLimitResponse>, tonic::Status>;
     }
     #[derive(Debug)]
-    #[doc(hidden)]
     pub struct RateLimitServiceServer<T: RateLimitService> {
         inner: _Inner<T>,
+        accept_compression_encodings: (),
+        send_compression_encodings: (),
     }
-    struct _Inner<T>(Arc<T>, Option<tonic::Interceptor>);
+    struct _Inner<T>(Arc<T>);
     impl<T: RateLimitService> RateLimitServiceServer<T> {
         pub fn new(inner: T) -> Self {
             let inner = Arc::new(inner);
-            let inner = _Inner(inner, None);
-            Self { inner }
+            let inner = _Inner(inner);
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+            }
         }
-        pub fn with_interceptor(inner: T, interceptor: impl Into<tonic::Interceptor>) -> Self {
-            let inner = Arc::new(inner);
-            let inner = _Inner(inner, Some(interceptor.into()));
-            Self { inner }
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
         }
     }
-    impl<T, B> Service<http::Request<B>> for RateLimitServiceServer<T>
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for RateLimitServiceServer<T>
     where
         T: RateLimitService,
-        B: HttpBody + Send + Sync + 'static,
+        B: Body + Send + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
         type Response = http::Response<tonic::body::BoxBody>;
@@ -221,21 +245,21 @@ pub mod rate_limit_service_server {
                             request: tonic::Request<super::RateLimitRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
-                            let fut = async move { inner.should_rate_limit(request).await };
+                            let fut = async move { (*inner).should_rate_limit(request).await };
                             Box::pin(fut)
                         }
                     }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let interceptor = inner.1.clone();
                         let inner = inner.0;
                         let method = ShouldRateLimitSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = if let Some(interceptor) = interceptor {
-                            tonic::server::Grpc::with_interceptor(codec, interceptor)
-                        } else {
-                            tonic::server::Grpc::new(codec)
-                        };
+                        let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
+                            accept_compression_encodings,
+                            send_compression_encodings,
+                        );
                         let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
@@ -245,7 +269,8 @@ pub mod rate_limit_service_server {
                     Ok(http::Response::builder()
                         .status(200)
                         .header("grpc-status", "12")
-                        .body(tonic::body::BoxBody::empty())
+                        .header("content-type", "application/grpc")
+                        .body(empty_body())
                         .unwrap())
                 }),
             }
@@ -254,12 +279,16 @@ pub mod rate_limit_service_server {
     impl<T: RateLimitService> Clone for RateLimitServiceServer<T> {
         fn clone(&self) -> Self {
             let inner = self.inner.clone();
-            Self { inner }
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+            }
         }
     }
     impl<T: RateLimitService> Clone for _Inner<T> {
         fn clone(&self) -> Self {
-            Self(self.0.clone(), self.1.clone())
+            Self(self.0.clone())
         }
     }
     impl<T: std::fmt::Debug> std::fmt::Debug for _Inner<T> {

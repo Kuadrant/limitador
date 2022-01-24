@@ -54,7 +54,7 @@ pub async fn lock(
 
             retries += 1;
 
-            tokio::time::delay_for(RETRIES_INTERVAL).await;
+            tokio::time::sleep(RETRIES_INTERVAL).await;
         }
     }
 }

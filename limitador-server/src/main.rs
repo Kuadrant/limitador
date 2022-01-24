@@ -1,3 +1,5 @@
+#![deny(clippy::all, clippy::cargo)]
+
 #[macro_use]
 extern crate log;
 
@@ -137,7 +139,7 @@ impl Limiter {
                 "{}://{}:{}",
                 parsed_url.scheme(),
                 parsed_url.host_str().unwrap(),
-                parsed_url.port().unwrap().to_string(),
+                parsed_url.port().unwrap(),
             ),
             parsed_url.username(),
             parsed_url.password().unwrap_or_default(),

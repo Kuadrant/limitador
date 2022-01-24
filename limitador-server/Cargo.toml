@@ -3,25 +3,32 @@ name = "limitador-server"
 version = "0.4.0"
 authors = ["David Ortiz <z.david.ortiz@gmail.com>"]
 license = "Apache-2.0"
+keywords = ["rate-limiting", "rate", "limiter", "envoy", "rls"]
+categories = ["web-programming"]
+description = "Rate limiting service that integrates with Envoy's RLS protocol"
+homepage = "https://github.com/kuadrant/limitador"
+repository = "https://github.com/kuadrant/limitador"
+documentation = "https://docs.rs/limitador"
+readme = "README.md"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 limitador = { path = "../limitador", features = ['infinispan_storage'] }
-tokio = { version = "0.2", features = ["full"] }
-thiserror = "1.0"
-tonic = "0.3"
-prost = "0.6"
-prost-types = "0.6"
+tokio = { version = "1", features = ["full"] }
+thiserror = "1"
+tonic = "0.6"
+prost = "0.9"
+prost-types = "0.9"
 serde_yaml = "0.8"
 log = "0.4"
-env_logger = "0.8"
-url = "2.2"
-actix-web = "3"
-actix-rt = "1"
-paperclip = { version = "0.5", features = ["actix"] }
-serde = { version = "1.0", features = ["derive"] }
+env_logger = "0.9"
+url = "2"
+actix-web = "= 4.0.0-beta.20"
+actix-rt = "2"
+paperclip = { git = "https://github.com/sfisol/paperclip", rev = "99db92949e95287fbeb8f3ea844291f1810cccee", features = ["actix"] }
+serde = { version = "1", features = ["derive"] }
 
 [build-dependencies]
-tonic-build = "0.2"
+tonic-build = "0.6"
