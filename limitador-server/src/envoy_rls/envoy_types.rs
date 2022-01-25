@@ -5,6 +5,9 @@ pub mod envoy {
         #[path = "."]
         pub mod core {
             #[path = "envoy.config.core.v3.rs"]
+            // clippy will barf on protobuff generated code for enum variants in
+            // v3::socket_option::SocketState, so allow this lint
+            #[allow(clippy::enum_variant_names)]
             pub mod v3;
         }
     }
