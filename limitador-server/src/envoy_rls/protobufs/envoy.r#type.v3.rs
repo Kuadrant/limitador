@@ -56,3 +56,39 @@ pub struct SemanticVersion {
     #[prost(uint32, tag = "3")]
     pub patch: u32,
 }
+// [#protodoc-title: Ratelimit Time Unit]
+
+/// Identifies the unit of of time for rate limit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum RateLimitUnit {
+    /// The time unit is not known.
+    Unknown = 0,
+    /// The time unit representing a second.
+    Second = 1,
+    /// The time unit representing a minute.
+    Minute = 2,
+    /// The time unit representing an hour.
+    Hour = 3,
+    /// The time unit representing a day.
+    Day = 4,
+}
+// [#protodoc-title: Token bucket]
+
+/// Configures a token bucket, typically used for rate limiting.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TokenBucket {
+    /// The maximum tokens that the bucket can hold. This is also the number of tokens that the bucket
+    /// initially contains.
+    #[prost(uint32, tag = "1")]
+    pub max_tokens: u32,
+    /// The number of tokens added to the bucket during each fill interval. If not specified, defaults
+    /// to a single token.
+    #[prost(message, optional, tag = "2")]
+    pub tokens_per_fill: ::core::option::Option<u32>,
+    /// The fill interval that tokens are added to the bucket. During each fill interval
+    /// `tokens_per_fill` are added to the bucket. The bucket will never contain more than
+    /// `max_tokens` tokens.
+    #[prost(message, optional, tag = "3")]
+    pub fill_interval: ::core::option::Option<::prost_types::Duration>,
+}
