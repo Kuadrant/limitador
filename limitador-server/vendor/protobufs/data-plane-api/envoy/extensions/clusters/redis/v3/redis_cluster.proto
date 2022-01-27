@@ -12,6 +12,7 @@ import "validate/validate.proto";
 option java_package = "io.envoyproxy.envoy.extensions.clusters.redis.v3";
 option java_outer_classname = "RedisClusterProto";
 option java_multiple_files = true;
+option go_package = "github.com/envoyproxy/go-control-plane/envoy/extensions/clusters/redis/v3;redisv3";
 option (udpa.annotations.file_status).package_version_status = ACTIVE;
 
 // [#protodoc-title: Redis Cluster Configuration]
@@ -19,7 +20,7 @@ option (udpa.annotations.file_status).package_version_status = ACTIVE;
 // of :ref:`Envoy's support for Redis Cluster <arch_overview_redis>`.
 //
 // Redis Cluster is an extension of Redis which supports sharding and high availability (where a
-// shard that loses its master fails over to a replica, and designates it as the new master).
+// shard that loses its primary fails over to a replica, and designates it as the new primary).
 // However, as there is no unified frontend or proxy service in front of Redis Cluster, the client
 // (in this case Envoy) must locally maintain the state of the Redis Cluster, specifically the
 // topology. A random node in the cluster is queried for the topology using the `CLUSTER SLOTS
@@ -27,7 +28,7 @@ option (udpa.annotations.file_status).package_version_status = ACTIVE;
 // updated at user-configured intervals.
 //
 // Additionally, if
-// :ref:`enable_redirection<envoy_api_field_extensions.filters.network.redis_proxy.v3.RedisProxy.ConnPoolSettings.enable_redirection>`
+// :ref:`enable_redirection<envoy_v3_api_field_extensions.filters.network.redis_proxy.v3.RedisProxy.ConnPoolSettings.enable_redirection>`
 // is true, then moved and ask redirection errors from upstream servers will trigger a topology
 // refresh when they exceed a user-configured error threshold.
 //

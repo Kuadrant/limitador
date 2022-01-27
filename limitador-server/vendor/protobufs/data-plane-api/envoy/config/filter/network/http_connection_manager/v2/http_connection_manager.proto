@@ -24,6 +24,7 @@ import "validate/validate.proto";
 option java_package = "io.envoyproxy.envoy.config.filter.network.http_connection_manager.v2";
 option java_outer_classname = "HttpConnectionManagerProto";
 option java_multiple_files = true;
+option go_package = "github.com/envoyproxy/go-control-plane/envoy/config/filter/network/http_connection_manager/v2;http_connection_managerv2";
 option (udpa.annotations.file_migrate).move_to_package =
     "envoy.extensions.filters.network.http_connection_manager.v3";
 option (udpa.annotations.file_status).package_version_status = FROZEN;
@@ -299,10 +300,8 @@ message HttpConnectionManager {
   // The maximum request headers size for incoming connections.
   // If unconfigured, the default max request headers allowed is 60 KiB.
   // Requests that exceed this limit will receive a 431 response.
-  // The max configurable limit is 96 KiB, based on current implementation
-  // constraints.
   google.protobuf.UInt32Value max_request_headers_kb = 29
-      [(validate.rules).uint32 = {lte: 96 gt: 0}];
+      [(validate.rules).uint32 = {lte: 8192 gt: 0}];
 
   // The idle timeout for connections managed by the connection manager. The
   // idle timeout is defined as the period in which there are no active
@@ -331,6 +330,16 @@ message HttpConnectionManager {
   // for the stream, the timer will be reset. If the timeout fires, the stream
   // is terminated with a 408 Request Timeout error code if no upstream response
   // header has been received, otherwise a stream reset occurs.
+  //
+  // This timeout also specifies the amount of time that Envoy will wait for the peer to open enough
+  // window to write any remaining stream data once the entirety of stream data (local end stream is
+  // true) has been buffered pending available window. In other words, this timeout defends against
+  // a peer that does not release enough window to completely write the stream, even though all
+  // data has been proxied within available flow control windows. If the timeout is hit in this
+  // case, the :ref:`tx_flush_timeout <config_http_conn_man_stats_per_codec>` counter will be
+  // incremented. Note that :ref:`max_stream_duration
+  // <envoy_api_field_core.HttpProtocolOptions.max_stream_duration>` does not apply to this corner
+  // case.
   //
   // Note that it is possible to idle timeout even if the wire traffic for a stream is non-idle, due
   // to the granularity of events presented to the connection manager. For example, while receiving
@@ -487,17 +496,17 @@ message HttpConnectionManager {
   // true in the future. When not specified, this value may be overridden by the
   // runtime variable
   // :ref:`http_connection_manager.normalize_path<config_http_conn_man_runtime_normalize_path>`.
-  // See `Normalization and Comparison <https://tools.ietf.org/html/rfc3986#section-6>`
+  // See `Normalization and Comparison <https://tools.ietf.org/html/rfc3986#section-6>`_
   // for details of normalization.
   // Note that Envoy does not perform
-  // `case normalization <https://tools.ietf.org/html/rfc3986#section-6.2.2.1>`
+  // `case normalization <https://tools.ietf.org/html/rfc3986#section-6.2.2.1>`_
   google.protobuf.BoolValue normalize_path = 30;
 
   // Determines if adjacent slashes in the path are merged into one before any processing of
   // requests by HTTP filters or routing. This affects the upstream *:path* header as well. Without
   // setting this option, incoming requests with path `//dir///file` will not match against route
   // with `prefix` match set to `/dir`. Defaults to `false`. Note that slash merging is not part of
-  // `HTTP spec <https://tools.ietf.org/html/rfc3986>` and is provided for convenience.
+  // `HTTP spec <https://tools.ietf.org/html/rfc3986>`_ and is provided for convenience.
   bool merge_slashes = 33;
 
   // The configuration of the request ID extension. This includes operations such as
@@ -576,6 +585,10 @@ message ScopedRoutes {
         }
 
         // The name of the header field to extract the value from.
+        //
+        // .. note::
+        //
+        //   If the header appears multiple times only the first value is used.
         string name = 1 [(validate.rules).string = {min_bytes: 1}];
 
         // The element separator (e.g., ';' separates 'a;b;c;d').

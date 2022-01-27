@@ -14,10 +14,16 @@ definitions and all their dependencies.
 
 Here are the repos and the revisions:
 
-- https://github.com/envoyproxy/data-plane-api.git b4cdc2be93283b5dd59723c4c3f3387580a7031f
-- https://github.com/envoyproxy/protoc-gen-validate.git 478e95eb5ebe9afa11d767b6ce53dec79b6cc8c4
-- https://github.com/cncf/udpa.git 3b31d022a144b334eb2224838e4d6952ab5253aa
+- https://github.com/envoyproxy/data-plane-api.git 863f431e56cecb1114a122eb467db7739b5df154
+- https://github.com/envoyproxy/protoc-gen-validate.git 7898287a95aefb07aeff95f5f17b8d422d4a5ded
+- https://github.com/cncf/xds.git 4a2b9fdd466b16721f8c058d7cadf5a54e229d66
 
 My first solution was to do the clone and the filtering in the build.rs.
 However, that does not really work because it means that we need to download
 dependencies at build time, which is not supported by docs.rs.
+
+## Deprecated UDPA definitions
+
+The UDPA repository has been replaced by the XDS one, but some definitions still reference
+UDPA. When you update the XDS repository, take into account that you must move the UDPA
+definitions around to ensure the code generation picks them up.
