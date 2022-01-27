@@ -25,9 +25,9 @@ serde_yaml = "0.8"
 log = "0.4"
 env_logger = "0.9"
 url = "2"
-actix-web = "= 4.0.0-beta.20"
+actix-web = "4.0.0-beta.20"
 actix-rt = "2"
-paperclip = { git = "https://github.com/sfisol/paperclip", rev = "99db92949e95287fbeb8f3ea844291f1810cccee", features = ["actix"] }
+paperclip = { git = "https://github.com/sfisol/paperclip", rev = "2522f12ecbc78055ab5bcfc5b7f033d21be2f794", features = ["actix"] }
 serde = { version = "1", features = ["derive"] }
 
 [build-dependencies]
