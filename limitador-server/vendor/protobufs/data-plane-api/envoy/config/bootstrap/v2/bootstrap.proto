@@ -25,6 +25,7 @@ import "validate/validate.proto";
 option java_package = "io.envoyproxy.envoy.config.bootstrap.v2";
 option java_outer_classname = "BootstrapProto";
 option java_multiple_files = true;
+option go_package = "github.com/envoyproxy/go-control-plane/envoy/config/bootstrap/v2;bootstrapv2";
 option (udpa.annotations.file_status).package_version_status = FROZEN;
 
 // [#protodoc-title: Bootstrap]
@@ -169,6 +170,9 @@ message Bootstrap {
   // when :ref:`dns_resolvers <envoy_api_field_Cluster.dns_resolvers>` and
   // :ref:`use_tcp_for_dns_lookups <envoy_api_field_Cluster.use_tcp_for_dns_lookups>` are
   // specified.
+  // Setting this value causes failure if the
+  // ``envoy.restart_features.use_apple_api_for_dns_lookups`` runtime value is true during
+  // server startup. Apple' API only uses UDP for DNS resolution.
   bool use_tcp_for_dns_lookups = 20;
 }
 

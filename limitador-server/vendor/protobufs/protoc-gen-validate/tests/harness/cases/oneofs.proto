@@ -1,8 +1,7 @@
 syntax = "proto3";
 
 package tests.harness.cases;
-option go_package = "cases";
-
+option go_package = "github.com/envoyproxy/protoc-gen-validate/tests/harness/cases/go;cases";
 import "validate/validate.proto";
 
 message TestOneOfMsg {
@@ -30,5 +29,7 @@ message OneOfRequired {
 
         string       x = 1;
         int32        y = 2;
+        int32        name_with_underscores = 3;
+        int32        under_and_1_number = 4;
     }
 }

@@ -41,11 +41,18 @@
 ///
 /// The idea behind the API is that (1)/(2)/(3) and (4)/(5) can be sent in 1 request if desired.
 /// This enables building complex application scenarios with a generic backend.
+///
+/// Optionally the descriptor can contain a limit override under a "limit" key, that specifies
+/// the number of requests per unit to use instead of the number configured in the
+/// rate limiting service.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RateLimitDescriptor {
     /// Descriptor entries.
     #[prost(message, repeated, tag = "1")]
     pub entries: ::prost::alloc::vec::Vec<rate_limit_descriptor::Entry>,
+    /// Optional rate limit override to supply to the ratelimit service.
+    #[prost(message, optional, tag = "2")]
+    pub limit: ::core::option::Option<rate_limit_descriptor::RateLimitOverride>,
 }
 /// Nested message and enum types in `RateLimitDescriptor`.
 pub mod rate_limit_descriptor {
@@ -58,4 +65,28 @@ pub mod rate_limit_descriptor {
         #[prost(string, tag = "2")]
         pub value: ::prost::alloc::string::String,
     }
+    /// Override rate limit to apply to this descriptor instead of the limit
+    /// configured in the rate limit service. See :ref:`rate limit override
+    /// <config_http_filters_rate_limit_rate_limit_override>` for more information.
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct RateLimitOverride {
+        /// The number of requests per unit of time.
+        #[prost(uint32, tag = "1")]
+        pub requests_per_unit: u32,
+        /// The unit of time.
+        #[prost(
+            enumeration = "super::super::super::super::super::r#type::v3::RateLimitUnit",
+            tag = "2"
+        )]
+        pub unit: i32,
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LocalRateLimitDescriptor {
+    /// Descriptor entries.
+    #[prost(message, repeated, tag = "1")]
+    pub entries: ::prost::alloc::vec::Vec<rate_limit_descriptor::Entry>,
+    /// Token Bucket algorithm for local ratelimiting.
+    #[prost(message, optional, tag = "2")]
+    pub token_bucket: ::core::option::Option<super::super::super::super::r#type::v3::TokenBucket>,
 }

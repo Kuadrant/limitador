@@ -39,3 +39,12 @@ pub mod envoy {
         }
     }
 }
+
+#[path = "protobufs"]
+pub mod xds {
+    #[path = "."]
+    pub mod core {
+        #[path = "xds.core.v3.rs"]
+        pub mod v3;
+    }
+}

@@ -58,6 +58,24 @@ pub struct Pipe {
     #[prost(uint32, tag = "2")]
     pub mode: u32,
 }
+/// \[#not-implemented-hide:\] The address represents an envoy internal listener.
+/// TODO(lambdai): Make this address available for listener and endpoint.
+/// TODO(asraa): When address available, remove workaround from test/server/server_fuzz_test.cc:30.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EnvoyInternalAddress {
+    #[prost(oneof = "envoy_internal_address::AddressNameSpecifier", tags = "1")]
+    pub address_name_specifier:
+        ::core::option::Option<envoy_internal_address::AddressNameSpecifier>,
+}
+/// Nested message and enum types in `EnvoyInternalAddress`.
+pub mod envoy_internal_address {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum AddressNameSpecifier {
+        /// \[#not-implemented-hide:\] The :ref:`listener name <envoy_v3_api_field_config.listener.v3.Listener.name>` of the destination internal listener.
+        #[prost(string, tag = "1")]
+        ServerListenerName(::prost::alloc::string::String),
+    }
+}
 /// [#next-free-field: 7]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SocketAddress {
@@ -67,13 +85,13 @@ pub struct SocketAddress {
     /// to the address. An empty address is not allowed. Specify ``0.0.0.0`` or ``::``
     /// to bind to any address. [#comment:TODO(zuercher) reinstate when implemented:
     /// It is possible to distinguish a Listener address via the prefix/suffix matching
-    /// in :ref:`FilterChainMatch <envoy_api_msg_config.listener.v3.FilterChainMatch>`.] When used
-    /// within an upstream :ref:`BindConfig <envoy_api_msg_config.core.v3.BindConfig>`, the address
+    /// in :ref:`FilterChainMatch <envoy_v3_api_msg_config.listener.v3.FilterChainMatch>`.] When used
+    /// within an upstream :ref:`BindConfig <envoy_v3_api_msg_config.core.v3.BindConfig>`, the address
     /// controls the source address of outbound connections. For :ref:`clusters
-    /// <envoy_api_msg_config.cluster.v3.Cluster>`, the cluster type determines whether the
+    /// <envoy_v3_api_msg_config.cluster.v3.Cluster>`, the cluster type determines whether the
     /// address must be an IP (*STATIC* or *EDS* clusters) or a hostname resolved by DNS
     /// (*STRICT_DNS* or *LOGICAL_DNS* clusters). Address resolution can be customized
-    /// via :ref:`resolver_name <envoy_api_field_config.core.v3.SocketAddress.resolver_name>`.
+    /// via :ref:`resolver_name <envoy_v3_api_field_config.core.v3.SocketAddress.resolver_name>`.
     #[prost(string, tag = "2")]
     pub address: ::prost::alloc::string::String,
     /// The name of the custom resolver. This must have been registered with Envoy. If
@@ -105,7 +123,7 @@ pub mod socket_address {
         #[prost(uint32, tag = "3")]
         PortValue(u32),
         /// This is only valid if :ref:`resolver_name
-        /// <envoy_api_field_config.core.v3.SocketAddress.resolver_name>` is specified below and the
+        /// <envoy_v3_api_field_config.core.v3.SocketAddress.resolver_name>` is specified below and the
         /// named resolver is capable of named port resolution.
         #[prost(string, tag = "4")]
         NamedPort(::prost::alloc::string::String),
@@ -135,7 +153,7 @@ pub struct BindConfig {
     pub source_address: ::core::option::Option<SocketAddress>,
     /// Whether to set the *IP_FREEBIND* option when creating the socket. When this
     /// flag is set to true, allows the :ref:`source_address
-    /// <envoy_api_field_config.cluster.v3.UpstreamBindConfig.source_address>` to be an IP address
+    /// <envoy_v3_api_field_config.cluster.v3.UpstreamBindConfig.source_address>` to be an IP address
     /// that is not configured on the system running Envoy. When this flag is set
     /// to false, the option *IP_FREEBIND* is disabled on the socket. When this
     /// flag is not set (default), the socket is not modified, i.e. the option is
@@ -152,7 +170,7 @@ pub struct BindConfig {
 /// management servers.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Address {
-    #[prost(oneof = "address::Address", tags = "1, 2")]
+    #[prost(oneof = "address::Address", tags = "1, 2, 3")]
     pub address: ::core::option::Option<address::Address>,
 }
 /// Nested message and enum types in `Address`.
@@ -163,6 +181,9 @@ pub mod address {
         SocketAddress(super::SocketAddress),
         #[prost(message, tag = "2")]
         Pipe(super::Pipe),
+        /// \[#not-implemented-hide:\]
+        #[prost(message, tag = "3")]
+        EnvoyInternalAddress(super::EnvoyInternalAddress),
     }
 }
 /// CidrRange specifies an IP Address and a prefix length to construct
@@ -172,7 +193,7 @@ pub struct CidrRange {
     /// IPv4 or IPv6 address, e.g. ``192.0.0.0`` or ``2001:db8::``.
     #[prost(string, tag = "1")]
     pub address_prefix: ::prost::alloc::string::String,
-    /// Length of prefix, e.g. 0, 32.
+    /// Length of prefix, e.g. 0, 32. Defaults to 0 when unset.
     #[prost(message, optional, tag = "2")]
     pub prefix_len: ::core::option::Option<u32>,
 }
@@ -183,14 +204,14 @@ pub struct CidrRange {
 pub struct BackoffStrategy {
     /// The base interval to be used for the next back off computation. It should
     /// be greater than zero and less than or equal to :ref:`max_interval
-    /// <envoy_api_field_config.core.v3.BackoffStrategy.max_interval>`.
+    /// <envoy_v3_api_field_config.core.v3.BackoffStrategy.max_interval>`.
     #[prost(message, optional, tag = "1")]
     pub base_interval: ::core::option::Option<::prost_types::Duration>,
     /// Specifies the maximum interval between retries. This parameter is optional,
     /// but must be greater than or equal to the :ref:`base_interval
-    /// <envoy_api_field_config.core.v3.BackoffStrategy.base_interval>` if set. The default
+    /// <envoy_v3_api_field_config.core.v3.BackoffStrategy.base_interval>` if set. The default
     /// is 10 times the :ref:`base_interval
-    /// <envoy_api_field_config.core.v3.BackoffStrategy.base_interval>`.
+    /// <envoy_v3_api_field_config.core.v3.BackoffStrategy.base_interval>`.
     #[prost(message, optional, tag = "2")]
     pub max_interval: ::core::option::Option<::prost_types::Duration>,
 }
@@ -243,12 +264,12 @@ pub mod http_uri {
 /// Identifies location of where either Envoy runs or where upstream hosts run.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Locality {
-    /// Region this :ref:`zone <envoy_api_field_config.core.v3.Locality.zone>` belongs to.
+    /// Region this :ref:`zone <envoy_v3_api_field_config.core.v3.Locality.zone>` belongs to.
     #[prost(string, tag = "1")]
     pub region: ::prost::alloc::string::String,
     /// Defines the local service zone where Envoy is running. Though optional, it
     /// should be set if discovery service routing is used and the discovery
-    /// service exposes :ref:`zone data <envoy_api_field_config.endpoint.v3.LocalityLbEndpoints.locality>`,
+    /// service exposes :ref:`zone data <envoy_v3_api_field_config.endpoint.v3.LocalityLbEndpoints.locality>`,
     /// either in this message or via :option:`--service-zone`. The meaning of zone
     /// is context dependent, e.g. `Availability Zone (AZ)
     /// <<https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html>`_>
@@ -270,7 +291,7 @@ pub struct BuildVersion {
     #[prost(message, optional, tag = "1")]
     pub version: ::core::option::Option<super::super::super::r#type::v3::SemanticVersion>,
     /// Free-form build information.
-    /// Envoy defines several well known keys in the source/common/common/version.h file
+    /// Envoy defines several well known keys in the source/common/version/version.h file
     #[prost(message, optional, tag = "2")]
     pub metadata: ::core::option::Option<::prost_types::Struct>,
 }
@@ -306,7 +327,7 @@ pub struct Extension {
 /// Identifies a specific Envoy instance. The node identifier is presented to the
 /// management server, which may use this identifier to distinguish per Envoy
 /// configuration for serving.
-/// [#next-free-field: 12]
+/// [#next-free-field: 13]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Node {
     /// An opaque node identifier for the Envoy node. This also provides the local
@@ -321,10 +342,10 @@ pub struct Node {
     /// optional, it should be set if any of the following features are used:
     /// :ref:`statsd <arch_overview_statistics>`, :ref:`health check cluster
     /// verification
-    /// <envoy_api_field_config.core.v3.HealthCheck.HttpHealthCheck.service_name_matcher>`,
-    /// :ref:`runtime override directory <envoy_api_msg_config.bootstrap.v3.Runtime>`,
+    /// <envoy_v3_api_field_config.core.v3.HealthCheck.HttpHealthCheck.service_name_matcher>`,
+    /// :ref:`runtime override directory <envoy_v3_api_msg_config.bootstrap.v3.Runtime>`,
     /// :ref:`user agent addition
-    /// <envoy_api_field_extensions.filters.network.http_connection_manager.v3.HttpConnectionManager.add_user_agent>`,
+    /// <envoy_v3_api_field_extensions.filters.network.http_connection_manager.v3.HttpConnectionManager.add_user_agent>`,
     /// :ref:`HTTP global rate limiting <config_http_filters_rate_limit>`,
     /// :ref:`CDS <config_cluster_manager_cds>`, and :ref:`HTTP tracing
     /// <arch_overview_tracing>`, either in this message or via
@@ -335,6 +356,16 @@ pub struct Node {
     /// directly to the management server.
     #[prost(message, optional, tag = "3")]
     pub metadata: ::core::option::Option<::prost_types::Struct>,
+    /// Map from xDS resource type URL to dynamic context parameters. These may vary at runtime (unlike
+    /// other fields in this message). For example, the xDS client may have a shard identifier that
+    /// changes during the lifetime of the xDS client. In Envoy, this would be achieved by updating the
+    /// dynamic context on the Server::Instance's LocalInfo context provider. The shard ID dynamic
+    /// parameter then appears in this field during future discovery requests.
+    #[prost(map = "string, message", tag = "12")]
+    pub dynamic_parameters: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        super::super::super::super::xds::core::v3::ContextParams,
+    >,
     /// Locality specifying where the Envoy instance is running.
     #[prost(message, optional, tag = "4")]
     pub locality: ::core::option::Option<Locality>,
@@ -356,6 +387,7 @@ pub struct Node {
     /// for filtering :ref:`listeners <config_listeners>` to be returned. For example,
     /// if there is a listener bound to port 80, the list can optionally contain the
     /// SocketAddress `(0.0.0.0,80)`. The field is optional and just a hint.
+    #[deprecated]
     #[prost(message, repeated, tag = "11")]
     pub listening_addresses: ::prost::alloc::vec::Vec<Address>,
     #[prost(oneof = "node::UserAgentVersionType", tags = "7, 8")]
@@ -400,9 +432,22 @@ pub mod node {
 pub struct Metadata {
     /// Key is the reverse DNS filter name, e.g. com.acme.widget. The envoy.*
     /// namespace is reserved for Envoy's built-in filters.
+    /// If both *filter_metadata* and
+    /// :ref:`typed_filter_metadata <envoy_v3_api_field_config.core.v3.Metadata.typed_filter_metadata>`
+    /// fields are present in the metadata with same keys,
+    /// only *typed_filter_metadata* field will be parsed.
     #[prost(map = "string, message", tag = "1")]
     pub filter_metadata:
         ::std::collections::HashMap<::prost::alloc::string::String, ::prost_types::Struct>,
+    /// Key is the reverse DNS filter name, e.g. com.acme.widget. The envoy.*
+    /// namespace is reserved for Envoy's built-in filters.
+    /// The value is encoded as google.protobuf.Any.
+    /// If both :ref:`filter_metadata <envoy_v3_api_field_config.core.v3.Metadata.filter_metadata>`
+    /// and *typed_filter_metadata* fields are present in the metadata with same keys,
+    /// only *typed_filter_metadata* field will be parsed.
+    #[prost(map = "string, message", tag = "2")]
+    pub typed_filter_metadata:
+        ::std::collections::HashMap<::prost::alloc::string::String, ::prost_types::Any>,
 }
 /// Runtime derived uint32 with a default when not specified.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -412,6 +457,16 @@ pub struct RuntimeUInt32 {
     pub default_value: u32,
     /// Runtime key to get value for comparison. This value is used if defined.
     #[prost(string, tag = "3")]
+    pub runtime_key: ::prost::alloc::string::String,
+}
+/// Runtime derived percentage with a default when not specified.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RuntimePercent {
+    /// Default value if runtime value is not available.
+    #[prost(message, optional, tag = "1")]
+    pub default_value: ::core::option::Option<super::super::super::r#type::v3::Percent>,
+    /// Runtime key to get value for comparison. This value is used if defined.
+    #[prost(string, tag = "2")]
     pub runtime_key: ::prost::alloc::string::String,
 }
 /// Runtime derived double with a default when not specified.
@@ -436,6 +491,16 @@ pub struct RuntimeFeatureFlag {
     #[prost(string, tag = "2")]
     pub runtime_key: ::prost::alloc::string::String,
 }
+/// Query parameter name/value pair.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryParameter {
+    /// The key of the query parameter. Case sensitive.
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+    /// The value of the query parameter.
+    #[prost(string, tag = "2")]
+    pub value: ::prost::alloc::string::String,
+}
 /// Header name/value pair.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HeaderValue {
@@ -457,9 +522,32 @@ pub struct HeaderValueOption {
     #[prost(message, optional, tag = "1")]
     pub header: ::core::option::Option<HeaderValue>,
     /// Should the value be appended? If true (default), the value is appended to
-    /// existing values.
+    /// existing values. Otherwise it replaces any existing values.
     #[prost(message, optional, tag = "2")]
     pub append: ::core::option::Option<bool>,
+    /// \[#not-implemented-hide:\] Describes the action taken to append/overwrite the given value for an existing header
+    /// or to only add this header if it's absent. Value defaults to :ref:`APPEND_IF_EXISTS_OR_ADD<envoy_v3_api_enum_value_config.core.v3.HeaderValueOption.HeaderAppendAction.APPEND_IF_EXISTS_OR_ADD>`.
+    #[prost(enumeration = "header_value_option::HeaderAppendAction", tag = "3")]
+    pub append_action: i32,
+}
+/// Nested message and enum types in `HeaderValueOption`.
+pub mod header_value_option {
+    /// Describes the supported actions types for header append action.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+    #[repr(i32)]
+    pub enum HeaderAppendAction {
+        /// This action will append the specified value to the existing values if the header
+        /// already exists. If the header doesn't exist then this will add the header with
+        /// specified key and value.
+        AppendIfExistsOrAdd = 0,
+        /// This action will add the header if it doesn't already exist. If the header
+        /// already exists then this will be a no-op.
+        AddIfAbsent = 1,
+        /// This action will overwrite the specified value by discarding any existing values if
+        /// the header already exists. If the header doesn't exist then this will add the header
+        /// with specified key and value.
+        OverwriteIfExistsOrAdd = 2,
+    }
 }
 /// Wrapper for a set of headers.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -467,10 +555,18 @@ pub struct HeaderMap {
     #[prost(message, repeated, tag = "1")]
     pub headers: ::prost::alloc::vec::Vec<HeaderValue>,
 }
-/// Data source consisting of either a file or an inline value.
+/// A directory that is watched for changes, e.g. by inotify on Linux. Move/rename
+/// events inside this directory trigger the watch.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WatchedDirectory {
+    /// Directory path to watch.
+    #[prost(string, tag = "1")]
+    pub path: ::prost::alloc::string::String,
+}
+/// Data source consisting of a file, an inline value, or an environment variable.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DataSource {
-    #[prost(oneof = "data_source::Specifier", tags = "1, 2, 3")]
+    #[prost(oneof = "data_source::Specifier", tags = "1, 2, 3, 4")]
     pub specifier: ::core::option::Option<data_source::Specifier>,
 }
 /// Nested message and enum types in `DataSource`.
@@ -486,12 +582,15 @@ pub mod data_source {
         /// String inlined in the configuration.
         #[prost(string, tag = "3")]
         InlineString(::prost::alloc::string::String),
+        /// Environment variable data source.
+        #[prost(string, tag = "4")]
+        EnvironmentVariable(::prost::alloc::string::String),
     }
 }
 /// The message specifies the retry policy of remote data source when fetching fails.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RetryPolicy {
-    /// Specifies parameters that control :ref:`retry backoff strategy <envoy_api_msg_config.core.v3.BackoffStrategy>`.
+    /// Specifies parameters that control :ref:`retry backoff strategy <envoy_v3_api_msg_config.core.v3.BackoffStrategy>`.
     /// This parameter is optional, in which case the default base interval is 1000 milliseconds. The
     /// default maximum interval is 10 times the base interval.
     #[prost(message, optional, tag = "1")]
@@ -533,7 +632,7 @@ pub mod async_data_source {
     }
 }
 /// Configuration for transport socket in :ref:`listeners <config_listeners>` and
-/// :ref:`clusters <envoy_api_msg_config.cluster.v3.Cluster>`. If the configuration is
+/// :ref:`clusters <envoy_v3_api_msg_config.cluster.v3.Cluster>`. If the configuration is
 /// empty, a default transport socket implementation and configuration will be
 /// chosen based on the platform and existence of tls_context.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -563,7 +662,7 @@ pub mod transport_socket {
 /// .. note::
 ///
 ///   Parsing of the runtime key's data is implemented such that it may be represented as a
-///   :ref:`FractionalPercent <envoy_api_msg_type.v3.FractionalPercent>` proto represented as JSON/YAML
+///   :ref:`FractionalPercent <envoy_v3_api_msg_type.v3.FractionalPercent>` proto represented as JSON/YAML
 ///   and may also be represented as an integer with the assumption that the value is an integral
 ///   percentage out of 100. For instance, a runtime key lookup returning the value "42" would parse
 ///   as a `FractionalPercent` whose numerator is 42 and denominator is HUNDRED.

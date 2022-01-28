@@ -93,6 +93,10 @@ pub struct FloatRules {
     /// values
     #[prost(float, repeated, packed = "false", tag = "7")]
     pub not_in: ::prost::alloc::vec::Vec<f32>,
+    /// IgnoreEmpty specifies that the validation rules of this field should be
+    /// evaluated only if the field is not empty
+    #[prost(bool, optional, tag = "8")]
+    pub ignore_empty: ::core::option::Option<bool>,
 }
 /// DoubleRules describes the constraints applied to `double` values
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -126,6 +130,10 @@ pub struct DoubleRules {
     /// values
     #[prost(double, repeated, packed = "false", tag = "7")]
     pub not_in: ::prost::alloc::vec::Vec<f64>,
+    /// IgnoreEmpty specifies that the validation rules of this field should be
+    /// evaluated only if the field is not empty
+    #[prost(bool, optional, tag = "8")]
+    pub ignore_empty: ::core::option::Option<bool>,
 }
 /// Int32Rules describes the constraints applied to `int32` values
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -159,6 +167,10 @@ pub struct Int32Rules {
     /// values
     #[prost(int32, repeated, packed = "false", tag = "7")]
     pub not_in: ::prost::alloc::vec::Vec<i32>,
+    /// IgnoreEmpty specifies that the validation rules of this field should be
+    /// evaluated only if the field is not empty
+    #[prost(bool, optional, tag = "8")]
+    pub ignore_empty: ::core::option::Option<bool>,
 }
 /// Int64Rules describes the constraints applied to `int64` values
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -192,6 +204,10 @@ pub struct Int64Rules {
     /// values
     #[prost(int64, repeated, packed = "false", tag = "7")]
     pub not_in: ::prost::alloc::vec::Vec<i64>,
+    /// IgnoreEmpty specifies that the validation rules of this field should be
+    /// evaluated only if the field is not empty
+    #[prost(bool, optional, tag = "8")]
+    pub ignore_empty: ::core::option::Option<bool>,
 }
 /// UInt32Rules describes the constraints applied to `uint32` values
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -225,6 +241,10 @@ pub struct UInt32Rules {
     /// values
     #[prost(uint32, repeated, packed = "false", tag = "7")]
     pub not_in: ::prost::alloc::vec::Vec<u32>,
+    /// IgnoreEmpty specifies that the validation rules of this field should be
+    /// evaluated only if the field is not empty
+    #[prost(bool, optional, tag = "8")]
+    pub ignore_empty: ::core::option::Option<bool>,
 }
 /// UInt64Rules describes the constraints applied to `uint64` values
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -258,6 +278,10 @@ pub struct UInt64Rules {
     /// values
     #[prost(uint64, repeated, packed = "false", tag = "7")]
     pub not_in: ::prost::alloc::vec::Vec<u64>,
+    /// IgnoreEmpty specifies that the validation rules of this field should be
+    /// evaluated only if the field is not empty
+    #[prost(bool, optional, tag = "8")]
+    pub ignore_empty: ::core::option::Option<bool>,
 }
 /// SInt32Rules describes the constraints applied to `sint32` values
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -291,6 +315,10 @@ pub struct SInt32Rules {
     /// values
     #[prost(sint32, repeated, packed = "false", tag = "7")]
     pub not_in: ::prost::alloc::vec::Vec<i32>,
+    /// IgnoreEmpty specifies that the validation rules of this field should be
+    /// evaluated only if the field is not empty
+    #[prost(bool, optional, tag = "8")]
+    pub ignore_empty: ::core::option::Option<bool>,
 }
 /// SInt64Rules describes the constraints applied to `sint64` values
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -324,6 +352,10 @@ pub struct SInt64Rules {
     /// values
     #[prost(sint64, repeated, packed = "false", tag = "7")]
     pub not_in: ::prost::alloc::vec::Vec<i64>,
+    /// IgnoreEmpty specifies that the validation rules of this field should be
+    /// evaluated only if the field is not empty
+    #[prost(bool, optional, tag = "8")]
+    pub ignore_empty: ::core::option::Option<bool>,
 }
 /// Fixed32Rules describes the constraints applied to `fixed32` values
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -357,6 +389,10 @@ pub struct Fixed32Rules {
     /// values
     #[prost(fixed32, repeated, packed = "false", tag = "7")]
     pub not_in: ::prost::alloc::vec::Vec<u32>,
+    /// IgnoreEmpty specifies that the validation rules of this field should be
+    /// evaluated only if the field is not empty
+    #[prost(bool, optional, tag = "8")]
+    pub ignore_empty: ::core::option::Option<bool>,
 }
 /// Fixed64Rules describes the constraints applied to `fixed64` values
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -390,6 +426,10 @@ pub struct Fixed64Rules {
     /// values
     #[prost(fixed64, repeated, packed = "false", tag = "7")]
     pub not_in: ::prost::alloc::vec::Vec<u64>,
+    /// IgnoreEmpty specifies that the validation rules of this field should be
+    /// evaluated only if the field is not empty
+    #[prost(bool, optional, tag = "8")]
+    pub ignore_empty: ::core::option::Option<bool>,
 }
 /// SFixed32Rules describes the constraints applied to `sfixed32` values
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -423,6 +463,10 @@ pub struct SFixed32Rules {
     /// values
     #[prost(sfixed32, repeated, packed = "false", tag = "7")]
     pub not_in: ::prost::alloc::vec::Vec<i32>,
+    /// IgnoreEmpty specifies that the validation rules of this field should be
+    /// evaluated only if the field is not empty
+    #[prost(bool, optional, tag = "8")]
+    pub ignore_empty: ::core::option::Option<bool>,
 }
 /// SFixed64Rules describes the constraints applied to `sfixed64` values
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -456,6 +500,10 @@ pub struct SFixed64Rules {
     /// values
     #[prost(sfixed64, repeated, packed = "false", tag = "7")]
     pub not_in: ::prost::alloc::vec::Vec<i64>,
+    /// IgnoreEmpty specifies that the validation rules of this field should be
+    /// evaluated only if the field is not empty
+    #[prost(bool, optional, tag = "8")]
+    pub ignore_empty: ::core::option::Option<bool>,
 }
 /// BoolRules describes the constraints applied to `bool` values
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -486,7 +534,6 @@ pub struct StringRules {
     #[prost(uint64, optional, tag = "3")]
     pub max_len: ::core::option::Option<u64>,
     /// LenBytes specifies that this field must be the specified number of bytes
-    /// at a minimum
     #[prost(uint64, optional, tag = "20")]
     pub len_bytes: ::core::option::Option<u64>,
     /// MinBytes specifies that this field must be the specified number of bytes
@@ -533,6 +580,10 @@ pub struct StringRules {
     /// \r\n\0 characters, which can be used to bypass header matching rules.
     #[prost(bool, optional, tag = "25", default = "true")]
     pub strict: ::core::option::Option<bool>,
+    /// IgnoreEmpty specifies that the validation rules of this field should be
+    /// evaluated only if the field is not empty
+    #[prost(bool, optional, tag = "26")]
+    pub ignore_empty: ::core::option::Option<bool>,
     /// WellKnown rules provide advanced constraints against common string
     /// patterns
     #[prost(
@@ -631,6 +682,10 @@ pub struct BytesRules {
     /// values
     #[prost(bytes = "vec", repeated, tag = "9")]
     pub not_in: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    /// IgnoreEmpty specifies that the validation rules of this field should be
+    /// evaluated only if the field is not empty
+    #[prost(bool, optional, tag = "14")]
+    pub ignore_empty: ::core::option::Option<bool>,
     /// WellKnown rules provide advanced constraints against common byte
     /// patterns
     #[prost(oneof = "bytes_rules::WellKnown", tags = "10, 11, 12")]
@@ -708,6 +763,10 @@ pub struct RepeatedRules {
     /// unless skip is specified here.
     #[prost(message, optional, boxed, tag = "4")]
     pub items: ::core::option::Option<::prost::alloc::boxed::Box<FieldRules>>,
+    /// IgnoreEmpty specifies that the validation rules of this field should be
+    /// evaluated only if the field is not empty
+    #[prost(bool, optional, tag = "5")]
+    pub ignore_empty: ::core::option::Option<bool>,
 }
 /// MapRules describe the constraints applied to `map` values
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -732,6 +791,10 @@ pub struct MapRules {
     /// unless skip is specified here.
     #[prost(message, optional, boxed, tag = "5")]
     pub values: ::core::option::Option<::prost::alloc::boxed::Box<FieldRules>>,
+    /// IgnoreEmpty specifies that the validation rules of this field should be
+    /// evaluated only if the field is not empty
+    #[prost(bool, optional, tag = "6")]
+    pub ignore_empty: ::core::option::Option<bool>,
 }
 /// AnyRules describe constraints applied exclusively to the
 /// `google.protobuf.Any` well-known type

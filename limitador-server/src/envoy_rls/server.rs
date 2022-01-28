@@ -40,6 +40,9 @@ impl RateLimitService for MyRateLimiter {
                 statuses: vec![],
                 request_headers_to_add: vec![],
                 response_headers_to_add: vec![],
+                raw_body: vec![],
+                dynamic_metadata: None,
+                quota: None,
             }));
         }
 
@@ -96,6 +99,9 @@ impl RateLimitService for MyRateLimiter {
             statuses: vec![],
             request_headers_to_add: vec![],
             response_headers_to_add: vec![],
+            raw_body: vec![],
+            dynamic_metadata: None,
+            quota: None,
         };
 
         Ok(Response::new(reply))
@@ -154,6 +160,7 @@ mod tests {
                         value: "1".to_string(),
                     },
                 ],
+                limit: None,
             }],
             hits_addend: 1,
         };
@@ -194,6 +201,7 @@ mod tests {
                     key: "req.method".to_string(),
                     value: "GET".to_string(),
                 }],
+                limit: None,
             }],
             hits_addend: 1,
         }
@@ -221,6 +229,7 @@ mod tests {
                     key: "req.method".to_string(),
                     value: "GET".to_string(),
                 }],
+                limit: None,
             }],
             hits_addend: 1,
         }
@@ -266,6 +275,7 @@ mod tests {
                             value: "1".to_string(),
                         },
                     ],
+                    limit: None,
                 },
                 // If this is taken into account, the result will be "overlimit"
                 // because of the second limit that has a max of 0.
@@ -274,6 +284,7 @@ mod tests {
                         key: "y".to_string(),
                         value: "2".to_string(),
                     }],
+                    limit: None,
                 },
             ],
             hits_addend: 1,
@@ -313,6 +324,7 @@ mod tests {
                         value: "1".to_string(),
                     },
                 ],
+                limit: None,
             }],
             hits_addend: 6,
         };
@@ -366,6 +378,7 @@ mod tests {
                         value: "2".to_string(),
                     },
                 ],
+                limit: None,
             }],
             hits_addend: 0,
         };

@@ -7,7 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &[
                 "vendor/protobufs/data-plane-api",
                 "vendor/protobufs/protoc-gen-validate",
-                "vendor/protobufs/udpa",
+                "vendor/protobufs/xds",
             ],
         )?;
     Ok(())

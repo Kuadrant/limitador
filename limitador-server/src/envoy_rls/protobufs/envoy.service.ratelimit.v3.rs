@@ -24,6 +24,7 @@ pub struct RateLimitRequest {
     pub hits_addend: u32,
 }
 /// A response from a ShouldRateLimit call.
+/// [#next-free-field: 8]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RateLimitResponse {
     /// The overall response code which takes into account all of the descriptors that were passed
@@ -43,6 +44,31 @@ pub struct RateLimitResponse {
     #[prost(message, repeated, tag = "4")]
     pub request_headers_to_add:
         ::prost::alloc::vec::Vec<super::super::super::config::core::v3::HeaderValue>,
+    /// A response body to send to the downstream client when the response code is not OK.
+    #[prost(bytes = "vec", tag = "5")]
+    pub raw_body: ::prost::alloc::vec::Vec<u8>,
+    /// Optional response metadata that will be emitted as dynamic metadata to be consumed by the next
+    /// filter. This metadata lives in a namespace specified by the canonical name of extension filter
+    /// that requires it:
+    ///
+    /// - :ref:`envoy.filters.http.ratelimit <config_http_filters_ratelimit_dynamic_metadata>` for HTTP filter.
+    /// - :ref:`envoy.filters.network.ratelimit <config_network_filters_ratelimit_dynamic_metadata>` for network filter.
+    /// - :ref:`envoy.filters.thrift.rate_limit <config_thrift_filters_rate_limit_dynamic_metadata>` for Thrift filter.
+    #[prost(message, optional, tag = "6")]
+    pub dynamic_metadata: ::core::option::Option<::prost_types::Struct>,
+    /// Quota is available for a request if its entire descriptor set has cached quota available.
+    /// This is a union of all descriptors in the descriptor set. Clients can use the quota for future matches if and only if the descriptor set matches what was sent in the request that originated this response.
+    ///
+    /// If quota is available, a RLS request will not be made and the quota will be reduced by 1.
+    /// If quota is not available (i.e., a cached entry doesn't exist for a RLS descriptor set), a RLS request will be triggered.
+    /// If the server did not provide a quota, such as the quota message is empty then the request admission is determined by the
+    /// :ref:`overall_code <envoy_v3_api_field_service.ratelimit.v3.RateLimitResponse.overall_code>`.
+    ///
+    /// If there is not sufficient quota and the cached entry exists for a RLS descriptor set is out-of-quota but not expired,
+    /// the request will be treated as OVER_LIMIT.
+    /// \[#not-implemented-hide:\]
+    #[prost(message, optional, tag = "7")]
+    pub quota: ::core::option::Option<rate_limit_response::Quota>,
 }
 /// Nested message and enum types in `RateLimitResponse`.
 pub mod rate_limit_response {
@@ -61,6 +87,8 @@ pub mod rate_limit_response {
     }
     /// Nested message and enum types in `RateLimit`.
     pub mod rate_limit {
+        /// Identifies the unit of of time for rate limit.
+        /// [#comment: replace by envoy/type/v3/ratelimit_unit.proto in v4]
         #[derive(
             Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
         )]
@@ -78,6 +106,43 @@ pub mod rate_limit_response {
             Day = 4,
         }
     }
+    /// Cacheable quota for responses.
+    /// Quota can be granted at different levels: either for each individual descriptor or for the whole descriptor set.
+    /// This is a certain number of requests over a period of time.
+    /// The client may cache this result and apply the effective RateLimitResponse to future matching
+    /// requests without querying rate limit service.
+    ///
+    /// When quota expires due to timeout, a new RLS request will also be made.
+    /// The implementation may choose to preemptively query the rate limit server for more quota on or
+    /// before expiration or before the available quota runs out.
+    /// \[#not-implemented-hide:\]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Quota {
+        /// Number of matching requests granted in quota. Must be 1 or more.
+        #[prost(uint32, tag = "1")]
+        pub requests: u32,
+        /// The unique id that is associated with each Quota either at individual descriptor level or whole descriptor set level.
+        ///
+        /// For a matching policy with boolean logic, for example, match: "request.headers\['environment'\] == 'staging' || request.headers\['environment'\] == 'dev'"),
+        /// the request_headers action produces a distinct list of descriptors for each possible value of the ‘environment’ header even though the granted quota is same.
+        /// Thus, the client will use this id information (returned from RLS server) to correctly correlate the multiple descriptors/descriptor sets that have been granted with same quota (i.e., share the same quota among multiple descriptors or descriptor sets.)
+        ///
+        /// If id is empty, this id field will be ignored. If quota for the same id changes (e.g. due to configuration update), the old quota will be overridden by the new one. Shared quotas referenced by ID will still adhere to expiration after `valid_until`.
+        #[prost(string, tag = "3")]
+        pub id: ::prost::alloc::string::String,
+        #[prost(oneof = "quota::ExpirationSpecifier", tags = "2")]
+        pub expiration_specifier: ::core::option::Option<quota::ExpirationSpecifier>,
+    }
+    /// Nested message and enum types in `Quota`.
+    pub mod quota {
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum ExpirationSpecifier {
+            /// Point in time at which the quota expires.
+            #[prost(message, tag = "2")]
+            ValidUntil(::prost_types::Timestamp),
+        }
+    }
+    /// [#next-free-field: 6]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct DescriptorStatus {
         /// The response code for an individual descriptor.
@@ -89,6 +154,35 @@ pub mod rate_limit_response {
         /// The limit remaining in the current time unit.
         #[prost(uint32, tag = "3")]
         pub limit_remaining: u32,
+        /// Duration until reset of the current limit window.
+        #[prost(message, optional, tag = "4")]
+        pub duration_until_reset: ::core::option::Option<::prost_types::Duration>,
+        /// Quota is available for a request if its descriptor set has cached quota available for all
+        /// descriptors.
+        /// This is for each individual descriptor in the descriptor set. The client will perform matches for each individual descriptor against available per-descriptor quota.
+        ///
+        /// If quota is available, a RLS request will not be made and the quota will be reduced by 1 for
+        /// all matching descriptors.
+        ///
+        /// If there is not sufficient quota, there are three cases:
+        /// 1. A cached entry exists for a RLS descriptor that is out-of-quota, but not expired.
+        ///    In this case, the request will be treated as OVER_LIMIT.
+        /// 2. Some RLS descriptors have a cached entry that has valid quota but some RLS descriptors
+        ///    have no cached entry. This will trigger a new RLS request.
+        ///    When the result is returned, a single unit will be consumed from the quota for all
+        ///    matching descriptors.
+        ///    If the server did not provide a quota, such as the quota message is empty for some of
+        ///    the descriptors, then the request admission is determined by the
+        ///    :ref:`overall_code <envoy_v3_api_field_service.ratelimit.v3.RateLimitResponse.overall_code>`.
+        /// 3. All RLS descriptors lack a cached entry, this will trigger a new RLS request,
+        ///    When the result is returned, a single unit will be consumed from the quota for all
+        ///    matching descriptors.
+        ///    If the server did not provide a quota, such as the quota message is empty for some of
+        ///    the descriptors, then the request admission is determined by the
+        ///    :ref:`overall_code <envoy_v3_api_field_service.ratelimit.v3.RateLimitResponse.overall_code>`.
+        /// \[#not-implemented-hide:\]
+        #[prost(message, optional, tag = "5")]
+        pub quota: ::core::option::Option<Quota>,
     }
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
