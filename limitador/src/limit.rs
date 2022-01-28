@@ -215,7 +215,7 @@ mod tests {
         values.insert("x".into(), "1".into());
         values.insert("y".into(), "1".into());
 
-        assert_eq!(false, limit.applies(&values))
+        assert!(!limit.applies(&values))
     }
 
     #[test]
@@ -227,7 +227,7 @@ mod tests {
         values.insert("a".into(), "1".into());
         values.insert("y".into(), "1".into());
 
-        assert_eq!(false, limit.applies(&values))
+        assert!(!limit.applies(&values))
     }
 
     #[test]
@@ -238,7 +238,7 @@ mod tests {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "5".into());
 
-        assert_eq!(false, limit.applies(&values))
+        assert!(!limit.applies(&values))
     }
 
     #[test]
@@ -274,6 +274,6 @@ mod tests {
         values.insert("y".into(), "2".into());
         values.insert("z".into(), "1".into());
 
-        assert_eq!(false, limit.applies(&values))
+        assert!(!limit.applies(&values))
     }
 }

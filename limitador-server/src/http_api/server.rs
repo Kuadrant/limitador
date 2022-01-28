@@ -269,10 +269,10 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_status() {
-        let mut app = test::init_service(App::new().route("/status", web::get().to(status))).await;
+        let app = test::init_service(App::new().route("/status", web::get().to(status))).await;
 
         let req = test::TestRequest::with_uri("/status").to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
 
         assert!(resp.status().is_success());
     }
@@ -281,7 +281,7 @@ mod tests {
     async fn test_metrics() {
         let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
         let data = web::Data::new(rate_limiter);
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(data.clone())
                 .route("/metrics", web::get().to(metrics)),
@@ -289,7 +289,7 @@ mod tests {
         .await;
 
         let req = test::TestRequest::get().uri("/metrics").to_request();
-        let resp = test::call_and_read_body(&mut app, req).await;
+        let resp = test::call_and_read_body(&app, req).await;
         let resp_string = String::from_utf8(resp.to_vec()).unwrap();
 
         // No need to check the whole output. We just want to make sure that it
@@ -301,7 +301,7 @@ mod tests {
     async fn test_limits_create_read_delete() {
         let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
         let data = web::Data::new(rate_limiter);
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(data.clone())
                 .route("/limits", web::post().to(create_limit))
@@ -325,7 +325,7 @@ mod tests {
             .data(data.clone())
             .set_json(&limit)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
         // Read limit created
@@ -333,7 +333,7 @@ mod tests {
             .uri(&format!("/limits/{}", namespace))
             .data(data.clone())
             .to_request();
-        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&mut app, req).await;
+        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&app, req).await;
         assert_eq!(resp_limits.len(), 1);
         assert_eq!(*resp_limits.get(0).unwrap(), limit);
 
@@ -343,7 +343,7 @@ mod tests {
             .data(data.clone())
             .set_json(&limit)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
         // Check that the list is now empty
@@ -351,7 +351,7 @@ mod tests {
             .uri(&format!("/limits/{}", namespace))
             .data(data.clone())
             .to_request();
-        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&mut app, req).await;
+        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&app, req).await;
         assert!(resp_limits.is_empty());
     }
 
@@ -359,7 +359,7 @@ mod tests {
     async fn test_create_limit_with_name() {
         let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
         let data = web::Data::new(rate_limiter);
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(data.clone())
                 .route("/limits", web::post().to(create_limit))
@@ -381,7 +381,7 @@ mod tests {
             .data(data.clone())
             .set_json(&limit)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
         // Read limit created
@@ -389,7 +389,7 @@ mod tests {
             .uri(&format!("/limits/{}", namespace))
             .data(data.clone())
             .to_request();
-        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&mut app, req).await;
+        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&app, req).await;
         assert_eq!(resp_limits.len(), 1);
         assert_eq!(*resp_limits.get(0).unwrap(), limit);
     }
@@ -398,7 +398,7 @@ mod tests {
     async fn test_delete_all_limits_of_namespace() {
         let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
         let data = web::Data::new(rate_limiter);
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(data.clone())
                 .route("/limits", web::post().to(create_limit))
@@ -433,7 +433,7 @@ mod tests {
                 .data(data.clone())
                 .set_json(&limit)
                 .to_request();
-            let resp = test::call_service(&mut app, req).await;
+            let resp = test::call_service(&app, req).await;
             assert!(resp.status().is_success());
         }
 
@@ -442,7 +442,7 @@ mod tests {
             .uri(&format!("/limits/{}", namespace))
             .data(data.clone())
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
         // Check that the list is now empty
@@ -450,7 +450,7 @@ mod tests {
             .uri(&format!("/limits/{}", namespace))
             .data(data.clone())
             .to_request();
-        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&mut app, req).await;
+        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&app, req).await;
         assert!(resp_limits.is_empty());
     }
 
@@ -458,7 +458,7 @@ mod tests {
     async fn test_check_and_report() {
         let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
         let data = web::Data::new(rate_limiter);
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(data.clone())
                 .route("/limits", web::post().to(create_limit))
@@ -483,7 +483,7 @@ mod tests {
             .data(data.clone())
             .set_json(&limit)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
         // Prepare values to check
@@ -502,7 +502,7 @@ mod tests {
             .data(data.clone())
             .set_json(&info)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
         // The second request should be rate-limited
@@ -511,7 +511,7 @@ mod tests {
             .data(data.clone())
             .set_json(&info)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
@@ -519,7 +519,7 @@ mod tests {
     async fn test_check_and_report_endpoints_separately() {
         let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
         let data = web::Data::new(rate_limiter);
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(data.clone())
                 .route("/limits", web::post().to(create_limit))
@@ -545,7 +545,7 @@ mod tests {
             .data(data.clone())
             .set_json(&limit)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
         // Prepare values to check
@@ -564,7 +564,7 @@ mod tests {
             .data(data.clone())
             .set_json(&info)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
         // Do the first report
@@ -573,7 +573,7 @@ mod tests {
             .data(data.clone())
             .set_json(&info)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
         // Should be rate-limited now
@@ -582,7 +582,7 @@ mod tests {
             .data(data.clone())
             .set_json(&info)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 }

@@ -257,7 +257,7 @@ mod tests {
             Limit::new(namespace, 0, 60, vec!["x == 1", "y == 2"], vec!["z"]),
         ]
         .iter()
-        .for_each(|limit| limiter.add_limit(&limit).unwrap());
+        .for_each(|limit| limiter.add_limit(limit).unwrap());
 
         let rate_limiter = MyRateLimiter::new(Arc::new(Limiter::Blocking(limiter)));
 
