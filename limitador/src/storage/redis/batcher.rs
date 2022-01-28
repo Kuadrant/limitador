@@ -10,8 +10,8 @@ pub struct Batcher {
 }
 
 impl Batcher {
-    pub fn new(redis_storage: AsyncRedisStorage) -> Batcher {
-        Batcher {
+    pub fn new(redis_storage: AsyncRedisStorage) -> Self {
+        Self {
             accumulated_counter_updates: Mutex::new(HashMap::new()),
             redis_storage,
         }

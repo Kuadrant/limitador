@@ -40,8 +40,8 @@ impl TryFrom<String> for Consistency {
         value.make_ascii_lowercase();
 
         match value.as_str() {
-            "weak" => Ok(Consistency::Weak),
-            "strong" => Ok(Consistency::Strong),
+            "weak" => Ok(Self::Weak),
+            "strong" => Ok(Self::Strong),
             _ => Err(InvalidConsistencyErr { mode: value }),
         }
     }
@@ -55,7 +55,7 @@ pub struct CounterOpts {
 
 impl CounterOpts {
     pub fn new(initial_value: i64, ttl: Duration, consistency: Consistency) -> Self {
-        CounterOpts {
+        Self {
             initial_value,
             ttl,
             consistency,

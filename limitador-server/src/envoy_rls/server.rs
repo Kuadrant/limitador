@@ -17,8 +17,8 @@ pub struct MyRateLimiter {
 }
 
 impl MyRateLimiter {
-    pub fn new(limiter: Arc<Limiter>) -> MyRateLimiter {
-        MyRateLimiter { limiter }
+    pub fn new(limiter: Arc<Limiter>) -> Self {
+        Self { limiter }
     }
 }
 

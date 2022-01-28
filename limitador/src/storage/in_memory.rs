@@ -132,8 +132,8 @@ impl Storage for InMemoryStorage {
 }
 
 impl InMemoryStorage {
-    pub fn new(capacity: usize) -> InMemoryStorage {
-        InMemoryStorage {
+    pub fn new(capacity: usize) -> Self {
+        Self {
             limits_for_namespace: RwLock::new(HashMap::new()),
             counters: RwLock::new(TtlCache::new(capacity)),
         }

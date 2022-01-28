@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::fmt::Error;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
@@ -8,16 +7,18 @@ use std::str::FromStr;
 pub struct Namespace(String);
 
 impl FromStr for Namespace {
-    type Err = Error;
+    type Err = core::convert::Infallible;
 
-    fn from_str(s: &str) -> Result<Namespace, Self::Err> {
-        Ok(Namespace(s.into()))
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(s.into()))
     }
 }
 
-impl From<&str> for Namespace {
-    fn from(s: &str) -> Namespace {
-        s.parse().unwrap()
+impl TryFrom<&str> for Namespace {
+    type Error = <Self as FromStr>::Err;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        s.parse()
     }
 }
 
@@ -28,8 +29,8 @@ impl AsRef<str> for Namespace {
 }
 
 impl From<String> for Namespace {
-    fn from(s: String) -> Namespace {
-        Namespace(s)
+    fn from(s: String) -> Self {
+        Self(s)
     }
 }
 
@@ -57,15 +58,19 @@ where
 }
 
 impl Limit {
-    pub fn new(
-        namespace: impl Into<Namespace>,
+    pub fn new<N: TryInto<Namespace>>(
+        namespace: N,
         max_value: i64,
         seconds: u64,
         conditions: impl IntoIterator<Item = impl Into<String>>,
         variables: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Limit {
-        Limit {
-            namespace: namespace.into(),
+    ) -> Self
+    where
+        <N as TryInto<Namespace>>::Error: core::fmt::Debug,
+    {
+        // the above where-clause is needed in order to call unwrap().
+        Self {
+            namespace: namespace.try_into().unwrap(),
             max_value,
             seconds,
             name: None,
@@ -177,7 +182,7 @@ mod tests {
     #[test]
     fn limit_can_have_an_optional_name() {
         let mut limit = Limit::new(
-            Namespace::from("test_namespace"),
+            "test_namespace".parse::<Namespace>().unwrap(),
             10,
             60,
             vec!["x == 5"],
@@ -193,7 +198,7 @@ mod tests {
     #[test]
     fn limit_applies() {
         let limit = Limit::new(
-            Namespace::from("test_namespace"),
+            "test_namespace".parse::<Namespace>().unwrap(),
             10,
             60,
             vec!["x == 5"],

@@ -94,7 +94,6 @@ mod test {
     use self::limitador::RateLimiter;
     use crate::helpers::tests_limiter::*;
     use limitador::limit::Limit;
-    use limitador::limit::Namespace;
     use limitador::storage::in_memory::InMemoryStorage;
     use limitador::storage::wasm::WasmStorage;
     use std::collections::{HashMap, HashSet};
@@ -170,7 +169,7 @@ mod test {
                 .get_namespaces()
                 .await
                 .unwrap()
-                .contains(&Namespace::from(ns)));
+                .contains(&ns.parse().unwrap()));
         }
     }
 
@@ -206,12 +205,12 @@ mod test {
             .get_namespaces()
             .await
             .unwrap()
-            .contains(&Namespace::from("first_namespace")));
+            .contains(&"first_namespace".parse().unwrap()));
         assert!(!rate_limiter
             .get_namespaces()
             .await
             .unwrap()
-            .contains(&Namespace::from("second_namespace")));
+            .contains(&"second_namespace".parse().unwrap()));
     }
 
     async fn add_a_limit(rate_limiter: &mut TestsLimiter) {

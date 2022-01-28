@@ -49,7 +49,7 @@ enum StorageType {
 }
 
 impl Limiter {
-    pub async fn new() -> Result<Limiter, LimitadorServerError> {
+    pub async fn new() -> Result<Self, LimitadorServerError> {
         let rate_limiter = match Self::storage_type()? {
             StorageType::Redis { url } => Self::redis_limiter(&url).await,
             StorageType::Infinispan { url } => Self::infinispan_limiter(&url).await,
@@ -73,7 +73,7 @@ impl Limiter {
         }
     }
 
-    async fn redis_limiter(url: &str) -> Limiter {
+    async fn redis_limiter(url: &str) -> Self {
         let storage = Self::storage_using_redis(url).await;
         let mut rate_limiter_builder = AsyncRateLimiterBuilder::new(storage);
 
@@ -81,7 +81,7 @@ impl Limiter {
             rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
         }
 
-        Limiter::Async(rate_limiter_builder.build())
+        Self::Async(rate_limiter_builder.build())
     }
 
     async fn storage_using_redis(redis_url: &str) -> Box<dyn AsyncStorage> {
@@ -131,7 +131,7 @@ impl Limiter {
         cached_redis_storage.build().await
     }
 
-    async fn infinispan_limiter(url: &str) -> Limiter {
+    async fn infinispan_limiter(url: &str) -> Self {
         let parsed_url = Url::parse(url).unwrap();
 
         let mut builder = InfinispanStorageBuilder::new(
@@ -171,17 +171,17 @@ impl Limiter {
             rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
         }
 
-        Limiter::Async(rate_limiter_builder.build())
+        Self::Async(rate_limiter_builder.build())
     }
 
-    fn in_memory_limiter() -> Limiter {
+    fn in_memory_limiter() -> Self {
         let mut rate_limiter_builder = RateLimiterBuilder::new();
 
         if Self::env_option_is_enabled(LIMIT_NAME_IN_PROMETHEUS_LABELS_ENV) {
             rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
         }
 
-        Limiter::Blocking(rate_limiter_builder.build())
+        Self::Blocking(rate_limiter_builder.build())
     }
 
     fn env_option_is_enabled(env_name: &str) -> bool {
@@ -197,8 +197,8 @@ impl Limiter {
             let limits: Vec<Limit> = serde_yaml::from_reader(f).unwrap();
 
             match &self {
-                Limiter::Blocking(limiter) => limiter.configure_with(limits).unwrap(),
-                Limiter::Async(limiter) => limiter.configure_with(limits).await.unwrap(),
+                Self::Blocking(limiter) => limiter.configure_with(limits).unwrap(),
+                Self::Async(limiter) => limiter.configure_with(limits).await.unwrap(),
             }
         }
     }

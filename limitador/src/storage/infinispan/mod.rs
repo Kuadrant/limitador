@@ -12,12 +12,12 @@ pub use infinispan_storage::InfinispanStorageBuilder;
 
 impl From<reqwest::Error> for StorageErr {
     fn from(e: reqwest::Error) -> Self {
-        StorageErr { msg: e.to_string() }
+        Self { msg: e.to_string() }
     }
 }
 
 impl From<InfinispanError> for StorageErr {
     fn from(e: InfinispanError) -> Self {
-        StorageErr { msg: e.to_string() }
+        Self { msg: e.to_string() }
     }
 }

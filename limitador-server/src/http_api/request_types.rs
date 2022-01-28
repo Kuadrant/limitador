@@ -40,7 +40,7 @@ impl From<&LimitadorLimit> for Limit {
 
 impl From<Limit> for LimitadorLimit {
     fn from(limit: Limit) -> Self {
-        let mut limitador_limit = LimitadorLimit::new(
+        let mut limitador_limit = Self::new(
             limit.namespace.as_str(),
             limit.max_value,
             limit.seconds,

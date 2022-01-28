@@ -19,31 +19,25 @@ pub struct CountersCacheBuilder {
 }
 
 impl CountersCacheBuilder {
-    pub fn new() -> CountersCacheBuilder {
-        CountersCacheBuilder {
+    pub fn new() -> Self {
+        Self {
             max_cached_counters: DEFAULT_MAX_CACHED_COUNTERS,
             max_ttl_cached_counters: DEFAULT_MAX_TTL_CACHED_COUNTERS,
             ttl_ratio_cached_counters: DEFAULT_TTL_RATIO_CACHED_COUNTERS,
         }
     }
 
-    pub fn max_cached_counters(mut self, max_cached_counters: usize) -> CountersCacheBuilder {
+    pub fn max_cached_counters(mut self, max_cached_counters: usize) -> Self {
         self.max_cached_counters = max_cached_counters;
         self
     }
 
-    pub fn max_ttl_cached_counter(
-        mut self,
-        max_ttl_cached_counter: Duration,
-    ) -> CountersCacheBuilder {
+    pub fn max_ttl_cached_counter(mut self, max_ttl_cached_counter: Duration) -> Self {
         self.max_ttl_cached_counters = max_ttl_cached_counter;
         self
     }
 
-    pub fn ttl_ratio_cached_counter(
-        mut self,
-        ttl_ratio_cached_counter: u64,
-    ) -> CountersCacheBuilder {
+    pub fn ttl_ratio_cached_counter(mut self, ttl_ratio_cached_counter: u64) -> Self {
         self.ttl_ratio_cached_counters = ttl_ratio_cached_counter;
         self
     }

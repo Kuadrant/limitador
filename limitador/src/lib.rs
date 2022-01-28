@@ -188,13 +188,15 @@
 // TODO this needs review to reduce the bloat pulled in by dependencies
 #![allow(clippy::multiple_crate_versions)]
 
+use core::fmt::Debug;
+use std::collections::{HashMap, HashSet};
+
 use crate::counter::Counter;
 use crate::errors::LimitadorError;
 use crate::limit::{Limit, Namespace};
 use crate::prometheus_metrics::PrometheusMetrics;
 use crate::storage::in_memory::InMemoryStorage;
 use crate::storage::{AsyncStorage, Authorization, Storage};
-use std::collections::{HashMap, HashSet};
 
 #[macro_use]
 extern crate lazy_static;
@@ -291,15 +293,15 @@ impl AsyncRateLimiterBuilder {
 }
 
 impl RateLimiter {
-    pub fn new() -> RateLimiter {
-        RateLimiter {
+    pub fn new() -> Self {
+        Self {
             storage: Box::new(InMemoryStorage::default()),
             prometheus_metrics: PrometheusMetrics::new(),
         }
     }
 
-    pub fn new_with_storage(storage: Box<dyn Storage>) -> RateLimiter {
-        RateLimiter {
+    pub fn new_with_storage(storage: Box<dyn Storage>) -> Self {
+        Self {
             storage,
             prometheus_metrics: PrometheusMetrics::new(),
         }
@@ -317,28 +319,37 @@ impl RateLimiter {
         self.storage.delete_limit(limit).map_err(|err| err.into())
     }
 
-    pub fn get_limits(
+    pub fn get_limits<N: TryInto<Namespace>>(
         &self,
-        namespace: impl Into<Namespace>,
-    ) -> Result<HashSet<Limit>, LimitadorError> {
+        namespace: N,
+    ) -> Result<HashSet<Limit>, LimitadorError>
+    where
+        <N as TryInto<Namespace>>::Error: Debug,
+    {
         self.storage
-            .get_limits(&namespace.into())
+            .get_limits(&namespace.try_into().unwrap())
             .map_err(|err| err.into())
     }
 
-    pub fn delete_limits(&self, namespace: impl Into<Namespace>) -> Result<(), LimitadorError> {
+    pub fn delete_limits<N: TryInto<Namespace>>(&self, namespace: N) -> Result<(), LimitadorError>
+    where
+        <N as TryInto<Namespace>>::Error: Debug,
+    {
         self.storage
-            .delete_limits(&namespace.into())
+            .delete_limits(&namespace.try_into().unwrap())
             .map_err(|err| err.into())
     }
 
-    pub fn is_rate_limited(
+    pub fn is_rate_limited<N: TryInto<Namespace>>(
         &self,
-        namespace: impl Into<Namespace>,
+        namespace: N,
         values: &HashMap<String, String>,
         delta: i64,
-    ) -> Result<bool, LimitadorError> {
-        let namespace = namespace.into();
+    ) -> Result<bool, LimitadorError>
+    where
+        <N as TryInto<Namespace>>::Error: Debug,
+    {
+        let namespace = namespace.try_into().unwrap();
         let counters = self.counters_that_apply(namespace.clone(), values)?;
 
         for counter in counters {
@@ -358,12 +369,15 @@ impl RateLimiter {
         Ok(false)
     }
 
-    pub fn update_counters(
+    pub fn update_counters<N: TryInto<Namespace>>(
         &self,
-        namespace: impl Into<Namespace>,
+        namespace: N,
         values: &HashMap<String, String>,
         delta: i64,
-    ) -> Result<(), LimitadorError> {
+    ) -> Result<(), LimitadorError>
+    where
+        <N as TryInto<Namespace>>::Error: Debug,
+    {
         let counters = self.counters_that_apply(namespace, values)?;
 
         counters
@@ -372,13 +386,16 @@ impl RateLimiter {
             .map_err(|err| err.into())
     }
 
-    pub fn check_rate_limited_and_update(
+    pub fn check_rate_limited_and_update<N: TryInto<Namespace>>(
         &self,
-        namespace: impl Into<Namespace>,
+        namespace: N,
         values: &HashMap<String, String>,
         delta: i64,
-    ) -> Result<bool, LimitadorError> {
-        let namespace = namespace.into();
+    ) -> Result<bool, LimitadorError>
+    where
+        <N as TryInto<Namespace>>::Error: Debug,
+    {
+        let namespace = namespace.try_into().unwrap();
         let counters = self.counters_that_apply(namespace.clone(), values)?;
 
         if counters.is_empty() {
@@ -450,11 +467,14 @@ impl RateLimiter {
         self.prometheus_metrics.gather_metrics()
     }
 
-    fn counters_that_apply(
+    fn counters_that_apply<N: TryInto<Namespace>>(
         &self,
-        namespace: impl Into<Namespace>,
+        namespace: N,
         values: &HashMap<String, String>,
-    ) -> Result<Vec<Counter>, LimitadorError> {
+    ) -> Result<Vec<Counter>, LimitadorError>
+    where
+        <N as TryInto<Namespace>>::Error: Debug,
+    {
         let limits = self.get_limits(namespace)?;
 
         let counters = limits
@@ -479,8 +499,8 @@ impl Default for RateLimiter {
 // to remove this duplication.
 
 impl AsyncRateLimiter {
-    pub fn new_with_storage(storage: Box<dyn AsyncStorage>) -> AsyncRateLimiter {
-        AsyncRateLimiter {
+    pub fn new_with_storage(storage: Box<dyn AsyncStorage>) -> Self {
+        Self {
             storage,
             prometheus_metrics: PrometheusMetrics::new(),
         }
@@ -568,13 +588,17 @@ impl AsyncRateLimiter {
         Ok(())
     }
 
-    pub async fn check_rate_limited_and_update(
+    pub async fn check_rate_limited_and_update<N: TryInto<Namespace>>(
         &self,
-        namespace: impl Into<Namespace>,
+        namespace: N,
         values: &HashMap<String, String>,
         delta: i64,
-    ) -> Result<bool, LimitadorError> {
-        let namespace = namespace.into();
+    ) -> Result<bool, LimitadorError>
+    where
+        <N as TryInto<Namespace>>::Error: Debug,
+    {
+        // the above where-clause is needed in order to call unwrap().
+        let namespace = namespace.try_into().unwrap();
         let counters = self.counters_that_apply(namespace.clone(), values).await?;
 
         if counters.is_empty() {

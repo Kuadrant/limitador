@@ -26,13 +26,13 @@ where
 }
 
 impl Counter {
-    pub fn new(limit: Limit, set_variables: HashMap<String, String>) -> Counter {
+    pub fn new(limit: Limit, set_variables: HashMap<String, String>) -> Self {
         // TODO: check that all the variables defined in the limit are set.
 
         let mut vars = set_variables;
         vars.retain(|var, _| limit.has_variable(var));
 
-        Counter {
+        Self {
             limit,
             set_variables: vars,
             remaining: None,

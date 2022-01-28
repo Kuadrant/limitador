@@ -140,8 +140,8 @@ mod tests {
         let prometheus_metrics = PrometheusMetrics::new();
 
         let namespaces_with_auth_counts = [
-            (Namespace::from("some_namespace"), 2),
-            (Namespace::from("another_namespace"), 3),
+            ("some_namespace".parse().unwrap(), 2),
+            ("another_namespace".parse().unwrap(), 3),
         ];
 
         namespaces_with_auth_counts
@@ -170,8 +170,8 @@ mod tests {
         let prometheus_metrics = PrometheusMetrics::new();
 
         let namespaces_with_limited_counts = [
-            (Namespace::from("some_namespace"), 2),
-            (Namespace::from("another_namespace"), 3),
+            ("some_namespace".parse().unwrap(), 2),
+            ("another_namespace".parse().unwrap(), 3),
         ];
 
         namespaces_with_limited_counts
@@ -200,8 +200,8 @@ mod tests {
         let prometheus_metrics = PrometheusMetrics::new_with_counters_by_limit_name();
 
         let limits_with_counts = [
-            (Namespace::from("some_namespace"), "Some limit", 2),
-            (Namespace::from("some_namespace"), "Another limit", 3),
+            ("some_namespace".parse().unwrap(), "Some limit", 2),
+            ("some_namespace".parse().unwrap(), "Another limit", 3),
         ];
 
         limits_with_counts
@@ -231,7 +231,7 @@ mod tests {
     #[test]
     fn incr_limited_calls_uses_empty_string_when_no_name() {
         let prometheus_metrics = PrometheusMetrics::new_with_counters_by_limit_name();
-        let namespace = Namespace::from("some namespace");
+        let namespace = "some namespace".parse().unwrap();
         prometheus_metrics.incr_limited_calls(&namespace, None);
 
         let metrics_output = prometheus_metrics.gather_metrics();

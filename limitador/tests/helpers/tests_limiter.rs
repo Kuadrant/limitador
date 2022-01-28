@@ -55,15 +55,27 @@ impl TestsLimiter {
 
     pub async fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, LimitadorError> {
         match &self.limiter_impl {
-            LimiterImpl::Blocking(limiter) => limiter.get_limits(namespace),
-            LimiterImpl::Async(limiter) => limiter.get_limits(namespace).await,
+            LimiterImpl::Blocking(limiter) => {
+                limiter.get_limits(namespace.parse::<Namespace>().unwrap())
+            }
+            LimiterImpl::Async(limiter) => {
+                limiter
+                    .get_limits(namespace.parse::<Namespace>().unwrap())
+                    .await
+            }
         }
     }
 
     pub async fn delete_limits(&self, namespace: &str) -> Result<(), LimitadorError> {
         match &self.limiter_impl {
-            LimiterImpl::Blocking(limiter) => limiter.delete_limits(namespace),
-            LimiterImpl::Async(limiter) => limiter.delete_limits(namespace).await,
+            LimiterImpl::Blocking(limiter) => {
+                limiter.delete_limits(namespace.parse::<Namespace>().unwrap())
+            }
+            LimiterImpl::Async(limiter) => {
+                limiter
+                    .delete_limits(namespace.parse::<Namespace>().unwrap())
+                    .await
+            }
         }
     }
 
@@ -74,8 +86,14 @@ impl TestsLimiter {
         delta: i64,
     ) -> Result<bool, LimitadorError> {
         match &self.limiter_impl {
-            LimiterImpl::Blocking(limiter) => limiter.is_rate_limited(namespace, values, delta),
-            LimiterImpl::Async(limiter) => limiter.is_rate_limited(namespace, values, delta).await,
+            LimiterImpl::Blocking(limiter) => {
+                limiter.is_rate_limited(namespace.parse::<Namespace>().unwrap(), values, delta)
+            }
+            LimiterImpl::Async(limiter) => {
+                limiter
+                    .is_rate_limited(namespace.parse::<Namespace>().unwrap(), values, delta)
+                    .await
+            }
         }
     }
 
@@ -86,8 +104,14 @@ impl TestsLimiter {
         delta: i64,
     ) -> Result<(), LimitadorError> {
         match &self.limiter_impl {
-            LimiterImpl::Blocking(limiter) => limiter.update_counters(namespace, values, delta),
-            LimiterImpl::Async(limiter) => limiter.update_counters(namespace, values, delta).await,
+            LimiterImpl::Blocking(limiter) => {
+                limiter.update_counters(namespace.parse::<Namespace>().unwrap(), values, delta)
+            }
+            LimiterImpl::Async(limiter) => {
+                limiter
+                    .update_counters(namespace.parse::<Namespace>().unwrap(), values, delta)
+                    .await
+            }
         }
     }
 
@@ -98,12 +122,18 @@ impl TestsLimiter {
         delta: i64,
     ) -> Result<bool, LimitadorError> {
         match &self.limiter_impl {
-            LimiterImpl::Blocking(limiter) => {
-                limiter.check_rate_limited_and_update(namespace, values, delta)
-            }
+            LimiterImpl::Blocking(limiter) => limiter.check_rate_limited_and_update(
+                namespace.parse::<Namespace>().unwrap(),
+                values,
+                delta,
+            ),
             LimiterImpl::Async(limiter) => {
                 limiter
-                    .check_rate_limited_and_update(namespace, values, delta)
+                    .check_rate_limited_and_update(
+                        namespace.parse::<Namespace>().unwrap(),
+                        values,
+                        delta,
+                    )
                     .await
             }
         }
@@ -111,8 +141,14 @@ impl TestsLimiter {
 
     pub async fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, LimitadorError> {
         match &self.limiter_impl {
-            LimiterImpl::Blocking(limiter) => limiter.get_counters(namespace),
-            LimiterImpl::Async(limiter) => limiter.get_counters(namespace).await,
+            LimiterImpl::Blocking(limiter) => {
+                limiter.get_counters(namespace.parse::<Namespace>().unwrap())
+            }
+            LimiterImpl::Async(limiter) => {
+                limiter
+                    .get_counters(namespace.parse::<Namespace>().unwrap())
+                    .await
+            }
         }
     }
 
