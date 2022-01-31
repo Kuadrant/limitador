@@ -9,6 +9,6 @@ pub enum LimitadorError {
 
 impl From<StorageErr> for LimitadorError {
     fn from(e: StorageErr) -> Self {
-        LimitadorError::Storage(e.msg().to_owned())
+        Self::Storage(e.msg().to_owned())
     }
 }

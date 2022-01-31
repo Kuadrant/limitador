@@ -199,7 +199,7 @@ impl AsyncStorage for CachedRedisStorage {
 }
 
 impl CachedRedisStorage {
-    pub async fn new(redis_url: &str) -> CachedRedisStorage {
+    pub async fn new(redis_url: &str) -> Self {
         Self::new_with_options(
             redis_url,
             DEFAULT_MAX_CACHED_NAMESPACES,
@@ -220,7 +220,7 @@ impl CachedRedisStorage {
         max_cached_counters: usize,
         ttl_cached_counters: Duration,
         ttl_ratio_cached_counters: u64,
-    ) -> CachedRedisStorage {
+    ) -> Self {
         let redis_conn_manager = ConnectionManager::new(
             redis::Client::open(ConnectionInfo::from_str(redis_url).unwrap()).unwrap(),
         )
@@ -251,7 +251,7 @@ impl CachedRedisStorage {
             .ttl_ratio_cached_counter(ttl_ratio_cached_counters)
             .build();
 
-        CachedRedisStorage {
+        Self {
             cached_limits_by_namespace: Mutex::new(TtlCache::new(max_cached_namespaces)),
             ttl_cached_limits,
             cached_counters: Mutex::new(cached_counters),
@@ -305,8 +305,8 @@ pub struct CachedRedisStorageBuilder {
 }
 
 impl CachedRedisStorageBuilder {
-    pub fn new(redis_url: &str) -> CachedRedisStorageBuilder {
-        CachedRedisStorageBuilder {
+    pub fn new(redis_url: &str) -> Self {
+        Self {
             redis_url: redis_url.to_string(),
             max_cached_namespaces: DEFAULT_MAX_CACHED_NAMESPACES,
             ttl_cached_limits: DEFAULT_TTL_CACHED_LIMITS,
@@ -317,44 +317,32 @@ impl CachedRedisStorageBuilder {
         }
     }
 
-    pub fn max_cached_namespaces(
-        mut self,
-        max_cached_namespaces: usize,
-    ) -> CachedRedisStorageBuilder {
+    pub fn max_cached_namespaces(mut self, max_cached_namespaces: usize) -> Self {
         self.max_cached_namespaces = max_cached_namespaces;
         self
     }
 
-    pub fn ttl_cached_limits(mut self, ttl_cached_limits: Duration) -> CachedRedisStorageBuilder {
+    pub fn ttl_cached_limits(mut self, ttl_cached_limits: Duration) -> Self {
         self.ttl_cached_limits = ttl_cached_limits;
         self
     }
 
-    pub fn flushing_period(
-        mut self,
-        flushing_period: Option<Duration>,
-    ) -> CachedRedisStorageBuilder {
+    pub fn flushing_period(mut self, flushing_period: Option<Duration>) -> Self {
         self.flushing_period = flushing_period;
         self
     }
 
-    pub fn max_cached_counters(mut self, max_cached_counters: usize) -> CachedRedisStorageBuilder {
+    pub fn max_cached_counters(mut self, max_cached_counters: usize) -> Self {
         self.max_cached_counters = max_cached_counters;
         self
     }
 
-    pub fn max_ttl_cached_counters(
-        mut self,
-        max_ttl_cached_counters: Duration,
-    ) -> CachedRedisStorageBuilder {
+    pub fn max_ttl_cached_counters(mut self, max_ttl_cached_counters: Duration) -> Self {
         self.max_ttl_cached_counters = max_ttl_cached_counters;
         self
     }
 
-    pub fn ttl_ratio_cached_counters(
-        mut self,
-        ttl_ratio_cached_counters: u64,
-    ) -> CachedRedisStorageBuilder {
+    pub fn ttl_ratio_cached_counters(mut self, ttl_ratio_cached_counters: u64) -> Self {
         self.ttl_ratio_cached_counters = ttl_ratio_cached_counters;
         self
     }

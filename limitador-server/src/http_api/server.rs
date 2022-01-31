@@ -2,6 +2,7 @@ use crate::http_api::request_types::{CheckAndReportInfo, Counter, Limit};
 use crate::Limiter;
 use actix_web::{http::StatusCode, ResponseError};
 use actix_web::{App, HttpServer};
+use limitador::limit::Namespace;
 use paperclip::actix::{
     api_v2_errors,
     api_v2_operation,
@@ -74,8 +75,14 @@ async fn get_limits(
     namespace: web::Path<String>,
 ) -> Result<web::Json<Vec<Limit>>, ErrorResponse> {
     let get_limits_result = match data.get_ref().as_ref() {
-        Limiter::Blocking(limiter) => limiter.get_limits(namespace.into_inner().as_str()),
-        Limiter::Async(limiter) => limiter.get_limits(namespace.into_inner().as_str()).await,
+        Limiter::Blocking(limiter) => {
+            limiter.get_limits(namespace.into_inner().parse::<Namespace>().unwrap())
+        }
+        Limiter::Async(limiter) => {
+            limiter
+                .get_limits(namespace.into_inner().parse::<Namespace>().unwrap())
+                .await
+        }
     };
 
     match get_limits_result {
@@ -109,8 +116,14 @@ async fn delete_limits(
     namespace: web::Path<String>,
 ) -> Result<web::Json<()>, ErrorResponse> {
     let delete_limits_result = match data.get_ref().as_ref() {
-        Limiter::Blocking(limiter) => limiter.delete_limits(namespace.into_inner().as_str()),
-        Limiter::Async(limiter) => limiter.delete_limits(namespace.into_inner().as_str()).await,
+        Limiter::Blocking(limiter) => {
+            limiter.delete_limits(namespace.into_inner().parse::<Namespace>().unwrap())
+        }
+        Limiter::Async(limiter) => {
+            limiter
+                .delete_limits(namespace.into_inner().parse::<Namespace>().unwrap())
+                .await
+        }
     };
 
     match delete_limits_result {
@@ -125,8 +138,14 @@ async fn get_counters(
     namespace: web::Path<String>,
 ) -> Result<web::Json<Vec<Counter>>, ErrorResponse> {
     let get_counters_result = match data.get_ref().as_ref() {
-        Limiter::Blocking(limiter) => limiter.get_counters(namespace.into_inner().as_str()),
-        Limiter::Async(limiter) => limiter.get_counters(namespace.into_inner().as_str()).await,
+        Limiter::Blocking(limiter) => {
+            limiter.get_counters(namespace.into_inner().parse::<Namespace>().unwrap())
+        }
+        Limiter::Async(limiter) => {
+            limiter
+                .get_counters(namespace.into_inner().parse::<Namespace>().unwrap())
+                .await
+        }
     };
 
     match get_counters_result {
@@ -147,12 +166,18 @@ async fn check(
     request: web::Json<CheckAndReportInfo>,
 ) -> Result<web::Json<()>, ErrorResponse> {
     let is_rate_limited_result = match state.get_ref().as_ref() {
-        Limiter::Blocking(limiter) => {
-            limiter.is_rate_limited(request.namespace.as_str(), &request.values, request.delta)
-        }
+        Limiter::Blocking(limiter) => limiter.is_rate_limited(
+            request.namespace.parse::<Namespace>().unwrap(),
+            &request.values,
+            request.delta,
+        ),
         Limiter::Async(limiter) => {
             limiter
-                .is_rate_limited(request.namespace.as_str(), &request.values, request.delta)
+                .is_rate_limited(
+                    request.namespace.parse::<Namespace>().unwrap(),
+                    &request.values,
+                    request.delta,
+                )
                 .await
         }
     };
@@ -175,12 +200,18 @@ async fn report(
     request: web::Json<CheckAndReportInfo>,
 ) -> Result<web::Json<()>, ErrorResponse> {
     let update_counters_result = match data.get_ref().as_ref() {
-        Limiter::Blocking(limiter) => {
-            limiter.update_counters(request.namespace.as_str(), &request.values, request.delta)
-        }
+        Limiter::Blocking(limiter) => limiter.update_counters(
+            request.namespace.parse::<Namespace>().unwrap(),
+            &request.values,
+            request.delta,
+        ),
         Limiter::Async(limiter) => {
             limiter
-                .update_counters(request.namespace.as_str(), &request.values, request.delta)
+                .update_counters(
+                    request.namespace.parse::<Namespace>().unwrap(),
+                    &request.values,
+                    request.delta,
+                )
                 .await
         }
     };
@@ -198,7 +229,7 @@ async fn check_and_report(
 ) -> Result<web::Json<()>, ErrorResponse> {
     let rate_limited_and_update_result = match data.get_ref().as_ref() {
         Limiter::Blocking(limiter) => limiter.check_rate_limited_and_update(
-            request.namespace.as_str(),
+            request.namespace.parse::<Namespace>().unwrap(),
             &request.values,
             request.delta,
         ),
@@ -269,10 +300,10 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_status() {
-        let mut app = test::init_service(App::new().route("/status", web::get().to(status))).await;
+        let app = test::init_service(App::new().route("/status", web::get().to(status))).await;
 
         let req = test::TestRequest::with_uri("/status").to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
 
         assert!(resp.status().is_success());
     }
@@ -281,7 +312,7 @@ mod tests {
     async fn test_metrics() {
         let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
         let data = web::Data::new(rate_limiter);
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(data.clone())
                 .route("/metrics", web::get().to(metrics)),
@@ -289,7 +320,7 @@ mod tests {
         .await;
 
         let req = test::TestRequest::get().uri("/metrics").to_request();
-        let resp = test::call_and_read_body(&mut app, req).await;
+        let resp = test::call_and_read_body(&app, req).await;
         let resp_string = String::from_utf8(resp.to_vec()).unwrap();
 
         // No need to check the whole output. We just want to make sure that it
@@ -301,7 +332,7 @@ mod tests {
     async fn test_limits_create_read_delete() {
         let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
         let data = web::Data::new(rate_limiter);
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(data.clone())
                 .route("/limits", web::post().to(create_limit))
@@ -325,7 +356,7 @@ mod tests {
             .data(data.clone())
             .set_json(&limit)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
         // Read limit created
@@ -333,7 +364,7 @@ mod tests {
             .uri(&format!("/limits/{}", namespace))
             .data(data.clone())
             .to_request();
-        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&mut app, req).await;
+        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&app, req).await;
         assert_eq!(resp_limits.len(), 1);
         assert_eq!(*resp_limits.get(0).unwrap(), limit);
 
@@ -343,7 +374,7 @@ mod tests {
             .data(data.clone())
             .set_json(&limit)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
         // Check that the list is now empty
@@ -351,7 +382,7 @@ mod tests {
             .uri(&format!("/limits/{}", namespace))
             .data(data.clone())
             .to_request();
-        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&mut app, req).await;
+        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&app, req).await;
         assert!(resp_limits.is_empty());
     }
 
@@ -359,7 +390,7 @@ mod tests {
     async fn test_create_limit_with_name() {
         let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
         let data = web::Data::new(rate_limiter);
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(data.clone())
                 .route("/limits", web::post().to(create_limit))
@@ -381,7 +412,7 @@ mod tests {
             .data(data.clone())
             .set_json(&limit)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
         // Read limit created
@@ -389,7 +420,7 @@ mod tests {
             .uri(&format!("/limits/{}", namespace))
             .data(data.clone())
             .to_request();
-        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&mut app, req).await;
+        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&app, req).await;
         assert_eq!(resp_limits.len(), 1);
         assert_eq!(*resp_limits.get(0).unwrap(), limit);
     }
@@ -398,7 +429,7 @@ mod tests {
     async fn test_delete_all_limits_of_namespace() {
         let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
         let data = web::Data::new(rate_limiter);
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(data.clone())
                 .route("/limits", web::post().to(create_limit))
@@ -433,7 +464,7 @@ mod tests {
                 .data(data.clone())
                 .set_json(&limit)
                 .to_request();
-            let resp = test::call_service(&mut app, req).await;
+            let resp = test::call_service(&app, req).await;
             assert!(resp.status().is_success());
         }
 
@@ -442,7 +473,7 @@ mod tests {
             .uri(&format!("/limits/{}", namespace))
             .data(data.clone())
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
         // Check that the list is now empty
@@ -450,7 +481,7 @@ mod tests {
             .uri(&format!("/limits/{}", namespace))
             .data(data.clone())
             .to_request();
-        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&mut app, req).await;
+        let resp_limits: Vec<Limit> = test::call_and_read_body_json(&app, req).await;
         assert!(resp_limits.is_empty());
     }
 
@@ -458,7 +489,7 @@ mod tests {
     async fn test_check_and_report() {
         let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
         let data = web::Data::new(rate_limiter);
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(data.clone())
                 .route("/limits", web::post().to(create_limit))
@@ -483,7 +514,7 @@ mod tests {
             .data(data.clone())
             .set_json(&limit)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
         // Prepare values to check
@@ -502,7 +533,7 @@ mod tests {
             .data(data.clone())
             .set_json(&info)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
         // The second request should be rate-limited
@@ -511,7 +542,7 @@ mod tests {
             .data(data.clone())
             .set_json(&info)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
@@ -519,7 +550,7 @@ mod tests {
     async fn test_check_and_report_endpoints_separately() {
         let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
         let data = web::Data::new(rate_limiter);
-        let mut app = test::init_service(
+        let app = test::init_service(
             App::new()
                 .app_data(data.clone())
                 .route("/limits", web::post().to(create_limit))
@@ -545,7 +576,7 @@ mod tests {
             .data(data.clone())
             .set_json(&limit)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
         // Prepare values to check
@@ -564,7 +595,7 @@ mod tests {
             .data(data.clone())
             .set_json(&info)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
         // Do the first report
@@ -573,7 +604,7 @@ mod tests {
             .data(data.clone())
             .set_json(&info)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
         // Should be rate-limited now
@@ -582,7 +613,7 @@ mod tests {
             .data(data.clone())
             .set_json(&info)
             .to_request();
-        let resp = test::call_service(&mut app, req).await;
+        let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 }

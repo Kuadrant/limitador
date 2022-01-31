@@ -2,6 +2,19 @@
 
 Notable changes to the Limitador server will be tracked in this document.
 
+## 0.5.0 - 2022-01-31
+
+### Added
+
+- Support for Infinispan (tested with 11.0.9.Final). You can enable it via the
+`INFINISPAN_URL` env variable. [#38](https://github.com/kuadrant/limitador/pull/38),
+[#40](https://github.com/kuadrant/limitador/pull/40), [#44](https://github.com/kuadrant/limitador/pull/44),
+[#45](https://github.com/kuadrant/limitador/pull/45).
+
+### Changed
+
+- Moved to the Tokio 1 async reactor. [#54](https://github.com/kuadrant/limitador/pull/54).
+
 ## 0.4.0 - 2021-03-08
 
 ### Added

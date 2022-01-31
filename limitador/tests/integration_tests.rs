@@ -1,3 +1,5 @@
+#![deny(clippy::all)]
+
 macro_rules! test_with_all_storage_impls {
     // This macro uses the "paste" crate to define the names of the functions.
     // Also, the Redis tests cannot be run in parallel. The "serial" tag from
@@ -92,7 +94,6 @@ mod test {
     use self::limitador::RateLimiter;
     use crate::helpers::tests_limiter::*;
     use limitador::limit::Limit;
-    use limitador::limit::Namespace;
     use limitador::storage::in_memory::InMemoryStorage;
     use limitador::storage::wasm::WasmStorage;
     use std::collections::{HashMap, HashSet};
@@ -163,12 +164,12 @@ mod test {
             rate_limiter.add_limit(&limit).await.unwrap();
         }
 
-        for ns in ["first_namespace", "second_namespace"].iter() {
+        for &ns in ["first_namespace", "second_namespace"].iter() {
             assert!(rate_limiter
                 .get_namespaces()
                 .await
                 .unwrap()
-                .contains(&Namespace::from(ns.as_ref())));
+                .contains(&ns.parse().unwrap()));
         }
     }
 
@@ -204,12 +205,12 @@ mod test {
             .get_namespaces()
             .await
             .unwrap()
-            .contains(&Namespace::from("first_namespace")));
+            .contains(&"first_namespace".parse().unwrap()));
         assert!(!rate_limiter
             .get_namespaces()
             .await
             .unwrap()
-            .contains(&Namespace::from("second_namespace")));
+            .contains(&"second_namespace".parse().unwrap()));
     }
 
     async fn add_a_limit(rate_limiter: &mut TestsLimiter) {
@@ -344,7 +345,7 @@ mod test {
         ];
 
         for limit in limits.iter() {
-            rate_limiter.add_limit(&limit).await.unwrap()
+            rate_limiter.add_limit(limit).await.unwrap()
         }
 
         rate_limiter.delete_limits(namespace).await.unwrap();
@@ -422,25 +423,19 @@ mod test {
         values.insert("app_id".to_string(), "test_app_id".to_string());
 
         for _ in 0..max_hits {
-            assert_eq!(
-                false,
-                rate_limiter
-                    .is_rate_limited(namespace, &values, 1)
-                    .await
-                    .unwrap()
-            );
+            assert!(!rate_limiter
+                .is_rate_limited(namespace, &values, 1)
+                .await
+                .unwrap());
             rate_limiter
                 .update_counters(namespace, &values, 1)
                 .await
                 .unwrap();
         }
-        assert_eq!(
-            true,
-            rate_limiter
-                .is_rate_limited(namespace, &values, 1)
-                .await
-                .unwrap()
-        );
+        assert!(rate_limiter
+            .is_rate_limited(namespace, &values, 1)
+            .await
+            .unwrap());
     }
 
     async fn rate_limited_with_delta_higher_than_one(rate_limiter: &mut TestsLimiter) {
@@ -456,25 +451,19 @@ mod test {
         // Report 5 hits twice. The limit is 10, so the first limited call should be
         // the third one.
         for _ in 0..2 {
-            assert_eq!(
-                false,
-                rate_limiter
-                    .is_rate_limited(namespace, &values, 5)
-                    .await
-                    .unwrap()
-            );
+            assert!(!rate_limiter
+                .is_rate_limited(namespace, &values, 5)
+                .await
+                .unwrap());
             rate_limiter
                 .update_counters(namespace, &values, 5)
                 .await
                 .unwrap();
         }
-        assert_eq!(
-            true,
-            rate_limiter
-                .is_rate_limited(namespace, &values, 1)
-                .await
-                .unwrap()
-        );
+        assert!(rate_limiter
+            .is_rate_limited(namespace, &values, 1)
+            .await
+            .unwrap());
     }
 
     async fn rate_limited_with_delta_higher_than_max(rate_limiter: &mut TestsLimiter) {
@@ -522,25 +511,19 @@ mod test {
             // iteration. It should not affect.
             values.insert("does_not_apply".to_string(), i.to_string());
 
-            assert_eq!(
-                false,
-                rate_limiter
-                    .is_rate_limited(namespace, &values, 1)
-                    .await
-                    .unwrap()
-            );
+            assert!(!rate_limiter
+                .is_rate_limited(namespace, &values, 1)
+                .await
+                .unwrap());
             rate_limiter
                 .update_counters(namespace, &values, 1)
                 .await
                 .unwrap();
         }
-        assert_eq!(
-            true,
-            rate_limiter
-                .is_rate_limited(namespace, &values, 1)
-                .await
-                .unwrap()
-        );
+        assert!(rate_limiter
+            .is_rate_limited(namespace, &values, 1)
+            .await
+            .unwrap());
     }
 
     async fn is_rate_limited_returns_false_when_no_limits_in_namespace(
@@ -549,13 +532,10 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());
 
-        assert_eq!(
-            rate_limiter
-                .is_rate_limited("test_namespace", &values, 1)
-                .await
-                .unwrap(),
-            false
-        );
+        assert!(!rate_limiter
+            .is_rate_limited("test_namespace", &values, 1)
+            .await
+            .unwrap());
     }
 
     async fn is_rate_limited_returns_false_when_no_matching_limits(
@@ -578,13 +558,10 @@ mod test {
         values.insert("req.method".to_string(), "POST".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
 
-        assert_eq!(
-            rate_limiter
-                .is_rate_limited(namespace, &values, 1)
-                .await
-                .unwrap(),
-            false
-        );
+        assert!(!rate_limiter
+            .is_rate_limited(namespace, &values, 1)
+            .await
+            .unwrap());
     }
 
     async fn is_rate_limited_applies_limit_if_its_unconditional(rate_limiter: &mut TestsLimiter) {
@@ -628,22 +605,16 @@ mod test {
         values.insert("app_id".to_string(), "test_app_id".to_string());
 
         for _ in 0..max_hits {
-            assert_eq!(
-                false,
-                rate_limiter
-                    .check_rate_limited_and_update(namespace, &values, 1)
-                    .await
-                    .unwrap()
-            );
-        }
-
-        assert_eq!(
-            true,
-            rate_limiter
+            assert!(!rate_limiter
                 .check_rate_limited_and_update(namespace, &values, 1)
                 .await
-                .unwrap()
-        );
+                .unwrap());
+        }
+
+        assert!(rate_limiter
+            .check_rate_limited_and_update(namespace, &values, 1)
+            .await
+            .unwrap());
     }
 
     async fn check_rate_limited_and_update_returns_true_if_no_limits_apply(
@@ -660,13 +631,10 @@ mod test {
         // Does not match the limit defined
         values.insert("req.method".to_string(), "POST".to_string());
 
-        assert_eq!(
-            false,
-            rate_limiter
-                .check_rate_limited_and_update(namespace, &values, 1)
-                .await
-                .unwrap()
-        );
+        assert!(!rate_limiter
+            .check_rate_limited_and_update(namespace, &values, 1)
+            .await
+            .unwrap());
     }
 
     async fn check_rate_limited_and_update_applies_limit_if_its_unconditional(

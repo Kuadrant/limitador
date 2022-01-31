@@ -35,7 +35,7 @@ impl AsyncStorage for InfinispanStorage {
             .get_set(key_for_namespaces_set())
             .await?
             .iter()
-            .map(|ns| Namespace::from(ns.as_ref()))
+            .map(|ns| ns.parse().unwrap())
             .collect())
     }
 
@@ -222,11 +222,11 @@ impl InfinispanStorage {
         password: &str,
         cache_name: Option<String>,
         counters_consistency: Consistency,
-    ) -> InfinispanStorage {
+    ) -> Self {
         let infinispan = Infinispan::new(url, username, password);
 
         match cache_name {
-            Some(cache_name) => InfinispanStorage {
+            Some(cache_name) => Self {
                 infinispan,
                 cache_name,
                 counters_consistency,
@@ -239,7 +239,7 @@ impl InfinispanStorage {
                     .await
                     .unwrap();
 
-                InfinispanStorage {
+                Self {
                     infinispan,
                     cache_name: cache_name.into(),
                     counters_consistency,

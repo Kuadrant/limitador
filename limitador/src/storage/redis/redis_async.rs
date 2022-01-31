@@ -36,10 +36,7 @@ impl AsyncStorage for AsyncRedisStorage {
             .smembers::<String, HashSet<String>>(key_for_namespaces_set())
             .await?;
 
-        Ok(namespaces
-            .iter()
-            .map(|ns| Namespace::from(ns.as_ref()))
-            .collect())
+        Ok(namespaces.iter().map(|ns| ns.parse().unwrap()).collect())
     }
 
     async fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
@@ -215,8 +212,8 @@ impl AsyncStorage for AsyncRedisStorage {
 }
 
 impl AsyncRedisStorage {
-    pub async fn new(redis_url: &str) -> AsyncRedisStorage {
-        AsyncRedisStorage {
+    pub async fn new(redis_url: &str) -> Self {
+        Self {
             conn_manager: ConnectionManager::new(
                 redis::Client::open(ConnectionInfo::from_str(redis_url).unwrap()).unwrap(),
             )
@@ -225,8 +222,8 @@ impl AsyncRedisStorage {
         }
     }
 
-    pub fn new_with_conn_manager(conn_manager: ConnectionManager) -> AsyncRedisStorage {
-        AsyncRedisStorage { conn_manager }
+    pub fn new_with_conn_manager(conn_manager: ConnectionManager) -> Self {
+        Self { conn_manager }
     }
 
     async fn delete_counters_of_namespace(&self, namespace: &Namespace) -> Result<(), StorageErr> {

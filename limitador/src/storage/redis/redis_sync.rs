@@ -27,10 +27,7 @@ impl Storage for RedisStorage {
 
         let namespaces = con.smembers::<String, HashSet<String>>(key_for_namespaces_set())?;
 
-        Ok(namespaces
-            .iter()
-            .map(|ns| Namespace::from(ns.as_ref()))
-            .collect())
+        Ok(namespaces.iter().map(|ns| ns.parse().unwrap()).collect())
     }
 
     fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
@@ -196,7 +193,7 @@ impl Storage for RedisStorage {
 }
 
 impl RedisStorage {
-    pub fn new(redis_url: &str) -> RedisStorage {
+    pub fn new(redis_url: &str) -> Self {
         let conn_manager = RedisConnectionManager::new(redis_url).unwrap();
         let conn_pool = Pool::builder()
             .connection_timeout(Duration::from_secs(3))
@@ -204,7 +201,7 @@ impl RedisStorage {
             .build(conn_manager)
             .unwrap();
 
-        RedisStorage { conn_pool }
+        Self { conn_pool }
     }
 
     fn delete_counters_of_namespace(&self, namespace: &Namespace) -> Result<(), StorageErr> {
@@ -239,8 +236,8 @@ pub struct RedisConnectionManager {
 }
 
 impl RedisConnectionManager {
-    pub fn new<T: IntoConnectionInfo>(params: T) -> Result<RedisConnectionManager, RedisError> {
-        Ok(RedisConnectionManager {
+    pub fn new<T: IntoConnectionInfo>(params: T) -> Result<Self, RedisError> {
+        Ok(Self {
             connection_info: params.into_connection_info()?,
         })
     }
@@ -268,7 +265,7 @@ impl ManageConnection for RedisConnectionManager {
 
 impl Default for RedisStorage {
     fn default() -> Self {
-        RedisStorage::new(DEFAULT_REDIS_URL)
+        Self::new(DEFAULT_REDIS_URL)
     }
 }
 
