@@ -1,3 +1,7 @@
 [workspace]
 
 members = ["limitador", "limitador-server"]
+
+[profile.release]
+lto = true
+codegen-units = 1
