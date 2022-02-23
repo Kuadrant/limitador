@@ -109,22 +109,20 @@ Some tests need a redis deployed in `localhost:6379`. You can run it in Docker w
 docker run --rm -p 6379:6379 -it redis
 ```
 
+Some tests need a infinispan deployed in `localhost:11222`. You can run it in Docker with:
+```bash
+docker run --rm -p 11222:11222 -it -e USER=username -e PASS=password infinispan/server:11.0.9.Final
+```
+
 Then, run the tests:
 
 ```bash
-cargo test
+cargo test --all-features
 ```
 
 or you can run tests disabling the "redis storage" feature:
 ```bash
 cd limitador; cargo test --no-default-features
-```
-
-Limitador also offers experimental support for Infinispan as a storage for the
-limits and counters. It's under a feature not enabled by default. To build with it and test it:
-```bash
-cargo build --features=infinispan_storage
-cargo test --features=infinispan_storage
 ```
 
 ## License
