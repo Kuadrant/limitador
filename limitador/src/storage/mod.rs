@@ -13,6 +13,7 @@ pub mod redis;
 #[cfg(feature = "infinispan_storage")]
 pub mod infinispan;
 
+#[cfg(any(feature = "redis_storage", feature = "infinispan_storage"))]
 mod keys;
 
 pub enum Authorization<'c> {
