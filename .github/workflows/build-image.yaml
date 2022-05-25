@@ -1,0 +1,23 @@
+---
+name: Build Image
+
+on:
+  push:
+    branches: ['*']
+    tags: ['*']
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+      - name: Build Image
+        id: build-image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: limitador
+          tags: ${{ github.ref_name }}
+          dockerfiles: |
+            ./Dockerfile
