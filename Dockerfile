@@ -2,7 +2,7 @@
 # Build Stage
 # ------------------------------------------------------------------------------
 
-FROM alpine:3.15 as limitador-build
+FROM alpine:3.16 as limitador-build
 
 ARG RUSTC_VERSION=1.58.1
 RUN apk update \
@@ -39,7 +39,7 @@ RUN source $HOME/.cargo/env \
 # Run Stage
 # ------------------------------------------------------------------------------
 
-FROM alpine:3.15
+FROM alpine:3.16
 
 RUN addgroup -g 1000 limitador \
     && adduser -D -s /bin/sh -u 1000 -G limitador limitador
