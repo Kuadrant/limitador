@@ -1,7 +1,7 @@
 [package]
 name = "limitador-server"
-version = "0.5.0"
-authors = ["David Ortiz <z.david.ortiz@gmail.com>"]
+version = "0.5.1"
+authors = ["Eguzki Astiz Lezaun <eguzki@redhat.com>"]
 license = "Apache-2.0"
 keywords = ["rate-limiting", "rate", "limiter", "envoy", "rls"]
 categories = ["web-programming"]

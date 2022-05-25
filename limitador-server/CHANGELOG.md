@@ -2,6 +2,16 @@
 
 Notable changes to the Limitador server will be tracked in this document.
 
+## 0.5.1 - 2022-05-25
+
+### Changed
+
+- Update paperclip dep to latest actix4 branch head [#59](https://github.com/kuadrant/limitador/pull/59)
+- Only use utility functions when needed [#61](https://github.com/kuadrant/limitador/pull/61)
+- Use Alpine for building instead of cross-compiling to musl [#61](https://github.com/kuadrant/limitador/pull/61)
+- Cargo.toml: add a profile release with LTO and CGU=1 for limitador-server [#61](https://github.com/kuadrant/limitador/pull/61)
+- Bump alpine base image to 3.16 [#65](https://github.com/kuadrant/limitador/pull/65)
+
 ## 0.5.0 - 2022-01-31
 
 ### Added
