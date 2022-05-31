@@ -7,4 +7,4 @@ lto = true
 codegen-units = 1
 
 [patch.crates-io]
-h2 = { git = "https://github.com/rahulanand16nov/h2", branch = "v0.3.11-pipe" }
+h2 = { git = "https://github.com/rahulanand16nov/h2", branch = "v0.3.11-pipe" } # This patch can be removed once hyperium/h2#619 is closed.
