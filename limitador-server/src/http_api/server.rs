@@ -2,7 +2,6 @@ use crate::http_api::request_types::{CheckAndReportInfo, Counter, Limit};
 use crate::Limiter;
 use actix_web::{http::StatusCode, ResponseError};
 use actix_web::{App, HttpServer};
-use limitador::limit::Namespace;
 use paperclip::actix::{
     api_v2_errors,
     api_v2_operation,
@@ -75,14 +74,8 @@ async fn get_limits(
     namespace: web::Path<String>,
 ) -> Result<web::Json<Vec<Limit>>, ErrorResponse> {
     let get_limits_result = match data.get_ref().as_ref() {
-        Limiter::Blocking(limiter) => {
-            let namespace: Namespace = namespace.into_inner().into();
-            limiter.get_limits(namespace)
-        }
-        Limiter::Async(limiter) => {
-            let namespace: Namespace = namespace.into_inner().into();
-            limiter.get_limits(namespace).await
-        }
+        Limiter::Blocking(limiter) => limiter.get_limits(namespace.into_inner()),
+        Limiter::Async(limiter) => limiter.get_limits(namespace.into_inner()).await,
     };
 
     match get_limits_result {
@@ -116,14 +109,8 @@ async fn delete_limits(
     namespace: web::Path<String>,
 ) -> Result<web::Json<()>, ErrorResponse> {
     let delete_limits_result = match data.get_ref().as_ref() {
-        Limiter::Blocking(limiter) => {
-            let namespace: Namespace = namespace.into_inner().into();
-            limiter.delete_limits(namespace)
-        }
-        Limiter::Async(limiter) => {
-            let namespace: Namespace = namespace.into_inner().into();
-            limiter.delete_limits(namespace).await
-        }
+        Limiter::Blocking(limiter) => limiter.delete_limits(namespace.into_inner()),
+        Limiter::Async(limiter) => limiter.delete_limits(namespace.into_inner()).await,
     };
 
     match delete_limits_result {
@@ -138,14 +125,8 @@ async fn get_counters(
     namespace: web::Path<String>,
 ) -> Result<web::Json<Vec<Counter>>, ErrorResponse> {
     let get_counters_result = match data.get_ref().as_ref() {
-        Limiter::Blocking(limiter) => {
-            let namespace: Namespace = namespace.into_inner().into();
-            limiter.get_counters(namespace)
-        }
-        Limiter::Async(limiter) => {
-            let namespace: Namespace = namespace.into_inner().into();
-            limiter.get_counters(namespace).await
-        }
+        Limiter::Blocking(limiter) => limiter.get_counters(namespace.into_inner()),
+        Limiter::Async(limiter) => limiter.get_counters(namespace.into_inner()).await,
     };
 
     match get_counters_result {
