@@ -73,9 +73,10 @@ async fn get_limits(
     data: web::Data<Arc<Limiter>>,
     namespace: web::Path<String>,
 ) -> Result<web::Json<Vec<Limit>>, ErrorResponse> {
+    let namespace = &namespace.into_inner().into();
     let get_limits_result = match data.get_ref().as_ref() {
-        Limiter::Blocking(limiter) => limiter.get_limits(namespace.into_inner()),
-        Limiter::Async(limiter) => limiter.get_limits(namespace.into_inner()).await,
+        Limiter::Blocking(limiter) => limiter.get_limits(namespace),
+        Limiter::Async(limiter) => limiter.get_limits(namespace).await,
     };
 
     match get_limits_result {
@@ -108,9 +109,10 @@ async fn delete_limits(
     data: web::Data<Arc<Limiter>>,
     namespace: web::Path<String>,
 ) -> Result<web::Json<()>, ErrorResponse> {
+    let namespace = namespace.into_inner().into();
     let delete_limits_result = match data.get_ref().as_ref() {
-        Limiter::Blocking(limiter) => limiter.delete_limits(namespace.into_inner()),
-        Limiter::Async(limiter) => limiter.delete_limits(namespace.into_inner()).await,
+        Limiter::Blocking(limiter) => limiter.delete_limits(&namespace),
+        Limiter::Async(limiter) => limiter.delete_limits(&namespace).await,
     };
 
     match delete_limits_result {
@@ -124,9 +126,10 @@ async fn get_counters(
     data: web::Data<Arc<Limiter>>,
     namespace: web::Path<String>,
 ) -> Result<web::Json<Vec<Counter>>, ErrorResponse> {
+    let namespace = namespace.into_inner().into();
     let get_counters_result = match data.get_ref().as_ref() {
-        Limiter::Blocking(limiter) => limiter.get_counters(namespace.into_inner()),
-        Limiter::Async(limiter) => limiter.get_counters(namespace.into_inner()).await,
+        Limiter::Blocking(limiter) => limiter.get_counters(&namespace),
+        Limiter::Async(limiter) => limiter.get_counters(&namespace).await,
     };
 
     match get_counters_result {
@@ -151,9 +154,10 @@ async fn check(
         values,
         delta,
     } = request.into_inner();
+    let namespace = namespace.into();
     let is_rate_limited_result = match state.get_ref().as_ref() {
-        Limiter::Blocking(limiter) => limiter.is_rate_limited(namespace, &values, delta),
-        Limiter::Async(limiter) => limiter.is_rate_limited(namespace, &values, delta).await,
+        Limiter::Blocking(limiter) => limiter.is_rate_limited(&namespace, &values, delta),
+        Limiter::Async(limiter) => limiter.is_rate_limited(&namespace, &values, delta).await,
     };
 
     match is_rate_limited_result {
@@ -178,9 +182,10 @@ async fn report(
         values,
         delta,
     } = request.into_inner();
+    let namespace = namespace.into();
     let update_counters_result = match data.get_ref().as_ref() {
-        Limiter::Blocking(limiter) => limiter.update_counters(namespace, &values, delta),
-        Limiter::Async(limiter) => limiter.update_counters(namespace, &values, delta).await,
+        Limiter::Blocking(limiter) => limiter.update_counters(&namespace, &values, delta),
+        Limiter::Async(limiter) => limiter.update_counters(&namespace, &values, delta).await,
     };
 
     match update_counters_result {
@@ -199,13 +204,14 @@ async fn check_and_report(
         values,
         delta,
     } = request.into_inner();
+    let namespace = namespace.into();
     let rate_limited_and_update_result = match data.get_ref().as_ref() {
         Limiter::Blocking(limiter) => {
-            limiter.check_rate_limited_and_update(namespace, &values, delta)
+            limiter.check_rate_limited_and_update(&namespace, &values, delta)
         }
         Limiter::Async(limiter) => {
             limiter
-                .check_rate_limited_and_update(namespace, &values, delta)
+                .check_rate_limited_and_update(&namespace, &values, delta)
                 .await
         }
     };

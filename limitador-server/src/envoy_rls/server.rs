@@ -46,6 +46,8 @@ impl RateLimitService for MyRateLimiter {
             }));
         }
 
+        let namespace = namespace.into();
+
         for descriptor in &req.descriptors {
             for entry in &descriptor.entries {
                 values.insert(entry.key.clone(), entry.value.clone());
@@ -62,11 +64,11 @@ impl RateLimitService for MyRateLimiter {
 
         let is_rate_limited_res = match &*self.limiter {
             Limiter::Blocking(limiter) => {
-                limiter.check_rate_limited_and_update(namespace, &values, i64::from(hits_addend))
+                limiter.check_rate_limited_and_update(&namespace, &values, i64::from(hits_addend))
             }
             Limiter::Async(limiter) => {
                 limiter
-                    .check_rate_limited_and_update(namespace, &values, i64::from(hits_addend))
+                    .check_rate_limited_and_update(&namespace, &values, i64::from(hits_addend))
                     .await
             }
         };

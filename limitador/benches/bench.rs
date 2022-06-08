@@ -130,7 +130,11 @@ fn bench_is_rate_limited(b: &mut Bencher, test_scenario: &TestScenario, storage:
 
         black_box(
             rate_limiter
-                .is_rate_limited(params.namespace.as_ref(), &params.values, params.delta)
+                .is_rate_limited(
+                    &params.namespace.to_owned().into(),
+                    &params.values,
+                    params.delta,
+                )
                 .unwrap(),
         )
     })
@@ -145,7 +149,11 @@ fn bench_update_counters(b: &mut Bencher, test_scenario: &TestScenario, storage:
 
         black_box(
             rate_limiter
-                .update_counters(params.namespace.as_ref(), &params.values, params.delta)
+                .update_counters(
+                    &params.namespace.to_owned().into(),
+                    &params.values,
+                    params.delta,
+                )
                 .unwrap(),
         )
     })
@@ -165,7 +173,7 @@ fn bench_check_rate_limited_and_update(
         black_box(
             rate_limiter
                 .check_rate_limited_and_update(
-                    params.namespace.as_ref(),
+                    &params.namespace.to_owned().into(),
                     &params.values,
                     params.delta,
                 )

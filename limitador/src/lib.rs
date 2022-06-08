@@ -81,10 +81,11 @@
 //! rate_limiter.delete_limit(&limit);
 //!
 //! // Get all the limits in a namespace
-//! rate_limiter.get_limits("my_namespace");
+//! let namespace = "my_namespace".into();
+//! rate_limiter.get_limits(&namespace);
 //!
 //! // Delete all the limits in a namespace
-//! rate_limiter.delete_limits("my_namespace");
+//! rate_limiter.delete_limits(&namespace);
 //! ```
 //!
 //! # Apply limits
@@ -112,22 +113,23 @@
 //! values_to_report.insert("user_id".to_string(), "1".to_string());
 //!
 //! // Check if we can report
-//! assert!(!rate_limiter.is_rate_limited("my_namespace", &values_to_report, 1).unwrap());
+//! let namespace = "my_namespace".into();
+//! assert!(!rate_limiter.is_rate_limited(&namespace, &values_to_report, 1).unwrap());
 //!
 //! // Report
-//! rate_limiter.update_counters("my_namespace", &values_to_report, 1).unwrap();
+//! rate_limiter.update_counters(&namespace, &values_to_report, 1).unwrap();
 //!
 //! // Check and report again
-//! assert!(!rate_limiter.is_rate_limited("my_namespace", &values_to_report, 1).unwrap());
-//! rate_limiter.update_counters("my_namespace", &values_to_report, 1).unwrap();
+//! assert!(!rate_limiter.is_rate_limited(&namespace, &values_to_report, 1).unwrap());
+//! rate_limiter.update_counters(&namespace, &values_to_report, 1).unwrap();
 //!
 //! // We've already reported 2, so reporting another one should not be allowed
-//! assert!(rate_limiter.is_rate_limited("my_namespace", &values_to_report, 1).unwrap());
+//! assert!(rate_limiter.is_rate_limited(&namespace, &values_to_report, 1).unwrap());
 //!
 //! // You can also check and report if not limited in a single call. It's useful
 //! // for example, when calling Limitador from a proxy. Instead of doing 2
 //! // separate calls, we can issue just one:
-//! rate_limiter.check_rate_limited_and_update("my_namespace", &values_to_report, 1).unwrap();
+//! rate_limiter.check_rate_limited_and_update(&namespace, &values_to_report, 1).unwrap();
 //! ```
 //!
 //! # Async
@@ -160,7 +162,7 @@
 //! use limitador::limit::Limit;
 //! use limitador::storage::redis::AsyncRedisStorage;
 //! let limit = Limit::new(
-//!     "my_namespace",
+//!      "my_namespace",
 //!      10,
 //!      60,
 //!      vec!["req.method == GET"],
@@ -188,7 +190,6 @@
 // TODO this needs review to reduce the bloat pulled in by dependencies
 #![allow(clippy::multiple_crate_versions)]
 
-use core::fmt::Debug;
 use std::collections::{HashMap, HashSet};
 
 use crate::counter::Counter;
@@ -319,45 +320,30 @@ impl RateLimiter {
         self.storage.delete_limit(limit).map_err(|err| err.into())
     }
 
-    pub fn get_limits<N: Into<Namespace>>(
-        &self,
-        namespace: N,
-    ) -> Result<HashSet<Limit>, LimitadorError>
-    where
-        <N as TryInto<Namespace>>::Error: Debug,
-    {
+    pub fn get_limits(&self, namespace: &Namespace) -> Result<HashSet<Limit>, LimitadorError> {
+        self.storage.get_limits(namespace).map_err(|err| err.into())
+    }
+
+    pub fn delete_limits(&self, namespace: &Namespace) -> Result<(), LimitadorError> {
         self.storage
-            .get_limits(&namespace.into())
+            .delete_limits(namespace)
             .map_err(|err| err.into())
     }
 
-    pub fn delete_limits<N: Into<Namespace>>(&self, namespace: N) -> Result<(), LimitadorError>
-    where
-        <N as TryInto<Namespace>>::Error: Debug,
-    {
-        self.storage
-            .delete_limits(&namespace.into())
-            .map_err(|err| err.into())
-    }
-
-    pub fn is_rate_limited<N: Into<Namespace>>(
+    pub fn is_rate_limited(
         &self,
-        namespace: N,
+        namespace: &Namespace,
         values: &HashMap<String, String>,
         delta: i64,
-    ) -> Result<bool, LimitadorError>
-    where
-        <N as TryInto<Namespace>>::Error: Debug,
-    {
-        let namespace = namespace.into();
-        let counters = self.counters_that_apply(namespace.clone(), values)?;
+    ) -> Result<bool, LimitadorError> {
+        let counters = self.counters_that_apply(namespace, values)?;
 
         for counter in counters {
             match self.storage.is_within_limits(&counter, delta) {
                 Ok(within_limits) => {
                     if !within_limits {
                         self.prometheus_metrics
-                            .incr_limited_calls(&namespace, counter.limit().name());
+                            .incr_limited_calls(namespace, counter.limit().name());
                         return Ok(true);
                     }
                 }
@@ -365,19 +351,16 @@ impl RateLimiter {
             }
         }
 
-        self.prometheus_metrics.incr_authorized_calls(&namespace);
+        self.prometheus_metrics.incr_authorized_calls(namespace);
         Ok(false)
     }
 
-    pub fn update_counters<N: Into<Namespace>>(
+    pub fn update_counters(
         &self,
-        namespace: N,
+        namespace: &Namespace,
         values: &HashMap<String, String>,
         delta: i64,
-    ) -> Result<(), LimitadorError>
-    where
-        <N as TryInto<Namespace>>::Error: Debug,
-    {
+    ) -> Result<(), LimitadorError> {
         let counters = self.counters_that_apply(namespace, values)?;
 
         counters
@@ -386,20 +369,16 @@ impl RateLimiter {
             .map_err(|err| err.into())
     }
 
-    pub fn check_rate_limited_and_update<N: Into<Namespace>>(
+    pub fn check_rate_limited_and_update(
         &self,
-        namespace: N,
+        namespace: &Namespace,
         values: &HashMap<String, String>,
         delta: i64,
-    ) -> Result<bool, LimitadorError>
-    where
-        <N as TryInto<Namespace>>::Error: Debug,
-    {
-        let namespace = namespace.into();
-        let counters = self.counters_that_apply(namespace.clone(), values)?;
+    ) -> Result<bool, LimitadorError> {
+        let counters = self.counters_that_apply(namespace, values)?;
 
         if counters.is_empty() {
-            self.prometheus_metrics.incr_authorized_calls(&namespace);
+            self.prometheus_metrics.incr_authorized_calls(namespace);
             return Ok(false);
         }
 
@@ -409,23 +388,20 @@ impl RateLimiter {
 
         match check_result {
             Authorization::Ok => {
-                self.prometheus_metrics.incr_authorized_calls(&namespace);
+                self.prometheus_metrics.incr_authorized_calls(namespace);
                 Ok(false)
             }
             Authorization::Limited(c) => {
                 self.prometheus_metrics
-                    .incr_limited_calls(&namespace, c.limit().name());
+                    .incr_limited_calls(namespace, c.limit().name());
                 Ok(true)
             }
         }
     }
 
-    pub fn get_counters(
-        &self,
-        namespace: impl Into<Namespace>,
-    ) -> Result<HashSet<Counter>, LimitadorError> {
+    pub fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, LimitadorError> {
         self.storage
-            .get_counters(&namespace.into())
+            .get_counters(namespace)
             .map_err(|err| err.into())
     }
 
@@ -445,7 +421,7 @@ impl RateLimiter {
             .get_namespaces()?
             .union(&namespaces_limits_to_keep_or_create)
         {
-            let limits_in_namespace = self.get_limits(namespace.clone())?;
+            let limits_in_namespace = self.get_limits(namespace)?;
             let limits_to_keep_in_ns: HashSet<Limit> = limits_to_keep_or_create
                 .get(namespace)
                 .cloned()
@@ -467,14 +443,11 @@ impl RateLimiter {
         self.prometheus_metrics.gather_metrics()
     }
 
-    fn counters_that_apply<N: Into<Namespace>>(
+    fn counters_that_apply(
         &self,
-        namespace: N,
+        namespace: &Namespace,
         values: &HashMap<String, String>,
-    ) -> Result<Vec<Counter>, LimitadorError>
-    where
-        <N as TryInto<Namespace>>::Error: Debug,
-    {
+    ) -> Result<Vec<Counter>, LimitadorError> {
         let limits = self.get_limits(namespace)?;
 
         let counters = limits
@@ -529,39 +502,35 @@ impl AsyncRateLimiter {
 
     pub async fn get_limits(
         &self,
-        namespace: impl Into<Namespace>,
+        namespace: &Namespace,
     ) -> Result<HashSet<Limit>, LimitadorError> {
         self.storage
-            .get_limits(&namespace.into())
+            .get_limits(namespace)
             .await
             .map_err(|err| err.into())
     }
 
-    pub async fn delete_limits(
-        &self,
-        namespace: impl Into<Namespace>,
-    ) -> Result<(), LimitadorError> {
+    pub async fn delete_limits(&self, namespace: &Namespace) -> Result<(), LimitadorError> {
         self.storage
-            .delete_limits(&namespace.into())
+            .delete_limits(namespace)
             .await
             .map_err(|err| err.into())
     }
 
     pub async fn is_rate_limited(
         &self,
-        namespace: impl Into<Namespace>,
+        namespace: &Namespace,
         values: &HashMap<String, String>,
         delta: i64,
     ) -> Result<bool, LimitadorError> {
-        let namespace = namespace.into();
-        let counters = self.counters_that_apply(namespace.clone(), values).await?;
+        let counters = self.counters_that_apply(namespace, values).await?;
 
         for counter in counters {
             match self.storage.is_within_limits(&counter, delta).await {
                 Ok(within_limits) => {
                     if !within_limits {
                         self.prometheus_metrics
-                            .incr_limited_calls(&namespace, counter.limit().name());
+                            .incr_limited_calls(namespace, counter.limit().name());
                         return Ok(true);
                     }
                 }
@@ -569,13 +538,13 @@ impl AsyncRateLimiter {
             }
         }
 
-        self.prometheus_metrics.incr_authorized_calls(&namespace);
+        self.prometheus_metrics.incr_authorized_calls(namespace);
         Ok(false)
     }
 
     pub async fn update_counters(
         &self,
-        namespace: impl Into<Namespace>,
+        namespace: &Namespace,
         values: &HashMap<String, String>,
         delta: i64,
     ) -> Result<(), LimitadorError> {
@@ -588,21 +557,17 @@ impl AsyncRateLimiter {
         Ok(())
     }
 
-    pub async fn check_rate_limited_and_update<N: Into<Namespace>>(
+    pub async fn check_rate_limited_and_update(
         &self,
-        namespace: N,
+        namespace: &Namespace,
         values: &HashMap<String, String>,
         delta: i64,
-    ) -> Result<bool, LimitadorError>
-    where
-        <N as TryInto<Namespace>>::Error: Debug,
-    {
+    ) -> Result<bool, LimitadorError> {
         // the above where-clause is needed in order to call unwrap().
-        let namespace = namespace.into();
-        let counters = self.counters_that_apply(namespace.clone(), values).await?;
+        let counters = self.counters_that_apply(namespace, values).await?;
 
         if counters.is_empty() {
-            self.prometheus_metrics.incr_authorized_calls(&namespace);
+            self.prometheus_metrics.incr_authorized_calls(namespace);
             return Ok(false);
         }
 
@@ -613,12 +578,12 @@ impl AsyncRateLimiter {
 
         match check_result {
             Authorization::Ok => {
-                self.prometheus_metrics.incr_authorized_calls(&namespace);
+                self.prometheus_metrics.incr_authorized_calls(namespace);
                 Ok(false)
             }
             Authorization::Limited(c) => {
                 self.prometheus_metrics
-                    .incr_limited_calls(&namespace, c.limit().name());
+                    .incr_limited_calls(namespace, c.limit().name());
                 Ok(true)
             }
         }
@@ -626,10 +591,10 @@ impl AsyncRateLimiter {
 
     pub async fn get_counters(
         &self,
-        namespace: impl Into<Namespace>,
+        namespace: &Namespace,
     ) -> Result<HashSet<Counter>, LimitadorError> {
         self.storage
-            .get_counters(&namespace.into())
+            .get_counters(namespace)
             .await
             .map_err(|err| err.into())
     }
@@ -651,7 +616,7 @@ impl AsyncRateLimiter {
             .await?
             .union(&namespaces_limits_to_keep_or_create)
         {
-            let limits_in_namespace = self.get_limits(namespace.clone()).await?;
+            let limits_in_namespace = self.get_limits(namespace).await?;
             let limits_to_keep_in_ns: HashSet<Limit> = limits_to_keep_or_create
                 .get(namespace)
                 .cloned()
@@ -675,7 +640,7 @@ impl AsyncRateLimiter {
 
     async fn counters_that_apply(
         &self,
-        namespace: impl Into<Namespace>,
+        namespace: &Namespace,
         values: &HashMap<String, String>,
     ) -> Result<Vec<Counter>, LimitadorError> {
         let limits = self.get_limits(namespace).await?;
