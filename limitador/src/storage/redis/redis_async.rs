@@ -36,7 +36,7 @@ impl AsyncStorage for AsyncRedisStorage {
             .smembers::<String, HashSet<String>>(key_for_namespaces_set())
             .await?;
 
-        Ok(namespaces.iter().map(|ns| ns.parse().unwrap()).collect())
+        Ok(namespaces.iter().map(|ns| ns.as_str().into()).collect())
     }
 
     async fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {

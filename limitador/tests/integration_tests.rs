@@ -169,7 +169,7 @@ mod test {
                 .get_namespaces()
                 .await
                 .unwrap()
-                .contains(&ns.parse().unwrap()));
+                .contains(&ns.into()));
         }
     }
 
@@ -205,12 +205,12 @@ mod test {
             .get_namespaces()
             .await
             .unwrap()
-            .contains(&"first_namespace".parse().unwrap()));
+            .contains(&"first_namespace".into()));
         assert!(!rate_limiter
             .get_namespaces()
             .await
             .unwrap()
-            .contains(&"second_namespace".parse().unwrap()));
+            .contains(&"second_namespace".into()));
     }
 
     async fn add_a_limit(rate_limiter: &mut TestsLimiter) {

@@ -35,7 +35,7 @@ impl AsyncStorage for InfinispanStorage {
             .get_set(key_for_namespaces_set())
             .await?
             .iter()
-            .map(|ns| ns.parse().unwrap())
+            .map(|ns| ns.as_str().into())
             .collect())
     }
 

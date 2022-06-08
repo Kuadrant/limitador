@@ -319,7 +319,7 @@ impl RateLimiter {
         self.storage.delete_limit(limit).map_err(|err| err.into())
     }
 
-    pub fn get_limits<N: TryInto<Namespace>>(
+    pub fn get_limits<N: Into<Namespace>>(
         &self,
         namespace: N,
     ) -> Result<HashSet<Limit>, LimitadorError>
@@ -327,20 +327,20 @@ impl RateLimiter {
         <N as TryInto<Namespace>>::Error: Debug,
     {
         self.storage
-            .get_limits(&namespace.try_into().unwrap())
+            .get_limits(&namespace.into())
             .map_err(|err| err.into())
     }
 
-    pub fn delete_limits<N: TryInto<Namespace>>(&self, namespace: N) -> Result<(), LimitadorError>
+    pub fn delete_limits<N: Into<Namespace>>(&self, namespace: N) -> Result<(), LimitadorError>
     where
         <N as TryInto<Namespace>>::Error: Debug,
     {
         self.storage
-            .delete_limits(&namespace.try_into().unwrap())
+            .delete_limits(&namespace.into())
             .map_err(|err| err.into())
     }
 
-    pub fn is_rate_limited<N: TryInto<Namespace>>(
+    pub fn is_rate_limited<N: Into<Namespace>>(
         &self,
         namespace: N,
         values: &HashMap<String, String>,
@@ -349,7 +349,7 @@ impl RateLimiter {
     where
         <N as TryInto<Namespace>>::Error: Debug,
     {
-        let namespace = namespace.try_into().unwrap();
+        let namespace = namespace.into();
         let counters = self.counters_that_apply(namespace.clone(), values)?;
 
         for counter in counters {
@@ -369,7 +369,7 @@ impl RateLimiter {
         Ok(false)
     }
 
-    pub fn update_counters<N: TryInto<Namespace>>(
+    pub fn update_counters<N: Into<Namespace>>(
         &self,
         namespace: N,
         values: &HashMap<String, String>,
@@ -386,7 +386,7 @@ impl RateLimiter {
             .map_err(|err| err.into())
     }
 
-    pub fn check_rate_limited_and_update<N: TryInto<Namespace>>(
+    pub fn check_rate_limited_and_update<N: Into<Namespace>>(
         &self,
         namespace: N,
         values: &HashMap<String, String>,
@@ -395,7 +395,7 @@ impl RateLimiter {
     where
         <N as TryInto<Namespace>>::Error: Debug,
     {
-        let namespace = namespace.try_into().unwrap();
+        let namespace = namespace.into();
         let counters = self.counters_that_apply(namespace.clone(), values)?;
 
         if counters.is_empty() {
@@ -467,7 +467,7 @@ impl RateLimiter {
         self.prometheus_metrics.gather_metrics()
     }
 
-    fn counters_that_apply<N: TryInto<Namespace>>(
+    fn counters_that_apply<N: Into<Namespace>>(
         &self,
         namespace: N,
         values: &HashMap<String, String>,
@@ -588,7 +588,7 @@ impl AsyncRateLimiter {
         Ok(())
     }
 
-    pub async fn check_rate_limited_and_update<N: TryInto<Namespace>>(
+    pub async fn check_rate_limited_and_update<N: Into<Namespace>>(
         &self,
         namespace: N,
         values: &HashMap<String, String>,
@@ -598,7 +598,7 @@ impl AsyncRateLimiter {
         <N as TryInto<Namespace>>::Error: Debug,
     {
         // the above where-clause is needed in order to call unwrap().
-        let namespace = namespace.try_into().unwrap();
+        let namespace = namespace.into();
         let counters = self.counters_that_apply(namespace.clone(), values).await?;
 
         if counters.is_empty() {

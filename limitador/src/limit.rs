@@ -1,24 +1,13 @@
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
-use std::str::FromStr;
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Namespace(String);
 
-impl FromStr for Namespace {
-    type Err = core::convert::Infallible;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self(s.into()))
-    }
-}
-
-impl TryFrom<&str> for Namespace {
-    type Error = <Self as FromStr>::Err;
-
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
-        s.parse()
+impl From<&str> for Namespace {
+    fn from(s: &str) -> Namespace {
+        Self(s.into())
     }
 }
 
@@ -58,7 +47,7 @@ where
 }
 
 impl Limit {
-    pub fn new<N: TryInto<Namespace>>(
+    pub fn new<N: Into<Namespace>>(
         namespace: N,
         max_value: i64,
         seconds: u64,
@@ -70,7 +59,7 @@ impl Limit {
     {
         // the above where-clause is needed in order to call unwrap().
         Self {
-            namespace: namespace.try_into().unwrap(),
+            namespace: namespace.into(),
             max_value,
             seconds,
             name: None,
@@ -181,13 +170,7 @@ mod tests {
 
     #[test]
     fn limit_can_have_an_optional_name() {
-        let mut limit = Limit::new(
-            "test_namespace".parse::<Namespace>().unwrap(),
-            10,
-            60,
-            vec!["x == 5"],
-            vec!["y"],
-        );
+        let mut limit = Limit::new("test_namespace", 10, 60, vec!["x == 5"], vec!["y"]);
         assert!(limit.name.is_none());
 
         let name = "Test Limit";
@@ -197,13 +180,7 @@ mod tests {
 
     #[test]
     fn limit_applies() {
-        let limit = Limit::new(
-            "test_namespace".parse::<Namespace>().unwrap(),
-            10,
-            60,
-            vec!["x == 5"],
-            vec!["y"],
-        );
+        let limit = Limit::new("test_namespace", 10, 60, vec!["x == 5"], vec!["y"]);
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "5".into());
