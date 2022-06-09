@@ -12,6 +12,7 @@ limits. Limitador can be used with Envoy because it also exposes a grpc service,
 port, that implements the Envoy Rate Limit protocol (v3).
 
 - [**Getting started**](#getting-started)
+- [**How it works**](/doc/how-it-works.md)
 - [**Limits storage**](#limits-storage)
 - [**Development**](#development)
 - [**Kubernetes**](limitador-server/kubernetes/)
