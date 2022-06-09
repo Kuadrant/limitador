@@ -27,7 +27,7 @@ impl Storage for RedisStorage {
 
         let namespaces = con.smembers::<String, HashSet<String>>(key_for_namespaces_set())?;
 
-        Ok(namespaces.iter().map(|ns| ns.parse().unwrap()).collect())
+        Ok(namespaces.iter().map(|ns| ns.as_str().into()).collect())
     }
 
     fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
