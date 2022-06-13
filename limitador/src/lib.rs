@@ -173,7 +173,7 @@
 //!     let rate_limiter = AsyncRateLimiter::new_with_storage(
 //!         Box::new(AsyncRedisStorage::new("redis://127.0.0.1:7777").await)
 //!     );
-//!     rate_limiter.add_limit(&limit).await;
+//!     rate_limiter.add_limit(limit);
 //! };
 //! # }
 //! ```
