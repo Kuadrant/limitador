@@ -85,12 +85,13 @@ impl Limiter {
     }
 
     async fn storage_using_redis(redis_url: &str) -> AsyncStorage {
-        let counters: Box<dyn AsyncCounterStorage> = if Self::env_option_is_enabled("REDIS_LOCAL_CACHE_ENABLED") {
-            Box::new(Self::storage_using_redis_and_local_cache(redis_url).await)
-        } else {
-            // Let's use the async impl. This could be configurable if needed.
-            Box::new(Self::storage_using_async_redis(redis_url).await)
-        };
+        let counters: Box<dyn AsyncCounterStorage> =
+            if Self::env_option_is_enabled("REDIS_LOCAL_CACHE_ENABLED") {
+                Box::new(Self::storage_using_redis_and_local_cache(redis_url).await)
+            } else {
+                // Let's use the async impl. This could be configurable if needed.
+                Box::new(Self::storage_using_async_redis(redis_url).await)
+            };
         AsyncStorage::with_counter_storage(counters)
     }
 
@@ -166,7 +167,8 @@ impl Limiter {
             Err(_) => builder.build().await,
         };
 
-        let mut rate_limiter_builder = AsyncRateLimiterBuilder::new(AsyncStorage::with_counter_storage(Box::new(storage)));
+        let mut rate_limiter_builder =
+            AsyncRateLimiterBuilder::new(AsyncStorage::with_counter_storage(Box::new(storage)));
 
         if Self::env_option_is_enabled(LIMIT_NAME_IN_PROMETHEUS_LABELS_ENV) {
             rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
