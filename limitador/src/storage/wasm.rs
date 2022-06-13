@@ -1,6 +1,6 @@
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
-use crate::storage::{Authorization, Storage, StorageErr};
+use crate::storage::{Authorization, CounterStorage, StorageErr};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::sync::RwLock;
@@ -79,67 +79,7 @@ pub struct WasmStorage {
     pub clock: Box<dyn Clock>,
 }
 
-impl Storage for WasmStorage {
-    fn get_namespaces(&self) -> Result<HashSet<Namespace>, StorageErr> {
-        Ok(self
-            .limits_for_namespace
-            .read()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect())
-    }
-
-    fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
-        let namespace = limit.namespace();
-
-        let mut limits_for_namespace = self.limits_for_namespace.write().unwrap();
-
-        match limits_for_namespace.get_mut(namespace) {
-            Some(limits) => {
-                limits.insert(limit.clone(), HashSet::new());
-            }
-            None => {
-                let mut limits = HashMap::new();
-                limits.insert(limit.clone(), HashSet::new());
-                limits_for_namespace.insert(namespace.clone(), limits);
-            }
-        }
-
-        Ok(())
-    }
-
-    fn get_limits(&self, namespace: &Namespace) -> Result<HashSet<Limit>, StorageErr> {
-        let limits = match self.limits_for_namespace.read().unwrap().get(namespace) {
-            Some(limits) => limits.keys().cloned().collect(),
-            None => HashSet::new(),
-        };
-
-        Ok(limits)
-    }
-
-    fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
-        self.delete_counters_of_limit(limit);
-
-        let mut limits_for_namespace = self.limits_for_namespace.write().unwrap();
-
-        if let Some(counters_by_limit) = limits_for_namespace.get_mut(limit.namespace()) {
-            counters_by_limit.remove(limit);
-
-            if counters_by_limit.is_empty() {
-                limits_for_namespace.remove(limit.namespace());
-            }
-        }
-
-        Ok(())
-    }
-
-    fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr> {
-        self.delete_counters_in_namespace(namespace);
-        self.limits_for_namespace.write().unwrap().remove(namespace);
-        Ok(())
-    }
-
+impl CounterStorage for WasmStorage {
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
         let stored_counters = self.counters.read().unwrap();
         Ok(self.counter_is_within_limits(counter, stored_counters.get(counter), delta))
@@ -172,7 +112,7 @@ impl Storage for WasmStorage {
         Ok(Authorization::Ok)
     }
 
-    fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
+    fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
         // TODO: optimize to avoid iterating over all of them.
 
         let counters_with_vals: Vec<Counter> = self
@@ -181,7 +121,7 @@ impl Storage for WasmStorage {
             .unwrap()
             .get_all(self.clock.get_current_time())
             .iter()
-            .filter(|(counter, _, _)| counter.namespace() == namespace)
+            .filter(|(counter, _, _)| limits.contains(counter.limit()))
             .map(|(counter, value, expires_at)| {
                 let mut counter_with_val =
                     Counter::new(counter.limit().clone(), counter.set_variables().clone());
@@ -199,6 +139,14 @@ impl Storage for WasmStorage {
             .collect();
 
         Ok(counters_with_vals.iter().cloned().collect())
+    }
+
+    fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr> {
+        for limit in limits {
+            self.delete_counters_of_limit(&limit);
+        }
+
+        Ok(())
     }
 
     fn clear(&self) -> Result<(), StorageErr> {
@@ -222,15 +170,6 @@ impl WasmStorage {
             .write()
             .unwrap()
             .insert(counter, value, expires_at);
-    }
-
-    fn delete_counters_in_namespace(&self, namespace: &Namespace) {
-        if let Some(counters_by_limit) = self.limits_for_namespace.read().unwrap().get(namespace) {
-            let mut counters = self.counters.write().unwrap();
-            for counter in counters_by_limit.values().flatten() {
-                counters.remove(counter);
-            }
-        }
     }
 
     fn delete_counters_of_limit(&self, limit: &Limit) {

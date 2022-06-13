@@ -58,18 +58,12 @@ async fn get_limits(
     namespace: web::Path<String>,
 ) -> Result<web::Json<Vec<Limit>>, ErrorResponse> {
     let namespace = &namespace.into_inner().into();
-    let get_limits_result = match data.get_ref().as_ref() {
+    let limits = match data.get_ref().as_ref() {
         Limiter::Blocking(limiter) => limiter.get_limits(namespace),
-        Limiter::Async(limiter) => limiter.get_limits(namespace).await,
+        Limiter::Async(limiter) => limiter.get_limits(namespace),
     };
-
-    match get_limits_result {
-        Ok(limits) => {
-            let resp_limits: Vec<Limit> = limits.iter().map(|l| l.into()).collect();
-            Ok(Json(resp_limits))
-        }
-        Err(_) => Err(ErrorResponse::InternalServerError),
-    }
+    let resp_limits: Vec<Limit> = limits.iter().map(|l| l.into()).collect();
+    Ok(Json(resp_limits))
 }
 
 #[api_v2_operation]
@@ -384,8 +378,8 @@ mod tests {
         );
 
         match &limiter {
-            Limiter::Blocking(limiter) => limiter.add_limit(&limit).unwrap(),
-            Limiter::Async(limiter) => limiter.add_limit(&limit).await.unwrap(),
+            Limiter::Blocking(limiter) => limiter.add_limit(limit.clone()),
+            Limiter::Async(limiter) => limiter.add_limit(limit.clone()),
         }
         limit
     }

@@ -75,7 +75,7 @@
 //! let mut rate_limiter = RateLimiter::default();
 //!
 //! // Add a limit
-//! rate_limiter.add_limit(&limit);
+//! rate_limiter.add_limit(limit.clone());
 //!
 //! // Delete the limit
 //! rate_limiter.delete_limit(&limit);
@@ -104,7 +104,7 @@
 //!      vec!["req.method == GET"],
 //!      vec!["user_id"],
 //! );
-//! rate_limiter.add_limit(&limit);
+//! rate_limiter.add_limit(limit);
 //!
 //! // We've defined a limit of 2. So we can report 2 times before being
 //! // rate-limited
@@ -197,7 +197,7 @@ use crate::errors::LimitadorError;
 use crate::limit::{Limit, Namespace};
 use crate::prometheus_metrics::PrometheusMetrics;
 use crate::storage::in_memory::InMemoryStorage;
-use crate::storage::{AsyncStorage, Authorization, Storage};
+use crate::storage::{AsyncCounterStorage, AsyncStorage, Authorization, CounterStorage, Storage};
 
 #[macro_use]
 extern crate lazy_static;
@@ -209,29 +209,29 @@ mod prometheus_metrics;
 pub mod storage;
 
 pub struct RateLimiter {
-    storage: Box<dyn Storage>,
+    storage: Storage,
     prometheus_metrics: PrometheusMetrics,
 }
 
 pub struct AsyncRateLimiter {
-    storage: Box<dyn AsyncStorage>,
+    storage: AsyncStorage,
     prometheus_metrics: PrometheusMetrics,
 }
 
 pub struct RateLimiterBuilder {
-    storage: Box<dyn Storage>,
+    storage: Storage,
     prometheus_limit_name_labels_enabled: bool,
 }
 
 impl RateLimiterBuilder {
     pub fn new() -> Self {
         Self {
-            storage: Box::new(InMemoryStorage::default()),
+            storage: Storage::new(),
             prometheus_limit_name_labels_enabled: false,
         }
     }
 
-    pub fn storage(mut self, storage: Box<dyn Storage>) -> Self {
+    pub fn storage(mut self, storage: Storage) -> Self {
         self.storage = storage;
         self
     }
@@ -262,12 +262,12 @@ impl Default for RateLimiterBuilder {
 }
 
 pub struct AsyncRateLimiterBuilder {
-    storage: Box<dyn AsyncStorage>,
+    storage: AsyncStorage,
     prometheus_limit_name_labels_enabled: bool,
 }
 
 impl AsyncRateLimiterBuilder {
-    pub fn new(storage: Box<dyn AsyncStorage>) -> Self {
+    pub fn new(storage: AsyncStorage) -> Self {
         Self {
             storage,
             prometheus_limit_name_labels_enabled: false,
@@ -296,38 +296,38 @@ impl AsyncRateLimiterBuilder {
 impl RateLimiter {
     pub fn new() -> Self {
         Self {
-            storage: Box::new(InMemoryStorage::default()),
+            storage: Storage::new(),
             prometheus_metrics: PrometheusMetrics::new(),
         }
     }
 
-    pub fn new_with_storage(storage: Box<dyn Storage>) -> Self {
+    pub fn new_with_storage(counters: Box<dyn CounterStorage>) -> Self {
         Self {
-            storage,
+            storage: Storage::with_counter_storage(counters),
             prometheus_metrics: PrometheusMetrics::new(),
         }
     }
 
-    pub fn get_namespaces(&self) -> Result<HashSet<Namespace>, LimitadorError> {
-        self.storage.get_namespaces().map_err(|err| err.into())
+    pub fn get_namespaces(&self) -> HashSet<Namespace> {
+        self.storage.get_namespaces()
     }
 
-    pub fn add_limit(&self, limit: &Limit) -> Result<(), LimitadorError> {
-        self.storage.add_limit(limit).map_err(|err| err.into())
+    pub fn add_limit(&self, limit: Limit) {
+        self.storage.add_limit(limit)
     }
 
     pub fn delete_limit(&self, limit: &Limit) -> Result<(), LimitadorError> {
-        self.storage.delete_limit(limit).map_err(|err| err.into())
+        self.storage.delete_limit(limit)?;
+        Ok(())
     }
 
-    pub fn get_limits(&self, namespace: &Namespace) -> Result<HashSet<Limit>, LimitadorError> {
-        self.storage.get_limits(namespace).map_err(|err| err.into())
+    pub fn get_limits(&self, namespace: &Namespace) -> HashSet<Limit> {
+        self.storage.get_limits(namespace)
     }
 
     pub fn delete_limits(&self, namespace: &Namespace) -> Result<(), LimitadorError> {
-        self.storage
-            .delete_limits(namespace)
-            .map_err(|err| err.into())
+        self.storage.delete_limits(namespace)?;
+        Ok(())
     }
 
     pub fn is_rate_limited(
@@ -418,10 +418,10 @@ impl RateLimiter {
             limits_to_keep_or_create.keys().cloned().collect();
 
         for namespace in self
-            .get_namespaces()?
+            .get_namespaces()
             .union(&namespaces_limits_to_keep_or_create)
         {
-            let limits_in_namespace = self.get_limits(namespace)?;
+            let limits_in_namespace = self.get_limits(namespace);
             let limits_to_keep_in_ns: HashSet<Limit> = limits_to_keep_or_create
                 .get(namespace)
                 .cloned()
@@ -432,7 +432,7 @@ impl RateLimiter {
             }
 
             for limit in limits_to_keep_in_ns.difference(&limits_in_namespace) {
-                self.add_limit(limit)?;
+                self.add_limit(limit.clone());
             }
         }
 
@@ -448,7 +448,7 @@ impl RateLimiter {
         namespace: &Namespace,
         values: &HashMap<String, String>,
     ) -> Result<Vec<Counter>, LimitadorError> {
-        let limits = self.get_limits(namespace)?;
+        let limits = self.get_limits(namespace);
 
         let counters = limits
             .iter()
@@ -472,49 +472,33 @@ impl Default for RateLimiter {
 // to remove this duplication.
 
 impl AsyncRateLimiter {
-    pub fn new_with_storage(storage: Box<dyn AsyncStorage>) -> Self {
+    pub fn new_with_storage(storage: Box<dyn AsyncCounterStorage>) -> Self {
         Self {
-            storage,
+            storage: AsyncStorage::with_counter_storage(storage),
             prometheus_metrics: PrometheusMetrics::new(),
         }
     }
 
-    pub async fn get_namespaces(&self) -> Result<HashSet<Namespace>, LimitadorError> {
-        self.storage
-            .get_namespaces()
-            .await
-            .map_err(|err| err.into())
+    pub fn get_namespaces(&self) -> HashSet<Namespace> {
+        self.storage.get_namespaces()
     }
 
-    pub async fn add_limit(&self, limit: &Limit) -> Result<(), LimitadorError> {
-        self.storage
-            .add_limit(limit)
-            .await
-            .map_err(|err| err.into())
+    pub fn add_limit(&self, limit: Limit) {
+        self.storage.add_limit(limit)
     }
 
     pub async fn delete_limit(&self, limit: &Limit) -> Result<(), LimitadorError> {
-        self.storage
-            .delete_limit(limit)
-            .await
-            .map_err(|err| err.into())
+        self.storage.delete_limit(limit).await?;
+        Ok(())
     }
 
-    pub async fn get_limits(
-        &self,
-        namespace: &Namespace,
-    ) -> Result<HashSet<Limit>, LimitadorError> {
-        self.storage
-            .get_limits(namespace)
-            .await
-            .map_err(|err| err.into())
+    pub fn get_limits(&self, namespace: &Namespace) -> HashSet<Limit> {
+        self.storage.get_limits(namespace)
     }
 
     pub async fn delete_limits(&self, namespace: &Namespace) -> Result<(), LimitadorError> {
-        self.storage
-            .delete_limits(namespace)
-            .await
-            .map_err(|err| err.into())
+        self.storage.delete_limits(namespace).await?;
+        Ok(())
     }
 
     pub async fn is_rate_limited(
@@ -613,10 +597,9 @@ impl AsyncRateLimiter {
 
         for namespace in self
             .get_namespaces()
-            .await?
             .union(&namespaces_limits_to_keep_or_create)
         {
-            let limits_in_namespace = self.get_limits(namespace).await?;
+            let limits_in_namespace = self.get_limits(namespace);
             let limits_to_keep_in_ns: HashSet<Limit> = limits_to_keep_or_create
                 .get(namespace)
                 .cloned()
@@ -627,7 +610,7 @@ impl AsyncRateLimiter {
             }
 
             for limit in limits_to_keep_in_ns.difference(&limits_in_namespace) {
-                self.add_limit(limit).await?;
+                self.add_limit(limit.clone());
             }
         }
 
@@ -643,7 +626,7 @@ impl AsyncRateLimiter {
         namespace: &Namespace,
         values: &HashMap<String, String>,
     ) -> Result<Vec<Counter>, LimitadorError> {
-        let limits = self.get_limits(namespace).await?;
+        let limits = self.get_limits(namespace);
 
         let counters = limits
             .iter()

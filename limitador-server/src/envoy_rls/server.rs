@@ -145,7 +145,7 @@ mod tests {
         let limit = Limit::new(namespace, 1, 60, vec!["req.method == GET"], vec!["app_id"]);
 
         let limiter = RateLimiter::default();
-        limiter.add_limit(&limit).unwrap();
+        limiter.add_limit(limit);
 
         let rate_limiter = MyRateLimiter::new(Arc::new(Limiter::Blocking(limiter)));
 
@@ -258,8 +258,8 @@ mod tests {
             Limit::new(namespace, 10, 60, vec!["x == 1"], vec!["z"]),
             Limit::new(namespace, 0, 60, vec!["x == 1", "y == 2"], vec!["z"]),
         ]
-        .iter()
-        .for_each(|limit| limiter.add_limit(limit).unwrap());
+        .into_iter()
+        .for_each(|limit| limiter.add_limit(limit));
 
         let rate_limiter = MyRateLimiter::new(Arc::new(Limiter::Blocking(limiter)));
 
@@ -309,7 +309,7 @@ mod tests {
         let limit = Limit::new(namespace, 10, 60, vec!["x == 1"], vec!["y"]);
 
         let limiter = RateLimiter::default();
-        limiter.add_limit(&limit).unwrap();
+        limiter.add_limit(limit);
 
         let rate_limiter = MyRateLimiter::new(Arc::new(Limiter::Blocking(limiter)));
 
@@ -363,7 +363,7 @@ mod tests {
         let limit = Limit::new(namespace, 1, 60, vec!["x == 1"], vec!["y"]);
 
         let limiter = RateLimiter::default();
-        limiter.add_limit(&limit).unwrap();
+        limiter.add_limit(limit);
 
         let rate_limiter = MyRateLimiter::new(Arc::new(Limiter::Blocking(limiter)));
 

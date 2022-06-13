@@ -1,10 +1,10 @@
 use crate::counter::Counter;
-use crate::limit::{Limit, Namespace};
+use crate::limit::Limit;
 use crate::storage::infinispan::counters::{Consistency, CounterOpts};
 use crate::storage::infinispan::response::response_to_string;
 use crate::storage::infinispan::{counters, sets};
 use crate::storage::keys::*;
-use crate::storage::{AsyncStorage, Authorization, StorageErr};
+use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
 use infinispan::errors::InfinispanError;
 use infinispan::request;
@@ -29,98 +29,7 @@ pub struct InfinispanStorageBuilder {
 }
 
 #[async_trait]
-impl AsyncStorage for InfinispanStorage {
-    async fn get_namespaces(&self) -> Result<HashSet<Namespace>, StorageErr> {
-        Ok(self
-            .get_set(key_for_namespaces_set())
-            .await?
-            .iter()
-            .map(|ns| ns.as_str().into())
-            .collect())
-    }
-
-    async fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
-        let serialized_limit = serde_json::to_string(limit).unwrap();
-
-        self.add_to_set(
-            key_for_limits_of_namespace(limit.namespace()),
-            serialized_limit,
-        )
-        .await?;
-
-        self.add_to_set(
-            key_for_namespaces_set(),
-            String::from(limit.namespace().clone().as_ref()),
-        )
-        .await?;
-
-        Ok(())
-    }
-
-    async fn get_limits(&self, namespace: &Namespace) -> Result<HashSet<Limit>, StorageErr> {
-        Ok(self
-            .get_set(&key_for_limits_of_namespace(namespace))
-            .await?
-            .iter()
-            .map(|limit_json| serde_json::from_str(limit_json).unwrap())
-            .collect())
-    }
-
-    async fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
-        self.delete_counters_associated_with_limit(limit).await?;
-
-        let _ = self
-            .infinispan
-            .run(&request::entries::delete(
-                &self.cache_name,
-                key_for_counters_of_limit(limit),
-            ))
-            .await?;
-
-        let serialized_limit = serde_json::to_string(limit).unwrap();
-
-        let limits_in_namespace = self
-            .delete_from_set(
-                key_for_limits_of_namespace(limit.namespace()),
-                serialized_limit,
-            )
-            .await?;
-
-        if limits_in_namespace.is_empty() {
-            self.delete_from_set(
-                key_for_namespaces_set(),
-                String::from(limit.namespace().clone().as_ref()),
-            )
-            .await?;
-        }
-
-        Ok(())
-    }
-
-    async fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr> {
-        self.delete_counters_of_namespace(namespace).await?;
-
-        for limit in self.get_limits(namespace).await? {
-            let _ = self
-                .infinispan
-                .run(&request::entries::delete(
-                    &self.cache_name,
-                    key_for_counters_of_limit(&limit),
-                ))
-                .await?;
-        }
-
-        let _ = self
-            .infinispan
-            .run(&request::entries::delete(
-                &self.cache_name,
-                key_for_limits_of_namespace(namespace),
-            ))
-            .await?;
-
-        Ok(())
-    }
-
+impl AsyncCounterStorage for InfinispanStorage {
     async fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
         let counter_key = key_for_counter(counter);
         let counter_val =
@@ -175,10 +84,10 @@ impl AsyncStorage for InfinispanStorage {
         Ok(Authorization::Ok)
     }
 
-    async fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
+    async fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
 
-        for limit in self.get_limits(namespace).await? {
+        for limit in limits {
             for counter_key in self.counter_keys_of_limit(&limit).await? {
                 let counter_val =
                     counters::get_value(&self.infinispan, &self.cache_name, &counter_key).await?;
@@ -201,6 +110,13 @@ impl AsyncStorage for InfinispanStorage {
         }
 
         Ok(res)
+    }
+
+    async fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr> {
+        for limit in limits {
+            self.delete_counters_associated_with_limit(&limit).await?;
+        }
+        Ok(())
     }
 
     async fn clear(&self) -> Result<(), StorageErr> {
@@ -248,14 +164,6 @@ impl InfinispanStorage {
         }
     }
 
-    async fn delete_counters_of_namespace(&self, namespace: &Namespace) -> Result<(), StorageErr> {
-        for limit in self.get_limits(namespace).await? {
-            self.delete_counters_associated_with_limit(&limit).await?
-        }
-
-        Ok(())
-    }
-
     async fn delete_counters_associated_with_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
         for counter_key in self.counter_keys_of_limit(limit).await? {
             counters::delete(&self.infinispan, &self.cache_name, &counter_key).await?
@@ -297,14 +205,6 @@ impl InfinispanStorage {
         element: impl Into<String>,
     ) -> Result<(), StorageErr> {
         sets::add(&self.infinispan, &self.cache_name, set_key, element).await
-    }
-
-    async fn delete_from_set(
-        &self,
-        set_key: impl Into<String>,
-        element: impl Into<String>,
-    ) -> Result<HashSet<String>, StorageErr> {
-        sets::delete(&self.infinispan, &self.cache_name, set_key, element).await
     }
 }
 

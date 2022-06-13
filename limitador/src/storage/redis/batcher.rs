@@ -1,6 +1,6 @@
 use crate::counter::Counter;
 use crate::storage::redis::AsyncRedisStorage;
-use crate::storage::AsyncStorage;
+use crate::storage::AsyncCounterStorage;
 use std::collections::HashMap;
 use tokio::sync::Mutex;
 

@@ -19,17 +19,6 @@ pub const SCRIPT_UPDATE_COUNTER: &str = "
         redis.call('sadd', KEYS[2], KEYS[1])
     end";
 
-// KEYS[1]: key with limits of namespace
-// KEYS[2]: key with set of all namespaces
-// ARGV[1]: limit
-// ARGV[2]: namespace of the limit
-pub const SCRIPT_DELETE_LIMIT: &str = "
-    redis.call('srem', KEYS[1], ARGV[1])
-    if redis.call('scard', KEYS[1]) == 0 then
-        redis.call('srem', KEYS[2], ARGV[2])
-    end
-";
-
 // KEYS: the function returns the value and TTL (in ms) for these keys
 // The first position of the list returned contains the value of KEYS[1], the
 // second position contains its TTL. The third position contains the value of

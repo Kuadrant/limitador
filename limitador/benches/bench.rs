@@ -4,7 +4,7 @@ use rand::seq::SliceRandom;
 use limitador::limit::Limit;
 use limitador::storage::in_memory::InMemoryStorage;
 use limitador::storage::redis::RedisStorage;
-use limitador::storage::Storage;
+use limitador::storage::CounterStorage;
 use limitador::RateLimiter;
 use std::collections::HashMap;
 
@@ -120,7 +120,11 @@ fn bench_check_rate_limited_and_update_redis(c: &mut Criterion) {
     );
 }
 
-fn bench_is_rate_limited(b: &mut Bencher, test_scenario: &TestScenario, storage: Box<dyn Storage>) {
+fn bench_is_rate_limited(
+    b: &mut Bencher,
+    test_scenario: &TestScenario,
+    storage: Box<dyn CounterStorage>,
+) {
     storage.clear().unwrap();
 
     let (rate_limiter, call_params) = generate_test_data(&test_scenario, storage);
@@ -140,7 +144,11 @@ fn bench_is_rate_limited(b: &mut Bencher, test_scenario: &TestScenario, storage:
     })
 }
 
-fn bench_update_counters(b: &mut Bencher, test_scenario: &TestScenario, storage: Box<dyn Storage>) {
+fn bench_update_counters(
+    b: &mut Bencher,
+    test_scenario: &TestScenario,
+    storage: Box<dyn CounterStorage>,
+) {
     storage.clear().unwrap();
     let (rate_limiter, call_params) = generate_test_data(&test_scenario, storage);
 
@@ -162,7 +170,7 @@ fn bench_update_counters(b: &mut Bencher, test_scenario: &TestScenario, storage:
 fn bench_check_rate_limited_and_update(
     b: &mut Bencher,
     test_scenario: &TestScenario,
-    storage: Box<dyn Storage>,
+    storage: Box<dyn CounterStorage>,
 ) {
     storage.clear().unwrap();
     let (rate_limiter, call_params) = generate_test_data(&test_scenario, storage);
@@ -192,7 +200,7 @@ fn bench_check_rate_limited_and_update(
 // that as another variable in the future.
 fn generate_test_data(
     scenario: &TestScenario,
-    storage: Box<dyn Storage>,
+    storage: Box<dyn CounterStorage>,
 ) -> (RateLimiter, Vec<TestCallParams>) {
     let mut test_values: HashMap<String, String> = HashMap::new();
 
@@ -236,7 +244,7 @@ fn generate_test_data(
     let rate_limiter = RateLimiter::new_with_storage(storage);
 
     for limit in test_limits {
-        rate_limiter.add_limit(&limit).unwrap();
+        rate_limiter.add_limit(limit);
     }
 
     (rate_limiter, call_params)

@@ -78,8 +78,8 @@ mod test {
 
             use limitador::AsyncRateLimiter;
             use serial_test::serial;
-            use crate::test::limitador::storage::AsyncStorage;
-            use crate::test::limitador::storage::Storage;
+            use crate::test::limitador::storage::CounterStorage;
+            use crate::test::limitador::storage::AsyncCounterStorage;
         }
     }
 
@@ -161,20 +161,16 @@ mod test {
         ];
 
         for limit in limits {
-            rate_limiter.add_limit(&limit).await.unwrap();
+            rate_limiter.add_limit(&limit).await;
         }
 
         for &ns in ["first_namespace", "second_namespace"].iter() {
-            assert!(rate_limiter
-                .get_namespaces()
-                .await
-                .unwrap()
-                .contains(&ns.into()));
+            assert!(rate_limiter.get_namespaces().await.contains(&ns.into()));
         }
     }
 
     async fn get_namespaces_returns_empty_when_there_arent_any(rate_limiter: &mut TestsLimiter) {
-        assert!(rate_limiter.get_namespaces().await.unwrap().is_empty())
+        assert!(rate_limiter.get_namespaces().await.is_empty())
     }
 
     async fn get_namespaces_doesnt_return_the_ones_that_no_longer_have_limits(
@@ -197,19 +193,17 @@ mod test {
         );
 
         for limit in vec![&lim1, &lim2].iter() {
-            rate_limiter.add_limit(limit).await.unwrap();
+            rate_limiter.add_limit(limit).await;
         }
         rate_limiter.delete_limit(&lim2).await.unwrap();
 
         assert!(rate_limiter
             .get_namespaces()
             .await
-            .unwrap()
             .contains(&"first_namespace".into()));
         assert!(!rate_limiter
             .get_namespaces()
             .await
-            .unwrap()
             .contains(&"second_namespace".into()));
     }
 
@@ -222,13 +216,13 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(&limit).await.unwrap();
+        rate_limiter.add_limit(&limit).await;
 
         let mut expected_result = HashSet::new();
         expected_result.insert(limit);
 
         assert_eq!(
-            rate_limiter.get_limits("test_namespace").await.unwrap(),
+            rate_limiter.get_limits("test_namespace").await,
             expected_result
         )
     }
@@ -242,13 +236,13 @@ mod test {
             Vec::<String>::new(),
         );
 
-        rate_limiter.add_limit(&limit).await.unwrap();
+        rate_limiter.add_limit(&limit).await;
 
         let mut expected_result = HashSet::new();
         expected_result.insert(limit);
 
         assert_eq!(
-            rate_limiter.get_limits("test_namespace").await.unwrap(),
+            rate_limiter.get_limits("test_namespace").await,
             expected_result
         )
     }
@@ -266,17 +260,14 @@ mod test {
 
         let limit_2 = Limit::new(namespace, 5, 60, vec!["req.method == GET"], vec!["app_id"]);
 
-        rate_limiter.add_limit(&limit_1).await.unwrap();
-        rate_limiter.add_limit(&limit_2).await.unwrap();
+        rate_limiter.add_limit(&limit_1).await;
+        rate_limiter.add_limit(&limit_2).await;
 
         let mut expected_result = HashSet::new();
         expected_result.insert(limit_1);
         expected_result.insert(limit_2);
 
-        assert_eq!(
-            rate_limiter.get_limits(namespace).await.unwrap(),
-            expected_result
-        )
+        assert_eq!(rate_limiter.get_limits(namespace).await, expected_result)
     }
 
     async fn delete_limit(rate_limiter: &mut TestsLimiter) {
@@ -288,22 +279,18 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(&limit).await.unwrap();
+        rate_limiter.add_limit(&limit).await;
 
         rate_limiter.delete_limit(&limit).await.unwrap();
 
-        assert!(rate_limiter
-            .get_limits("test_namespace")
-            .await
-            .unwrap()
-            .is_empty())
+        assert!(rate_limiter.get_limits("test_namespace").await.is_empty())
     }
 
     async fn delete_limit_also_deletes_associated_counters(rate_limiter: &mut TestsLimiter) {
         let namespace = "test_namespace";
         let limit = Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
 
-        rate_limiter.add_limit(&limit).await.unwrap();
+        rate_limiter.add_limit(&limit).await;
 
         let mut values = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());
@@ -323,11 +310,7 @@ mod test {
     }
 
     async fn get_limits_returns_empty_if_no_limits_in_namespace(rate_limiter: &mut TestsLimiter) {
-        assert!(rate_limiter
-            .get_limits("test_namespace")
-            .await
-            .unwrap()
-            .is_empty())
+        assert!(rate_limiter.get_limits("test_namespace").await.is_empty())
     }
 
     async fn delete_limits_of_a_namespace(rate_limiter: &mut TestsLimiter) {
@@ -345,12 +328,12 @@ mod test {
         ];
 
         for limit in limits.iter() {
-            rate_limiter.add_limit(limit).await.unwrap()
+            rate_limiter.add_limit(limit).await
         }
 
         rate_limiter.delete_limits(namespace).await.unwrap();
 
-        assert!(rate_limiter.get_limits(namespace).await.unwrap().is_empty())
+        assert!(rate_limiter.get_limits(namespace).await.is_empty())
     }
 
     async fn delete_limits_does_not_delete_limits_from_other_namespaces(
@@ -361,28 +344,22 @@ mod test {
 
         rate_limiter
             .add_limit(&Limit::new(namespace1, 10, 60, vec!["x == 10"], vec!["z"]))
-            .await
-            .unwrap();
+            .await;
         rate_limiter
             .add_limit(&Limit::new(namespace2, 5, 60, vec!["x == 10"], vec!["z"]))
-            .await
-            .unwrap();
+            .await;
 
         rate_limiter.delete_limits(namespace1).await.unwrap();
 
-        assert!(rate_limiter
-            .get_limits(namespace1)
-            .await
-            .unwrap()
-            .is_empty());
-        assert_eq!(rate_limiter.get_limits(namespace2).await.unwrap().len(), 1);
+        assert!(rate_limiter.get_limits(namespace1).await.is_empty());
+        assert_eq!(rate_limiter.get_limits(namespace2).await.len(), 1);
     }
 
     async fn delete_limits_of_a_namespace_also_deletes_counters(rate_limiter: &mut TestsLimiter) {
         let namespace = "test_namespace";
         let limit = Limit::new(namespace, 5, 60, vec!["req.method == GET"], vec!["app_id"]);
 
-        rate_limiter.add_limit(&limit).await.unwrap();
+        rate_limiter.add_limit(&limit).await;
 
         let mut values = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());
@@ -416,7 +393,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(&limit).await.unwrap();
+        rate_limiter.add_limit(&limit).await;
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());
@@ -442,7 +419,7 @@ mod test {
         let namespace = "test_namespace";
         let limit = Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
 
-        rate_limiter.add_limit(&limit).await.unwrap();
+        rate_limiter.add_limit(&limit).await;
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());
@@ -477,7 +454,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(&limit).await.unwrap();
+        rate_limiter.add_limit(&limit).await;
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());
@@ -500,7 +477,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(&limit).await.unwrap();
+        rate_limiter.add_limit(&limit).await;
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());
@@ -551,7 +528,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(&limit).await.unwrap();
+        rate_limiter.add_limit(&limit).await;
 
         // Notice that does not match because the method is "POST".
         let mut values: HashMap<String, String> = HashMap::new();
@@ -575,7 +552,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(&limit).await.unwrap();
+        rate_limiter.add_limit(&limit).await;
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("app_id".to_string(), "test_app_id".to_string());
@@ -598,7 +575,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(&limit).await.unwrap();
+        rate_limiter.add_limit(&limit).await;
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());
@@ -624,7 +601,7 @@ mod test {
 
         let limit = Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
 
-        rate_limiter.add_limit(&limit).await.unwrap();
+        rate_limiter.add_limit(&limit).await;
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("app_id".to_string(), "test_app_id".to_string());
@@ -650,7 +627,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(&limit).await.unwrap();
+        rate_limiter.add_limit(&limit).await;
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("app_id".to_string(), "test_app_id".to_string());
@@ -675,7 +652,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(&limit).await.unwrap();
+        rate_limiter.add_limit(&limit).await;
 
         let mut values = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());
@@ -690,6 +667,8 @@ mod test {
             .update_counters(namespace, &values, hits_app_2)
             .await
             .unwrap();
+
+        assert_eq!(rate_limiter.get_limits(namespace).await.len(), 1);
 
         let counters = rate_limiter.get_counters(namespace).await.unwrap();
 
@@ -730,7 +709,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(&limit).await.unwrap();
+        rate_limiter.add_limit(&limit).await;
 
         assert!(rate_limiter
             .get_counters("test_namespace")
@@ -751,7 +730,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(&limit).await.unwrap();
+        rate_limiter.add_limit(&limit).await;
 
         let mut values = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());
@@ -796,13 +775,11 @@ mod test {
         assert!(rate_limiter
             .get_limits("first_namespace")
             .await
-            .unwrap()
             .contains(&first_limit));
 
         assert!(rate_limiter
             .get_limits("second_namespace")
             .await
-            .unwrap()
             .contains(&second_limit));
     }
 
@@ -821,7 +798,7 @@ mod test {
             vec!["app_id"],
         );
 
-        rate_limiter.add_limit(&limit).await.unwrap();
+        rate_limiter.add_limit(&limit).await;
 
         let mut values = HashMap::new();
         values.insert("req.method".to_string(), "GET".to_string());
@@ -836,11 +813,7 @@ mod test {
             .await
             .unwrap();
 
-        assert!(rate_limiter
-            .get_limits(namespace)
-            .await
-            .unwrap()
-            .contains(&limit));
+        assert!(rate_limiter.get_limits(namespace).await.contains(&limit));
 
         let counters: Vec<Counter> = rate_limiter
             .get_counters(namespace)
@@ -863,7 +836,7 @@ mod test {
             Limit::new(namespace, 20, 60, vec!["req.method == GET"], vec!["app_id"]);
 
         for limit in [&limit_to_be_kept, &limit_to_be_deleted].iter() {
-            rate_limiter.add_limit(limit).await.unwrap();
+            rate_limiter.add_limit(limit).await;
         }
 
         rate_limiter
@@ -871,7 +844,7 @@ mod test {
             .await
             .unwrap();
 
-        let limits = rate_limiter.get_limits(namespace).await.unwrap();
+        let limits = rate_limiter.get_limits(namespace).await;
 
         assert!(limits.contains(&limit_to_be_kept));
         assert!(!limits.contains(&limit_to_be_deleted));
