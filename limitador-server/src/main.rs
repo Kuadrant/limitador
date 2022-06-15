@@ -10,11 +10,15 @@ use limitador::storage::infinispan::{Consistency, InfinispanStorageBuilder};
 use limitador::storage::redis::{AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder};
 use limitador::storage::{AsyncCounterStorage, AsyncStorage};
 use limitador::{AsyncRateLimiter, AsyncRateLimiterBuilder, RateLimiter, RateLimiterBuilder};
+use notify::event::{DataChange, ModifyKind};
+use notify::{Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::convert::TryInto;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{env, process};
 use thiserror::Error;
+use tokio::runtime::Handle;
 use url::Url;
 
 mod envoy_rls;
@@ -55,8 +59,6 @@ impl Limiter {
             StorageType::Infinispan { url } => Self::infinispan_limiter(&url).await,
             StorageType::InMemory => Self::in_memory_limiter(),
         };
-
-        rate_limiter.load_limits_from_file().await;
 
         Ok(rate_limiter)
     }
@@ -194,15 +196,13 @@ impl Limiter {
         }
     }
 
-    async fn load_limits_from_file(&self) {
-        if let Ok(limits_file_path) = env::var(LIMITS_FILE_ENV) {
-            let f = std::fs::File::open(limits_file_path).unwrap();
-            let limits: Vec<Limit> = serde_yaml::from_reader(f).unwrap();
+    pub async fn load_limits_from_file<P: AsRef<Path>>(&self, path: &P) {
+        let f = std::fs::File::open(path).unwrap();
+        let limits: Vec<Limit> = serde_yaml::from_reader(f).unwrap();
 
-            match &self {
-                Self::Blocking(limiter) => limiter.configure_with(limits).unwrap(),
-                Self::Async(limiter) => limiter.configure_with(limits).await.unwrap(),
-            }
+        match &self {
+            Self::Blocking(limiter) => limiter.configure_with(limits).unwrap(),
+            Self::Async(limiter) => limiter.configure_with(limits).await.unwrap(),
         }
     }
 }
@@ -217,6 +217,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("Error: {}", e);
             process::exit(1)
         }
+    };
+
+    let _watcher = if let Ok(limits_file_path) = env::var(LIMITS_FILE_ENV) {
+        rate_limiter.load_limits_from_file(&limits_file_path).await;
+
+        let limiter = Arc::clone(&rate_limiter);
+        let handle = Handle::current();
+
+        let mut watcher =
+            RecommendedWatcher::new(move |result: Result<Event, Error>| match result {
+                Ok(ref event) => {
+                    if let EventKind::Modify(ModifyKind::Data(DataChange::Content)) = event.kind {
+                        let limiter = limiter.clone();
+                        let location = event.paths.first().unwrap().clone();
+                        handle.spawn(async move {
+                            limiter.load_limits_from_file(&location).await;
+                        });
+                    }
+                }
+                Err(ref e) => {
+                    warn!(
+                        "Something went wrong while watching configuration file: {}",
+                        e
+                    );
+                }
+            })?;
+
+        watcher.watch(Path::new(&limits_file_path), RecursiveMode::Recursive)?;
+        Some(watcher)
+    } else {
+        None
     };
 
     let envoy_rls_host = env::var("ENVOY_RLS_HOST").unwrap_or_else(|_| String::from(DEFAULT_HOST));

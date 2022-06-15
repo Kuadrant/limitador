@@ -29,6 +29,7 @@ actix-web = "4.0.0-rc.3"
 actix-rt = "2"
 paperclip = { git = "https://github.com/sfisol/paperclip", rev = "6359742625d599c76f27492e497776df795bdcaa", features = ["actix"] }
 serde = { version = "1", features = ["derive"] }
+notify = "5.0.0-pre.15"
 
 [build-dependencies]
 tonic-build = "0.6"
