@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Bencher, BenchmarkId, Criterion};
 use rand::seq::SliceRandom;
 
 use limitador::limit::Limit;
@@ -7,16 +7,9 @@ use limitador::storage::redis::RedisStorage;
 use limitador::storage::CounterStorage;
 use limitador::RateLimiter;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 
-criterion_group!(
-    benches,
-    bench_is_rate_limited_in_mem,
-    bench_is_rate_limited_redis,
-    bench_update_counters_in_mem,
-    bench_update_counters_redis,
-    bench_check_rate_limited_and_update_in_mem,
-    bench_check_rate_limited_and_update_redis,
-);
+criterion_group!(benches, bench_in_mem, bench_redis,);
 criterion_main!(benches);
 
 #[derive(Debug, Clone)]
@@ -54,70 +47,76 @@ struct TestCallParams {
     delta: i64,
 }
 
-fn bench_is_rate_limited_in_mem(c: &mut Criterion) {
-    c.bench_function_over_inputs(
-        &format!("is_rate_limited (in mem)"),
-        |b: &mut Bencher, test_scenario: &&TestScenario| {
-            let storage = Box::new(InMemoryStorage::default());
-            bench_is_rate_limited(b, test_scenario, storage);
-        },
-        TEST_SCENARIOS.to_vec(),
-    );
+impl Display for TestScenario {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} namespaces with {} limits each with {} conditions and {} variables",
+            self.n_namespaces, self.n_limits_per_ns, self.n_conds_per_limit, self.n_vars_per_limit
+        )
+    }
 }
 
-fn bench_is_rate_limited_redis(c: &mut Criterion) {
-    c.bench_function_over_inputs(
-        &format!("is_rate_limited (redis)"),
-        |b: &mut Bencher, test_scenario: &&TestScenario| {
-            let storage = Box::new(RedisStorage::default());
-            bench_is_rate_limited(b, test_scenario, storage);
-        },
-        TEST_SCENARIOS.to_vec(),
-    );
+fn bench_in_mem(c: &mut Criterion) {
+    let mut group = c.benchmark_group("In memory");
+    for scenario in TEST_SCENARIOS {
+        group.bench_with_input(
+            BenchmarkId::new("is_rate_limited", scenario),
+            scenario,
+            |b: &mut Bencher, test_scenario: &&TestScenario| {
+                let storage = Box::new(InMemoryStorage::default());
+                bench_is_rate_limited(b, test_scenario, storage);
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("update_counters", scenario),
+            scenario,
+            |b: &mut Bencher, test_scenario: &&TestScenario| {
+                let storage = Box::new(InMemoryStorage::default());
+                bench_update_counters(b, test_scenario, storage);
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("check_rate_limited_and_update", scenario),
+            scenario,
+            |b: &mut Bencher, test_scenario: &&TestScenario| {
+                let storage = Box::new(InMemoryStorage::default());
+                bench_check_rate_limited_and_update(b, test_scenario, storage);
+            },
+        );
+    }
+    group.finish();
 }
 
-fn bench_update_counters_in_mem(c: &mut Criterion) {
-    c.bench_function_over_inputs(
-        &format!("update_counters (in mem)"),
-        |b: &mut Bencher, test_scenario: &&TestScenario| {
-            let storage = Box::new(InMemoryStorage::default());
-            bench_update_counters(b, test_scenario, storage);
-        },
-        TEST_SCENARIOS.to_vec(),
-    );
-}
-
-fn bench_update_counters_redis(c: &mut Criterion) {
-    c.bench_function_over_inputs(
-        &format!("update_counters (redis)"),
-        |b: &mut Bencher, test_scenario: &&TestScenario| {
-            let storage = Box::new(RedisStorage::default());
-            bench_update_counters(b, test_scenario, storage);
-        },
-        TEST_SCENARIOS.to_vec(),
-    );
-}
-
-fn bench_check_rate_limited_and_update_in_mem(c: &mut Criterion) {
-    c.bench_function_over_inputs(
-        &format!("check_rate_limited_and_update (in mem)"),
-        |b: &mut Bencher, test_scenario: &&TestScenario| {
-            let storage = Box::new(InMemoryStorage::default());
-            bench_check_rate_limited_and_update(b, test_scenario, storage);
-        },
-        TEST_SCENARIOS.to_vec(),
-    );
-}
-
-fn bench_check_rate_limited_and_update_redis(c: &mut Criterion) {
-    c.bench_function_over_inputs(
-        &format!("check_rate_limited_and_update (redis)"),
-        |b: &mut Bencher, test_scenario: &&TestScenario| {
-            let storage = Box::new(RedisStorage::default());
-            bench_check_rate_limited_and_update(b, test_scenario, storage);
-        },
-        TEST_SCENARIOS.to_vec(),
-    );
+fn bench_redis(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Redis");
+    for scenario in TEST_SCENARIOS {
+        group.bench_with_input(
+            BenchmarkId::new("is_rate_limited", scenario),
+            scenario,
+            |b: &mut Bencher, test_scenario: &&TestScenario| {
+                let storage = Box::new(RedisStorage::default());
+                bench_is_rate_limited(b, test_scenario, storage);
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("update_counters", scenario),
+            scenario,
+            |b: &mut Bencher, test_scenario: &&TestScenario| {
+                let storage = Box::new(RedisStorage::default());
+                bench_update_counters(b, test_scenario, storage);
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("check_rate_limited_and_update", scenario),
+            scenario,
+            |b: &mut Bencher, test_scenario: &&TestScenario| {
+                let storage = Box::new(RedisStorage::default());
+                bench_check_rate_limited_and_update(b, test_scenario, storage);
+            },
+        );
+    }
+    group.finish();
 }
 
 fn bench_is_rate_limited(
