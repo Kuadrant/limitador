@@ -2,12 +2,12 @@
 //!
 //! # Basic operation
 //!
-//! Limitador can store the limits in memory or in Redis. Storing them in memory
-//! is faster, but the limits cannot be shared between several instances of
+//! Limitador can store the counters in memory or in Redis. Storing them in memory
+//! is faster, but the counters cannot be shared between several instances of
 //! Limitador. Storing the limits in Redis is slower, but they can be shared
 //! between instances.
 //!
-//! By default, the rate limiter is configured to store the limits in memory:
+//! By default, the rate limiter is configured to store the counters in memory:
 //! ```
 //! use limitador::RateLimiter;
 //! let rate_limiter = RateLimiter::default();
