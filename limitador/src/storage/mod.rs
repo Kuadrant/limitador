@@ -88,8 +88,7 @@ impl Storage {
 
     pub fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr> {
         if let Some(data) = self.limits.write().unwrap().remove(namespace) {
-            let limits = data.iter().cloned().collect();
-            self.counters.delete_counters(limits)?;
+            self.counters.delete_counters(data)?;
         }
         Ok(())
     }
@@ -111,8 +110,10 @@ impl Storage {
     }
 
     pub fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
-        let limits = self.get_limits(namespace);
-        self.counters.get_counters(limits)
+        match self.limits.read().unwrap().get(namespace) {
+            Some(limits) => self.counters.get_counters(limits),
+            None => Ok(HashSet::new()),
+        }
     }
 
     pub fn clear(&self) -> Result<(), StorageErr> {
@@ -231,7 +232,7 @@ pub trait CounterStorage: Sync + Send {
         counters: HashSet<Counter>,
         delta: i64,
     ) -> Result<Authorization, StorageErr>;
-    fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr>;
+    fn get_counters(&self, limits: &HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr>;
     fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr>;
     fn clear(&self) -> Result<(), StorageErr>;
 }

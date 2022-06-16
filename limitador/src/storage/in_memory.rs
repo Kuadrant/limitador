@@ -52,7 +52,7 @@ impl CounterStorage for InMemoryStorage {
         Ok(Authorization::Ok)
     }
 
-    fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
+    fn get_counters(&self, limits: &HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
 
         let namespaces: HashSet<&Namespace> = limits.iter().map(Limit::namespace).collect();

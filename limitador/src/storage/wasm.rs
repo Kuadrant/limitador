@@ -114,7 +114,7 @@ impl CounterStorage for WasmStorage {
         Ok(Authorization::Ok)
     }
 
-    fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
+    fn get_counters(&self, limits: &HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
         // TODO: optimize to avoid iterating over all of them.
 
         let counters_with_vals: Vec<Counter> = self
