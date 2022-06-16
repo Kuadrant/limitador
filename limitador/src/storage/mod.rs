@@ -1,7 +1,9 @@
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
+use crate::InMemoryStorage;
 use async_trait::async_trait;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::sync::RwLock;
 use thiserror::Error;
 
 pub mod in_memory;
@@ -21,12 +23,207 @@ pub enum Authorization<'c> {
     Limited(&'c Counter), // First counter found over the limits
 }
 
-pub trait Storage: Sync + Send {
-    fn get_namespaces(&self) -> Result<HashSet<Namespace>, StorageErr>;
-    fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr>;
-    fn get_limits(&self, namespace: &Namespace) -> Result<HashSet<Limit>, StorageErr>;
-    fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr>;
-    fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr>;
+pub struct Storage {
+    limits: RwLock<HashMap<Namespace, HashSet<Limit>>>,
+    counters: Box<dyn CounterStorage>,
+}
+
+pub struct AsyncStorage {
+    limits: RwLock<HashMap<Namespace, HashSet<Limit>>>,
+    counters: Box<dyn AsyncCounterStorage>,
+}
+
+impl Storage {
+    pub fn new() -> Self {
+        Self {
+            limits: RwLock::new(HashMap::new()),
+            counters: Box::new(InMemoryStorage::default()),
+        }
+    }
+
+    pub fn with_counter_storage(counters: Box<dyn CounterStorage>) -> Self {
+        Self {
+            limits: RwLock::new(HashMap::new()),
+            counters,
+        }
+    }
+
+    pub fn get_namespaces(&self) -> HashSet<Namespace> {
+        self.limits.read().unwrap().keys().cloned().collect()
+    }
+
+    pub fn add_limit(&self, limit: Limit) {
+        let namespace = limit.namespace().clone();
+        self.limits
+            .write()
+            .unwrap()
+            .entry(namespace)
+            .or_default()
+            .insert(limit);
+    }
+
+    pub fn get_limits(&self, namespace: &Namespace) -> HashSet<Limit> {
+        match self.limits.read().unwrap().get(namespace) {
+            Some(limits) => limits.iter().cloned().collect(),
+            None => HashSet::new(),
+        }
+    }
+
+    pub fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
+        let mut limits = HashSet::new();
+        limits.insert(limit.clone());
+        self.counters.delete_counters(limits)?;
+
+        let mut limits = self.limits.write().unwrap();
+
+        if let Some(limits_for_ns) = limits.get_mut(limit.namespace()) {
+            limits_for_ns.remove(limit);
+
+            if limits_for_ns.is_empty() {
+                limits.remove(limit.namespace());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr> {
+        if let Some(data) = self.limits.write().unwrap().remove(namespace) {
+            let limits = data.iter().cloned().collect();
+            self.counters.delete_counters(limits)?;
+        }
+        Ok(())
+    }
+
+    pub fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
+        self.counters.is_within_limits(counter, delta)
+    }
+
+    pub fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
+        self.counters.update_counter(counter, delta)
+    }
+
+    pub fn check_and_update<'c>(
+        &self,
+        counters: &HashSet<&'c Counter>,
+        delta: i64,
+    ) -> Result<Authorization<'c>, StorageErr> {
+        self.counters.check_and_update(counters, delta)
+    }
+
+    pub fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
+        let limits = self.get_limits(namespace);
+        self.counters.get_counters(limits)
+    }
+
+    pub fn clear(&self) -> Result<(), StorageErr> {
+        self.limits.write().unwrap().clear();
+        self.counters.clear()
+    }
+}
+
+impl Default for Storage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AsyncStorage {
+    pub fn with_counter_storage(counters: Box<dyn AsyncCounterStorage>) -> Self {
+        Self {
+            limits: RwLock::new(HashMap::new()),
+            counters,
+        }
+    }
+
+    pub fn get_namespaces(&self) -> HashSet<Namespace> {
+        self.limits.read().unwrap().keys().cloned().collect()
+    }
+
+    pub fn add_limit(&self, limit: Limit) {
+        let namespace = limit.namespace().clone();
+
+        let mut limits_for_namespace = self.limits.write().unwrap();
+
+        match limits_for_namespace.get_mut(&namespace) {
+            Some(limits) => {
+                limits.insert(limit);
+            }
+            None => {
+                let mut limits = HashSet::new();
+                limits.insert(limit);
+                limits_for_namespace.insert(namespace, limits);
+            }
+        }
+    }
+
+    pub fn get_limits(&self, namespace: &Namespace) -> HashSet<Limit> {
+        match self.limits.read().unwrap().get(namespace) {
+            Some(limits) => limits.iter().cloned().collect(),
+            None => HashSet::new(),
+        }
+    }
+
+    pub async fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
+        let mut limits = HashSet::new();
+        limits.insert(limit.clone());
+        self.counters.delete_counters(limits).await?;
+
+        let mut limits_for_namespace = self.limits.write().unwrap();
+
+        if let Some(counters_by_limit) = limits_for_namespace.get_mut(limit.namespace()) {
+            counters_by_limit.remove(limit);
+
+            if counters_by_limit.is_empty() {
+                limits_for_namespace.remove(limit.namespace());
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr> {
+        let option = { self.limits.write().unwrap().remove(namespace) };
+        if let Some(data) = option {
+            let limits = data.iter().cloned().collect();
+            self.counters.delete_counters(limits).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn is_within_limits(
+        &self,
+        counter: &Counter,
+        delta: i64,
+    ) -> Result<bool, StorageErr> {
+        self.counters.is_within_limits(counter, delta).await
+    }
+
+    pub async fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
+        self.counters.update_counter(counter, delta).await
+    }
+
+    pub async fn check_and_update<'c>(
+        &self,
+        counters: &HashSet<&'c Counter>,
+        delta: i64,
+    ) -> Result<Authorization<'c>, StorageErr> {
+        self.counters.check_and_update(counters, delta).await
+    }
+
+    pub async fn get_counters(
+        &self,
+        namespace: &Namespace,
+    ) -> Result<HashSet<Counter>, StorageErr> {
+        let limits = self.get_limits(namespace);
+        self.counters.get_counters(limits).await
+    }
+
+    pub async fn clear(&self) -> Result<(), StorageErr> {
+        self.limits.write().unwrap().clear();
+        self.counters.clear().await
+    }
+}
+
+pub trait CounterStorage: Sync + Send {
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr>;
     fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
     fn check_and_update<'c>(
@@ -34,17 +231,13 @@ pub trait Storage: Sync + Send {
         counters: &HashSet<&'c Counter>,
         delta: i64,
     ) -> Result<Authorization<'c>, StorageErr>;
-    fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr>;
+    fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr>;
+    fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr>;
     fn clear(&self) -> Result<(), StorageErr>;
 }
 
 #[async_trait]
-pub trait AsyncStorage: Sync + Send {
-    async fn get_namespaces(&self) -> Result<HashSet<Namespace>, StorageErr>;
-    async fn add_limit(&self, limit: &Limit) -> Result<(), StorageErr>;
-    async fn get_limits(&self, namespace: &Namespace) -> Result<HashSet<Limit>, StorageErr>;
-    async fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr>;
-    async fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr>;
+pub trait AsyncCounterStorage: Sync + Send {
     async fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr>;
     async fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
     async fn check_and_update<'c>(
@@ -52,7 +245,8 @@ pub trait AsyncStorage: Sync + Send {
         counters: &HashSet<&'c Counter>,
         delta: i64,
     ) -> Result<Authorization<'c>, StorageErr>;
-    async fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr>;
+    async fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr>;
+    async fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr>;
     async fn clear(&self) -> Result<(), StorageErr>;
 }
 

@@ -32,17 +32,17 @@ impl TestsLimiter {
         }
     }
 
-    pub async fn get_namespaces(&self) -> Result<HashSet<Namespace>, LimitadorError> {
+    pub async fn get_namespaces(&self) -> HashSet<Namespace> {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => limiter.get_namespaces(),
-            LimiterImpl::Async(limiter) => limiter.get_namespaces().await,
+            LimiterImpl::Async(limiter) => limiter.get_namespaces(),
         }
     }
 
-    pub async fn add_limit(&self, limit: &Limit) -> Result<(), LimitadorError> {
+    pub async fn add_limit(&self, limit: &Limit) {
         match &self.limiter_impl {
-            LimiterImpl::Blocking(limiter) => limiter.add_limit(limit),
-            LimiterImpl::Async(limiter) => limiter.add_limit(limit).await,
+            LimiterImpl::Blocking(limiter) => limiter.add_limit(limit.clone()),
+            LimiterImpl::Async(limiter) => limiter.add_limit(limit.clone()),
         }
     }
 
@@ -53,10 +53,10 @@ impl TestsLimiter {
         }
     }
 
-    pub async fn get_limits(&self, namespace: &str) -> Result<HashSet<Limit>, LimitadorError> {
+    pub async fn get_limits(&self, namespace: &str) -> HashSet<Limit> {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => limiter.get_limits(&namespace.into()),
-            LimiterImpl::Async(limiter) => limiter.get_limits(&namespace.into()).await,
+            LimiterImpl::Async(limiter) => limiter.get_limits(&namespace.into()),
         }
     }
 

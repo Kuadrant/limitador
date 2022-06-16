@@ -13,15 +13,7 @@
 // "{}" for sharding applies.
 
 use crate::counter::Counter;
-use crate::limit::{Limit, Namespace};
-
-pub fn key_for_namespaces_set() -> String {
-    "namespaces_set".to_string()
-}
-
-pub fn key_for_limits_of_namespace(namespace: &Namespace) -> String {
-    format!("limits_of_namespace:{{{}}}", namespace.as_ref())
-}
+use crate::limit::Limit;
 
 pub fn key_for_counter(counter: &Counter) -> String {
     format!(

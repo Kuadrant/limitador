@@ -49,25 +49,6 @@ pub async fn add(
     res
 }
 
-pub async fn delete(
-    infinispan: &Infinispan,
-    cache_name: impl Into<String>,
-    set_key: impl Into<String>,
-    element: impl Into<String>,
-) -> Result<HashSet<String>, StorageErr> {
-    let cache_name = cache_name.into();
-    let set_key = set_key.into();
-    let element = element.into();
-
-    dist_lock::lock(infinispan, &cache_name, &set_key).await?;
-
-    let res = delete_from_set(infinispan, cache_name.clone(), set_key.clone(), element).await;
-
-    dist_lock::release(infinispan, &cache_name, &set_key).await?;
-
-    res
-}
-
 async fn add_set(
     infinispan: &Infinispan,
     cache_name: String,
@@ -103,36 +84,4 @@ async fn add_set(
     }
 
     Ok(())
-}
-
-async fn delete_from_set(
-    infinispan: &Infinispan,
-    cache_name: String,
-    set_key: String,
-    element: String,
-) -> Result<HashSet<String>, StorageErr> {
-    let response = infinispan
-        .run(&request::entries::get(&cache_name, &set_key))
-        .await?;
-
-    let mut set: HashSet<String> =
-        serde_json::from_str(&response_to_string(response).await).unwrap();
-
-    set.remove(&element);
-
-    if set.is_empty() {
-        let _ = infinispan
-            .run(&request::entries::delete(&cache_name, &set_key))
-            .await?;
-    } else {
-        let _ = infinispan
-            .run(&request::entries::update(
-                &cache_name,
-                &set_key,
-                &json!(set).to_string(),
-            ))
-            .await?;
-    }
-
-    Ok(set)
 }
