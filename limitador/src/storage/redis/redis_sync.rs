@@ -45,39 +45,49 @@ impl CounterStorage for RedisStorage {
         Ok(())
     }
 
-    fn check_and_update<'c>(
+    fn check_and_update(
         &self,
-        counters: &HashSet<&'c Counter>,
+        counters: HashSet<Counter>,
         delta: i64,
-    ) -> Result<Authorization<'c>, StorageErr> {
+    ) -> Result<Authorization, StorageErr> {
         let mut con = self.conn_pool.get()?;
 
         let counter_keys: Vec<String> = counters
             .iter()
-            .map(|counter| key_for_counter(counter))
+            .map(key_for_counter)
             .collect();
 
         let counter_vals: Vec<Option<i64>> =
             redis::cmd("MGET").arg(counter_keys).query(&mut *con)?;
 
-        for (i, counter) in counters.iter().enumerate() {
+        let mut counters_to_update = Vec::with_capacity(counters.len());
+
+        for (i, counter) in counters.into_iter().enumerate() {
             match counter_vals[i] {
                 Some(val) => {
                     if val - delta < 0 {
-                        return Ok(Authorization::Limited(counter));
+                        return Ok(Authorization::Limited(
+                            counter.limit().name().map(|n| n.to_owned()),
+                        ));
+                    } else {
+                        counters_to_update.push(counter);
                     }
                 }
                 None => {
                     if counter.max_value() - delta < 0 {
-                        return Ok(Authorization::Limited(counter));
+                        return Ok(Authorization::Limited(
+                            counter.limit().name().map(|n| n.to_owned()),
+                        ));
+                    } else {
+                        counters_to_update.push(counter);
                     }
                 }
             }
         }
 
         // TODO: this can be optimized by using pipelines with multiple updates
-        for counter in counters {
-            self.update_counter(counter, delta)?
+        for counter in counters_to_update {
+            self.update_counter(&counter, delta)?
         }
 
         Ok(Authorization::Ok)

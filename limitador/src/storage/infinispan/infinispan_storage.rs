@@ -65,20 +65,26 @@ impl AsyncCounterStorage for InfinispanStorage {
         Ok(())
     }
 
-    async fn check_and_update<'c>(
+    async fn check_and_update(
         &self,
-        counters: &HashSet<&'c Counter>,
+        counters: HashSet<Counter>,
         delta: i64,
-    ) -> Result<Authorization<'c>, StorageErr> {
+    ) -> Result<Authorization, StorageErr> {
+        let mut counters_to_update = Vec::with_capacity(counters.len());
+
         for counter in counters {
-            if !self.is_within_limits(counter, delta).await? {
-                return Ok(Authorization::Limited(counter));
+            if !self.is_within_limits(&counter, delta).await? {
+                return Ok(Authorization::Limited(
+                    counter.limit().name().map(|n| n.to_owned()),
+                ));
+            } else {
+                counters_to_update.push(counter);
             }
         }
 
         // Update only if all are withing limits
-        for counter in counters {
-            self.update_counter(counter, delta).await?
+        for counter in counters_to_update {
+            self.update_counter(&counter, delta).await?
         }
 
         Ok(Authorization::Ok)

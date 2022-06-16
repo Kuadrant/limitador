@@ -29,22 +29,28 @@ impl CounterStorage for InMemoryStorage {
         Ok(())
     }
 
-    fn check_and_update<'c>(
+    fn check_and_update(
         &self,
-        counters: &HashSet<&'c Counter>,
+        counters: HashSet<Counter>,
         delta: i64,
-    ) -> Result<Authorization<'c>, StorageErr> {
+    ) -> Result<Authorization, StorageErr> {
         // This makes the operator of check + update atomic
         let mut stored_counters = self.counters.write().unwrap();
 
+        let mut counters_to_update = Vec::with_capacity(counters.len());
+
         for counter in counters {
-            if !Self::counter_is_within_limits(counter, stored_counters.get(counter), delta) {
-                return Ok(Authorization::Limited(counter));
+            if !Self::counter_is_within_limits(&counter, stored_counters.get(&counter), delta) {
+                return Ok(Authorization::Limited(
+                    counter.limit().name().map(|n| n.to_owned()),
+                ));
+            } else {
+                counters_to_update.push(counter);
             }
         }
 
-        for &counter in counters {
-            self.insert_or_update_counter(&mut stored_counters, counter, delta)
+        for counter in counters_to_update {
+            self.insert_or_update_counter(&mut stored_counters, &counter, delta)
         }
 
         Ok(Authorization::Ok)
