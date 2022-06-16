@@ -3,13 +3,18 @@ use rand::seq::SliceRandom;
 
 use limitador::limit::Limit;
 use limitador::storage::in_memory::InMemoryStorage;
+#[cfg(feature = "redis")]
 use limitador::storage::redis::RedisStorage;
 use limitador::storage::CounterStorage;
 use limitador::RateLimiter;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
-criterion_group!(benches, bench_in_mem, bench_redis,);
+#[cfg(not(feature = "redis"))]
+criterion_group!(benches, bench_in_mem);
+#[cfg(feature = "redis")]
+criterion_group!(benches, bench_in_mem, bench_redis);
+
 criterion_main!(benches);
 
 #[derive(Debug, Clone)]
@@ -88,6 +93,7 @@ fn bench_in_mem(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(feature = "redis")]
 fn bench_redis(c: &mut Criterion) {
     let mut group = c.benchmark_group("Redis");
     for scenario in TEST_SCENARIOS {
