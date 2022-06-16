@@ -60,17 +60,13 @@ impl CounterStorage for RedisStorage {
         let counter_vals: Vec<Option<i64>> =
             redis::cmd("MGET").arg(counter_keys).query(&mut *con)?;
 
-        let mut counters_to_update = Vec::with_capacity(counters.len());
-
-        for (i, counter) in counters.into_iter().enumerate() {
+        for (i, counter) in counters.iter().enumerate() {
             match counter_vals[i] {
                 Some(val) => {
                     if val - delta < 0 {
                         return Ok(Authorization::Limited(
                             counter.limit().name().map(|n| n.to_owned()),
                         ));
-                    } else {
-                        counters_to_update.push(counter);
                     }
                 }
                 None => {
@@ -78,16 +74,14 @@ impl CounterStorage for RedisStorage {
                         return Ok(Authorization::Limited(
                             counter.limit().name().map(|n| n.to_owned()),
                         ));
-                    } else {
-                        counters_to_update.push(counter);
                     }
                 }
             }
         }
 
         // TODO: this can be optimized by using pipelines with multiple updates
-        for counter in counters_to_update {
-            self.update_counter(&counter, delta)?
+        for counter in counters.iter() {
+            self.update_counter(counter, delta)?
         }
 
         Ok(Authorization::Ok)

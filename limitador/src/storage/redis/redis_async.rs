@@ -70,17 +70,13 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             .query_async(&mut con)
             .await?;
 
-        let mut counters_to_update = Vec::with_capacity(counters.len());
-
-        for (i, counter) in counters.into_iter().enumerate() {
+        for (i, counter) in counters.iter().enumerate() {
             match counter_vals[i] {
                 Some(val) => {
                     if val - delta < 0 {
                         return Ok(Authorization::Limited(
                             counter.limit().name().map(|n| n.to_owned()),
                         ));
-                    } else {
-                        counters_to_update.push(counter);
                     }
                 }
                 None => {
@@ -88,15 +84,13 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                         return Ok(Authorization::Limited(
                             counter.limit().name().map(|n| n.to_owned()),
                         ));
-                    } else {
-                        counters_to_update.push(counter);
                     }
                 }
             }
         }
 
         // TODO: this can be optimized by using pipelines with multiple updates
-        for counter in counters_to_update {
+        for counter in counters {
             self.update_counter(&counter, delta).await?
         }
 

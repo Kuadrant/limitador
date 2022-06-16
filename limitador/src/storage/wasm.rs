@@ -99,19 +99,15 @@ impl CounterStorage for WasmStorage {
         // This makes the operator of check + update atomic
         let mut stored_counters = self.counters.write().unwrap();
 
-        let mut counters_to_update = Vec::with_capacity(counters.len());
-
-        for counter in counters {
-            if !self.counter_is_within_limits(&counter, stored_counters.get(&counter), delta) {
+        for counter in counters.iter() {
+            if !self.counter_is_within_limits(counter, stored_counters.get(counter), delta) {
                 return Ok(Authorization::Limited(
                     counter.limit().name().map(|n| n.to_owned()),
                 ));
-            } else {
-                counters_to_update.push(counter);
             }
         }
 
-        for counter in counters_to_update {
+        for counter in counters {
             self.insert_or_update_counter(&mut stored_counters, &counter, delta)
         }
 
