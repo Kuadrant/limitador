@@ -272,9 +272,8 @@ mod tests {
         let limiter = Limiter::new().await.unwrap();
 
         // Create a limit with max == 1
-
         let namespace = "test_namespace";
-        let limit = create_test_limit(&limiter, namespace, 1).await;
+        let _limit = create_test_limit(&limiter, namespace, 1).await;
         let rate_limiter: Arc<Limiter> = Arc::new(limiter);
         let data = web::Data::new(rate_limiter);
         let app = test::init_service(
@@ -317,7 +316,7 @@ mod tests {
     async fn test_check_and_report_endpoints_separately() {
         let namespace = "test_namespace";
         let limiter = Limiter::new().await.unwrap();
-        let limit = create_test_limit(&limiter, namespace, 1).await;
+        let _limit = create_test_limit(&limiter, namespace, 1).await;
 
         let rate_limiter: Arc<Limiter> = Arc::new(limiter);
         let data = web::Data::new(rate_limiter);
