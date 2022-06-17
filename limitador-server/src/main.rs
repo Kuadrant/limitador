@@ -5,16 +5,21 @@ extern crate log;
 
 use crate::envoy_rls::server::run_envoy_rls_server;
 use crate::http_api::server::run_http_server;
+use limitador::errors::LimitadorError;
 use limitador::limit::Limit;
 use limitador::storage::infinispan::{Consistency, InfinispanStorageBuilder};
 use limitador::storage::redis::{AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder};
 use limitador::storage::{AsyncCounterStorage, AsyncStorage};
 use limitador::{AsyncRateLimiter, AsyncRateLimiterBuilder, RateLimiter, RateLimiterBuilder};
+use notify::event::{DataChange, ModifyKind};
+use notify::{Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::convert::TryInto;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{env, process};
 use thiserror::Error;
+use tokio::runtime::Handle;
 use url::Url;
 
 mod envoy_rls;
@@ -35,6 +40,10 @@ const ENV_OPTION_ENABLED: &str = "1";
 pub enum LimitadorServerError {
     #[error("please set either the Redis or the Infinispan URL, but not both")]
     IncompatibleStorages,
+    #[error("Invalid limit file: {0}")]
+    ConfigFile(String),
+    #[error("Internal error: {0}")]
+    Internal(LimitadorError),
 }
 
 pub enum Limiter {
@@ -48,6 +57,12 @@ enum StorageType {
     InMemory,
 }
 
+impl From<LimitadorError> for LimitadorServerError {
+    fn from(e: LimitadorError) -> Self {
+        Self::Internal(e)
+    }
+}
+
 impl Limiter {
     pub async fn new() -> Result<Self, LimitadorServerError> {
         let rate_limiter = match Self::storage_type()? {
@@ -55,8 +70,6 @@ impl Limiter {
             StorageType::Infinispan { url } => Self::infinispan_limiter(&url).await,
             StorageType::InMemory => Self::in_memory_limiter(),
         };
-
-        rate_limiter.load_limits_from_file().await;
 
         Ok(rate_limiter)
     }
@@ -194,15 +207,32 @@ impl Limiter {
         }
     }
 
-    async fn load_limits_from_file(&self) {
-        if let Ok(limits_file_path) = env::var(LIMITS_FILE_ENV) {
-            let f = std::fs::File::open(limits_file_path).unwrap();
-            let limits: Vec<Limit> = serde_yaml::from_reader(f).unwrap();
-
-            match &self {
-                Self::Blocking(limiter) => limiter.configure_with(limits).unwrap(),
-                Self::Async(limiter) => limiter.configure_with(limits).await.unwrap(),
+    pub async fn load_limits_from_file<P: AsRef<Path>>(
+        &self,
+        path: &P,
+    ) -> Result<(), LimitadorServerError> {
+        match std::fs::File::open(path) {
+            Ok(f) => {
+                let parsed_limits: Result<Vec<Limit>, _> = serde_yaml::from_reader(f);
+                match parsed_limits {
+                    Ok(limits) => {
+                        match &self {
+                            Self::Blocking(limiter) => limiter.configure_with(limits)?,
+                            Self::Async(limiter) => limiter.configure_with(limits).await?,
+                        }
+                        Ok(())
+                    }
+                    Err(e) => Err(LimitadorServerError::ConfigFile(format!(
+                        "Couldn't parse: {}",
+                        e
+                    ))),
+                }
             }
+            Err(e) => Err(LimitadorServerError::ConfigFile(format!(
+                "Couldn't read file '{}': {}",
+                path.as_ref().display(),
+                e
+            ))),
         }
     }
 }
@@ -217,6 +247,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("Error: {}", e);
             process::exit(1)
         }
+    };
+
+    let _watcher = if let Ok(limits_file_path) = env::var(LIMITS_FILE_ENV) {
+        if let Err(e) = rate_limiter.load_limits_from_file(&limits_file_path).await {
+            eprintln!("Failed to load limit file: {}", e);
+            process::exit(1)
+        }
+
+        let limiter = Arc::clone(&rate_limiter);
+        let handle = Handle::current();
+
+        let mut watcher =
+            RecommendedWatcher::new(move |result: Result<Event, Error>| match result {
+                Ok(ref event) => {
+                    if let EventKind::Modify(ModifyKind::Data(DataChange::Content)) = event.kind {
+                        let limiter = limiter.clone();
+                        let location = event.paths.first().unwrap().clone();
+                        handle.spawn(async move {
+                            match limiter.load_limits_from_file(&location).await {
+                                Ok(_) => info!("Reloaded limit file"),
+                                Err(e) => error!("Failed reloading limit file: {}", e),
+                            }
+                        });
+                    }
+                }
+                Err(ref e) => {
+                    warn!("Something went wrong while watching limit file: {}", e);
+                }
+            })?;
+
+        watcher.watch(Path::new(&limits_file_path), RecursiveMode::Recursive)?;
+        Some(watcher)
+    } else {
+        None
     };
 
     let envoy_rls_host = env::var("ENVOY_RLS_HOST").unwrap_or_else(|_| String::from(DEFAULT_HOST));
