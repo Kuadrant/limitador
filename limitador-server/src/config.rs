@@ -132,15 +132,32 @@ mod tests {
     use serial_test::serial;
     use std::env;
 
+    struct VarEnvCleaner {
+        vars: Vec<String>,
+    }
+
+    impl VarEnvCleaner {
+        pub fn new() -> Self {
+            Self { vars: Vec::new() }
+        }
+
+        pub fn set_var(&mut self, k: &str, v: &str) {
+            self.vars.insert(0, k.to_string());
+            env::set_var(k, v);
+        }
+    }
+
+    impl Drop for VarEnvCleaner {
+        fn drop(&mut self) {
+            for var in &self.vars {
+                env::remove_var(var);
+            }
+        }
+    }
+
     #[test]
     #[serial]
     fn test_config_defaults() {
-        env::remove_var("REDIS_URL");
-        env::remove_var("INFINISPAN_URL");
-
-        println!("{:?}", env::var("REDIS_URL"));
-        println!("{:?}", env::var("INFINISPAN_URL"));
-
         let config = Configuration::from_env().unwrap();
         assert_eq!(config.limits_file, None);
         assert_eq!(config.storage, StorageConfiguration::InMemory);
@@ -152,14 +169,10 @@ mod tests {
     #[test]
     #[serial]
     fn test_config_redis_defaults() {
-        env::remove_var("REDIS_URL");
-        env::remove_var("INFINISPAN_URL");
+        let mut vars = VarEnvCleaner::new();
+        let url = "redis://127.0.1.1:7654";
+        vars.set_var("REDIS_URL", url);
 
-        println!("{:?}", env::var("REDIS_URL"));
-        println!("{:?}", env::var("INFINISPAN_URL"));
-
-        let url = "127.0.1.1:7654";
-        env::set_var("REDIS_URL", url);
         let config = Configuration::from_env().unwrap();
         assert_eq!(config.limits_file, None);
         if let StorageConfiguration::Redis(ref redis_config) = config.storage {
@@ -176,14 +189,10 @@ mod tests {
     #[test]
     #[serial]
     fn test_config_infinispan_defaults() {
-        env::remove_var("REDIS_URL");
-        env::remove_var("INFINISPAN_URL");
-
-        println!("{:?}", env::var("REDIS_URL"));
-        println!("{:?}", env::var("INFINISPAN_URL"));
+        let mut vars = VarEnvCleaner::new();
 
         let url = "127.0.2.2:9876";
-        env::set_var("INFINISPAN_URL", url);
+        vars.set_var("INFINISPAN_URL", url);
         let config = Configuration::from_env().unwrap();
         assert_eq!(config.limits_file, None);
         if let StorageConfiguration::Infinispan(ref infinispan_config) = config.storage {
