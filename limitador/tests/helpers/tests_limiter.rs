@@ -39,7 +39,7 @@ impl TestsLimiter {
         }
     }
 
-    pub async fn add_limit(&self, limit: &Limit) {
+    pub async fn add_limit(&self, limit: &Limit) -> bool {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => limiter.add_limit(limit.clone()),
             LimiterImpl::Async(limiter) => limiter.add_limit(limit.clone()),

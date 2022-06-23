@@ -312,7 +312,7 @@ impl RateLimiter {
         self.storage.get_namespaces()
     }
 
-    pub fn add_limit(&self, limit: Limit) {
+    pub fn add_limit(&self, limit: Limit) -> bool {
         self.storage.add_limit(limit)
     }
 
@@ -483,7 +483,7 @@ impl AsyncRateLimiter {
         self.storage.get_namespaces()
     }
 
-    pub fn add_limit(&self, limit: Limit) {
+    pub fn add_limit(&self, limit: Limit) -> bool {
         self.storage.add_limit(limit)
     }
 
