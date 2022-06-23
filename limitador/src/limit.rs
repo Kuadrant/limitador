@@ -129,9 +129,7 @@ impl Limit {
 impl Hash for Limit {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.namespace.hash(state);
-        self.max_value.hash(state);
         self.seconds.hash(state);
-        self.name.hash(state);
 
         let mut encoded_conditions = self
             .conditions
@@ -156,9 +154,7 @@ impl Hash for Limit {
 impl PartialEq for Limit {
     fn eq(&self, other: &Self) -> bool {
         self.namespace == other.namespace
-            && self.max_value == other.max_value
             && self.seconds == other.seconds
-            && self.name == other.name
             && self.conditions == other.conditions
             && self.variables == other.variables
     }
