@@ -37,3 +37,23 @@ pub fn counter_from_counter_key(key: &str) -> Counter {
 
     serde_json::from_str(&key[start_pos_counter..]).unwrap()
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::storage::keys::key_for_counters_of_limit;
+    use crate::Limit;
+
+    #[test]
+    fn key_for_limit_format() {
+        let limit = Limit::new(
+            "example.com",
+            10,
+            60,
+            vec!["req.method == GET"],
+            vec!["app_id"],
+        );
+        assert_eq!(
+            "namespace:{example.com},counters_of_limit:{\"namespace\":\"example.com\",\"seconds\":60,\"conditions\":[\"req.method == GET\"],\"variables\":[\"app_id\"]}",
+            key_for_counters_of_limit(&limit))
+    }
+}

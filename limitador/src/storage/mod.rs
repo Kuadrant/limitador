@@ -146,9 +146,7 @@ impl AsyncStorage {
         let mut limits_for_namespace = self.limits.write().unwrap();
 
         match limits_for_namespace.get_mut(&namespace) {
-            Some(limits) => {
-                limits.insert(limit)
-            }
+            Some(limits) => limits.insert(limit),
             None => {
                 let mut limits = HashSet::new();
                 limits.insert(limit);

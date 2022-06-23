@@ -854,14 +854,11 @@ mod test {
     async fn add_limit_only_adds_if_not_present(rate_limiter: &mut TestsLimiter) {
         let namespace = "test_namespace";
 
-        let limit_1 =
-            Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
+        let limit_1 = Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
 
-        let limit_2 =
-            Limit::new(namespace, 20, 60, vec!["req.method == GET"], vec!["app_id"]);
+        let limit_2 = Limit::new(namespace, 20, 60, vec!["req.method == GET"], vec!["app_id"]);
 
-        let mut limit_3 =
-            Limit::new(namespace, 20, 60, vec!["req.method == GET"], vec!["app_id"]);
+        let mut limit_3 = Limit::new(namespace, 20, 60, vec!["req.method == GET"], vec!["app_id"]);
         limit_3.set_name("Name is irrelevant too".to_owned());
 
         assert!(rate_limiter.add_limit(&limit_1).await);
