@@ -201,6 +201,7 @@ use crate::storage::{AsyncCounterStorage, AsyncStorage, Authorization, CounterSt
 
 #[macro_use]
 extern crate lazy_static;
+extern crate core;
 
 pub mod counter;
 pub mod errors;

@@ -26,10 +26,10 @@ impl From<String> for Namespace {
 #[derive(Eq, Debug, Clone, Serialize, Deserialize)]
 pub struct Limit {
     namespace: Namespace,
-    // #[serde(skip_serializing)]
+    #[serde(skip_serializing)]
     max_value: i64,
     seconds: u64,
-    // #[serde(skip_serializing)]
+    #[serde(skip_serializing)]
     name: Option<String>,
 
     // Need to sort to generate the same object when using the JSON as a key or
@@ -88,6 +88,10 @@ impl Limit {
 
     pub fn set_name(&mut self, name: String) {
         self.name = Some(name)
+    }
+
+    pub fn set_max_value(&mut self, value: i64) {
+        self.max_value = value;
     }
 
     pub fn conditions(&self) -> HashSet<String> {
