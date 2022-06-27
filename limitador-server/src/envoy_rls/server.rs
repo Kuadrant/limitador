@@ -128,6 +128,7 @@ mod tests {
     use super::*;
     use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::rate_limit_descriptor::Entry;
     use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::RateLimitDescriptor;
+    use crate::Configuration;
     use limitador::limit::Limit;
     use limitador::RateLimiter;
     use tonic::IntoRequest;
@@ -194,7 +195,11 @@ mod tests {
     #[tokio::test]
     async fn test_returns_ok_when_no_limits_apply() {
         // No limits saved
-        let rate_limiter = MyRateLimiter::new(Arc::new(Limiter::new().await.unwrap()));
+        let rate_limiter = MyRateLimiter::new(Arc::new(
+            Limiter::new(Configuration::from_env().unwrap())
+                .await
+                .unwrap(),
+        ));
 
         let req = RateLimitRequest {
             domain: "test_namespace".to_string(),
@@ -222,7 +227,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_returns_unknown_when_domain_is_empty() {
-        let rate_limiter = MyRateLimiter::new(Arc::new(Limiter::new().await.unwrap()));
+        let rate_limiter = MyRateLimiter::new(Arc::new(
+            Limiter::new(Configuration::from_env().unwrap())
+                .await
+                .unwrap(),
+        ));
 
         let req = RateLimitRequest {
             domain: "".to_string(),

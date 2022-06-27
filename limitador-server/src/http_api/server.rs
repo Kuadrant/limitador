@@ -201,6 +201,7 @@ pub async fn run_http_server(address: &str, rate_limiter: Arc<Limiter>) -> std::
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Configuration;
     use actix_web::{test, web};
     use limitador::limit::Limit as LimitadorLimit;
     use std::collections::HashMap;
@@ -224,7 +225,11 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_metrics() {
-        let rate_limiter: Arc<Limiter> = Arc::new(Limiter::new().await.unwrap());
+        let rate_limiter: Arc<Limiter> = Arc::new(
+            Limiter::new(Configuration::from_env().unwrap())
+                .await
+                .unwrap(),
+        );
         let data = web::Data::new(rate_limiter);
         let app = test::init_service(
             App::new()
@@ -244,7 +249,9 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_limits_read() {
-        let limiter = Limiter::new().await.unwrap();
+        let limiter = Limiter::new(Configuration::from_env().unwrap())
+            .await
+            .unwrap();
         let namespace = "test_namespace";
 
         let limit = create_test_limit(&limiter, namespace, 10).await;
@@ -269,7 +276,9 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_check_and_report() {
-        let limiter = Limiter::new().await.unwrap();
+        let limiter = Limiter::new(Configuration::from_env().unwrap())
+            .await
+            .unwrap();
 
         // Create a limit with max == 1
         let namespace = "test_namespace";
@@ -315,7 +324,9 @@ mod tests {
     #[actix_rt::test]
     async fn test_check_and_report_endpoints_separately() {
         let namespace = "test_namespace";
-        let limiter = Limiter::new().await.unwrap();
+        let limiter = Limiter::new(Configuration::from_env().unwrap())
+            .await
+            .unwrap();
         let _limit = create_test_limit(&limiter, namespace, 1).await;
 
         let rate_limiter: Arc<Limiter> = Arc::new(limiter);
