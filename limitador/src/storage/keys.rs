@@ -31,11 +31,21 @@ pub fn key_for_counters_of_limit(limit: &Limit) -> String {
     )
 }
 
-pub fn counter_from_counter_key(key: &str) -> Counter {
+pub fn counter_from_counter_key(key: &str, limit: &Limit) -> Counter {
     let counter_prefix = "counter:";
     let start_pos_counter = key.find(counter_prefix).unwrap() + counter_prefix.len();
 
-    serde_json::from_str(&key[start_pos_counter..]).unwrap()
+    let mut counter: Counter = serde_json::from_str(&key[start_pos_counter..]).unwrap();
+    if !counter.update_to_limit(limit) {
+        // this means some kind of data corruption _or_ most probably
+        // an out of sync `impl PartialEq for Limit` vs `pub fn key_for_counter(counter: &Counter) -> String`
+        panic!(
+            "Failed to rebuild Counter's Limit from the provided Limit: {:?} vs {:?}",
+            counter.limit(),
+            limit
+        )
+    }
+    counter
 }
 
 #[cfg(test)]
