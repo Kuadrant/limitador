@@ -64,11 +64,11 @@ impl AsyncCounterStorage for CachedRedisStorage {
     // limits. In order to do so, we'd need to run this whole function
     // atomically, but that'd be too slow.
     // This function trades accuracy for speed.
-    async fn check_and_update<'c>(
+    async fn check_and_update(
         &self,
-        counters: &HashSet<&'c Counter>,
+        counters: HashSet<Counter>,
         delta: i64,
-    ) -> Result<Authorization<'c>, StorageErr> {
+    ) -> Result<Authorization, StorageErr> {
         let mut con = self.redis_conn_manager.clone();
 
         let mut not_cached: Vec<&Counter> = vec![];
@@ -76,11 +76,13 @@ impl AsyncCounterStorage for CachedRedisStorage {
         // Check cached counters
         {
             let cached_counters = self.cached_counters.lock().await;
-            for counter in counters {
+            for counter in counters.iter() {
                 match cached_counters.get(counter) {
                     Some(val) => {
                         if val - delta < 0 {
-                            return Ok(Authorization::Limited(counter));
+                            return Ok(Authorization::Limited(
+                                counter.limit().name().map(|n| n.to_owned()),
+                            ));
                         }
                     }
                     None => {
@@ -116,16 +118,20 @@ impl AsyncCounterStorage for CachedRedisStorage {
                 }
             }
 
-            for (i, counter) in not_cached.iter().enumerate() {
+            for (i, counter) in not_cached.into_iter().enumerate() {
                 match counter_vals[i] {
                     Some(val) => {
                         if val - delta < 0 {
-                            return Ok(Authorization::Limited(counter));
+                            return Ok(Authorization::Limited(
+                                counter.limit().name().map(|n| n.to_owned()),
+                            ));
                         }
                     }
                     None => {
                         if counter.max_value() - delta < 0 {
-                            return Ok(Authorization::Limited(counter));
+                            return Ok(Authorization::Limited(
+                                counter.limit().name().map(|n| n.to_owned()),
+                            ));
                         }
                     }
                 }
@@ -135,7 +141,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
         // Update cached values
         {
             let mut cached_counters = self.cached_counters.lock().await;
-            for counter in counters {
+            for counter in counters.iter() {
                 cached_counters.decrease_by(counter, delta);
             }
         }
@@ -144,11 +150,11 @@ impl AsyncCounterStorage for CachedRedisStorage {
         if self.batching_is_enabled {
             let batcher = self.batcher_counter_updates.lock().await;
             for counter in counters {
-                batcher.add_counter(counter, delta).await
+                batcher.add_counter(&counter, delta).await
             }
         } else {
             for counter in counters {
-                self.update_counter(counter, delta).await?
+                self.update_counter(&counter, delta).await?
             }
         }
 

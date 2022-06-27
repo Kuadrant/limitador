@@ -45,17 +45,14 @@ impl CounterStorage for RedisStorage {
         Ok(())
     }
 
-    fn check_and_update<'c>(
+    fn check_and_update(
         &self,
-        counters: &HashSet<&'c Counter>,
+        counters: HashSet<Counter>,
         delta: i64,
-    ) -> Result<Authorization<'c>, StorageErr> {
+    ) -> Result<Authorization, StorageErr> {
         let mut con = self.conn_pool.get()?;
 
-        let counter_keys: Vec<String> = counters
-            .iter()
-            .map(|counter| key_for_counter(counter))
-            .collect();
+        let counter_keys: Vec<String> = counters.iter().map(key_for_counter).collect();
 
         let counter_vals: Vec<Option<i64>> =
             redis::cmd("MGET").arg(counter_keys).query(&mut *con)?;
@@ -64,33 +61,37 @@ impl CounterStorage for RedisStorage {
             match counter_vals[i] {
                 Some(val) => {
                     if val - delta < 0 {
-                        return Ok(Authorization::Limited(counter));
+                        return Ok(Authorization::Limited(
+                            counter.limit().name().map(|n| n.to_owned()),
+                        ));
                     }
                 }
                 None => {
                     if counter.max_value() - delta < 0 {
-                        return Ok(Authorization::Limited(counter));
+                        return Ok(Authorization::Limited(
+                            counter.limit().name().map(|n| n.to_owned()),
+                        ));
                     }
                 }
             }
         }
 
         // TODO: this can be optimized by using pipelines with multiple updates
-        for counter in counters {
+        for counter in counters.iter() {
             self.update_counter(counter, delta)?
         }
 
         Ok(Authorization::Ok)
     }
 
-    fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
+    fn get_counters(&self, limits: &HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
 
         let mut con = self.conn_pool.get()?;
 
         for limit in limits {
             let counter_keys =
-                con.smembers::<String, HashSet<String>>(key_for_counters_of_limit(&limit))?;
+                con.smembers::<String, HashSet<String>>(key_for_counters_of_limit(limit))?;
 
             for counter_key in counter_keys {
                 let mut counter: Counter = counter_from_counter_key(&counter_key);

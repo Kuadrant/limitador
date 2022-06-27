@@ -91,28 +91,30 @@ impl CounterStorage for WasmStorage {
         Ok(())
     }
 
-    fn check_and_update<'c>(
+    fn check_and_update(
         &self,
-        counters: &HashSet<&'c Counter>,
+        counters: HashSet<Counter>,
         delta: i64,
-    ) -> Result<Authorization<'c>, StorageErr> {
+    ) -> Result<Authorization, StorageErr> {
         // This makes the operator of check + update atomic
         let mut stored_counters = self.counters.write().unwrap();
 
-        for counter in counters {
+        for counter in counters.iter() {
             if !self.counter_is_within_limits(counter, stored_counters.get(counter), delta) {
-                return Ok(Authorization::Limited(counter));
+                return Ok(Authorization::Limited(
+                    counter.limit().name().map(|n| n.to_owned()),
+                ));
             }
         }
 
-        for &counter in counters {
-            self.insert_or_update_counter(&mut stored_counters, counter, delta)
+        for counter in counters {
+            self.insert_or_update_counter(&mut stored_counters, &counter, delta)
         }
 
         Ok(Authorization::Ok)
     }
 
-    fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
+    fn get_counters(&self, limits: &HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
         // TODO: optimize to avoid iterating over all of them.
 
         let counters_with_vals: Vec<Counter> = self

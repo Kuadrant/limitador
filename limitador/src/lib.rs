@@ -384,16 +384,16 @@ impl RateLimiter {
 
         let check_result = self
             .storage
-            .check_and_update(&counters.iter().collect(), delta)?;
+            .check_and_update(counters.into_iter().collect(), delta)?;
 
         match check_result {
             Authorization::Ok => {
                 self.prometheus_metrics.incr_authorized_calls(namespace);
                 Ok(false)
             }
-            Authorization::Limited(c) => {
+            Authorization::Limited(name) => {
                 self.prometheus_metrics
-                    .incr_limited_calls(namespace, c.limit().name());
+                    .incr_limited_calls(namespace, name.as_deref());
                 Ok(true)
             }
         }
@@ -557,7 +557,7 @@ impl AsyncRateLimiter {
 
         let check_result = self
             .storage
-            .check_and_update(&counters.iter().collect(), delta)
+            .check_and_update(counters.into_iter().collect(), delta)
             .await?;
 
         match check_result {
@@ -565,9 +565,9 @@ impl AsyncRateLimiter {
                 self.prometheus_metrics.incr_authorized_calls(namespace);
                 Ok(false)
             }
-            Authorization::Limited(c) => {
+            Authorization::Limited(name) => {
                 self.prometheus_metrics
-                    .incr_limited_calls(namespace, c.limit().name());
+                    .incr_limited_calls(namespace, name.as_deref());
                 Ok(true)
             }
         }

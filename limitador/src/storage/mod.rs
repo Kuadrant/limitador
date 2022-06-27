@@ -18,9 +18,9 @@ pub mod infinispan;
 #[cfg(any(feature = "redis_storage", feature = "infinispan_storage"))]
 mod keys;
 
-pub enum Authorization<'c> {
+pub enum Authorization {
     Ok,
-    Limited(&'c Counter), // First counter found over the limits
+    Limited(Option<String>), // First counter found over the limits
 }
 
 pub struct Storage {
@@ -88,8 +88,7 @@ impl Storage {
 
     pub fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr> {
         if let Some(data) = self.limits.write().unwrap().remove(namespace) {
-            let limits = data.iter().cloned().collect();
-            self.counters.delete_counters(limits)?;
+            self.counters.delete_counters(data)?;
         }
         Ok(())
     }
@@ -102,17 +101,19 @@ impl Storage {
         self.counters.update_counter(counter, delta)
     }
 
-    pub fn check_and_update<'c>(
+    pub fn check_and_update(
         &self,
-        counters: &HashSet<&'c Counter>,
+        counters: HashSet<Counter>,
         delta: i64,
-    ) -> Result<Authorization<'c>, StorageErr> {
+    ) -> Result<Authorization, StorageErr> {
         self.counters.check_and_update(counters, delta)
     }
 
     pub fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
-        let limits = self.get_limits(namespace);
-        self.counters.get_counters(limits)
+        match self.limits.read().unwrap().get(namespace) {
+            Some(limits) => self.counters.get_counters(limits),
+            None => Ok(HashSet::new()),
+        }
     }
 
     pub fn clear(&self) -> Result<(), StorageErr> {
@@ -201,11 +202,11 @@ impl AsyncStorage {
         self.counters.update_counter(counter, delta).await
     }
 
-    pub async fn check_and_update<'c>(
+    pub async fn check_and_update(
         &self,
-        counters: &HashSet<&'c Counter>,
+        counters: HashSet<Counter>,
         delta: i64,
-    ) -> Result<Authorization<'c>, StorageErr> {
+    ) -> Result<Authorization, StorageErr> {
         self.counters.check_and_update(counters, delta).await
     }
 
@@ -226,12 +227,12 @@ impl AsyncStorage {
 pub trait CounterStorage: Sync + Send {
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr>;
     fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
-    fn check_and_update<'c>(
+    fn check_and_update(
         &self,
-        counters: &HashSet<&'c Counter>,
+        counters: HashSet<Counter>,
         delta: i64,
-    ) -> Result<Authorization<'c>, StorageErr>;
-    fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr>;
+    ) -> Result<Authorization, StorageErr>;
+    fn get_counters(&self, limits: &HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr>;
     fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr>;
     fn clear(&self) -> Result<(), StorageErr>;
 }
@@ -240,11 +241,11 @@ pub trait CounterStorage: Sync + Send {
 pub trait AsyncCounterStorage: Sync + Send {
     async fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr>;
     async fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
-    async fn check_and_update<'c>(
+    async fn check_and_update(
         &self,
-        counters: &HashSet<&'c Counter>,
+        counters: HashSet<Counter>,
         delta: i64,
-    ) -> Result<Authorization<'c>, StorageErr>;
+    ) -> Result<Authorization, StorageErr>;
     async fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr>;
     async fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr>;
     async fn clear(&self) -> Result<(), StorageErr>;
