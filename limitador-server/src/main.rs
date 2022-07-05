@@ -2,6 +2,7 @@
 
 #[macro_use]
 extern crate log;
+extern crate clap;
 
 use crate::config::{
     Configuration, InfinispanStorageConfiguration, RedisStorageCacheConfiguration,
@@ -9,12 +10,19 @@ use crate::config::{
 };
 use crate::envoy_rls::server::run_envoy_rls_server;
 use crate::http_api::server::run_http_server;
+use clap::builder::PossibleValuesParser;
+use clap::{App, Arg, SubCommand};
+use env_logger::Builder;
 use limitador::errors::LimitadorError;
 use limitador::limit::Limit;
 use limitador::storage::infinispan::{Consistency, InfinispanStorageBuilder};
+use limitador::storage::infinispan::{
+    DEFAULT_INFINISPAN_CONSISTENCY, DEFAULT_INFINISPAN_LIMITS_CACHE_NAME,
+};
 use limitador::storage::redis::{AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder};
 use limitador::storage::{AsyncCounterStorage, AsyncStorage};
 use limitador::{AsyncRateLimiter, AsyncRateLimiterBuilder, RateLimiter, RateLimiterBuilder};
+use log::LevelFilter;
 use notify::event::ModifyKind;
 use notify::{Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::convert::TryInto;
@@ -30,6 +38,8 @@ mod envoy_rls;
 mod http_api;
 
 mod config;
+
+const LIMITADOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Error, Debug)]
 pub enum LimitadorServerError {
@@ -205,15 +215,181 @@ impl Limiter {
 
 #[actix_rt::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
+    let matches = App::new("Limitador Server")
+        .version(LIMITADOR_VERSION)
+        .author("The Kuadrant team - github.com/Kuadrant")
+        .about("Rate Limiting Server")
+        .arg(
+            Arg::with_name("config_from_env")
+                .short('E')
+                .long("use-env-vars")
+                .help("Sets the server up from ENV VARS instead of these options")
+                .exclusive(true),
+        )
+        .arg(
+            Arg::with_name("LIMITS_FILE")
+                .help("The limit file to use")
+                .required(true)
+                .index(1),
+        )
+        .arg(
+            Arg::with_name("ip")
+                .short('b')
+                .long("rls-ip")
+                .default_value(Configuration::DEFAULT_IP_BIND)
+                .display_order(1)
+                .help("The IP to listen on for RLS"),
+        )
+        .arg(
+            Arg::with_name("port")
+                .short('p')
+                .long("rls-port")
+                .default_value(Configuration::DEFAULT_RLS_PORT)
+                .display_order(2)
+                .help("The port to listen on for RLS"),
+        )
+        .arg(
+            Arg::with_name("http_ip")
+                .short('B')
+                .long("http-ip")
+                .default_value(Configuration::DEFAULT_IP_BIND)
+                .display_order(3)
+                .help("The IP to listen on for HTTP"),
+        )
+        .arg(
+            Arg::with_name("http_port")
+                .short('P')
+                .long("http-port")
+                .default_value(Configuration::DEFAULT_HTTP_PORT)
+                .display_order(4)
+                .help("The port to listen on for HTTP"),
+        )
+        .arg(
+            Arg::with_name("limit_name_in_labels")
+                .short('l')
+                .long("limit-name-in-labels")
+                .display_order(5)
+                .help("Include the Limit Name in prometheus label"),
+        )
+        .arg(
+            Arg::with_name("v")
+                .short('v')
+                .multiple_occurrences(true)
+                .max_occurrences(4)
+                .display_order(6)
+                .help("Sets the level of verbosity"),
+        )
+        .subcommand(
+            SubCommand::with_name("redis")
+                .display_order(1)
+                .about("Uses Redis to store counters")
+                .arg(
+                    Arg::with_name("URL")
+                        .help("Redis URL to use")
+                        .required(true)
+                        .index(1),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("cached_redis")
+                .about("Uses Redis to store counters, with an in-memory cache")
+                .display_order(2)
+                .arg(
+                    Arg::with_name("URL")
+                        .help("Redis URL to use")
+                        .required(true)
+                        .index(1),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("infinispan")
+                .about("Uses Infinispan to store counters")
+                .display_order(3)
+                .arg(
+                    Arg::with_name("URL")
+                        .help("Infinispan URL to use")
+                        .display_order(1)
+                        .required(true)
+                        .index(1),
+                )
+                .arg(
+                    Arg::with_name("cache name")
+                        .short('n')
+                        .long("cache-name")
+                        .takes_value(true)
+                        .default_value(DEFAULT_INFINISPAN_LIMITS_CACHE_NAME)
+                        .display_order(2)
+                        .help("Name of the cache to store counters in"),
+                )
+                .arg(
+                    Arg::with_name("consistency")
+                        .short('c')
+                        .long("consistency")
+                        .takes_value(true)
+                        .default_value(&format!("{}", DEFAULT_INFINISPAN_CONSISTENCY))
+                        .value_parser(PossibleValuesParser::new(["Strong", "Weak"]))
+                        .display_order(3)
+                        .help("The consistency to use to read from the cache"),
+                ),
+        )
+        .get_matches();
 
-    let config = match Configuration::from_env() {
-        Ok(config) => config,
-        Err(_) => {
-            eprintln!("Error: please set either the Redis or the Infinispan URL, but not both");
-            process::exit(1)
+    let config = if matches.contains_id("config_from_env") {
+        match Configuration::from_env() {
+            Ok(config) => config,
+            Err(_) => {
+                eprintln!("Error: please set either the Redis or the Infinispan URL, but not both");
+                process::exit(1)
+            }
         }
+    } else {
+        let limits_file = matches.value_of("LIMITS_FILE").unwrap();
+        // todo build actual counter config based of arguments passed in!
+        let storage = match matches.subcommand() {
+            Some(("redis", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
+                url: sub.value_of("URL").unwrap().to_owned(),
+                cache: None,
+            }),
+            Some(("cached_redis", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
+                url: sub.value_of("URL").unwrap().to_owned(),
+                cache: None,
+            }),
+            Some(("infinispan", sub)) => {
+                StorageConfiguration::Infinispan(InfinispanStorageConfiguration {
+                    url: sub.value_of("URL").unwrap().to_owned(),
+                    cache: None,
+                    consistency: None,
+                })
+            }
+            None => StorageConfiguration::InMemory,
+            _ => unreachable!("Some new storage wasn't configured"),
+        };
+
+        Configuration::with(
+            storage,
+            limits_file.to_string(),
+            matches.value_of("ip").unwrap().into(),
+            matches.value_of("port").unwrap().parse().unwrap(),
+            matches.value_of("http_ip").unwrap().into(),
+            matches.value_of("http_port").unwrap().parse().unwrap(),
+            matches.value_of("limit_name_in_labels").is_some(),
+        )
     };
+
+    let level_filter = match matches.occurrences_of("v") {
+        0 => LevelFilter::Error,
+        1 => LevelFilter::Warn,
+        2 => LevelFilter::Info,
+        3 => LevelFilter::Debug,
+        4 => LevelFilter::Trace,
+        _ => unreachable!("Verbosity should at most be 4!"),
+    };
+    let mut builder = Builder::new();
+
+    builder
+        .filter(None, level_filter)
+        .parse_default_env()
+        .init();
 
     let limit_file = config.limits_file.clone();
     let envoy_rls_address = config.rlp_address();
@@ -261,6 +437,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         rate_limiter.clone(),
     ));
 
+    info!("HTTP server starting on {}", http_api_address);
     run_http_server(&http_api_address, rate_limiter.clone()).await?;
 
     Ok(())

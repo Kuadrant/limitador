@@ -31,18 +31,46 @@ pub struct Configuration {
 }
 
 impl Configuration {
+    pub const DEFAULT_RLS_PORT: &'static str = "8081";
+    pub const DEFAULT_HTTP_PORT: &'static str = "8080";
+    pub const DEFAULT_IP_BIND: &'static str = "0.0.0.0";
+
     pub fn from_env() -> Result<Self, ()> {
-        let rls_port = env::var("ENVOY_RLS_PORT").unwrap_or_else(|_| "8081".to_string());
-        let http_port = env::var("HTTP_API_PORT").unwrap_or_else(|_| "8080".to_string());
+        let rls_port =
+            env::var("ENVOY_RLS_PORT").unwrap_or_else(|_| Self::DEFAULT_RLS_PORT.to_string());
+        let http_port =
+            env::var("HTTP_API_PORT").unwrap_or_else(|_| Self::DEFAULT_HTTP_PORT.to_string());
         Ok(Self {
             limits_file: env::var("LIMITS_FILE").expect("No limit file provided!"),
             storage: storage_config_from_env()?,
-            rls_host: env::var("ENVOY_RLS_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
+            rls_host: env::var("ENVOY_RLS_HOST")
+                .unwrap_or_else(|_| Self::DEFAULT_IP_BIND.to_string()),
             rls_port: rls_port.parse().expect("Expected a port number!"),
-            http_host: env::var("HTTP_API_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
+            http_host: env::var("HTTP_API_HOST")
+                .unwrap_or_else(|_| Self::DEFAULT_IP_BIND.to_string()),
             http_port: http_port.parse().expect("Expected a port number!"),
             limit_name_in_labels: env_option_is_enabled("LIMIT_NAME_IN_PROMETHEUS_LABELS"),
         })
+    }
+
+    pub fn with(
+        storage: StorageConfiguration,
+        limits_file: String,
+        rls_host: String,
+        rls_port: u16,
+        http_host: String,
+        http_port: u16,
+        limit_name_in_labels: bool,
+    ) -> Self {
+        Self {
+            limits_file,
+            storage,
+            rls_host,
+            rls_port,
+            http_host,
+            http_port,
+            limit_name_in_labels,
+        }
     }
 
     pub fn rlp_address(&self) -> String {

@@ -21,3 +21,6 @@ impl From<InfinispanError> for StorageErr {
         Self { msg: e.to_string() }
     }
 }
+
+pub const DEFAULT_INFINISPAN_LIMITS_CACHE_NAME: &str = "limitador";
+pub const DEFAULT_INFINISPAN_CONSISTENCY: Consistency = Consistency::Strong;

@@ -30,6 +30,7 @@ actix-rt = "2"
 paperclip = { version = "0.7", features = ["actix4"] }
 serde = { version = "1", features = ["derive"] }
 notify = "5.0.0-pre.15"
+clap = "3.2.8"
 serial_test = "0.7.0"
 
 [build-dependencies]
