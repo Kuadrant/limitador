@@ -227,39 +227,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let _watcher = if let Some(limits_file_path) = limit_file {
-        if let Err(e) = rate_limiter.load_limits_from_file(&limits_file_path).await {
-            eprintln!("Failed to load limit file: {}", e);
-            process::exit(1)
-        }
+    if let Err(e) = rate_limiter.load_limits_from_file(&limit_file).await {
+        eprintln!("Failed to load limit file: {}", e);
+        process::exit(1)
+    }
 
-        let limiter = Arc::clone(&rate_limiter);
-        let handle = Handle::current();
+    let limiter = Arc::clone(&rate_limiter);
+    let handle = Handle::current();
 
-        let mut watcher =
-            RecommendedWatcher::new(move |result: Result<Event, Error>| match result {
-                Ok(ref event) => {
-                    if let EventKind::Modify(ModifyKind::Data(_)) = event.kind {
-                        let limiter = limiter.clone();
-                        let location = event.paths.first().unwrap().clone();
-                        handle.spawn(async move {
-                            match limiter.load_limits_from_file(&location).await {
-                                Ok(_) => info!("Reloaded limit file"),
-                                Err(e) => error!("Failed reloading limit file: {}", e),
-                            }
-                        });
+    let mut watcher = RecommendedWatcher::new(move |result: Result<Event, Error>| match result {
+        Ok(ref event) => {
+            if let EventKind::Modify(ModifyKind::Data(_)) = event.kind {
+                let limiter = limiter.clone();
+                let location = event.paths.first().unwrap().clone();
+                handle.spawn(async move {
+                    match limiter.load_limits_from_file(&location).await {
+                        Ok(_) => info!("Reloaded limit file"),
+                        Err(e) => error!("Failed reloading limit file: {}", e),
                     }
-                }
-                Err(ref e) => {
-                    warn!("Something went wrong while watching limit file: {}", e);
-                }
-            })?;
+                });
+            }
+        }
+        Err(ref e) => {
+            warn!("Something went wrong while watching limit file: {}", e);
+        }
+    })?;
 
-        watcher.watch(Path::new(&limits_file_path), RecursiveMode::Recursive)?;
-        Some(watcher)
-    } else {
-        None
-    };
+    watcher.watch(Path::new(&limit_file), RecursiveMode::Recursive)?;
 
     info!("Envoy RLS server starting on {}", envoy_rls_address);
     tokio::spawn(run_envoy_rls_server(
