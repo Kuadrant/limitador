@@ -215,10 +215,16 @@ impl Limiter {
 
 #[actix_rt::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let matches = App::new("Limitador Server")
+    let infinispan_consistency_default = format!("{}", DEFAULT_INFINISPAN_CONSISTENCY);
+    let cmdline = App::new("Limitador Server")
         .version(LIMITADOR_VERSION)
         .author("The Kuadrant team - github.com/Kuadrant")
         .about("Rate Limiting Server")
+        .disable_help_subcommand(true)
+        .subcommand_negates_reqs(false)
+        .subcommand_value_name("STORAGE")
+        .subcommand_help_heading("STORAGES")
+        .subcommand_required(false)
         .arg(
             Arg::with_name("config_from_env")
                 .short('E')
@@ -280,8 +286,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .help("Sets the level of verbosity"),
         )
         .subcommand(
-            SubCommand::with_name("redis")
+            SubCommand::with_name("memory")
                 .display_order(1)
+                .about("Counters are held in Limitador (ephemeral)"),
+        )
+        .subcommand(
+            SubCommand::with_name("redis")
+                .display_order(2)
                 .about("Uses Redis to store counters")
                 .arg(
                     Arg::with_name("URL")
@@ -291,20 +302,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ),
         )
         .subcommand(
-            SubCommand::with_name("cached_redis")
+            SubCommand::with_name("redis_cached")
                 .about("Uses Redis to store counters, with an in-memory cache")
-                .display_order(2)
+                .display_order(3)
                 .arg(
                     Arg::with_name("URL")
                         .help("Redis URL to use")
                         .required(true)
                         .index(1),
+                )
+                .arg(
+                    Arg::with_name("TTL")
+                        .long("ttl")
+                        .takes_value(true)
+                        // .default_value(DEFAULT_INFINISPAN_LIMITS_CACHE_NAME)
+                        .display_order(2)
+                        .help("TTL for cached counters in milliseconds"),
                 ),
         )
         .subcommand(
             SubCommand::with_name("infinispan")
                 .about("Uses Infinispan to store counters")
-                .display_order(3)
+                .display_order(4)
                 .arg(
                     Arg::with_name("URL")
                         .help("Infinispan URL to use")
@@ -326,12 +345,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .short('c')
                         .long("consistency")
                         .takes_value(true)
-                        .default_value(&format!("{}", DEFAULT_INFINISPAN_CONSISTENCY))
+                        .default_value(&infinispan_consistency_default)
                         .value_parser(PossibleValuesParser::new(["Strong", "Weak"]))
                         .display_order(3)
                         .help("The consistency to use to read from the cache"),
                 ),
-        )
+        );
+    let matches = cmdline
         .get_matches();
 
     let config = if matches.contains_id("config_from_env") {
@@ -350,7 +370,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 url: sub.value_of("URL").unwrap().to_owned(),
                 cache: None,
             }),
-            Some(("cached_redis", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
+            Some(("redis_cached", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
                 url: sub.value_of("URL").unwrap().to_owned(),
                 cache: None,
             }),
@@ -361,8 +381,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     consistency: None,
                 })
             }
-            None => StorageConfiguration::InMemory,
-            _ => unreachable!("Some new storage wasn't configured"),
+            Some(("memory", _sub)) => StorageConfiguration::InMemory,
+            _ => unreachable!("Some storage wasn't configured!"),
         };
 
         Configuration::with(
