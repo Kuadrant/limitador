@@ -132,8 +132,8 @@ impl InMemoryStorage {
         {
             Entry::Occupied(mut e) => {
                 e.get_mut()
-                    .get_mut(counter.limit())
-                    .unwrap()
+                    .entry(counter.limit().clone())
+                    .or_default()
                     .insert(counter.clone());
             }
             Entry::Vacant(e) => {
