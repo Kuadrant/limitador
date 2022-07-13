@@ -108,7 +108,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                 .await?;
 
             for counter_key in counter_keys {
-                let mut counter: Counter = counter_from_counter_key(&counter_key, &limit);
+                let mut counter: Counter = counter_from_counter_key(&counter_key);
 
                 // If the key does not exist, it means that the counter expired,
                 // so we don't have to return it.

@@ -138,7 +138,6 @@ mod test {
     test_with_all_storage_impls!(configure_with_creates_the_given_limits);
     test_with_all_storage_impls!(configure_with_keeps_the_given_limits_and_counters_if_they_exist);
     test_with_all_storage_impls!(configure_with_deletes_all_except_the_limits_given);
-    test_with_all_storage_impls!(add_limit_only_adds_if_not_present);
 
     // All these functions need to use async/await. That's needed to support
     // both the sync and the async implementations of the rate limiter.
@@ -329,7 +328,7 @@ mod test {
         ];
 
         for limit in limits.iter() {
-            rate_limiter.add_limit(limit).await;
+            rate_limiter.add_limit(limit).await
         }
 
         rate_limiter.delete_limits(namespace).await.unwrap();
@@ -831,7 +830,7 @@ mod test {
         let namespace = "test_namespace";
 
         let limit_to_be_kept =
-            Limit::new(namespace, 10, 1, vec!["req.method == GET"], vec!["app_id"]);
+            Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
 
         let limit_to_be_deleted =
             Limit::new(namespace, 20, 60, vec!["req.method == GET"], vec!["app_id"]);
@@ -849,27 +848,5 @@ mod test {
 
         assert!(limits.contains(&limit_to_be_kept));
         assert!(!limits.contains(&limit_to_be_deleted));
-    }
-
-    async fn add_limit_only_adds_if_not_present(rate_limiter: &mut TestsLimiter) {
-        let namespace = "test_namespace";
-
-        let limit_1 = Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
-
-        let limit_2 = Limit::new(namespace, 20, 60, vec!["req.method == GET"], vec!["app_id"]);
-
-        let mut limit_3 = Limit::new(namespace, 20, 60, vec!["req.method == GET"], vec!["app_id"]);
-        limit_3.set_name("Name is irrelevant too".to_owned());
-
-        assert!(rate_limiter.add_limit(&limit_1).await);
-        assert!(!rate_limiter.add_limit(&limit_2).await);
-        assert!(!rate_limiter.add_limit(&limit_3).await);
-
-        let limits = rate_limiter.get_limits(namespace).await;
-
-        assert_eq!(limits.len(), 1);
-        let known_limit = limits.iter().next().unwrap();
-        assert_eq!(known_limit.max_value(), 10);
-        assert_eq!(known_limit.name(), None);
     }
 }

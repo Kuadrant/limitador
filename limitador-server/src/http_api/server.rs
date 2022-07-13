@@ -390,7 +390,7 @@ mod tests {
         match &limiter {
             Limiter::Blocking(limiter) => limiter.add_limit(limit.clone()),
             Limiter::Async(limiter) => limiter.add_limit(limit.clone()),
-        };
+        }
         limit
     }
 }

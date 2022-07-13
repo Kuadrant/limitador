@@ -201,7 +201,6 @@ use crate::storage::{AsyncCounterStorage, AsyncStorage, Authorization, CounterSt
 
 #[macro_use]
 extern crate lazy_static;
-extern crate core;
 
 pub mod counter;
 pub mod errors;
@@ -313,7 +312,7 @@ impl RateLimiter {
         self.storage.get_namespaces()
     }
 
-    pub fn add_limit(&self, limit: Limit) -> bool {
+    pub fn add_limit(&self, limit: Limit) {
         self.storage.add_limit(limit)
     }
 
@@ -484,7 +483,7 @@ impl AsyncRateLimiter {
         self.storage.get_namespaces()
     }
 
-    pub fn add_limit(&self, limit: Limit) -> bool {
+    pub fn add_limit(&self, limit: Limit) {
         self.storage.add_limit(limit)
     }
 

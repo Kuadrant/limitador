@@ -26,10 +26,8 @@ impl From<String> for Namespace {
 #[derive(Eq, Debug, Clone, Serialize, Deserialize)]
 pub struct Limit {
     namespace: Namespace,
-    #[serde(skip)]
     max_value: i64,
     seconds: u64,
-    #[serde(skip)]
     name: Option<String>,
 
     // Need to sort to generate the same object when using the JSON as a key or
@@ -90,10 +88,6 @@ impl Limit {
         self.name = Some(name)
     }
 
-    pub fn set_max_value(&mut self, value: i64) {
-        self.max_value = value;
-    }
-
     pub fn conditions(&self) -> HashSet<String> {
         self.conditions.iter().map(|cond| cond.into()).collect()
     }
@@ -135,7 +129,9 @@ impl Limit {
 impl Hash for Limit {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.namespace.hash(state);
+        self.max_value.hash(state);
         self.seconds.hash(state);
+        self.name.hash(state);
 
         let mut encoded_conditions = self
             .conditions
@@ -160,7 +156,9 @@ impl Hash for Limit {
 impl PartialEq for Limit {
     fn eq(&self, other: &Self) -> bool {
         self.namespace == other.namespace
+            && self.max_value == other.max_value
             && self.seconds == other.seconds
+            && self.name == other.name
             && self.conditions == other.conditions
             && self.variables == other.variables
     }

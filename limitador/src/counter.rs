@@ -48,17 +48,6 @@ impl Counter {
         self.limit.max_value()
     }
 
-    pub fn update_to_limit(&mut self, limit: &Limit) -> bool {
-        if limit == &self.limit {
-            self.limit.set_max_value(limit.max_value());
-            if let Some(name) = limit.name() {
-                self.limit.set_name(name.to_string());
-            }
-            return true;
-        }
-        false
-    }
-
     pub fn seconds(&self) -> u64 {
         self.limit.seconds()
     }
