@@ -132,8 +132,8 @@ impl InMemoryStorage {
         {
             Entry::Occupied(mut e) => {
                 e.get_mut()
-                    .get_mut(counter.limit())
-                    .unwrap()
+                    .entry(counter.limit().clone())
+                    .or_default()
                     .insert(counter.clone());
             }
             Entry::Vacant(e) => {
@@ -179,5 +179,27 @@ impl InMemoryStorage {
 impl Default for InMemoryStorage {
     fn default() -> Self {
         Self::new(1000)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn counters_for_multiple_limit_per_ns() {
+        let storage = InMemoryStorage::new(100);
+        let namespace = "test_namespace";
+        let limit_1 = Limit::new(namespace, 1, 1, vec!["req.method == GET"], vec!["app_id"]);
+        let limit_2 = Limit::new(namespace, 1, 10, vec!["req.method == GET"], vec!["app_id"]);
+        let counter_1 = Counter::new(limit_1, HashMap::default());
+        let counter_2 = Counter::new(limit_2, HashMap::default());
+        storage.update_counter(&counter_1, 1).unwrap();
+        storage.update_counter(&counter_2, 1).unwrap();
+
+        assert_eq!(
+            storage.counters_in_namespace(counter_1.namespace()).len(),
+            2
+        );
     }
 }
