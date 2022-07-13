@@ -15,7 +15,7 @@ use limitador::storage::infinispan::{Consistency, InfinispanStorageBuilder};
 use limitador::storage::redis::{AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder};
 use limitador::storage::{AsyncCounterStorage, AsyncStorage};
 use limitador::{AsyncRateLimiter, AsyncRateLimiterBuilder, RateLimiter, RateLimiterBuilder};
-use notify::event::{DataChange, ModifyKind};
+use notify::event::ModifyKind;
 use notify::{Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::convert::TryInto;
 use std::path::Path;
@@ -239,7 +239,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut watcher =
             RecommendedWatcher::new(move |result: Result<Event, Error>| match result {
                 Ok(ref event) => {
-                    if let EventKind::Modify(ModifyKind::Data(DataChange::Content)) = event.kind {
+                    if let EventKind::Modify(ModifyKind::Data(_)) = event.kind {
                         let limiter = limiter.clone();
                         let location = event.paths.first().unwrap().clone();
                         handle.spawn(async move {
