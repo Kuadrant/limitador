@@ -102,7 +102,7 @@ impl AsyncCounterStorage for InfinispanStorage {
                 // unnecessarily.
 
                 if let Some(val) = counter_val {
-                    let mut counter: Counter = counter_from_counter_key(&counter_key, &limit);
+                    let mut counter: Counter = counter_from_counter_key(&counter_key);
                     let ttl = 0; // TODO: calculate TTL from response headers.
                     counter.set_remaining(val);
                     counter.set_expires_in(Duration::from_secs(ttl));
