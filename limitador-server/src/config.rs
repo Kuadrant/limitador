@@ -18,6 +18,7 @@
 // HTTP_API_HOST: host // just to become HTTP_API_HOST:HTTP_API_PORT as &str
 // HTTP_API_PORT: port
 
+use limitador::storage::redis::DEFAULT_MAX_CACHED_COUNTERS;
 use std::env;
 
 #[derive(Debug)]
@@ -105,6 +106,7 @@ fn storage_config_from_env() -> Result<StorageConfiguration, ()> {
                         .unwrap_or_else(|_| "10".to_string())
                         .parse()
                         .expect("Expected an u64"),
+                    max_counters: DEFAULT_MAX_CACHED_COUNTERS,
                 })
             } else {
                 None
@@ -146,6 +148,7 @@ pub struct RedisStorageCacheConfiguration {
     pub flushing_period: i64,
     pub max_ttl: u64,
     pub ttl_ratio: u64,
+    pub max_counters: usize,
 }
 
 #[derive(PartialEq, Debug)]

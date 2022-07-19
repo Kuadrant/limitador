@@ -20,8 +20,9 @@ use limitador::storage::infinispan::{
     DEFAULT_INFINISPAN_CONSISTENCY, DEFAULT_INFINISPAN_LIMITS_CACHE_NAME,
 };
 use limitador::storage::redis::{
-    AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder,
-    DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC,
+    AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder, DEFAULT_FLUSHING_PERIOD_SEC,
+    DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC,
+    DEFAULT_TTL_RATIO_CACHED_COUNTERS,
 };
 use limitador::storage::{AsyncCounterStorage, AsyncStorage};
 use limitador::{AsyncRateLimiter, AsyncRateLimiterBuilder, RateLimiter, RateLimiterBuilder};
@@ -125,6 +126,7 @@ impl Limiter {
             cached_redis_storage.max_ttl_cached_counters(Duration::from_millis(cache_cfg.max_ttl));
 
         cached_redis_storage = cached_redis_storage.ttl_ratio_cached_counters(cache_cfg.ttl_ratio);
+        cached_redis_storage = cached_redis_storage.max_cached_counters(cache_cfg.max_counters);
 
         cached_redis_storage.build().await
     }
@@ -219,7 +221,12 @@ impl Limiter {
 #[actix_rt::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let infinispan_consistency_default = format!("{}", DEFAULT_INFINISPAN_CONSISTENCY);
+
     let redis_cached_ttl_default = DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC.to_string();
+    let redis_flushing_period_default = DEFAULT_FLUSHING_PERIOD_SEC.to_string();
+    let redis_max_cached_counters_default = DEFAULT_MAX_CACHED_COUNTERS.to_string();
+    let redis_ttl_ratio_default = DEFAULT_TTL_RATIO_CACHED_COUNTERS.to_string();
+
     let cmdline = App::new("Limitador Server")
         .version(LIMITADOR_VERSION)
         .author("The Kuadrant team - github.com/Kuadrant")
@@ -323,6 +330,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .default_value(&redis_cached_ttl_default)
                         .display_order(2)
                         .help("TTL for cached counters in seconds"),
+                )
+                .arg(
+                    Arg::with_name("ratio")
+                        .long("ratio")
+                        .takes_value(true)
+                        .value_parser(clap::value_parser!(u64))
+                        .default_value(&redis_ttl_ratio_default)
+                        .display_order(3)
+                        .help("Ratio to apply to the TTL from Redis on cached counters"),
+                )
+                .arg(
+                    Arg::with_name("flush")
+                        .long("flush-period")
+                        .takes_value(true)
+                        .value_parser(clap::value_parser!(i64))
+                        .default_value(&redis_flushing_period_default)
+                        .display_order(4)
+                        .help("Flushing period for counters in seconds"),
+                )
+                .arg(
+                    Arg::with_name("max")
+                        .long("max-cached")
+                        .takes_value(true)
+                        .value_parser(clap::value_parser!(usize))
+                        .default_value(&redis_max_cached_counters_default)
+                        .display_order(5)
+                        .help("Maximum amount of counters cached"),
                 ),
         )
         .subcommand(
@@ -372,7 +406,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else {
         let limits_file = matches.value_of("LIMITS_FILE").unwrap();
-        // todo build actual counter config based of arguments passed in!
         let storage = match matches.subcommand() {
             Some(("redis", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
                 url: sub.value_of("URL").unwrap().to_owned(),
@@ -381,9 +414,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(("redis_cached", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
                 url: sub.value_of("URL").unwrap().to_owned(),
                 cache: Some(RedisStorageCacheConfiguration {
-                    flushing_period: 0,
+                    flushing_period: *sub.get_one("flush").unwrap(),
                     max_ttl: *sub.get_one("TTL").unwrap(),
-                    ttl_ratio: 0,
+                    ttl_ratio: *sub.get_one("ratio").unwrap(),
+                    max_counters: *sub.get_one("max").unwrap(),
                 }),
             }),
             Some(("infinispan", sub)) => {
