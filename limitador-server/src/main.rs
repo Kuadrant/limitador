@@ -19,7 +19,10 @@ use limitador::storage::infinispan::{Consistency, InfinispanStorageBuilder};
 use limitador::storage::infinispan::{
     DEFAULT_INFINISPAN_CONSISTENCY, DEFAULT_INFINISPAN_LIMITS_CACHE_NAME,
 };
-use limitador::storage::redis::{AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder};
+use limitador::storage::redis::{
+    AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder,
+    DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC,
+};
 use limitador::storage::{AsyncCounterStorage, AsyncStorage};
 use limitador::{AsyncRateLimiter, AsyncRateLimiterBuilder, RateLimiter, RateLimiterBuilder};
 use log::LevelFilter;
@@ -216,6 +219,7 @@ impl Limiter {
 #[actix_rt::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let infinispan_consistency_default = format!("{}", DEFAULT_INFINISPAN_CONSISTENCY);
+    let redis_cached_ttl_default = DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC.to_string();
     let cmdline = App::new("Limitador Server")
         .version(LIMITADOR_VERSION)
         .author("The Kuadrant team - github.com/Kuadrant")
@@ -288,7 +292,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .subcommand(
             SubCommand::with_name("memory")
                 .display_order(1)
-                .about("Counters are held in Limitador (ephemeral)"),
+                .about("Counters are held in Limitador (ephemeral) [default storage]"),
         )
         .subcommand(
             SubCommand::with_name("redis")
@@ -315,9 +319,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Arg::with_name("TTL")
                         .long("ttl")
                         .takes_value(true)
-                        // .default_value(DEFAULT_INFINISPAN_LIMITS_CACHE_NAME)
+                        .value_parser(clap::value_parser!(u64))
+                        .default_value(&redis_cached_ttl_default)
                         .display_order(2)
-                        .help("TTL for cached counters in milliseconds"),
+                        .help("TTL for cached counters in seconds"),
                 ),
         )
         .subcommand(
@@ -351,14 +356,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .help("The consistency to use to read from the cache"),
                 ),
         );
-    let matches = cmdline
-        .get_matches();
+    let matches = cmdline.get_matches();
 
     let config = if matches.contains_id("config_from_env") {
+        if matches.subcommand_name().is_some() {
+            eprintln!("error: The argument '--use-env-vars' cannot be used with any subcommand");
+            process::exit(1)
+        }
         match Configuration::from_env() {
             Ok(config) => config,
             Err(_) => {
-                eprintln!("Error: please set either the Redis or the Infinispan URL, but not both");
+                eprintln!("error: please set either the Redis or the Infinispan URL, but not both");
                 process::exit(1)
             }
         }
@@ -372,16 +380,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }),
             Some(("redis_cached", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
                 url: sub.value_of("URL").unwrap().to_owned(),
-                cache: None,
+                cache: Some(RedisStorageCacheConfiguration {
+                    flushing_period: 0,
+                    max_ttl: *sub.get_one("TTL").unwrap(),
+                    ttl_ratio: 0,
+                }),
             }),
             Some(("infinispan", sub)) => {
                 StorageConfiguration::Infinispan(InfinispanStorageConfiguration {
                     url: sub.value_of("URL").unwrap().to_owned(),
-                    cache: None,
-                    consistency: None,
+                    cache: Some(sub.value_of("cache name").unwrap().to_string()),
+                    consistency: Some(sub.value_of("consistency").unwrap().to_string()),
                 })
             }
             Some(("memory", _sub)) => StorageConfiguration::InMemory,
+            None => StorageConfiguration::InMemory,
             _ => unreachable!("Some storage wasn't configured!"),
         };
 
@@ -410,6 +423,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter(None, level_filter)
         .parse_default_env()
         .init();
+
+    info!("Using config: {:?}", config);
 
     let limit_file = config.limits_file.clone();
     let envoy_rls_address = config.rlp_address();

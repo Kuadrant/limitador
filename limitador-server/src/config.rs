@@ -20,6 +20,7 @@
 
 use std::env;
 
+#[derive(Debug)]
 pub struct Configuration {
     pub limits_file: String,
     pub storage: StorageConfiguration,

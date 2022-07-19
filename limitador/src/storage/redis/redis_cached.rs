@@ -2,12 +2,13 @@ use crate::counter::Counter;
 use crate::limit::Limit;
 use crate::storage::keys::*;
 use crate::storage::redis::batcher::Batcher;
-use crate::storage::redis::counters_cache::{
-    CountersCache, CountersCacheBuilder, DEFAULT_MAX_CACHED_COUNTERS,
-    DEFAULT_MAX_TTL_CACHED_COUNTERS, DEFAULT_TTL_RATIO_CACHED_COUNTERS,
-};
+use crate::storage::redis::counters_cache::{CountersCache, CountersCacheBuilder};
 use crate::storage::redis::redis_async::AsyncRedisStorage;
 use crate::storage::redis::scripts::VALUES_AND_TTLS;
+use crate::storage::redis::{
+    DEFAULT_FLUSHING_PERIOD_SEC, DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC,
+    DEFAULT_TTL_RATIO_CACHED_COUNTERS,
+};
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
 use redis::aio::ConnectionManager;
@@ -35,8 +36,6 @@ use tokio::sync::Mutex;
 // Future improvements:
 // - Introduce a mechanism to avoid going to Redis to fetch the same counter
 // multiple times when it is not cached.
-
-const DEFAULT_FLUSHING_PERIOD: Duration = Duration::from_secs(1);
 
 pub struct CachedRedisStorage {
     cached_counters: Mutex<CountersCache>,
@@ -178,9 +177,9 @@ impl CachedRedisStorage {
     pub async fn new(redis_url: &str) -> Self {
         Self::new_with_options(
             redis_url,
-            Some(DEFAULT_FLUSHING_PERIOD),
+            Some(Duration::from_secs(DEFAULT_FLUSHING_PERIOD_SEC)),
             DEFAULT_MAX_CACHED_COUNTERS,
-            DEFAULT_MAX_TTL_CACHED_COUNTERS,
+            Duration::from_secs(DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC),
             DEFAULT_TTL_RATIO_CACHED_COUNTERS,
         )
         .await
@@ -276,9 +275,9 @@ impl CachedRedisStorageBuilder {
     pub fn new(redis_url: &str) -> Self {
         Self {
             redis_url: redis_url.to_string(),
-            flushing_period: Some(DEFAULT_FLUSHING_PERIOD),
+            flushing_period: Some(Duration::from_secs(DEFAULT_FLUSHING_PERIOD_SEC)),
             max_cached_counters: DEFAULT_MAX_CACHED_COUNTERS,
-            max_ttl_cached_counters: DEFAULT_MAX_TTL_CACHED_COUNTERS,
+            max_ttl_cached_counters: Duration::from_secs(DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC),
             ttl_ratio_cached_counters: DEFAULT_TTL_RATIO_CACHED_COUNTERS,
         }
     }

@@ -1,10 +1,10 @@
 use crate::counter::Counter;
+use crate::storage::redis::{
+    DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC,
+    DEFAULT_TTL_RATIO_CACHED_COUNTERS,
+};
 use std::time::Duration;
 use ttl_cache::TtlCache;
-
-pub const DEFAULT_MAX_CACHED_COUNTERS: usize = 10000;
-pub const DEFAULT_MAX_TTL_CACHED_COUNTERS: Duration = Duration::from_secs(5);
-pub const DEFAULT_TTL_RATIO_CACHED_COUNTERS: u64 = 10;
 
 pub struct CountersCache {
     max_ttl_cached_counters: Duration,
@@ -22,7 +22,7 @@ impl CountersCacheBuilder {
     pub fn new() -> Self {
         Self {
             max_cached_counters: DEFAULT_MAX_CACHED_COUNTERS,
-            max_ttl_cached_counters: DEFAULT_MAX_TTL_CACHED_COUNTERS,
+            max_ttl_cached_counters: Duration::from_secs(DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC),
             ttl_ratio_cached_counters: DEFAULT_TTL_RATIO_CACHED_COUNTERS,
         }
     }
