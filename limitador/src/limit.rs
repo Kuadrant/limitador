@@ -26,10 +26,10 @@ impl From<String> for Namespace {
 #[derive(Eq, Debug, Clone, Serialize, Deserialize)]
 pub struct Limit {
     namespace: Namespace,
-    #[serde(skip_serializing)]
+    #[serde(skip_serializing, default)]
     max_value: i64,
     seconds: u64,
-    #[serde(skip_serializing)]
+    #[serde(skip_serializing, default)]
     name: Option<String>,
 
     // Need to sort to generate the same object when using the JSON as a key or
