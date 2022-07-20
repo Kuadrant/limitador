@@ -123,6 +123,21 @@ fn storage_config_from_env() -> Result<StorageConfiguration, ()> {
     }
 }
 
+#[cfg(test)]
+impl Default for Configuration {
+    fn default() -> Self {
+        Configuration {
+            limits_file: "".to_string(),
+            storage: StorageConfiguration::InMemory,
+            rls_host: "".to_string(),
+            rls_port: 0,
+            http_host: "".to_string(),
+            http_port: 0,
+            limit_name_in_labels: false,
+        }
+    }
+}
+
 fn env_option_is_enabled(env_name: &str) -> bool {
     match env::var(env_name) {
         Ok(value) => value == "1",
@@ -190,8 +205,10 @@ mod tests {
     #[test]
     #[serial]
     fn test_config_defaults() {
+        let mut vars = VarEnvCleaner::new();
+        vars.set_var("LIMITS_FILE", "limitador-server/examples/limit.yaml");
         let config = Configuration::from_env().unwrap();
-        assert_eq!(&config.limits_file, "");
+        assert_eq!(&config.limits_file, "limitador-server/examples/limit.yaml");
         assert_eq!(config.storage, StorageConfiguration::InMemory);
         assert_eq!(config.http_address(), "0.0.0.0:8080".to_string());
         assert_eq!(config.rlp_address(), "0.0.0.0:8081".to_string());
@@ -203,10 +220,11 @@ mod tests {
     fn test_config_redis_defaults() {
         let mut vars = VarEnvCleaner::new();
         let url = "redis://127.0.1.1:7654";
+        vars.set_var("LIMITS_FILE", "limitador-server/examples/limit.yaml");
         vars.set_var("REDIS_URL", url);
 
         let config = Configuration::from_env().unwrap();
-        assert_eq!(&config.limits_file, "");
+        assert_eq!(&config.limits_file, "limitador-server/examples/limit.yaml");
         if let StorageConfiguration::Redis(ref redis_config) = config.storage {
             assert_eq!(redis_config.url, url);
             assert_eq!(redis_config.cache, None);
@@ -222,11 +240,12 @@ mod tests {
     #[serial]
     fn test_config_infinispan_defaults() {
         let mut vars = VarEnvCleaner::new();
+        vars.set_var("LIMITS_FILE", "limitador-server/examples/limit.yaml");
 
         let url = "127.0.2.2:9876";
         vars.set_var("INFINISPAN_URL", url);
         let config = Configuration::from_env().unwrap();
-        assert_eq!(&config.limits_file, "");
+        assert_eq!(&config.limits_file, "limitador-server/examples/limit.yaml");
         if let StorageConfiguration::Infinispan(ref infinispan_config) = config.storage {
             assert_eq!(infinispan_config.url, url);
             assert_eq!(infinispan_config.cache, None);
