@@ -15,6 +15,7 @@ port, that implements the Envoy Rate Limit protocol (v3).
 - [**How it works**](/doc/how-it-works.md)
 - [**Limits storage**](#limits-storage)
 - [**Development**](#development)
+- [**Testing Environment**](limitador-server/docs/sandbox.md)
 - [**Kubernetes**](limitador-server/kubernetes/)
 - [**License**](#license)
 
