@@ -18,6 +18,8 @@ COPY ./Cargo.toml ./Cargo.toml
 COPY limitador/Cargo.toml ./limitador/Cargo.toml
 COPY limitador-server/Cargo.toml ./limitador-server/Cargo.toml
 
+ENV RUSTFLAGS="-C target-feature=-crt-static"
+
 RUN mkdir -p limitador/src limitador-server/src
 
 RUN echo "fn main() {println!(\"if you see this, the build broke\")}" > limitador/src/main.rs \
@@ -40,6 +42,8 @@ RUN source $HOME/.cargo/env \
 # ------------------------------------------------------------------------------
 
 FROM alpine:3.16
+
+RUN apk add libssl3 libgcc
 
 RUN addgroup -g 1000 limitador \
     && adduser -D -s /bin/sh -u 1000 -G limitador limitador
