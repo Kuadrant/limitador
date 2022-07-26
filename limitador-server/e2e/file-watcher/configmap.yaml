@@ -1,0 +1,13 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: limitador-config
+data:
+  limits.yaml: |
+    ---
+    - namespace: test
+      max_value: 1000
+      seconds: 1
+      conditions: []
+      variables: ["user_id"]

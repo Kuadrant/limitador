@@ -1,0 +1,81 @@
+---
+name: e2e tests
+on:
+  push:
+    branches:
+      - '*'
+  pull_request:
+    branches:
+      - '*'
+jobs:
+  limits_file_watcher:
+    name: Limits File Watcher in k8s environment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+      - name: Build Limitador Image
+        id: build-image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: limitador-testing
+          tags: latest
+          dockerfiles: |
+            ./Dockerfile
+      - name: Create k8s Kind Cluster
+        uses: helm/kind-action@v1.1.0
+        with:
+          version: v0.11.1
+          config: limitador-server/script/kind-cluster.yaml
+          cluster_name: limitador-local
+          wait: 120s
+      - name: Check cluster info
+        run: |
+          kubectl cluster-info dump
+      - name: Load limitador docker image
+        run: |
+          podman save -o image.tar ${{ steps.build-image.outputs.image }}:${{ steps.build-image.outputs.tags }}
+          kind load image-archive --name limitador-local image.tar
+      - name: Deploy limitador
+        run: |
+          kubectl apply -f limitador-server/e2e/file-watcher/configmap.yaml
+          kubectl apply -f limitador-server/e2e/file-watcher/deployment.yaml
+          kubectl apply -f limitador-server/e2e/file-watcher/service.yaml
+      - name: Watch limitador pod resource (background)
+        timeout-minutes: 5
+        run: |
+          limitador-server/e2e/file-watcher/watch-pod-resource.sh </dev/null 2>/dev/null &
+      - name: Wait for limitador deployment availability
+        run: |
+          # use 'wait' to check for Available status in .status.conditions[]
+          kubectl wait deployment limitador --for condition=Available=True --timeout=300s
+      - name: Read limits from HTTP endpoint
+        uses: nick-fields/retry@v2
+        with:
+          timeout_seconds: 10
+          max_attempts: 10
+          command: |
+            ip=$(kubectl get nodes -lkubernetes.io/hostname!=kind-control-plane -ojsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}')
+            port=$(kubectl get service limitador -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
+            curl "http://${ip}:${port}/limits/test" -o output-limits.json 2>/dev/null
+            jq --exit-status '.[] | select(.max_value == 1000)' output-limits.json
+      - name: Update limit in the configmap
+        run: |
+          kubectl apply -f limitador-server/e2e/file-watcher/configmap_updated.yaml
+          # Little tric to force kubelet to update local file
+          kubectl annotate $(kubectl get pods -l app=limitador -o name) bla=bla1
+      - name: Watch limitador pod resource (background)
+        timeout-minutes: 5
+        run: |
+          limitador-server/e2e/file-watcher/watch-pod-env.sh </dev/null 2>/dev/null &
+      - name: Read new limits from HTTP endpoint
+        uses: nick-fields/retry@v2
+        with:
+          timeout_seconds: 10
+          max_attempts: 10
+          retry_wait_seconds: 30
+          command: |
+            ip=$(kubectl get nodes -lkubernetes.io/hostname!=kind-control-plane -ojsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}')
+            port=$(kubectl get service limitador -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
+            curl "http://${ip}:${port}/limits/test" -o output-limits-new.json 2>/dev/null
+            jq --exit-status '.[] | select(.max_value == 2000)' output-limits-new.json
