@@ -237,13 +237,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .subcommand_help_heading("STORAGES")
         .subcommand_required(false)
         .arg(
-            Arg::with_name("config_from_env")
-                .short('E')
-                .long("use-env-vars")
-                .help("Sets the server up from ENV VARS instead of these options")
-                .exclusive(true),
-        )
-        .arg(
             Arg::with_name("LIMITS_FILE")
                 .help("The limit file to use")
                 .required(true)
@@ -392,56 +385,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     let matches = cmdline.get_matches();
 
-    let config = if matches.contains_id("config_from_env") {
-        if matches.subcommand_name().is_some() {
-            eprintln!("error: The argument '--use-env-vars' cannot be used with any subcommand");
-            process::exit(1)
-        }
-        match Configuration::from_env() {
-            Ok(config) => config,
-            Err(_) => {
-                eprintln!("error: please set either the Redis or the Infinispan URL, but not both");
-                process::exit(1)
-            }
-        }
-    } else {
-        let limits_file = matches.value_of("LIMITS_FILE").unwrap();
-        let storage = match matches.subcommand() {
-            Some(("redis", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
-                url: sub.value_of("URL").unwrap().to_owned(),
-                cache: None,
+    let limits_file = matches.value_of("LIMITS_FILE").unwrap();
+    let storage = match matches.subcommand() {
+        Some(("redis", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
+            url: sub.value_of("URL").unwrap().to_owned(),
+            cache: None,
+        }),
+        Some(("redis_cached", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
+            url: sub.value_of("URL").unwrap().to_owned(),
+            cache: Some(RedisStorageCacheConfiguration {
+                flushing_period: *sub.get_one("flush").unwrap(),
+                max_ttl: *sub.get_one("TTL").unwrap(),
+                ttl_ratio: *sub.get_one("ratio").unwrap(),
+                max_counters: *sub.get_one("max").unwrap(),
             }),
-            Some(("redis_cached", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
+        }),
+        Some(("infinispan", sub)) => {
+            StorageConfiguration::Infinispan(InfinispanStorageConfiguration {
                 url: sub.value_of("URL").unwrap().to_owned(),
-                cache: Some(RedisStorageCacheConfiguration {
-                    flushing_period: *sub.get_one("flush").unwrap(),
-                    max_ttl: *sub.get_one("TTL").unwrap(),
-                    ttl_ratio: *sub.get_one("ratio").unwrap(),
-                    max_counters: *sub.get_one("max").unwrap(),
-                }),
-            }),
-            Some(("infinispan", sub)) => {
-                StorageConfiguration::Infinispan(InfinispanStorageConfiguration {
-                    url: sub.value_of("URL").unwrap().to_owned(),
-                    cache: Some(sub.value_of("cache name").unwrap().to_string()),
-                    consistency: Some(sub.value_of("consistency").unwrap().to_string()),
-                })
-            }
-            Some(("memory", _sub)) => StorageConfiguration::InMemory,
-            None => StorageConfiguration::InMemory,
-            _ => unreachable!("Some storage wasn't configured!"),
-        };
-
-        Configuration::with(
-            storage,
-            limits_file.to_string(),
-            matches.value_of("ip").unwrap().into(),
-            matches.value_of("port").unwrap().parse().unwrap(),
-            matches.value_of("http_ip").unwrap().into(),
-            matches.value_of("http_port").unwrap().parse().unwrap(),
-            matches.value_of("limit_name_in_labels").is_some(),
-        )
+                cache: Some(sub.value_of("cache name").unwrap().to_string()),
+                consistency: Some(sub.value_of("consistency").unwrap().to_string()),
+            })
+        }
+        Some(("memory", _sub)) => StorageConfiguration::InMemory,
+        None => StorageConfiguration::InMemory,
+        _ => unreachable!("Some storage wasn't configured!"),
     };
+
+    let config = Configuration::with(
+        storage,
+        limits_file.to_string(),
+        matches.value_of("ip").unwrap().into(),
+        matches.value_of("port").unwrap().parse().unwrap(),
+        matches.value_of("http_ip").unwrap().into(),
+        matches.value_of("http_port").unwrap().parse().unwrap(),
+        matches.value_of("limit_name_in_labels").is_some(),
+    );
 
     let level_filter = match matches.occurrences_of("v") {
         0 => LevelFilter::Error,
