@@ -1156,7 +1156,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "serial_test 0.5.1",
+ "serial_test",
  "thiserror",
  "tokio",
  "ttl_cache",
@@ -1178,7 +1178,6 @@ dependencies = [
  "prost-types",
  "serde",
  "serde_yaml",
- "serial_test 0.7.0",
  "thiserror",
  "tokio",
  "tonic",
@@ -2093,19 +2092,7 @@ checksum = "e0bccbcf40c8938196944a3da0e133e031a33f4d6b72db3bda3cc556e361905d"
 dependencies = [
  "lazy_static",
  "parking_lot 0.11.2",
- "serial_test_derive 0.5.1",
-]
-
-[[package]]
-name = "serial_test"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d19dbfb999a147cedbfe82f042eb9555f5b0fa4ef95ee4570b74349103d9c9f4"
-dependencies = [
- "lazy_static",
- "log",
- "parking_lot 0.12.1",
- "serial_test_derive 0.7.0",
+ "serial_test_derive",
 ]
 
 [[package]]
@@ -2116,19 +2103,6 @@ checksum = "b2acd6defeddb41eb60bb468f8825d0cfd0c2a76bc03bfd235b6a1dc4f6a1ad5"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
-]
-
-[[package]]
-name = "serial_test_derive"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb9e2050b2be1d681f8f1c1a528bcfe4e00afa2d8995f713974f5333288659f2"
-dependencies = [
- "proc-macro-error",
- "proc-macro2",
- "quote",
- "rustversion",
  "syn",
 ]
 
