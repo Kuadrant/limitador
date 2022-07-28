@@ -542,15 +542,17 @@ fn storage_config_from_env() -> Result<StorageConfiguration, ()> {
             cache: if env_option_is_enabled("REDIS_LOCAL_CACHE_ENABLED") {
                 Some(RedisStorageCacheConfiguration {
                     flushing_period: env::var("REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS")
-                        .unwrap_or_else(|_| DEFAULT_FLUSHING_PERIOD_SEC.to_string())
+                        .unwrap_or_else(|_| (DEFAULT_FLUSHING_PERIOD_SEC * 1000).to_string())
                         .parse()
                         .expect("Expected an i64"),
                     max_ttl: env::var("REDIS_LOCAL_CACHE_MAX_TTL_CACHED_COUNTERS_MS")
-                        .unwrap_or_else(|_| "5000".to_string())
+                        .unwrap_or_else(|_| {
+                            (DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC * 1000).to_string()
+                        })
                         .parse()
                         .expect("Expected an u64"),
                     ttl_ratio: env::var("REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS")
-                        .unwrap_or_else(|_| "10".to_string())
+                        .unwrap_or_else(|_| DEFAULT_TTL_RATIO_CACHED_COUNTERS.to_string())
                         .parse()
                         .expect("Expected an u64"),
                     max_counters: DEFAULT_MAX_CACHED_COUNTERS,
