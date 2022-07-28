@@ -31,9 +31,9 @@ use notify::event::ModifyKind;
 use notify::{Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::convert::TryInto;
 use std::path::Path;
-use std::process;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{env, process};
 use thiserror::Error;
 use tokio::runtime::Handle;
 use url::Url;
@@ -220,222 +220,15 @@ impl Limiter {
 
 #[actix_rt::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let infinispan_consistency_default = format!("{}", DEFAULT_INFINISPAN_CONSISTENCY);
+    let config = create_config();
 
-    let redis_cached_ttl_default = DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC.to_string();
-    let redis_flushing_period_default = DEFAULT_FLUSHING_PERIOD_SEC.to_string();
-    let redis_max_cached_counters_default = DEFAULT_MAX_CACHED_COUNTERS.to_string();
-    let redis_ttl_ratio_default = DEFAULT_TTL_RATIO_CACHED_COUNTERS.to_string();
-
-    let cmdline = App::new("Limitador Server")
-        .version(LIMITADOR_VERSION)
-        .author("The Kuadrant team - github.com/Kuadrant")
-        .about("Rate Limiting Server")
-        .disable_help_subcommand(true)
-        .subcommand_negates_reqs(false)
-        .subcommand_value_name("STORAGE")
-        .subcommand_help_heading("STORAGES")
-        .subcommand_required(false)
-        .arg(
-            Arg::with_name("LIMITS_FILE")
-                .help("The limit file to use")
-                .required(true)
-                .index(1),
-        )
-        .arg(
-            Arg::with_name("ip")
-                .short('b')
-                .long("rls-ip")
-                .default_value(Configuration::DEFAULT_IP_BIND)
-                .display_order(1)
-                .help("The IP to listen on for RLS"),
-        )
-        .arg(
-            Arg::with_name("port")
-                .short('p')
-                .long("rls-port")
-                .default_value(Configuration::DEFAULT_RLS_PORT)
-                .display_order(2)
-                .help("The port to listen on for RLS"),
-        )
-        .arg(
-            Arg::with_name("http_ip")
-                .short('B')
-                .long("http-ip")
-                .default_value(Configuration::DEFAULT_IP_BIND)
-                .display_order(3)
-                .help("The IP to listen on for HTTP"),
-        )
-        .arg(
-            Arg::with_name("http_port")
-                .short('P')
-                .long("http-port")
-                .default_value(Configuration::DEFAULT_HTTP_PORT)
-                .display_order(4)
-                .help("The port to listen on for HTTP"),
-        )
-        .arg(
-            Arg::with_name("limit_name_in_labels")
-                .short('l')
-                .long("limit-name-in-labels")
-                .display_order(5)
-                .help("Include the Limit Name in prometheus label"),
-        )
-        .arg(
-            Arg::with_name("v")
-                .short('v')
-                .multiple_occurrences(true)
-                .max_occurrences(4)
-                .display_order(6)
-                .help("Sets the level of verbosity"),
-        )
-        .subcommand(
-            SubCommand::with_name("memory")
-                .display_order(1)
-                .about("Counters are held in Limitador (ephemeral) [default storage]"),
-        )
-        .subcommand(
-            SubCommand::with_name("redis")
-                .display_order(2)
-                .about("Uses Redis to store counters")
-                .arg(
-                    Arg::with_name("URL")
-                        .help("Redis URL to use")
-                        .required(true)
-                        .index(1),
-                ),
-        )
-        .subcommand(
-            SubCommand::with_name("redis_cached")
-                .about("Uses Redis to store counters, with an in-memory cache")
-                .display_order(3)
-                .arg(
-                    Arg::with_name("URL")
-                        .help("Redis URL to use")
-                        .required(true)
-                        .index(1),
-                )
-                .arg(
-                    Arg::with_name("TTL")
-                        .long("ttl")
-                        .takes_value(true)
-                        .value_parser(clap::value_parser!(u64))
-                        .default_value(&redis_cached_ttl_default)
-                        .display_order(2)
-                        .help("TTL for cached counters in seconds"),
-                )
-                .arg(
-                    Arg::with_name("ratio")
-                        .long("ratio")
-                        .takes_value(true)
-                        .value_parser(clap::value_parser!(u64))
-                        .default_value(&redis_ttl_ratio_default)
-                        .display_order(3)
-                        .help("Ratio to apply to the TTL from Redis on cached counters"),
-                )
-                .arg(
-                    Arg::with_name("flush")
-                        .long("flush-period")
-                        .takes_value(true)
-                        .value_parser(clap::value_parser!(i64))
-                        .default_value(&redis_flushing_period_default)
-                        .display_order(4)
-                        .help("Flushing period for counters in seconds"),
-                )
-                .arg(
-                    Arg::with_name("max")
-                        .long("max-cached")
-                        .takes_value(true)
-                        .value_parser(clap::value_parser!(usize))
-                        .default_value(&redis_max_cached_counters_default)
-                        .display_order(5)
-                        .help("Maximum amount of counters cached"),
-                ),
-        )
-        .subcommand(
-            SubCommand::with_name("infinispan")
-                .about("Uses Infinispan to store counters")
-                .display_order(4)
-                .arg(
-                    Arg::with_name("URL")
-                        .help("Infinispan URL to use")
-                        .display_order(1)
-                        .required(true)
-                        .index(1),
-                )
-                .arg(
-                    Arg::with_name("cache name")
-                        .short('n')
-                        .long("cache-name")
-                        .takes_value(true)
-                        .default_value(DEFAULT_INFINISPAN_LIMITS_CACHE_NAME)
-                        .display_order(2)
-                        .help("Name of the cache to store counters in"),
-                )
-                .arg(
-                    Arg::with_name("consistency")
-                        .short('c')
-                        .long("consistency")
-                        .takes_value(true)
-                        .default_value(&infinispan_consistency_default)
-                        .value_parser(PossibleValuesParser::new(["Strong", "Weak"]))
-                        .display_order(3)
-                        .help("The consistency to use to read from the cache"),
-                ),
-        );
-    let matches = cmdline.get_matches();
-
-    let limits_file = matches.value_of("LIMITS_FILE").unwrap();
-    let storage = match matches.subcommand() {
-        Some(("redis", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
-            url: sub.value_of("URL").unwrap().to_owned(),
-            cache: None,
-        }),
-        Some(("redis_cached", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
-            url: sub.value_of("URL").unwrap().to_owned(),
-            cache: Some(RedisStorageCacheConfiguration {
-                flushing_period: *sub.get_one("flush").unwrap(),
-                max_ttl: *sub.get_one("TTL").unwrap(),
-                ttl_ratio: *sub.get_one("ratio").unwrap(),
-                max_counters: *sub.get_one("max").unwrap(),
-            }),
-        }),
-        Some(("infinispan", sub)) => {
-            StorageConfiguration::Infinispan(InfinispanStorageConfiguration {
-                url: sub.value_of("URL").unwrap().to_owned(),
-                cache: Some(sub.value_of("cache name").unwrap().to_string()),
-                consistency: Some(sub.value_of("consistency").unwrap().to_string()),
-            })
-        }
-        Some(("memory", _sub)) => StorageConfiguration::InMemory,
-        None => StorageConfiguration::InMemory,
-        _ => unreachable!("Some storage wasn't configured!"),
-    };
-
-    let config = Configuration::with(
-        storage,
-        limits_file.to_string(),
-        matches.value_of("ip").unwrap().into(),
-        matches.value_of("port").unwrap().parse().unwrap(),
-        matches.value_of("http_ip").unwrap().into(),
-        matches.value_of("http_port").unwrap().parse().unwrap(),
-        matches.value_of("limit_name_in_labels").is_some(),
-    );
-
-    let level_filter = match matches.occurrences_of("v") {
-        0 => LevelFilter::Error,
-        1 => LevelFilter::Warn,
-        2 => LevelFilter::Info,
-        3 => LevelFilter::Debug,
-        4 => LevelFilter::Trace,
-        _ => unreachable!("Verbosity should at most be 4!"),
-    };
     let mut builder = Builder::new();
-
-    builder
-        .filter(None, level_filter)
-        .parse_default_env()
-        .init();
+    if let Some(level) = config.log_level {
+        builder.filter(None, level);
+    } else {
+        builder.parse_default_env();
+    }
+    builder.init();
 
     info!("Using config: {:?}", config);
 
@@ -489,4 +282,297 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     run_http_server(&http_api_address, rate_limiter.clone()).await?;
 
     Ok(())
+}
+
+fn create_config() -> Configuration {
+    // figure defaults out
+    let default_limit_file = env::var("LIMITS_FILE").unwrap_or_else(|_| "".to_string());
+
+    let default_rls_host =
+        env::var("ENVOY_RLS_HOST").unwrap_or_else(|_| Configuration::DEFAULT_IP_BIND.to_string());
+    let default_rls_port =
+        env::var("ENVOY_RLS_PORT").unwrap_or_else(|_| Configuration::DEFAULT_RLS_PORT.to_string());
+
+    let default_http_host =
+        env::var("HTTP_API_HOST").unwrap_or_else(|_| Configuration::DEFAULT_IP_BIND.to_string());
+    let default_http_port =
+        env::var("HTTP_API_PORT").unwrap_or_else(|_| Configuration::DEFAULT_HTTP_PORT.to_string());
+
+    let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "".to_string());
+
+    let redis_cached_ttl_default = env::var("REDIS_LOCAL_CACHE_MAX_TTL_CACHED_COUNTERS_MS")
+        .unwrap_or_else(|_| (DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC * 1000).to_string());
+    let redis_flushing_period_default = env::var("REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS")
+        .unwrap_or_else(|_| (DEFAULT_FLUSHING_PERIOD_SEC * 1000).to_string());
+    let redis_max_cached_counters_default = DEFAULT_MAX_CACHED_COUNTERS.to_string();
+    let redis_ttl_ratio_default = env::var("REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS")
+        .unwrap_or_else(|_| DEFAULT_TTL_RATIO_CACHED_COUNTERS.to_string());
+
+    let infinispan_cache_default = env::var("INFINISPAN_CACHE_NAME")
+        .unwrap_or_else(|_| DEFAULT_INFINISPAN_LIMITS_CACHE_NAME.to_string());
+    let infinispan_consistency_default = env::var("INFINISPAN_COUNTERS_CONSISTENCY")
+        .unwrap_or_else(|_| DEFAULT_INFINISPAN_CONSISTENCY.to_string());
+
+    // wire args based of defaults
+    let limit_arg = Arg::with_name("LIMITS_FILE")
+        .help("The limit file to use")
+        .index(1);
+    let limit_arg = if default_limit_file.is_empty() {
+        limit_arg.required(true)
+    } else {
+        limit_arg.default_value(&default_limit_file)
+    };
+
+    let redis_url_arg = Arg::with_name("URL").help("Redis URL to use").index(1);
+    let redis_url_arg = if redis_url.is_empty() {
+        redis_url_arg.required(true)
+    } else {
+        redis_url_arg.default_value(&redis_url)
+    };
+
+    // build app
+    let cmdline = App::new("Limitador Server")
+        .version(LIMITADOR_VERSION)
+        .author("The Kuadrant team - github.com/Kuadrant")
+        .about("Rate Limiting Server")
+        .disable_help_subcommand(true)
+        .subcommand_negates_reqs(false)
+        .subcommand_value_name("STORAGE")
+        .subcommand_help_heading("STORAGES")
+        .subcommand_required(false)
+        .arg(limit_arg)
+        .arg(
+            Arg::with_name("ip")
+                .short('b')
+                .long("rls-ip")
+                .default_value(&default_rls_host)
+                .display_order(1)
+                .help("The IP to listen on for RLS"),
+        )
+        .arg(
+            Arg::with_name("port")
+                .short('p')
+                .long("rls-port")
+                .default_value(&default_rls_port)
+                .display_order(2)
+                .help("The port to listen on for RLS"),
+        )
+        .arg(
+            Arg::with_name("http_ip")
+                .short('B')
+                .long("http-ip")
+                .default_value(&default_http_host)
+                .display_order(3)
+                .help("The IP to listen on for HTTP"),
+        )
+        .arg(
+            Arg::with_name("http_port")
+                .short('P')
+                .long("http-port")
+                .default_value(&default_http_port)
+                .display_order(4)
+                .help("The port to listen on for HTTP"),
+        )
+        .arg(
+            Arg::with_name("limit_name_in_labels")
+                .short('l')
+                .long("limit-name-in-labels")
+                .display_order(5)
+                .help("Include the Limit Name in prometheus label"),
+        )
+        .arg(
+            Arg::with_name("v")
+                .short('v')
+                .multiple_occurrences(true)
+                .max_occurrences(4)
+                .display_order(6)
+                .help("Sets the level of verbosity"),
+        )
+        .subcommand(
+            SubCommand::with_name("memory")
+                .display_order(1)
+                .about("Counters are held in Limitador (ephemeral)"),
+        )
+        .subcommand(
+            SubCommand::with_name("redis")
+                .display_order(2)
+                .about("Uses Redis to store counters")
+                .arg(redis_url_arg.clone()),
+        )
+        .subcommand(
+            SubCommand::with_name("redis_cached")
+                .about("Uses Redis to store counters, with an in-memory cache")
+                .display_order(3)
+                .arg(redis_url_arg)
+                .arg(
+                    Arg::with_name("TTL")
+                        .long("ttl")
+                        .takes_value(true)
+                        .value_parser(clap::value_parser!(u64))
+                        .default_value(&redis_cached_ttl_default)
+                        .display_order(2)
+                        .help("TTL for cached counters in milliseconds"),
+                )
+                .arg(
+                    Arg::with_name("ratio")
+                        .long("ratio")
+                        .takes_value(true)
+                        .value_parser(clap::value_parser!(u64))
+                        .default_value(&redis_ttl_ratio_default)
+                        .display_order(3)
+                        .help("Ratio to apply to the TTL from Redis on cached counters"),
+                )
+                .arg(
+                    Arg::with_name("flush")
+                        .long("flush-period")
+                        .takes_value(true)
+                        .value_parser(clap::value_parser!(i64))
+                        .default_value(&redis_flushing_period_default)
+                        .display_order(4)
+                        .help("Flushing period for counters in milliseconds"),
+                )
+                .arg(
+                    Arg::with_name("max")
+                        .long("max-cached")
+                        .takes_value(true)
+                        .value_parser(clap::value_parser!(usize))
+                        .default_value(&redis_max_cached_counters_default)
+                        .display_order(5)
+                        .help("Maximum amount of counters cached"),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("infinispan")
+                .about("Uses Infinispan to store counters")
+                .display_order(4)
+                .arg(
+                    Arg::with_name("URL")
+                        .help("Infinispan URL to use")
+                        .display_order(1)
+                        .required(true)
+                        .index(1),
+                )
+                .arg(
+                    Arg::with_name("cache name")
+                        .short('n')
+                        .long("cache-name")
+                        .takes_value(true)
+                        .default_value(&infinispan_cache_default)
+                        .display_order(2)
+                        .help("Name of the cache to store counters in"),
+                )
+                .arg(
+                    Arg::with_name("consistency")
+                        .short('c')
+                        .long("consistency")
+                        .takes_value(true)
+                        .default_value(&infinispan_consistency_default)
+                        .value_parser(PossibleValuesParser::new(["Strong", "Weak"]))
+                        .display_order(3)
+                        .help("The consistency to use to read from the cache"),
+                ),
+        );
+
+    let matches = cmdline.get_matches();
+
+    let limits_file = matches.value_of("LIMITS_FILE").unwrap();
+    let storage = match matches.subcommand() {
+        Some(("redis", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
+            url: sub.value_of("URL").unwrap().to_owned(),
+            cache: None,
+        }),
+        Some(("redis_cached", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
+            url: sub.value_of("URL").unwrap().to_owned(),
+            cache: Some(RedisStorageCacheConfiguration {
+                flushing_period: *sub.get_one("flush").unwrap(),
+                max_ttl: *sub.get_one("TTL").unwrap(),
+                ttl_ratio: *sub.get_one("ratio").unwrap(),
+                max_counters: *sub.get_one("max").unwrap(),
+            }),
+        }),
+        Some(("infinispan", sub)) => {
+            StorageConfiguration::Infinispan(InfinispanStorageConfiguration {
+                url: sub.value_of("URL").unwrap().to_owned(),
+                cache: Some(sub.value_of("cache name").unwrap().to_string()),
+                consistency: Some(sub.value_of("consistency").unwrap().to_string()),
+            })
+        }
+        Some(("memory", _sub)) => StorageConfiguration::InMemory,
+        None => match storage_config_from_env() {
+            Ok(storage_cfg) => storage_cfg,
+            Err(_) => {
+                eprintln!("Set either REDIS_URL or INFINISPAN_URL, but not both!");
+                process::exit(1);
+            }
+        },
+        _ => unreachable!("Some storage wasn't configured!"),
+    };
+
+    let mut config = Configuration::with(
+        storage,
+        limits_file.to_string(),
+        matches.value_of("ip").unwrap().into(),
+        matches.value_of("port").unwrap().parse().unwrap(),
+        matches.value_of("http_ip").unwrap().into(),
+        matches.value_of("http_port").unwrap().parse().unwrap(),
+        matches.value_of("limit_name_in_labels").is_some()
+            || env_option_is_enabled("LIMIT_NAME_IN_PROMETHEUS_LABELS"),
+    );
+
+    config.log_level = match matches.occurrences_of("v") {
+        0 => None,
+        1 => Some(LevelFilter::Warn),
+        2 => Some(LevelFilter::Info),
+        3 => Some(LevelFilter::Debug),
+        4 => Some(LevelFilter::Trace),
+        _ => unreachable!("Verbosity should at most be 4!"),
+    };
+
+    config
+}
+
+fn storage_config_from_env() -> Result<StorageConfiguration, ()> {
+    let redis_url = env::var("REDIS_URL");
+    let infinispan_url = env::var("INFINISPAN_URL");
+
+    match (redis_url, infinispan_url) {
+        (Ok(_), Ok(_)) => Err(()),
+        (Ok(url), Err(_)) => Ok(StorageConfiguration::Redis(RedisStorageConfiguration {
+            url,
+            cache: if env_option_is_enabled("REDIS_LOCAL_CACHE_ENABLED") {
+                Some(RedisStorageCacheConfiguration {
+                    flushing_period: env::var("REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS")
+                        .unwrap_or_else(|_| DEFAULT_FLUSHING_PERIOD_SEC.to_string())
+                        .parse()
+                        .expect("Expected an i64"),
+                    max_ttl: env::var("REDIS_LOCAL_CACHE_MAX_TTL_CACHED_COUNTERS_MS")
+                        .unwrap_or_else(|_| "5000".to_string())
+                        .parse()
+                        .expect("Expected an u64"),
+                    ttl_ratio: env::var("REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS")
+                        .unwrap_or_else(|_| "10".to_string())
+                        .parse()
+                        .expect("Expected an u64"),
+                    max_counters: DEFAULT_MAX_CACHED_COUNTERS,
+                })
+            } else {
+                None
+            },
+        })),
+        (Err(_), Ok(url)) => Ok(StorageConfiguration::Infinispan(
+            InfinispanStorageConfiguration {
+                url,
+                cache: env::var("INFINISPAN_CACHE_NAME").ok(),
+                consistency: env::var("INFINISPAN_COUNTERS_CONSISTENCY").ok(),
+            },
+        )),
+        _ => Ok(StorageConfiguration::InMemory),
+    }
+}
+
+fn env_option_is_enabled(env_name: &str) -> bool {
+    match env::var(env_name) {
+        Ok(value) => value == "1",
+        Err(_) => false,
+    }
 }
