@@ -67,6 +67,22 @@ impl Configuration {
     }
 }
 
+#[cfg(test)]
+impl Default for Configuration {
+    fn default() -> Self {
+        Configuration {
+            limits_file: "".to_string(),
+            storage: StorageConfiguration::InMemory,
+            rls_host: "".to_string(),
+            rls_port: 0,
+            http_host: "".to_string(),
+            http_port: 0,
+            limit_name_in_labels: false,
+            log_level: None,
+        }
+    }
+}
+
 #[derive(PartialEq, Debug)]
 pub enum StorageConfiguration {
     InMemory,
