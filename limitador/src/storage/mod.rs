@@ -52,14 +52,14 @@ impl Storage {
         self.limits.read().unwrap().keys().cloned().collect()
     }
 
-    pub fn add_limit(&self, limit: Limit) {
+    pub fn add_limit(&self, limit: Limit) -> bool {
         let namespace = limit.namespace().clone();
         self.limits
             .write()
             .unwrap()
             .entry(namespace)
             .or_default()
-            .insert(limit);
+            .insert(limit)
     }
 
     pub fn get_limits(&self, namespace: &Namespace) -> HashSet<Limit> {
@@ -140,19 +140,18 @@ impl AsyncStorage {
         self.limits.read().unwrap().keys().cloned().collect()
     }
 
-    pub fn add_limit(&self, limit: Limit) {
+    pub fn add_limit(&self, limit: Limit) -> bool {
         let namespace = limit.namespace().clone();
 
         let mut limits_for_namespace = self.limits.write().unwrap();
 
         match limits_for_namespace.get_mut(&namespace) {
-            Some(limits) => {
-                limits.insert(limit);
-            }
+            Some(limits) => limits.insert(limit),
             None => {
                 let mut limits = HashSet::new();
                 limits.insert(limit);
                 limits_for_namespace.insert(namespace, limits);
+                true
             }
         }
     }
