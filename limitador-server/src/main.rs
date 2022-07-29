@@ -265,10 +265,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         x: fs::canonicalize(&limit_file).unwrap(),
     };
 
-    let mut watcher = RecommendedWatcher::new(
-        move |result: Result<Event, Error>| match result {
-            Ok(ref event) => {
-                debug!("Event!!! {:?}", event);
+        let mut watcher =
+            RecommendedWatcher::new(move |result: Result<Event, Error>| match result {
+                Ok(ref event) => {
                 match event.kind {
                     EventKind::Modify(ModifyKind::Data(_)) => {
                         // Content has been changed
@@ -280,39 +279,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // As the move event always occurrs,
                         // skip reloading limit file in this event.
 
-                        // the parent dir is being watched
-                        // only reload when the limits file content changed
-                        if location == last_known_canonical_path.x {
-                            let limiter = limiter.clone();
-                            handle.spawn(async move {
-                                match limiter.load_limits_from_file(&location).await {
-                                    Ok(_) => info!("data modified; reloaded limit file"),
-                                    Err(e) => error!("Failed reloading limit file: {}", e),
-                                }
-                            });
-                        } else {
-                            debug!("data modification event not related to the limits file; skipped");
-                        }
+                            // the parent dir is being watched
+                            // only reload when the limits file content changed
+                            if location == last_known_canonical_path.x {
+                                let limiter = limiter.clone();
+                                handle.spawn(async move {
+                                    match limiter.load_limits_from_file(&location).await {
+                                        Ok(_) => info!("data modified; reloaded limit file"),
+                                        Err(e) => error!("Failed reloading limit file: {}", e),
+                                    }
+                                });
+                            }
                     }
                     EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
                         // Move operation occurred
                         // Usually happens in k8s envs when content source is a configmap
 
-                        // symbolic links resolved.
-                        let canonical_limit_file =
-                            fs::canonicalize(&limits_file_path_cloned).unwrap();
-                        info!("current canonical file path !!! {:?}", canonical_limit_file);
-                        info!(
-                                "last known canonical file path !!! {:?}",
-                                last_known_canonical_path.x
-                            );
-                        // check if the real path to the config file changed (eg: k8s ConfigMap replacement)
-                        if canonical_limit_file != last_known_canonical_path.x {
-                            last_known_canonical_path.x = canonical_limit_file.clone();
-                            info!(
-                                    "new canonical file path !!! {:?}",
-                                    last_known_canonical_path.x
-                                );
+                            // symbolic links resolved.
+                            let canonical_limit_file =
+                                fs::canonicalize(&limits_file_path_cloned).unwrap();
+                            // check if the real path to the config file changed
+                            // (eg: k8s ConfigMap replacement)
+                            if canonical_limit_file != last_known_canonical_path.x {
+                                last_known_canonical_path.x = canonical_limit_file.clone();
                             let limiter = limiter.clone();
                             handle.spawn(async move {
                                 match limiter.load_limits_from_file(&canonical_limit_file).await
@@ -331,9 +320,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(ref e) => {
                 warn!("Something went wrong while watching limit file: {}", e);
             }
-        },
-    )?;
-    watcher.watch(limits_file_dir, RecursiveMode::Recursive)?;
+        })?;
+        watcher.watch(limits_file_dir, RecursiveMode::Recursive)?;
+
 
     info!("Envoy RLS server starting on {}", envoy_rls_address);
     tokio::spawn(run_envoy_rls_server(
