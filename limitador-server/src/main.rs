@@ -31,7 +31,7 @@ use notify::event::{ModifyKind, RenameMode};
 use notify::{Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::convert::TryInto;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{env, process};
@@ -219,10 +219,6 @@ impl Limiter {
     }
 }
 
-struct LimitsPath {
-    x: PathBuf,
-}
-
 #[actix_rt::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = create_config();
@@ -261,9 +257,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let limits_file_dir = Path::new(&limit_file).parent().unwrap();
     let limits_file_path_cloned = limit_file.to_owned();
     // structure needed to keep state of the last known canonical limits file path
-    let mut last_known_canonical_path = LimitsPath {
-        x: fs::canonicalize(&limit_file).unwrap(),
-    };
+    let mut last_known_canonical_path = fs::canonicalize(&limit_file).unwrap();
 
     let mut watcher = RecommendedWatcher::new(move |result: Result<Event, Error>| match result {
         Ok(ref event) => {
@@ -280,7 +274,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     // the parent dir is being watched
                     // only reload when the limits file content changed
-                    if location == last_known_canonical_path.x {
+                    if location == last_known_canonical_path {
                         let limiter = limiter.clone();
                         handle.spawn(async move {
                             match limiter.load_limits_from_file(&location).await {
@@ -298,8 +292,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let canonical_limit_file = fs::canonicalize(&limits_file_path_cloned).unwrap();
                     // check if the real path to the config file changed
                     // (eg: k8s ConfigMap replacement)
-                    if canonical_limit_file != last_known_canonical_path.x {
-                        last_known_canonical_path.x = canonical_limit_file.clone();
+                    if canonical_limit_file != last_known_canonical_path {
+                        last_known_canonical_path = canonical_limit_file.clone();
                         let limiter = limiter.clone();
                         handle.spawn(async move {
                             match limiter.load_limits_from_file(&canonical_limit_file).await {
