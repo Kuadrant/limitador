@@ -233,7 +233,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let _watcher = if let Some(limits_file_path) = limit_file {
-        info!("limits file path: {}", limits_file_path);
         if let Err(e) = rate_limiter.load_limits_from_file(&limits_file_path).await {
             eprintln!("Failed to load limit file: {}", e);
             process::exit(1)
@@ -249,10 +248,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             x: fs::canonicalize(&limits_file_path).unwrap(),
         };
 
-        let mut watcher = RecommendedWatcher::new(
-            move |result: Result<Event, Error>| match result {
+        let mut watcher =
+            RecommendedWatcher::new(move |result: Result<Event, Error>| match result {
                 Ok(ref event) => {
-                    debug!("Event!!! {:?}", event);
                     match event.kind {
                         EventKind::Modify(ModifyKind::Data(_)) => {
                             // Content has been changed
@@ -274,8 +272,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         Err(e) => error!("Failed reloading limit file: {}", e),
                                     }
                                 });
-                            } else {
-                                debug!("data modification event not related to the limits file; skipped");
                             }
                         }
                         EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
@@ -285,18 +281,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // symbolic links resolved.
                             let canonical_limit_file =
                                 fs::canonicalize(&limits_file_path_cloned).unwrap();
-                            info!("current canonical file path !!! {:?}", canonical_limit_file);
-                            info!(
-                                "last known canonical file path !!! {:?}",
-                                last_known_canonical_path.x
-                            );
-                            // check if the real path to the config file changed (eg: k8s ConfigMap replacement)
+                            // check if the real path to the config file changed
+                            // (eg: k8s ConfigMap replacement)
                             if canonical_limit_file != last_known_canonical_path.x {
                                 last_known_canonical_path.x = canonical_limit_file.clone();
-                                info!(
-                                    "new canonical file path !!! {:?}",
-                                    last_known_canonical_path.x
-                                );
                                 let limiter = limiter.clone();
                                 handle.spawn(async move {
                                     match limiter.load_limits_from_file(&canonical_limit_file).await
@@ -315,8 +303,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Err(ref e) => {
                     warn!("Something went wrong while watching limit file: {}", e);
                 }
-            },
-        )?;
+            })?;
         watcher.watch(limits_file_dir, RecursiveMode::Recursive)?;
         Some(watcher)
     } else {
