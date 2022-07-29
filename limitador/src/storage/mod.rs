@@ -62,6 +62,24 @@ impl Storage {
             .insert(limit)
     }
 
+    pub fn update_limit(&self, update: &Limit) -> bool {
+        let mut namespaces = self.limits.write().unwrap();
+        let limits = namespaces.get_mut(update.namespace());
+        if let Some(limits) = limits {
+            let req_update = if let Some(limit) = limits.get(update) {
+                limit.max_value() != update.max_value() || limit.name() != update.name()
+            } else {
+                false
+            };
+            if req_update {
+                limits.remove(update);
+                limits.insert(update.clone());
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn get_limits(&self, namespace: &Namespace) -> HashSet<Limit> {
         match self.limits.read().unwrap().get(namespace) {
             Some(limits) => limits.iter().cloned().collect(),
@@ -154,6 +172,24 @@ impl AsyncStorage {
                 true
             }
         }
+    }
+
+    pub fn update_limit(&self, update: &Limit) -> bool {
+        let mut namespaces = self.limits.write().unwrap();
+        let limits = namespaces.get_mut(update.namespace());
+        if let Some(limits) = limits {
+            let req_update = if let Some(limit) = limits.get(update) {
+                limit.max_value() != update.max_value() || limit.name() != update.name()
+            } else {
+                false
+            };
+            if req_update {
+                limits.remove(update);
+                limits.insert(update.clone());
+                return true;
+            }
+        }
+        false
     }
 
     pub fn get_limits(&self, namespace: &Namespace) -> HashSet<Limit> {
