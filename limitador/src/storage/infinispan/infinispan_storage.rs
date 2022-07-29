@@ -2,7 +2,9 @@ use crate::counter::Counter;
 use crate::limit::Limit;
 use crate::storage::infinispan::counters::{Consistency, CounterOpts};
 use crate::storage::infinispan::response::response_to_string;
-use crate::storage::infinispan::{counters, sets};
+use crate::storage::infinispan::{
+    counters, sets, DEFAULT_INFINISPAN_CONSISTENCY, DEFAULT_INFINISPAN_LIMITS_CACHE_NAME,
+};
 use crate::storage::keys::*;
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
@@ -11,8 +13,6 @@ use infinispan::request;
 use infinispan::Infinispan;
 use std::collections::HashSet;
 use std::time::Duration;
-
-const DEFAULT_INFINISPAN_LIMITS_CACHE_NAME: &str = "limitador";
 
 pub struct InfinispanStorage {
     infinispan: Infinispan,
@@ -241,7 +241,8 @@ impl InfinispanStorageBuilder {
             &self.username,
             &self.password,
             self.cache_name,
-            self.counters_consistency.unwrap_or(Consistency::Strong),
+            self.counters_consistency
+                .unwrap_or(DEFAULT_INFINISPAN_CONSISTENCY),
         )
         .await
     }

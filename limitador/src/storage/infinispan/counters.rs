@@ -18,6 +18,7 @@ use crate::storage::infinispan::response::response_to_string;
 use infinispan::errors::InfinispanError;
 use infinispan::{request, Infinispan};
 use std::convert::TryFrom;
+use std::fmt::{Display, Formatter};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -25,6 +26,15 @@ use thiserror::Error;
 pub enum Consistency {
     Weak,
     Strong,
+}
+
+impl Display for Consistency {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Consistency::Weak => write!(f, "Weak"),
+            Consistency::Strong => write!(f, "Strong"),
+        }
+    }
 }
 
 #[derive(Error, Debug)]

@@ -196,9 +196,7 @@ mod tests {
     async fn test_returns_ok_when_no_limits_apply() {
         // No limits saved
         let rate_limiter = MyRateLimiter::new(Arc::new(
-            Limiter::new(Configuration::from_env().unwrap())
-                .await
-                .unwrap(),
+            Limiter::new(Configuration::default()).await.unwrap(),
         ));
 
         let req = RateLimitRequest {
@@ -228,9 +226,7 @@ mod tests {
     #[tokio::test]
     async fn test_returns_unknown_when_domain_is_empty() {
         let rate_limiter = MyRateLimiter::new(Arc::new(
-            Limiter::new(Configuration::from_env().unwrap())
-                .await
-                .unwrap(),
+            Limiter::new(Configuration::default()).await.unwrap(),
         ));
 
         let req = RateLimitRequest {
