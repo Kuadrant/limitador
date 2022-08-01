@@ -1,0 +1,60 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: limitador
+  labels:
+    app: limitador
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: limitador
+  template:
+    metadata:
+      labels:
+        app: limitador
+    spec:
+      containers:
+        - name: limitador
+          image: localhost/limitador-testing:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: RUST_LOG
+              value: debug
+            - name: LIMITS_FILE
+              value: /tmp/limitador/limits.yaml
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /status
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 5
+            timeoutSeconds: 2
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /status
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          volumeMounts:
+            - mountPath: /tmp/limitador
+              name: runtime-config
+      volumes:
+        - name: runtime-config
+          configMap:
+            name: limitador-config

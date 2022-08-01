@@ -138,6 +138,7 @@ mod test {
     test_with_all_storage_impls!(configure_with_creates_the_given_limits);
     test_with_all_storage_impls!(configure_with_keeps_the_given_limits_and_counters_if_they_exist);
     test_with_all_storage_impls!(configure_with_deletes_all_except_the_limits_given);
+    test_with_all_storage_impls!(configure_with_updates_the_limits);
     test_with_all_storage_impls!(add_limit_only_adds_if_not_present);
 
     // All these functions need to use async/await. That's needed to support
@@ -849,6 +850,26 @@ mod test {
 
         assert!(limits.contains(&limit_to_be_kept));
         assert!(!limits.contains(&limit_to_be_deleted));
+    }
+
+    async fn configure_with_updates_the_limits(rate_limiter: &mut TestsLimiter) {
+        let namespace = "test_namespace";
+
+        let limit_orig = Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
+
+        let limit_update = Limit::new(namespace, 20, 60, vec!["req.method == GET"], vec!["app_id"]);
+
+        rate_limiter.add_limit(&limit_orig).await;
+
+        rate_limiter
+            .configure_with(vec![limit_update.clone()])
+            .await
+            .unwrap();
+
+        let limits = rate_limiter.get_limits(namespace).await;
+
+        assert_eq!(limits.len(), 1);
+        assert_eq!(limits.iter().next().unwrap().max_value(), 20);
     }
 
     async fn add_limit_only_adds_if_not_present(rate_limiter: &mut TestsLimiter) {

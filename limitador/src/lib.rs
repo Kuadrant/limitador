@@ -435,6 +435,10 @@ impl RateLimiter {
             for limit in limits_to_keep_in_ns.difference(&limits_in_namespace) {
                 self.add_limit(limit.clone());
             }
+
+            for limit in limits_to_keep_in_ns.union(&limits_in_namespace) {
+                self.storage.update_limit(limit);
+            }
         }
 
         Ok(())
@@ -612,6 +616,10 @@ impl AsyncRateLimiter {
 
             for limit in limits_to_keep_in_ns.difference(&limits_in_namespace) {
                 self.add_limit(limit.clone());
+            }
+
+            for limit in limits_to_keep_in_ns.union(&limits_in_namespace) {
+                self.storage.update_limit(limit);
             }
         }
 
