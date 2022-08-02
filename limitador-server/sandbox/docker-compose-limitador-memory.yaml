@@ -1,0 +1,27 @@
+---
+version: '2.2'
+services:
+  limitador:
+    image: ${LIMITADOR_IMAGE:-limitador-testing}
+    depends_on:
+      - envoy
+    command:
+      - limitador-server
+      - --rls-ip
+      - 0.0.0.0
+      - --rls-port
+      - "8081"
+      - --http-ip
+      - 0.0.0.0
+      - --http-port
+      - "8080"
+      - -vvv
+      - /opt/kuadrant/limits/limits.yaml
+      - memory
+    expose:
+      - "8080"
+      - "8081"
+    ports:
+      - "18080:8080"
+    volumes:
+      - ./limits.yaml:/opt/kuadrant/limits/limits.yaml

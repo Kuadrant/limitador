@@ -1,0 +1,13 @@
+---
+- namespace: test_namespace
+  max_value: 10
+  seconds: 60
+  conditions:
+    - "req.method == GET"
+  variables: []
+- namespace: test_namespace
+  max_value: 5
+  seconds: 60
+  conditions:
+    - "req.method == POST"
+  variables: []
