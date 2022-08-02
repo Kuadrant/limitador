@@ -334,12 +334,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn create_config() -> (Configuration, String) {
-    let full_version = format!(
-        "{} build v{} ({})",
-        LIMITADOR_PROFILE,
-        LIMITADOR_VERSION,
-        env!("LIMITADOR_GIT_HASH")
-    );
+    let full_version = {
+        let build = match LIMITADOR_PROFILE {
+            "release" => "".to_owned(),
+            other => format!(" {} build", other),
+        };
+
+        format!(
+            "v{} ({}){}",
+            LIMITADOR_VERSION,
+            env!("LIMITADOR_GIT_HASH"),
+            build,
+        )
+    };
 
     // figure defaults out
     let default_limit_file = env::var("LIMITS_FILE").unwrap_or_else(|_| "".to_string());
