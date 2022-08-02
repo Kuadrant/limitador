@@ -40,6 +40,77 @@ pub struct Limit {
     variables: HashSet<String>,
 }
 
+#[derive(Deserialize, Serialize, PartialEq, Eq, Debug, Clone)]
+#[serde(try_from = "&str", into = "String")]
+pub struct Condition {
+    var_name: String,
+    operator: Operator,
+    operand: String,
+}
+
+impl TryFrom<&str> for Condition {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let split: Vec<&str> = value.split_whitespace().collect();
+        if split.len() != 3 {
+            Err(format!("Invalid condition format for: {}", value))
+        } else {
+            let var_name = split[0].to_string();
+            let operator = split[1].try_into()?;
+            let operand = split[2].to_string();
+            Ok(Condition {
+                var_name,
+                operator,
+                operand,
+            })
+        }
+    }
+}
+
+impl Into<String> for Condition {
+    fn into(self) -> String {
+        let operator: String = self.operator.into();
+        format!("{} {} {}", self.var_name, operator, self.operand)
+    }
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Eq, Debug, Clone)]
+#[serde(try_from = "&str", into = "String")]
+pub enum Operator {
+    EQUAL,
+}
+
+impl TryFrom<&str> for Operator {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "==" => Ok(Operator::EQUAL),
+            _ => Err(format!("Invalid operator: {}", value)),
+        }
+    }
+}
+
+impl Into<String> for Operator {
+    fn into(self) -> String {
+        match self {
+            Operator::EQUAL => "==".to_string(),
+        }
+    }
+}
+
+fn ordered_condition_set<S>(value: &HashSet<Condition>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let ordered: BTreeSet<String> = value.iter().map(|c| {
+        let s: String = c.clone().into();
+        s
+    }).collect();
+    ordered.serialize(serializer)
+}
+
 fn ordered_set<S>(value: &HashSet<String>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -259,5 +330,59 @@ mod tests {
         values.insert("z".into(), "1".into());
 
         assert!(!limit.applies(&values))
+    }
+
+    #[test]
+    fn valid_condition_parsing() {
+        let result: Condition = serde_json::from_str(r#""x == 5""#).expect("Should deserialize");
+        assert_eq!(
+            result,
+            Condition {
+                var_name: "x".to_string(),
+                operator: Operator::EQUAL,
+                operand: "5".to_string(),
+            }
+        );
+
+        let result: Condition =
+            serde_json::from_str(r#""  foobar  ==   ok  ""#).expect("Should deserialize");
+        assert_eq!(
+            result,
+            Condition {
+                var_name: "foobar".to_string(),
+                operator: Operator::EQUAL,
+                operand: "ok".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn invalid_operator_condition_parsing() {
+        let result = serde_json::from_str::<'static, Condition>(r#""x != 5""#)
+            .err()
+            .expect("should fail parsing");
+        assert_eq!(result.to_string(), "Invalid operator: !=".to_string());
+    }
+
+    #[test]
+    fn invalid_condition_parsing() {
+        let result = serde_json::from_str::<'static, Condition>(r#""x != 5 && x > 12""#)
+            .err()
+            .expect("should fail parsing");
+        assert_eq!(
+            result.to_string(),
+            "Invalid condition format for: x != 5 && x > 12".to_string()
+        );
+    }
+
+    #[test]
+    fn condition_serilization() {
+        let condition = Condition {
+            var_name: "foobar".to_string(),
+            operator: Operator::EQUAL,
+            operand: "ok".to_string(),
+        };
+        let result = serde_json::to_string(&condition).expect("Should serialize");
+        assert_eq!(result, r#""foobar == ok""#.to_string());
     }
 }
