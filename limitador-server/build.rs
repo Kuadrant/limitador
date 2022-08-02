@@ -16,16 +16,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter(|output| output.status.success())
         .map(|output| !matches!(output.stdout.len(), 0));
 
-    if Some(true) == dirty && git_hash.is_some() {
-        println!(
-            "cargo:rustc-env=LIMITADOR_GIT_HASH={}-dirty",
-            git_hash.unwrap_or_else(|| "unknown".to_owned())
-        );
-    } else {
-        println!(
-            "cargo:rustc-env=LIMITADOR_GIT_HASH={}",
-            git_hash.unwrap_or_else(|| "unknown".to_owned())
-        );
+    match git_hash {
+        None => println!("cargo:rustc-env=LIMITADOR_GIT_HASH=unknown"),
+        Some(hash) => match dirty {
+            Some(true) => println!("cargo:rustc-env=LIMITADOR_GIT_HASH={}-dirty", hash),
+            Some(false) => println!("cargo:rustc-env=LIMITADOR_GIT_HASH={}", hash),
+            _ => unreachable!("How can we have a git hash, yet not know if the tree is dirty?"),
+        },
     }
 
     if let Ok(profile) = std::env::var("PROFILE") {
