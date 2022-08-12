@@ -83,20 +83,20 @@ impl Default for Configuration {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub enum StorageConfiguration {
     InMemory,
     Redis(RedisStorageConfiguration),
     Infinispan(InfinispanStorageConfiguration),
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct RedisStorageConfiguration {
     pub url: String,
     pub cache: Option<RedisStorageCacheConfiguration>,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct RedisStorageCacheConfiguration {
     pub flushing_period: i64,
     pub max_ttl: u64,
@@ -104,7 +104,7 @@ pub struct RedisStorageCacheConfiguration {
     pub max_counters: usize,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct InfinispanStorageConfiguration {
     pub url: String,
     pub cache: Option<String>,

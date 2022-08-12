@@ -1,4 +1,5 @@
 #![deny(clippy::all, clippy::cargo)]
+#![allow(clippy::duplicate_mod)]
 
 #[macro_use]
 extern crate log;
