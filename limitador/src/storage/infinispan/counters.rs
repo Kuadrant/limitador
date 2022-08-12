@@ -92,10 +92,10 @@ pub async fn get_value(
 
     // Note: as these operations are not atomic, the counter might have been
     // deleted at this point. In that case, the parsing will fail.
-    return match response_to_string(response).await.parse::<i64>() {
+    match response_to_string(response).await.parse::<i64>() {
         Ok(val) => Ok(Some(val)),
         Err(_) => Ok(None),
-    };
+    }
 }
 
 // Returns a bool that indicates whether the counter was created.
