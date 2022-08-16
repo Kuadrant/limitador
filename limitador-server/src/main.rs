@@ -46,6 +46,8 @@ mod http_api;
 mod config;
 
 const LIMITADOR_VERSION: &str = env!("CARGO_PKG_VERSION");
+const LIMITADOR_PROFILE: &str = env!("LIMITADOR_PROFILE");
+const LIMITADOR_HEADER: &str = "Limitador Server";
 
 #[derive(Error, Debug)]
 pub enum LimitadorServerError {
@@ -222,17 +224,21 @@ impl Limiter {
 
 #[actix_rt::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = create_config();
+    let config = {
+        let (config, version) = create_config();
+        println!("{} {}", LIMITADOR_HEADER, version);
+        let mut builder = Builder::new();
+        if let Some(level) = config.log_level {
+            builder.filter(None, level);
+        } else {
+            builder.parse_default_env();
+        }
+        builder.init();
 
-    let mut builder = Builder::new();
-    if let Some(level) = config.log_level {
-        builder.filter(None, level);
-    } else {
-        builder.parse_default_env();
-    }
-    builder.init();
-
-    info!("Using config: {:?}", config);
+        info!("Version: {}", version);
+        info!("Using config: {:?}", config);
+        config
+    };
 
     let limit_file = config.limits_file.clone();
     let envoy_rls_address = config.rlp_address();
@@ -327,7 +333,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn create_config() -> Configuration {
+fn create_config() -> (Configuration, String) {
+    let full_version = {
+        let build = match LIMITADOR_PROFILE {
+            "release" => "".to_owned(),
+            other => format!(" {} build", other),
+        };
+
+        format!(
+            "v{} ({}){}",
+            LIMITADOR_VERSION,
+            env!("LIMITADOR_GIT_HASH"),
+            build,
+        )
+    };
+
     // figure defaults out
     let default_limit_file = env::var("LIMITS_FILE").unwrap_or_else(|_| "".to_string());
 
@@ -374,8 +394,8 @@ fn create_config() -> Configuration {
     };
 
     // build app
-    let cmdline = App::new("Limitador Server")
-        .version(LIMITADOR_VERSION)
+    let cmdline = App::new(LIMITADOR_HEADER)
+        .version(full_version.as_str())
         .author("The Kuadrant team - github.com/Kuadrant")
         .about("Rate Limiting Server")
         .disable_help_subcommand(true)
@@ -571,7 +591,7 @@ fn create_config() -> Configuration {
         _ => unreachable!("Verbosity should at most be 4!"),
     };
 
-    config
+    (config, full_version)
 }
 
 fn storage_config_from_env() -> Result<StorageConfiguration, ()> {
