@@ -1,54 +1,48 @@
-#[path = "protobufs"]
 pub mod envoy {
-    #[path = "."]
     pub mod config {
-        #[path = "."]
         pub mod core {
-            #[path = "envoy.config.core.v3.rs"]
             // clippy will barf on protobuff generated code for enum variants in
             // v3::socket_option::SocketState, so allow this lint
             #[allow(clippy::enum_variant_names, clippy::derive_partial_eq_without_eq)]
-            pub mod v3;
-        }
-    }
-
-    #[path = "."]
-    pub mod extensions {
-        #[path = "."]
-        pub mod common {
-            #[path = "."]
-            pub mod ratelimit {
-                #[path = "envoy.extensions.common.ratelimit.v3.rs"]
-                #[allow(clippy::derive_partial_eq_without_eq)]
-                pub mod v3;
+            pub mod v3 {
+                tonic::include_proto!("envoy.config.core.v3");
             }
         }
     }
 
-    #[path = "."]
-    pub mod r#type {
-        #[path = "envoy.r#type.v3.rs"]
-        #[allow(clippy::derive_partial_eq_without_eq)]
-        pub mod v3;
+    pub mod extensions {
+        pub mod common {
+            pub mod ratelimit {
+                #[allow(clippy::derive_partial_eq_without_eq)]
+                pub mod v3 {
+                    tonic::include_proto!("envoy.extensions.common.ratelimit.v3");
+                }
+            }
+        }
     }
 
-    #[path = "."]
+    pub mod r#type {
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        pub mod v3 {
+            tonic::include_proto!("envoy.r#type.v3");
+        }
+    }
+
     pub mod service {
-        #[path = "."]
         pub mod ratelimit {
-            #[path = "envoy.service.ratelimit.v3.rs"]
             #[allow(clippy::derive_partial_eq_without_eq)]
-            pub mod v3;
+            pub mod v3 {
+                tonic::include_proto!("envoy.service.ratelimit.v3");
+            }
         }
     }
 }
 
-#[path = "protobufs"]
 pub mod xds {
-    #[path = "."]
     pub mod core {
-        #[path = "xds.core.v3.rs"]
         #[allow(clippy::derive_partial_eq_without_eq)]
-        pub mod v3;
+        pub mod v3 {
+            tonic::include_proto!("xds.core.v3");
+        }
     }
 }

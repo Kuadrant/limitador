@@ -8,17 +8,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn generate_protobuf() -> Result<(), Box<dyn Error>> {
-    tonic_build::configure()
-        .build_server(true)
-        .out_dir("src/envoy_rls/protobufs")
-        .compile(
-            &["envoy/service/ratelimit/v3/rls.proto"],
-            &[
-                "vendor/protobufs/data-plane-api",
-                "vendor/protobufs/protoc-gen-validate",
-                "vendor/protobufs/xds",
-            ],
-        )?;
+    tonic_build::configure().build_server(true).compile(
+        &["envoy/service/ratelimit/v3/rls.proto"],
+        &[
+            "vendor/protobufs/data-plane-api",
+            "vendor/protobufs/protoc-gen-validate",
+            "vendor/protobufs/xds",
+        ],
+    )?;
     Ok(())
 }
 

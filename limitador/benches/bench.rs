@@ -25,7 +25,7 @@ struct TestScenario {
     n_vars_per_limit: u32,
 }
 
-const TEST_SCENARIOS: &'static [&'static TestScenario] = &[
+const TEST_SCENARIOS: &[&TestScenario] = &[
     &TestScenario {
         n_namespaces: 1,
         n_limits_per_ns: 1,
@@ -132,7 +132,7 @@ fn bench_is_rate_limited(
 ) {
     storage.clear().unwrap();
 
-    let (rate_limiter, call_params) = generate_test_data(&test_scenario, storage);
+    let (rate_limiter, call_params) = generate_test_data(test_scenario, storage);
 
     b.iter(|| {
         let params = call_params.choose(&mut rand::thread_rng()).unwrap();
@@ -155,20 +155,19 @@ fn bench_update_counters(
     storage: Box<dyn CounterStorage>,
 ) {
     storage.clear().unwrap();
-    let (rate_limiter, call_params) = generate_test_data(&test_scenario, storage);
+    let (rate_limiter, call_params) = generate_test_data(test_scenario, storage);
 
     b.iter(|| {
         let params = call_params.choose(&mut rand::thread_rng()).unwrap();
 
-        black_box(
-            rate_limiter
-                .update_counters(
-                    &params.namespace.to_owned().into(),
-                    &params.values,
-                    params.delta,
-                )
-                .unwrap(),
-        )
+        rate_limiter
+            .update_counters(
+                &params.namespace.to_owned().into(),
+                &params.values,
+                params.delta,
+            )
+            .unwrap();
+        black_box(())
     })
 }
 
@@ -178,7 +177,7 @@ fn bench_check_rate_limited_and_update(
     storage: Box<dyn CounterStorage>,
 ) {
     storage.clear().unwrap();
-    let (rate_limiter, call_params) = generate_test_data(&test_scenario, storage);
+    let (rate_limiter, call_params) = generate_test_data(test_scenario, storage);
 
     b.iter(|| {
         let params = call_params.choose(&mut rand::thread_rng()).unwrap();
@@ -211,14 +210,14 @@ fn generate_test_data(
 
     let mut conditions = vec![];
     for idx_cond in 0..scenario.n_conds_per_limit {
-        let cond_name = format!("cond_{}", idx_cond.to_string());
+        let cond_name = format!("cond_{}", idx_cond);
         conditions.push(format!("{} == 1", cond_name));
         test_values.insert(cond_name, "1".into());
     }
 
     let mut variables = vec![];
     for idx_var in 0..scenario.n_vars_per_limit {
-        let var_name = format!("var_{}", idx_var.to_string());
+        let var_name = format!("var_{}", idx_var);
         variables.push(var_name.clone());
         test_values.insert(var_name, "1".into());
     }
