@@ -6,6 +6,12 @@ on:
     branches: ['*']
     tags: ['*']
 
+env:
+  IMG_TAGS: ${{ github.ref_name }}
+  IMG_REGISTRY_HOST: quay.io
+  IMG_REGISTRY_ORG: kuadrant
+  MAIN_BRANCH_NAME: main
+
 jobs:
   build:
     name: Build
@@ -13,11 +19,28 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v2
+      - name: Add latest tag
+        if: ${{ github.ref_name == env.MAIN_BRANCH_NAME }}
+        id: add-latest-tag
+        run: |
+          echo "IMG_TAGS=latest ${{ env.IMG_TAGS }}" >> $GITHUB_ENV
       - name: Build Image
         id: build-image
         uses: redhat-actions/buildah-build@v2
         with:
           image: limitador
-          tags: ${{ github.ref_name }}
+          tags: ${{ env.IMG_TAGS }}
           dockerfiles: |
             ./Dockerfile
+      - name: Push Image
+        if: ${{ !env.ACT }}
+        id: push-to-quay
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ${{ steps.build-image.outputs.image }}
+          tags: ${{ steps.build-image.outputs.tags }}
+          registry: ${{ env.IMG_REGISTRY_HOST }}/${{ env.IMG_REGISTRY_ORG }}
+          username: ${{ secrets.IMG_REGISTRY_USERNAME }}
+          password: ${{ secrets.IMG_REGISTRY_TOKEN }}
+      - name: Print Image URL
+        run: echo "Image pushed to ${{ steps.push-to-quay.outputs.registry-paths }}"
