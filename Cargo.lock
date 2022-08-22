@@ -1137,7 +1137,7 @@ checksum = "04c3b4822ccebfa39c02fc03d1534441b22ead323fa0f48bb7ddd8e6ba076a40"
 
 [[package]]
 name = "limitador"
-version = "0.2.0"
+version = "0.3.0-dev"
 dependencies = [
  "async-trait",
  "cfg-if",
@@ -1161,7 +1161,7 @@ dependencies = [
 
 [[package]]
 name = "limitador-server"
-version = "0.5.1"
+version = "1.0.0-dev"
 dependencies = [
  "actix-rt",
  "actix-web",
