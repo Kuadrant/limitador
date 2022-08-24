@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
+use crate::limit;
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Namespace(String);
@@ -34,17 +35,17 @@ pub struct Limit {
 
     // Need to sort to generate the same object when using the JSON as a key or
     // value in Redis.
-    #[serde(serialize_with = "ordered_set")]
-    conditions: HashSet<String>,
+    #[serde(skip)]
+    conditions: HashSet<Condition>,
     #[serde(serialize_with = "ordered_set")]
     variables: HashSet<String>,
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Eq, Debug, Clone)]
-#[serde(try_from = "&str", into = "String")]
+#[derive(Deserialize, Serialize, PartialEq, Eq, Debug, Clone, Hash)]
+#[serde(try_from = "&str")]
 pub struct Condition {
     var_name: String,
-    operator: Operator,
+    predicate: Predicate,
     operand: String,
 }
 
@@ -57,45 +58,54 @@ impl TryFrom<&str> for Condition {
             Err(format!("Invalid condition format for: {}", value))
         } else {
             let var_name = split[0].to_string();
-            let operator = split[1].try_into()?;
+            let predicate = split[1].try_into()?;
             let operand = split[2].to_string();
             Ok(Condition {
                 var_name,
-                operator,
+                predicate,
                 operand,
             })
         }
     }
 }
 
-impl From<Condition> for String {
-    fn from(condition: Condition) -> Self {
-        let operator: String = condition.operator.into();
-        format!("{} {} {}", condition.var_name, operator, condition.operand)
+impl From<&Condition> for String {
+    fn from(condition: &Condition) -> Self {
+        let p = &condition.predicate;
+        let predicate: String = p.into();
+        format!("{} {} {}", condition.var_name, predicate, condition.operand)
     }
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Eq, Debug, Clone)]
-#[serde(try_from = "&str", into = "String")]
-pub enum Operator {
+#[derive(Deserialize, Serialize, PartialEq, Eq, Debug, Clone, Hash)]
+#[serde(try_from = "&str")]
+pub enum Predicate {
     EQUAL,
 }
 
-impl TryFrom<&str> for Operator {
-    type Error = String;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "==" => Ok(Operator::EQUAL),
-            _ => Err(format!("Invalid operator: {}", value)),
+impl Predicate {
+    fn test(&self, lhs: &str, rhs: &str) -> bool {
+        match self {
+            Predicate::EQUAL => lhs == rhs,
         }
     }
 }
 
-impl From<Operator> for String {
-    fn from(op: Operator) -> Self {
+impl TryFrom<&str> for Predicate {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "==" => Ok(Predicate::EQUAL),
+            _ => Err(format!("Invalid predicate: {}", value)),
+        }
+    }
+}
+
+impl From<&Predicate> for String {
+    fn from(op: &Predicate) -> Self {
         match op {
-            Operator::EQUAL => "==".to_string(),
+            Predicate::EQUAL => "==".to_string(),
         }
     }
 }
@@ -107,7 +117,7 @@ where
     let ordered: BTreeSet<String> = value
         .iter()
         .map(|c| {
-            let s: String = c.clone().into();
+            let s: String = c.into();
             s
         })
         .collect();
@@ -123,15 +133,16 @@ where
 }
 
 impl Limit {
-    pub fn new<N: Into<Namespace>>(
+    pub fn new<N: Into<Namespace>, T: TryInto<Condition>>(
         namespace: N,
         max_value: i64,
         seconds: u64,
-        conditions: impl IntoIterator<Item = impl Into<String>>,
+        conditions: impl IntoIterator<Item = T>,
         variables: impl IntoIterator<Item = impl Into<String>>,
     ) -> Self
     where
         <N as TryInto<Namespace>>::Error: core::fmt::Debug,
+        <T as TryInto<Condition>>::Error: core::fmt::Debug,
     {
         // the above where-clause is needed in order to call unwrap().
         Self {
@@ -139,7 +150,7 @@ impl Limit {
             max_value,
             seconds,
             name: None,
-            conditions: conditions.into_iter().map(|cond| cond.into()).collect(),
+            conditions: conditions.into_iter().map(|cond| cond.try_into().expect("Duh!")).collect(),
             variables: variables.into_iter().map(|var| var.into()).collect(),
         }
     }
@@ -191,16 +202,12 @@ impl Limit {
         all_conditions_apply && all_vars_are_set
     }
 
-    fn condition_applies(condition: &str, values: &HashMap<String, String>) -> bool {
-        // TODO: for now assume that all the conditions have this format:
-        // "left_operand == right_operand"
-
-        let split: Vec<&str> = condition.split(" == ").collect();
-        let left_operand = split[0];
-        let right_operand = split[1];
+    fn condition_applies(condition: &Condition, values: &HashMap<String, String>) -> bool {
+        let left_operand = condition.var_name.as_str();
+        let right_operand = condition.operand.as_str();
 
         match values.get(left_operand) {
-            Some(val) => val == right_operand,
+            Some(val) => condition.predicate.test(val, right_operand),
             None => false,
         }
     }
@@ -214,7 +221,7 @@ impl Hash for Limit {
         let mut encoded_conditions = self
             .conditions
             .iter()
-            .map(|c| c.to_string())
+            .map(|c| c.into())
             .collect::<Vec<String>>();
 
         encoded_conditions.sort();
@@ -342,7 +349,7 @@ mod tests {
             result,
             Condition {
                 var_name: "x".to_string(),
-                operator: Operator::EQUAL,
+                predicate: Predicate::EQUAL,
                 operand: "5".to_string(),
             }
         );
@@ -353,18 +360,18 @@ mod tests {
             result,
             Condition {
                 var_name: "foobar".to_string(),
-                operator: Operator::EQUAL,
+                predicate: Predicate::EQUAL,
                 operand: "ok".to_string(),
             }
         );
     }
 
     #[test]
-    fn invalid_operator_condition_parsing() {
+    fn invalid_predicate_condition_parsing() {
         let result = serde_json::from_str::<'static, Condition>(r#""x != 5""#)
             .err()
             .expect("should fail parsing");
-        assert_eq!(result.to_string(), "Invalid operator: !=".to_string());
+        assert_eq!(result.to_string(), "Invalid predicate: !=".to_string());
     }
 
     #[test]
@@ -379,10 +386,10 @@ mod tests {
     }
 
     #[test]
-    fn condition_serilization() {
+    fn condition_serialization() {
         let condition = Condition {
             var_name: "foobar".to_string(),
-            operator: Operator::EQUAL,
+            predicate: Predicate::EQUAL,
             operand: "ok".to_string(),
         };
         let result = serde_json::to_string(&condition).expect("Should serialize");
