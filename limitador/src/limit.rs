@@ -149,7 +149,10 @@ impl Limit {
             max_value,
             seconds,
             name: None,
-            conditions: conditions.into_iter().map(|cond| cond.try_into().expect("Duh!")).collect(),
+            conditions: conditions
+                .into_iter()
+                .map(|cond| cond.try_into().expect("Duh!"))
+                .collect(),
             variables: variables.into_iter().map(|var| var.into()).collect(),
         }
     }
@@ -179,7 +182,10 @@ impl Limit {
     }
 
     pub fn conditions(&self) -> HashSet<String> {
-        self.conditions.iter().map(|cond| cond.clone().into()).collect()
+        self.conditions
+            .iter()
+            .map(|cond| cond.clone().into())
+            .collect()
     }
 
     pub fn variables(&self) -> HashSet<String> {
@@ -243,6 +249,154 @@ impl PartialEq for Limit {
             && self.seconds == other.seconds
             && self.conditions == other.conditions
             && self.variables == other.variables
+    }
+}
+
+mod conditions {
+    use std::string::FromUtf8Error;
+    use crate::limit::conditions::Literal::Identifier;
+
+    #[derive(Eq, PartialEq, Debug)]
+    enum TokenType {
+        // Predicates
+        EqualEqual,
+
+        //Literals
+        Identifier,
+        String,
+    }
+
+    #[derive(Eq, PartialEq, Debug)]
+    enum Literal {
+        Identifier(String),
+        String(String),
+    }
+
+    #[derive(Eq, PartialEq, Debug)]
+    struct Token {
+        token_type: TokenType,
+        literal: Option<Literal>,
+    }
+
+    struct Scanner {
+        input: Vec<u8>,
+        pos: usize,
+        start: usize,
+    }
+
+    impl Scanner {
+        fn scan(condition: String) -> Result<Vec<Token>, usize> {
+            let mut tokens: Vec<Token> = Vec::with_capacity(3);
+            let mut scanner = Scanner {
+                input: condition.into_bytes(),
+                pos: 0,
+                start: 0,
+            };
+            while !scanner.done() {
+                match scanner.next_token() {
+                    Ok(token) => {
+                        if let Some(token) = token {
+                            tokens.push(token)
+                        }
+                    }
+                    Err(err) => {
+                        return Err(err);
+                    }
+                }
+            }
+            Ok(tokens)
+        }
+
+        fn next_token(&mut self) -> Result<Option<Token>, usize> {
+            let character = self.advance();
+            match character {
+                '=' => {
+                    if self.next_matches('=') {
+                        Ok(Some(Token {
+                            token_type: TokenType::EqualEqual,
+                            literal: None,
+                        }))
+                    } else {
+                        Err(self.pos)
+                    }
+                }
+                '"' | '\'' => self.scan_string(character).map(|t| Some(t)),
+                ' ' | '\n' | '\r' | '\t' => Ok(None),
+                _ => {
+                    if character.is_alphabetic() {
+                        self.scan_identifier().map(|t| Some(t))
+                    } else {
+                        Err(self.pos)
+                    }
+                }
+            }
+        }
+
+        fn scan_identifier(&mut self) -> Result<Token, usize> {
+            let start = self.pos - 1;
+            while !self.done() && self.input[self.pos].is_ascii_alphanumeric() {
+                self.advance();
+            };
+            match String::from_utf8(self.input[start..self.pos].to_vec()) {
+                Ok(value) => Ok(Token {
+                    token_type: TokenType::Identifier,
+                    literal: Some(Literal::Identifier(value)),
+                }),
+                Err(_) => Err(start),
+            }
+        }
+
+
+        fn scan_string(&mut self, until: char) -> Result<Token, usize> {
+            let start = self.pos;
+            while !self.done() && self.advance() != until {
+            };
+            match String::from_utf8(self.input[start..self.pos - 1].to_vec()) {
+                Ok(value) => Ok(Token {
+                    token_type: TokenType::String,
+                    literal: Some(Literal::String(value)),
+                }),
+                Err(_) => Err(start),
+            }
+        }
+
+        fn advance(&mut self) -> char {
+            let char = self.input[self.pos].into();
+            self.pos += 1;
+            char
+        }
+
+        fn next_matches(&mut self, c: char) -> bool {
+            if self.done() || char::from(self.input[self.pos]) != c {
+                return false;
+            }
+
+            self.pos += 1;
+            true
+        }
+
+        fn done(&self) -> bool {
+            self.pos >= self.input.len()
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use crate::limit::conditions::{Literal, Scanner, Token, TokenType};
+        use crate::limit::conditions::Literal::Identifier;
+
+        #[test]
+        fn test_scanner() {
+            let tokens = Scanner::scan("foo=='bar '".to_owned()).expect("Should parse alright!");
+            assert_eq!(tokens.len(), 3);
+            assert_eq!(tokens[0], Token { token_type: TokenType::Identifier, literal: Some(Identifier("foo".to_owned())) });
+            assert_eq!(tokens[1], Token { token_type: TokenType::EqualEqual, literal: None });
+            assert_eq!(tokens[2], Token { token_type: TokenType::String, literal: Some(Literal::String("bar ".to_owned())) });
+
+            assert_eq!(tokens, Scanner::scan("foo == 'bar '".to_owned()).expect("Should parse alright!"));
+            assert_eq!(tokens, Scanner::scan("  foo == 'bar ' ".to_owned()).expect("Should parse alright!"));
+            assert_eq!(tokens, Scanner::scan("  foo   ==   'bar ' ".to_owned()).expect("Should parse alright!"));
+        }
     }
 }
 
@@ -342,7 +496,7 @@ mod tests {
     }
 
     #[test]
-    fn valid_condition_parsing() {
+    fn valid_condition_positional_parsing() {
         let result: Condition = serde_json::from_str(r#""x == 5""#).expect("Should deserialize");
         assert_eq!(
             result,
@@ -355,6 +509,31 @@ mod tests {
 
         let result: Condition =
             serde_json::from_str(r#""  foobar  ==   ok  ""#).expect("Should deserialize");
+        assert_eq!(
+            result,
+            Condition {
+                var_name: "foobar".to_string(),
+                predicate: Predicate::EQUAL,
+                operand: "ok".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    #[ignore]
+    fn valid_condition_literal_parsing() {
+        let result: Condition = serde_json::from_str(r#""x == '5'""#).expect("Should deserialize");
+        assert_eq!(
+            result,
+            Condition {
+                var_name: "x".to_string(),
+                predicate: Predicate::EQUAL,
+                operand: "5".to_string(),
+            }
+        );
+
+        let result: Condition =
+            serde_json::from_str(r#""  foobar=='ok' ""#).expect("Should deserialize");
         assert_eq!(
             result,
             Condition {
