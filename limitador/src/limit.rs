@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
-use crate::limit;
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Namespace(String);
@@ -42,7 +41,7 @@ pub struct Limit {
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Eq, Debug, Clone, Hash)]
-#[serde(try_from = "&str")]
+#[serde(try_from = "&str", into = "String")]
 pub struct Condition {
     var_name: String,
     predicate: Predicate,
@@ -69,16 +68,16 @@ impl TryFrom<&str> for Condition {
     }
 }
 
-impl From<&Condition> for String {
-    fn from(condition: &Condition) -> Self {
+impl From<Condition> for String {
+    fn from(condition: Condition) -> Self {
         let p = &condition.predicate;
-        let predicate: String = p.into();
+        let predicate: String = p.clone().into();
         format!("{} {} {}", condition.var_name, predicate, condition.operand)
     }
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Eq, Debug, Clone, Hash)]
-#[serde(try_from = "&str")]
+#[serde(try_from = "&str", into = "String")]
 pub enum Predicate {
     EQUAL,
 }
@@ -102,8 +101,8 @@ impl TryFrom<&str> for Predicate {
     }
 }
 
-impl From<&Predicate> for String {
-    fn from(op: &Predicate) -> Self {
+impl From<Predicate> for String {
+    fn from(op: Predicate) -> Self {
         match op {
             Predicate::EQUAL => "==".to_string(),
         }
@@ -117,7 +116,7 @@ where
     let ordered: BTreeSet<String> = value
         .iter()
         .map(|c| {
-            let s: String = c.into();
+            let s: String = c.clone().into();
             s
         })
         .collect();
@@ -180,7 +179,7 @@ impl Limit {
     }
 
     pub fn conditions(&self) -> HashSet<String> {
-        self.conditions.iter().map(|cond| cond.into()).collect()
+        self.conditions.iter().map(|cond| cond.clone().into()).collect()
     }
 
     pub fn variables(&self) -> HashSet<String> {
@@ -221,7 +220,7 @@ impl Hash for Limit {
         let mut encoded_conditions = self
             .conditions
             .iter()
-            .map(|c| c.into())
+            .map(|c| c.clone().into())
             .collect::<Vec<String>>();
 
         encoded_conditions.sort();
