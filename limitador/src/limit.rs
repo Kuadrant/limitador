@@ -68,10 +68,10 @@ impl TryFrom<&str> for Condition {
     }
 }
 
-impl Into<String> for Condition {
-    fn into(self) -> String {
-        let operator: String = self.operator.into();
-        format!("{} {} {}", self.var_name, operator, self.operand)
+impl From<Condition> for String {
+    fn from(condition: Condition) -> Self {
+        let operator: String = condition.operator.into();
+        format!("{} {} {}", condition.var_name, operator, condition.operand)
     }
 }
 
@@ -92,9 +92,9 @@ impl TryFrom<&str> for Operator {
     }
 }
 
-impl Into<String> for Operator {
-    fn into(self) -> String {
-        match self {
+impl From<Operator> for String {
+    fn from(op: Operator) -> Self {
+        match op {
             Operator::EQUAL => "==".to_string(),
         }
     }
@@ -104,10 +104,13 @@ fn ordered_condition_set<S>(value: &HashSet<Condition>, serializer: S) -> Result
 where
     S: Serializer,
 {
-    let ordered: BTreeSet<String> = value.iter().map(|c| {
-        let s: String = c.clone().into();
-        s
-    }).collect();
+    let ordered: BTreeSet<String> = value
+        .iter()
+        .map(|c| {
+            let s: String = c.clone().into();
+            s
+        })
+        .collect();
     ordered.serialize(serializer)
 }
 
