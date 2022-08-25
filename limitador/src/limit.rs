@@ -125,6 +125,25 @@ impl TryFrom<&str> for Condition {
                                 )
                             }
                         }
+                        // For backwards compatibility!
+                        (TokenType::Identifier, TokenType::EqualEqual, TokenType::Number) => {
+                            if let (
+                                Some(Literal::Identifier(var_name)),
+                                Some(Literal::Number(operand)),
+                            ) = (&tokens[0].literal, &tokens[2].literal)
+                            {
+                                Ok(Condition {
+                                    var_name: var_name.clone(),
+                                    predicate: Predicate::EQUAL,
+                                    operand: operand.to_string(),
+                                })
+                            } else {
+                                panic!(
+                                    "Unexpected state {:?} returned from Scanner for: `{}`",
+                                    tokens, value
+                                )
+                            }
+                        }
                         (_, _, _) => Err(format!(
                             "Unexpected token {:?} at {} for: {}",
                             tokens[0], tokens[0].pos, value
@@ -178,12 +197,7 @@ fn ordered_condition_set<S>(value: &HashSet<Condition>, serializer: S) -> Result
 where
     S: Serializer,
 {
-    let ordered: BTreeSet<String> = value
-        .iter()
-        .map(|c| {
-            c.clone().into()
-        })
-        .collect();
+    let ordered: BTreeSet<String> = value.iter().map(|c| c.clone().into()).collect();
     ordered.serialize(serializer)
 }
 
@@ -326,12 +340,14 @@ mod conditions {
         //Literals
         Identifier,
         String,
+        Number,
     }
 
     #[derive(Eq, PartialEq, Debug)]
     pub enum Literal {
         Identifier(String),
         String(String),
+        Number(i64),
     }
 
     #[derive(Eq, PartialEq, Debug)]
@@ -387,6 +403,8 @@ mod conditions {
                 _ => {
                     if character.is_alphabetic() {
                         self.scan_identifier().map(Some)
+                    } else if character.is_numeric() {
+                        self.scan_number().map(Some)
                     } else {
                         Err(self.pos)
                     }
@@ -395,16 +413,16 @@ mod conditions {
         }
 
         fn scan_identifier(&mut self) -> Result<Token, usize> {
-            let start = self.pos - 1;
+            let start = self.pos;
             while !self.done() && self.valid_id_char() {
                 self.advance();
             }
             Ok(Token {
                 token_type: TokenType::Identifier,
                 literal: Some(Literal::Identifier(
-                    self.input[start..self.pos].iter().collect(),
+                    self.input[start - 1..self.pos].iter().collect(),
                 )),
-                pos: start + 1,
+                pos: start,
             })
         }
 
@@ -423,6 +441,22 @@ mod conditions {
                 )),
                 pos: start,
             })
+        }
+
+        fn scan_number(&mut self) -> Result<Token, usize> {
+            let start = self.pos;
+            while !self.done() && self.input[self.pos].is_numeric() {
+                self.advance();
+            }
+            let number_str = self.input[start - 1..self.pos].iter().collect::<String>();
+            match number_str.parse::<i64>() {
+                Ok(number) => Ok(Token {
+                    token_type: TokenType::Number,
+                    literal: Some(Literal::Number(number)),
+                    pos: start,
+                }),
+                Err(_) => Err(start),
+            }
         }
 
         fn advance(&mut self) -> char {
@@ -500,6 +534,36 @@ mod conditions {
             assert_eq!(
                 tokens,
                 Scanner::scan("  foo   ==   'bar ' ".to_owned()).expect("Should parse alright!")
+            );
+        }
+
+        #[test]
+        fn test_number_literal() {
+            let tokens = Scanner::scan("var == 42".to_owned()).expect("Should parse alright!");
+            assert_eq!(tokens.len(), 3);
+            assert_eq!(
+                tokens[0],
+                Token {
+                    token_type: TokenType::Identifier,
+                    literal: Some(Identifier("var".to_owned())),
+                    pos: 1,
+                }
+            );
+            assert_eq!(
+                tokens[1],
+                Token {
+                    token_type: TokenType::EqualEqual,
+                    literal: None,
+                    pos: 5,
+                }
+            );
+            assert_eq!(
+                tokens[2],
+                Token {
+                    token_type: TokenType::Number,
+                    literal: Some(Literal::Number(42)),
+                    pos: 8,
+                }
             );
         }
 
