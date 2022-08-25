@@ -63,7 +63,7 @@ impl TryFrom<&str> for Condition {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match conditions::Scanner::scan(value.to_owned()) {
-            Ok(tokens) => match tokens.len().cmp(&(3 as usize)) {
+            Ok(tokens) => match tokens.len().cmp(&(3_usize)) {
                 Ordering::Equal => {
                     match (
                         &tokens[0].token_type,
@@ -87,7 +87,7 @@ impl TryFrom<&str> for Condition {
                                     tokens, value
                                 )
                             }
-                        },
+                        }
                         (TokenType::String, TokenType::EqualEqual, TokenType::Identifier) => {
                             if let (
                                 Some(Literal::String(operand)),
@@ -105,7 +105,7 @@ impl TryFrom<&str> for Condition {
                                     tokens, value
                                 )
                             }
-                        },
+                        }
                         // For backwards compatibility!
                         (TokenType::Identifier, TokenType::EqualEqual, TokenType::Identifier) => {
                             if let (
@@ -124,7 +124,7 @@ impl TryFrom<&str> for Condition {
                                     tokens, value
                                 )
                             }
-                        },
+                        }
                         (_, _, _) => Err(format!(
                             "Unexpected token {:?} at {} for: {}",
                             tokens[0], tokens[0].pos, value
@@ -383,11 +383,11 @@ mod conditions {
                         Err(self.pos)
                     }
                 }
-                '"' | '\'' => self.scan_string(character).map(|t| Some(t)),
+                '"' | '\'' => self.scan_string(character).map(Some),
                 ' ' | '\n' | '\r' | '\t' => Ok(None),
                 _ => {
                     if character.is_alphabetic() {
-                        self.scan_identifier().map(|t| Some(t))
+                        self.scan_identifier().map(Some)
                     } else {
                         Err(self.pos)
                     }
@@ -427,7 +427,7 @@ mod conditions {
         }
 
         fn advance(&mut self) -> char {
-            let char = self.input[self.pos].into();
+            let char = self.input[self.pos];
             self.pos += 1;
             char
         }
@@ -696,7 +696,10 @@ mod tests {
         let result = serde_json::from_str::<'static, Condition>(r#""x != 5""#)
             .err()
             .expect("should fail parsing");
-        assert_eq!(result.to_string(), "Invalid character at 3 for: `x != 5`".to_string());
+        assert_eq!(
+            result.to_string(),
+            "Invalid character at 3 for: `x != 5`".to_string()
+        );
     }
 
     #[test]
