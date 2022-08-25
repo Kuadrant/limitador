@@ -253,8 +253,8 @@ impl PartialEq for Limit {
 }
 
 mod conditions {
-    use std::string::FromUtf8Error;
     use crate::limit::conditions::Literal::Identifier;
+    use std::string::FromUtf8Error;
 
     #[derive(Eq, PartialEq, Debug)]
     enum TokenType {
@@ -279,7 +279,7 @@ mod conditions {
     }
 
     struct Scanner {
-        input: Vec<u8>,
+        input: Vec<char>,
         pos: usize,
         start: usize,
     }
@@ -288,7 +288,7 @@ mod conditions {
         fn scan(condition: String) -> Result<Vec<Token>, usize> {
             let mut tokens: Vec<Token> = Vec::with_capacity(3);
             let mut scanner = Scanner {
-                input: condition.into_bytes(),
+                input: condition.chars().collect(),
                 pos: 0,
                 start: 0,
             };
@@ -334,30 +334,26 @@ mod conditions {
 
         fn scan_identifier(&mut self) -> Result<Token, usize> {
             let start = self.pos - 1;
-            while !self.done() && self.input[self.pos].is_ascii_alphanumeric() {
+            while !self.done() && self.input[self.pos].is_alphanumeric() {
                 self.advance();
-            };
-            match String::from_utf8(self.input[start..self.pos].to_vec()) {
-                Ok(value) => Ok(Token {
-                    token_type: TokenType::Identifier,
-                    literal: Some(Literal::Identifier(value)),
-                }),
-                Err(_) => Err(start),
             }
+            Ok(Token {
+                token_type: TokenType::Identifier,
+                literal: Some(Literal::Identifier(
+                    self.input[start..self.pos].iter().collect(),
+                )),
+            })
         }
-
 
         fn scan_string(&mut self, until: char) -> Result<Token, usize> {
             let start = self.pos;
-            while !self.done() && self.advance() != until {
-            };
-            match String::from_utf8(self.input[start..self.pos - 1].to_vec()) {
-                Ok(value) => Ok(Token {
-                    token_type: TokenType::String,
-                    literal: Some(Literal::String(value)),
-                }),
-                Err(_) => Err(start),
-            }
+            while !self.done() && self.advance() != until {}
+            Ok(Token {
+                token_type: TokenType::String,
+                literal: Some(Literal::String(
+                    self.input[start..self.pos - 1].iter().collect(),
+                )),
+            })
         }
 
         fn advance(&mut self) -> char {
@@ -367,7 +363,7 @@ mod conditions {
         }
 
         fn next_matches(&mut self, c: char) -> bool {
-            if self.done() || char::from(self.input[self.pos]) != c {
+            if self.done() || self.input[self.pos] != c {
                 return false;
             }
 
@@ -382,20 +378,75 @@ mod conditions {
 
     #[cfg(test)]
     mod tests {
-        use crate::limit::conditions::{Literal, Scanner, Token, TokenType};
         use crate::limit::conditions::Literal::Identifier;
+        use crate::limit::conditions::{Literal, Scanner, Token, TokenType};
 
         #[test]
         fn test_scanner() {
             let tokens = Scanner::scan("foo=='bar '".to_owned()).expect("Should parse alright!");
             assert_eq!(tokens.len(), 3);
-            assert_eq!(tokens[0], Token { token_type: TokenType::Identifier, literal: Some(Identifier("foo".to_owned())) });
-            assert_eq!(tokens[1], Token { token_type: TokenType::EqualEqual, literal: None });
-            assert_eq!(tokens[2], Token { token_type: TokenType::String, literal: Some(Literal::String("bar ".to_owned())) });
+            assert_eq!(
+                tokens[0],
+                Token {
+                    token_type: TokenType::Identifier,
+                    literal: Some(Identifier("foo".to_owned()))
+                }
+            );
+            assert_eq!(
+                tokens[1],
+                Token {
+                    token_type: TokenType::EqualEqual,
+                    literal: None
+                }
+            );
+            assert_eq!(
+                tokens[2],
+                Token {
+                    token_type: TokenType::String,
+                    literal: Some(Literal::String("bar ".to_owned()))
+                }
+            );
 
-            assert_eq!(tokens, Scanner::scan("foo == 'bar '".to_owned()).expect("Should parse alright!"));
-            assert_eq!(tokens, Scanner::scan("  foo == 'bar ' ".to_owned()).expect("Should parse alright!"));
-            assert_eq!(tokens, Scanner::scan("  foo   ==   'bar ' ".to_owned()).expect("Should parse alright!"));
+            assert_eq!(
+                tokens,
+                Scanner::scan("foo == 'bar '".to_owned()).expect("Should parse alright!")
+            );
+            assert_eq!(
+                tokens,
+                Scanner::scan("  foo == 'bar ' ".to_owned()).expect("Should parse alright!")
+            );
+            assert_eq!(
+                tokens,
+                Scanner::scan("  foo   ==   'bar ' ".to_owned()).expect("Should parse alright!")
+            );
+        }
+
+        #[test]
+        fn test_charset() {
+            let tokens =
+                Scanner::scan(" 変数 == '  💖 '".to_owned()).expect("Should parse alright!");
+            assert_eq!(tokens.len(), 3);
+            assert_eq!(
+                tokens[0],
+                Token {
+                    token_type: TokenType::Identifier,
+                    literal: Some(Identifier("変数".to_owned()))
+                }
+            );
+            assert_eq!(
+                tokens[1],
+                Token {
+                    token_type: TokenType::EqualEqual,
+                    literal: None
+                }
+            );
+            assert_eq!(
+                tokens[2],
+                Token {
+                    token_type: TokenType::String,
+                    literal: Some(Literal::String("  💖 ".to_owned()))
+                }
+            );
         }
     }
 }
