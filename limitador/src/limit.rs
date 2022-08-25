@@ -1,4 +1,6 @@
+use crate::limit::conditions::{Literal, TokenType};
 use serde::{Deserialize, Serialize, Serializer};
+use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
@@ -48,22 +50,94 @@ pub struct Condition {
     operand: String,
 }
 
+impl TryFrom<String> for Condition {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.as_str().try_into()
+    }
+}
+
 impl TryFrom<&str> for Condition {
     type Error = String;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let split: Vec<&str> = value.split_whitespace().collect();
-        if split.len() != 3 {
-            Err(format!("Invalid condition format for: {}", value))
-        } else {
-            let var_name = split[0].to_string();
-            let predicate = split[1].try_into()?;
-            let operand = split[2].to_string();
-            Ok(Condition {
-                var_name,
-                predicate,
-                operand,
-            })
+        match conditions::Scanner::scan(value.to_owned()) {
+            Ok(tokens) => match tokens.len().cmp(&(3 as usize)) {
+                Ordering::Equal => {
+                    match (
+                        &tokens[0].token_type,
+                        &tokens[1].token_type,
+                        &tokens[2].token_type,
+                    ) {
+                        (TokenType::Identifier, TokenType::EqualEqual, TokenType::String) => {
+                            if let (
+                                Some(Literal::Identifier(var_name)),
+                                Some(Literal::String(operand)),
+                            ) = (&tokens[0].literal, &tokens[2].literal)
+                            {
+                                Ok(Condition {
+                                    var_name: var_name.clone(),
+                                    predicate: Predicate::EQUAL,
+                                    operand: operand.clone(),
+                                })
+                            } else {
+                                panic!(
+                                    "Unexpected state {:?} returned from Scanner for: `{}`",
+                                    tokens, value
+                                )
+                            }
+                        },
+                        (TokenType::String, TokenType::EqualEqual, TokenType::Identifier) => {
+                            if let (
+                                Some(Literal::String(operand)),
+                                Some(Literal::Identifier(var_name)),
+                            ) = (&tokens[0].literal, &tokens[2].literal)
+                            {
+                                Ok(Condition {
+                                    var_name: var_name.clone(),
+                                    predicate: Predicate::EQUAL,
+                                    operand: operand.clone(),
+                                })
+                            } else {
+                                panic!(
+                                    "Unexpected state {:?} returned from Scanner for: `{}`",
+                                    tokens, value
+                                )
+                            }
+                        },
+                        // For backwards compatibility!
+                        (TokenType::Identifier, TokenType::EqualEqual, TokenType::Identifier) => {
+                            if let (
+                                Some(Literal::Identifier(operand)),
+                                Some(Literal::Identifier(var_name)),
+                            ) = (&tokens[0].literal, &tokens[2].literal)
+                            {
+                                Ok(Condition {
+                                    var_name: var_name.clone(),
+                                    predicate: Predicate::EQUAL,
+                                    operand: operand.clone(),
+                                })
+                            } else {
+                                panic!(
+                                    "Unexpected state {:?} returned from Scanner for: `{}`",
+                                    tokens, value
+                                )
+                            }
+                        },
+                        (_, _, _) => Err(format!(
+                            "Unexpected token {:?} at {} for: {}",
+                            tokens[0], tokens[0].pos, value
+                        )),
+                    }
+                }
+                Ordering::Less => Err(format!("Missing expected token for: `{}`", value)),
+                Ordering::Greater => Err(format!(
+                    "Unexpected token {:?} at {} for: {}",
+                    tokens[3], tokens[3].pos, value
+                )),
+            },
+            Err(pos) => Err(format!("Invalid character at {} for: `{}`", pos, value)),
         }
     }
 }
@@ -72,12 +146,14 @@ impl From<Condition> for String {
     fn from(condition: Condition) -> Self {
         let p = &condition.predicate;
         let predicate: String = p.clone().into();
-        format!("{} {} {}", condition.var_name, predicate, condition.operand)
+        format!(
+            "{} {} \"{}\"",
+            condition.var_name, predicate, condition.operand
+        )
     }
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Eq, Debug, Clone, Hash)]
-#[serde(try_from = "&str", into = "String")]
+#[derive(PartialEq, Eq, Debug, Clone, Hash)]
 pub enum Predicate {
     EQUAL,
 }
@@ -86,17 +162,6 @@ impl Predicate {
     fn test(&self, lhs: &str, rhs: &str) -> bool {
         match self {
             Predicate::EQUAL => lhs == rhs,
-        }
-    }
-}
-
-impl TryFrom<&str> for Predicate {
-    type Error = String;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "==" => Ok(Predicate::EQUAL),
-            _ => Err(format!("Invalid predicate: {}", value)),
         }
     }
 }
@@ -253,11 +318,9 @@ impl PartialEq for Limit {
 }
 
 mod conditions {
-    use crate::limit::conditions::Literal::Identifier;
-    use std::string::FromUtf8Error;
 
     #[derive(Eq, PartialEq, Debug)]
-    enum TokenType {
+    pub enum TokenType {
         // Predicates
         EqualEqual,
 
@@ -267,30 +330,29 @@ mod conditions {
     }
 
     #[derive(Eq, PartialEq, Debug)]
-    enum Literal {
+    pub enum Literal {
         Identifier(String),
         String(String),
     }
 
     #[derive(Eq, PartialEq, Debug)]
-    struct Token {
-        token_type: TokenType,
-        literal: Option<Literal>,
+    pub struct Token {
+        pub token_type: TokenType,
+        pub literal: Option<Literal>,
+        pub pos: usize,
     }
 
-    struct Scanner {
+    pub struct Scanner {
         input: Vec<char>,
         pos: usize,
-        start: usize,
     }
 
     impl Scanner {
-        fn scan(condition: String) -> Result<Vec<Token>, usize> {
+        pub fn scan(condition: String) -> Result<Vec<Token>, usize> {
             let mut tokens: Vec<Token> = Vec::with_capacity(3);
             let mut scanner = Scanner {
                 input: condition.chars().collect(),
                 pos: 0,
-                start: 0,
             };
             while !scanner.done() {
                 match scanner.next_token() {
@@ -315,6 +377,7 @@ mod conditions {
                         Ok(Some(Token {
                             token_type: TokenType::EqualEqual,
                             literal: None,
+                            pos: self.pos - 1,
                         }))
                     } else {
                         Err(self.pos)
@@ -334,7 +397,7 @@ mod conditions {
 
         fn scan_identifier(&mut self) -> Result<Token, usize> {
             let start = self.pos - 1;
-            while !self.done() && self.input[self.pos].is_alphanumeric() {
+            while !self.done() && self.valid_id_char() {
                 self.advance();
             }
             Ok(Token {
@@ -342,7 +405,13 @@ mod conditions {
                 literal: Some(Literal::Identifier(
                     self.input[start..self.pos].iter().collect(),
                 )),
+                pos: start + 1,
             })
+        }
+
+        fn valid_id_char(&mut self) -> bool {
+            let char = self.input[self.pos];
+            char.is_alphanumeric() || char == '.'
         }
 
         fn scan_string(&mut self, until: char) -> Result<Token, usize> {
@@ -353,6 +422,7 @@ mod conditions {
                 literal: Some(Literal::String(
                     self.input[start..self.pos - 1].iter().collect(),
                 )),
+                pos: start,
             })
         }
 
@@ -383,38 +453,51 @@ mod conditions {
 
         #[test]
         fn test_scanner() {
-            let tokens = Scanner::scan("foo=='bar '".to_owned()).expect("Should parse alright!");
+            let mut tokens =
+                Scanner::scan("foo=='bar '".to_owned()).expect("Should parse alright!");
             assert_eq!(tokens.len(), 3);
             assert_eq!(
                 tokens[0],
                 Token {
                     token_type: TokenType::Identifier,
-                    literal: Some(Identifier("foo".to_owned()))
+                    literal: Some(Identifier("foo".to_owned())),
+                    pos: 1,
                 }
             );
             assert_eq!(
                 tokens[1],
                 Token {
                     token_type: TokenType::EqualEqual,
-                    literal: None
+                    literal: None,
+                    pos: 4,
                 }
             );
             assert_eq!(
                 tokens[2],
                 Token {
                     token_type: TokenType::String,
-                    literal: Some(Literal::String("bar ".to_owned()))
+                    literal: Some(Literal::String("bar ".to_owned())),
+                    pos: 6,
                 }
             );
 
+            tokens[1].pos += 1;
+            tokens[2].pos += 2;
             assert_eq!(
                 tokens,
                 Scanner::scan("foo == 'bar '".to_owned()).expect("Should parse alright!")
             );
+
+            tokens[0].pos += 2;
+            tokens[1].pos += 2;
+            tokens[2].pos += 2;
             assert_eq!(
                 tokens,
                 Scanner::scan("  foo == 'bar ' ".to_owned()).expect("Should parse alright!")
             );
+
+            tokens[1].pos += 2;
+            tokens[2].pos += 4;
             assert_eq!(
                 tokens,
                 Scanner::scan("  foo   ==   'bar ' ".to_owned()).expect("Should parse alright!")
@@ -430,21 +513,24 @@ mod conditions {
                 tokens[0],
                 Token {
                     token_type: TokenType::Identifier,
-                    literal: Some(Identifier("変数".to_owned()))
+                    literal: Some(Identifier("変数".to_owned())),
+                    pos: 2,
                 }
             );
             assert_eq!(
                 tokens[1],
                 Token {
                     token_type: TokenType::EqualEqual,
-                    literal: None
+                    literal: None,
+                    pos: 5,
                 }
             );
             assert_eq!(
                 tokens[2],
                 Token {
                     token_type: TokenType::String,
-                    literal: Some(Literal::String("  💖 ".to_owned()))
+                    literal: Some(Literal::String("  💖 ".to_owned())),
+                    pos: 8,
                 }
             );
         }
@@ -457,7 +543,7 @@ mod tests {
 
     #[test]
     fn limit_can_have_an_optional_name() {
-        let mut limit = Limit::new("test_namespace", 10, 60, vec!["x == 5"], vec!["y"]);
+        let mut limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"]);
         assert!(limit.name.is_none());
 
         let name = "Test Limit";
@@ -467,7 +553,7 @@ mod tests {
 
     #[test]
     fn limit_applies() {
-        let limit = Limit::new("test_namespace", 10, 60, vec!["x == 5"], vec!["y"]);
+        let limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"]);
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "5".into());
@@ -478,7 +564,7 @@ mod tests {
 
     #[test]
     fn limit_does_not_apply_when_cond_is_false() {
-        let limit = Limit::new("test_namespace", 10, 60, vec!["x == 5"], vec!["y"]);
+        let limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"]);
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "1".into());
@@ -488,8 +574,19 @@ mod tests {
     }
 
     #[test]
+    fn limit_does_not_apply_when_cond_is_false_deprecated_style() {
+        let limit = Limit::new("test_namespace", 10, 60, vec!["x == foobar"], vec!["y"]);
+
+        let mut values: HashMap<String, String> = HashMap::new();
+        values.insert("x".into(), "foobar".into());
+        values.insert("y".into(), "1".into());
+
+        assert!(!limit.applies(&values))
+    }
+
+    #[test]
     fn limit_does_not_apply_when_cond_var_is_not_set() {
-        let limit = Limit::new("test_namespace", 10, 60, vec!["x == 5"], vec!["y"]);
+        let limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"]);
 
         // Notice that "x" is not set
         let mut values: HashMap<String, String> = HashMap::new();
@@ -501,7 +598,7 @@ mod tests {
 
     #[test]
     fn limit_does_not_apply_when_var_not_set() {
-        let limit = Limit::new("test_namespace", 10, 60, vec!["x == 5"], vec!["y"]);
+        let limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"]);
 
         // Notice that "y" is not set
         let mut values: HashMap<String, String> = HashMap::new();
@@ -516,7 +613,7 @@ mod tests {
             "test_namespace",
             10,
             60,
-            vec!["x == 5", "y == 2"],
+            vec!["x == \"5\"", "y == \"2\""],
             vec!["z"],
         );
 
@@ -534,7 +631,7 @@ mod tests {
             "test_namespace",
             10,
             60,
-            vec!["x == 5", "y == 2"],
+            vec!["x == \"5\"", "y == \"2\""],
             vec!["z"],
         );
 
@@ -548,7 +645,7 @@ mod tests {
 
     #[test]
     fn valid_condition_positional_parsing() {
-        let result: Condition = serde_json::from_str(r#""x == 5""#).expect("Should deserialize");
+        let result: Condition = serde_json::from_str(r#""x == '5'""#).expect("Should deserialize");
         assert_eq!(
             result,
             Condition {
@@ -559,7 +656,7 @@ mod tests {
         );
 
         let result: Condition =
-            serde_json::from_str(r#""  foobar  ==   ok  ""#).expect("Should deserialize");
+            serde_json::from_str(r#""  foobar  ==   'ok'  ""#).expect("Should deserialize");
         assert_eq!(
             result,
             Condition {
@@ -571,7 +668,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn valid_condition_literal_parsing() {
         let result: Condition = serde_json::from_str(r#""x == '5'""#).expect("Should deserialize");
         assert_eq!(
@@ -600,7 +696,7 @@ mod tests {
         let result = serde_json::from_str::<'static, Condition>(r#""x != 5""#)
             .err()
             .expect("should fail parsing");
-        assert_eq!(result.to_string(), "Invalid predicate: !=".to_string());
+        assert_eq!(result.to_string(), "Invalid character at 3 for: `x != 5`".to_string());
     }
 
     #[test]
@@ -610,7 +706,7 @@ mod tests {
             .expect("should fail parsing");
         assert_eq!(
             result.to_string(),
-            "Invalid condition format for: x != 5 && x > 12".to_string()
+            "Invalid character at 3 for: `x != 5 && x > 12`".to_string()
         );
     }
 
@@ -622,6 +718,6 @@ mod tests {
             operand: "ok".to_string(),
         };
         let result = serde_json::to_string(&condition).expect("Should serialize");
-        assert_eq!(result, r#""foobar == ok""#.to_string());
+        assert_eq!(result, r#""foobar == \"ok\"""#.to_string());
     }
 }
