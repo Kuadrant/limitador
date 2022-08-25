@@ -59,11 +59,11 @@ mod tests {
             "example.com",
             10,
             60,
-            vec!["req.method == GET"],
+            vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
         assert_eq!(
-            "namespace:{example.com},counters_of_limit:{\"namespace\":\"example.com\",\"seconds\":60,\"conditions\":[\"req.method == GET\"],\"variables\":[\"app_id\"]}",
+            "namespace:{example.com},counters_of_limit:{\"namespace\":\"example.com\",\"seconds\":60,\"conditions\":[\"req.method == 'GET'\"],\"variables\":[\"app_id\"]}",
             key_for_counters_of_limit(&limit))
     }
 }

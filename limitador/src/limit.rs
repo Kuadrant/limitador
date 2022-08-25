@@ -36,7 +36,7 @@ pub struct Limit {
 
     // Need to sort to generate the same object when using the JSON as a key or
     // value in Redis.
-    #[serde(skip)]
+    #[serde(serialize_with = "ordered_condition_set")]
     conditions: HashSet<Condition>,
     #[serde(serialize_with = "ordered_set")]
     variables: HashSet<String>,
@@ -109,8 +109,8 @@ impl TryFrom<&str> for Condition {
                         // For backwards compatibility!
                         (TokenType::Identifier, TokenType::EqualEqual, TokenType::Identifier) => {
                             if let (
-                                Some(Literal::Identifier(operand)),
                                 Some(Literal::Identifier(var_name)),
+                                Some(Literal::Identifier(operand)),
                             ) = (&tokens[0].literal, &tokens[2].literal)
                             {
                                 Ok(Condition {
@@ -147,7 +147,7 @@ impl From<Condition> for String {
         let p = &condition.predicate;
         let predicate: String = p.clone().into();
         format!(
-            "{} {} \"{}\"",
+            "{} {} '{}'",
             condition.var_name, predicate, condition.operand
         )
     }
@@ -181,8 +181,7 @@ where
     let ordered: BTreeSet<String> = value
         .iter()
         .map(|c| {
-            let s: String = c.clone().into();
-            s
+            c.clone().into()
         })
         .collect();
     ordered.serialize(serializer)
@@ -574,14 +573,14 @@ mod tests {
     }
 
     #[test]
-    fn limit_does_not_apply_when_cond_is_false_deprecated_style() {
+    fn limit_does_apply_when_cond_is_false_deprecated_style() {
         let limit = Limit::new("test_namespace", 10, 60, vec!["x == foobar"], vec!["y"]);
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "foobar".into());
         values.insert("y".into(), "1".into());
 
-        assert!(!limit.applies(&values))
+        assert!(limit.applies(&values))
     }
 
     #[test]
@@ -721,6 +720,6 @@ mod tests {
             operand: "ok".to_string(),
         };
         let result = serde_json::to_string(&condition).expect("Should serialize");
-        assert_eq!(result, r#""foobar == \"ok\"""#.to_string());
+        assert_eq!(result, r#""foobar == 'ok'""#.to_string());
     }
 }
