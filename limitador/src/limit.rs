@@ -75,19 +75,19 @@ impl Error for ConditionParsingError {
     }
 }
 
-impl TryFrom<String> for Condition {
-    type Error = ConditionParsingError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.as_str().try_into()
-    }
-}
-
 impl TryFrom<&str> for Condition {
     type Error = ConditionParsingError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match conditions::Scanner::scan(value.to_owned()) {
+        value.to_owned().try_into()
+    }
+}
+
+impl TryFrom<String> for Condition {
+    type Error = ConditionParsingError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match conditions::Scanner::scan(value.clone()) {
             Ok(tokens) => match tokens.len().cmp(&(3_usize)) {
                 Ordering::Equal => {
                     match (
@@ -170,23 +170,33 @@ impl TryFrom<&str> for Condition {
                                                     }
                                                 }
                         */
-                        (_, _, _) => Err(ConditionParsingError {
-                            error: SyntaxError {
-                                pos: tokens[0].pos,
-                                error: ErrorType::UnexpectedToken(tokens[0].clone()),
-                            },
-                            tokens,
-                            condition: value.to_owned(),
-                        }),
+                        (t1, t2, _) => {
+                            let faulty = match (t1, t2) {
+                                (
+                                    TokenType::Identifier | TokenType::String,
+                                    TokenType::EqualEqual,
+                                ) => 2,
+                                (TokenType::Identifier | TokenType::String, _) => 1,
+                                (_, _) => 0,
+                            };
+                            Err(ConditionParsingError {
+                                error: SyntaxError {
+                                    pos: tokens[faulty].pos,
+                                    error: ErrorType::UnexpectedToken(tokens[faulty].clone()),
+                                },
+                                tokens,
+                                condition: value,
+                            })
+                        }
                     }
                 }
                 Ordering::Less => Err(ConditionParsingError {
                     error: SyntaxError {
-                        pos: tokens[0].pos,
-                        error: ErrorType::UnexpectedToken(tokens[0].clone()),
+                        pos: value.len(),
+                        error: ErrorType::MissingToken,
                     },
                     tokens,
-                    condition: value.to_owned(),
+                    condition: value,
                 }),
                 Ordering::Greater => Err(ConditionParsingError {
                     error: SyntaxError {
@@ -194,13 +204,13 @@ impl TryFrom<&str> for Condition {
                         error: ErrorType::UnexpectedToken(tokens[3].clone()),
                     },
                     tokens,
-                    condition: value.to_owned(),
+                    condition: value,
                 }),
             },
             Err(err) => Err(ConditionParsingError {
                 error: err,
                 tokens: Vec::new(),
-                condition: value.to_owned(),
+                condition: value,
             }),
         }
     }
@@ -376,7 +386,6 @@ impl PartialEq for Limit {
 }
 
 mod conditions {
-    use crate::limit::conditions::ErrorType::InvalidNumber;
     use std::error::Error;
     use std::fmt::{Debug, Display, Formatter};
     use std::num::IntErrorKind;
@@ -390,6 +399,7 @@ mod conditions {
     #[derive(Debug)]
     pub enum ErrorType {
         UnexpectedToken(Token),
+        MissingToken,
         InvalidCharacter(char),
         InvalidNumber,
     }
@@ -399,15 +409,20 @@ mod conditions {
             match &self.error {
                 ErrorType::UnexpectedToken(token) => write!(
                     f,
-                    "SyntaxError: Unexpected token `{}` at {}",
+                    "SyntaxError: Unexpected token `{}` at offset {}",
                     token, self.pos
                 ),
                 ErrorType::InvalidCharacter(char) => write!(
                     f,
-                    "SyntaxError: Invalid character `{}` at {}",
+                    "SyntaxError: Invalid character `{}` at offset {}",
                     char, self.pos
                 ),
-                InvalidNumber => write!(f, "SyntaxError: Invalid number at {}", self.pos),
+                ErrorType::InvalidNumber => {
+                    write!(f, "SyntaxError: Invalid number at offset {}", self.pos)
+                }
+                ErrorType::MissingToken => {
+                    write!(f, "SyntaxError: Expected token at offset {}", self.pos)
+                }
             }
         }
     }
@@ -506,7 +521,7 @@ mod conditions {
                     } else {
                         Err(SyntaxError {
                             pos: self.pos,
-                            error: ErrorType::InvalidCharacter(self.input[self.pos]),
+                            error: ErrorType::InvalidCharacter(self.input[self.pos - 1]),
                         })
                     }
                 }
@@ -580,7 +595,7 @@ mod conditions {
                         }
                         _ => SyntaxError {
                             pos: start,
-                            error: InvalidNumber,
+                            error: ErrorType::InvalidNumber,
                         },
                     };
                     Err(syntax_error)
@@ -890,7 +905,8 @@ mod tests {
             .expect("should fail parsing");
         assert_eq!(
             result.to_string(),
-            "Invalid condition: \"x != 5\"\n └ SyntaxError: Invalid character `!` at 3".to_string()
+            "Invalid condition: \"x != 5\"\n └ SyntaxError: Invalid character `!` at offset 3"
+                .to_string()
         );
     }
 
@@ -901,7 +917,7 @@ mod tests {
             .expect("should fail parsing");
         assert_eq!(
             result.to_string(),
-            "Invalid condition: \"x != 5 && x > 12\"\n └ SyntaxError: Invalid character `!` at 3"
+            "Invalid condition: \"x != 5 && x > 12\"\n └ SyntaxError: Invalid character `!` at offset 3"
                 .to_string()
         );
     }
