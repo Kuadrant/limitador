@@ -45,7 +45,7 @@ pub struct Limit {
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Eq, Debug, Clone, Hash)]
-#[serde(try_from = "&str", into = "String")]
+#[serde(try_from = "String", into = "String")]
 pub struct Condition {
     var_name: String,
     predicate: Predicate,
