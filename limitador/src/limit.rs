@@ -756,7 +756,7 @@ mod tests {
 
     #[test]
     fn invalid_predicate_condition_parsing() {
-        let result = serde_json::from_str::<'static, Condition>(r#""x != 5""#)
+        let result = serde_json::from_str::<Condition>(r#""x != 5""#)
             .err()
             .expect("should fail parsing");
         assert_eq!(
@@ -767,7 +767,7 @@ mod tests {
 
     #[test]
     fn invalid_condition_parsing() {
-        let result = serde_json::from_str::<'static, Condition>(r#""x != 5 && x > 12""#)
+        let result = serde_json::from_str::<Condition>(r#""x != 5 && x > 12""#)
             .err()
             .expect("should fail parsing");
         assert_eq!(
