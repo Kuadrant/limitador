@@ -1,7 +1,9 @@
-use crate::limit::conditions::{Literal, TokenType};
+use crate::limit::conditions::{ErrorType, Literal, SyntaxError, Token, TokenType};
 use serde::{Deserialize, Serialize, Serializer};
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::error::Error;
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
@@ -50,8 +52,31 @@ pub struct Condition {
     operand: String,
 }
 
+#[derive(Debug)]
+pub struct ConditionParsingError {
+    error: SyntaxError,
+    pub tokens: Vec<Token>,
+    condition: String,
+}
+
+impl Display for ConditionParsingError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Invalid condition: \"{}\"\n └ {}",
+            self.condition, self.error
+        )
+    }
+}
+
+impl Error for ConditionParsingError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&self.error)
+    }
+}
+
 impl TryFrom<String> for Condition {
-    type Error = String;
+    type Error = ConditionParsingError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         value.as_str().try_into()
@@ -59,7 +84,7 @@ impl TryFrom<String> for Condition {
 }
 
 impl TryFrom<&str> for Condition {
-    type Error = String;
+    type Error = ConditionParsingError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match conditions::Scanner::scan(value.to_owned()) {
@@ -144,19 +169,38 @@ impl TryFrom<&str> for Condition {
                                 )
                             }
                         }
-                        (_, _, _) => Err(format!(
-                            "Unexpected token {:?} at {} for: {}",
-                            tokens[0], tokens[0].pos, value
-                        )),
+                        (_, _, _) => Err(ConditionParsingError {
+                            error: SyntaxError {
+                                pos: tokens[0].pos,
+                                error: ErrorType::UnexpectedToken(tokens[0].clone()),
+                            },
+                            tokens,
+                            condition: value.to_owned(),
+                        }),
                     }
                 }
-                Ordering::Less => Err(format!("Missing expected token for: `{}`", value)),
-                Ordering::Greater => Err(format!(
-                    "Unexpected token {:?} at {} for: {}",
-                    tokens[3], tokens[3].pos, value
-                )),
+                Ordering::Less => Err(ConditionParsingError {
+                    error: SyntaxError {
+                        pos: tokens[0].pos,
+                        error: ErrorType::UnexpectedToken(tokens[0].clone()),
+                    },
+                    tokens,
+                    condition: value.to_owned(),
+                }),
+                Ordering::Greater => Err(ConditionParsingError {
+                    error: SyntaxError {
+                        pos: tokens[3].pos,
+                        error: ErrorType::UnexpectedToken(tokens[3].clone()),
+                    },
+                    tokens,
+                    condition: value.to_owned(),
+                }),
             },
-            Err(pos) => Err(format!("Invalid character at {} for: `{}`", pos, value)),
+            Err(err) => Err(ConditionParsingError {
+                error: err,
+                tokens: Vec::new(),
+                condition: value.to_owned(),
+            }),
         }
     }
 }
@@ -331,8 +375,45 @@ impl PartialEq for Limit {
 }
 
 mod conditions {
+    use crate::limit::conditions::ErrorType::InvalidNumber;
+    use std::error::Error;
+    use std::fmt::{Debug, Display, Formatter};
+    use std::num::IntErrorKind;
 
-    #[derive(Eq, PartialEq, Debug)]
+    #[derive(Debug)]
+    pub struct SyntaxError {
+        pub pos: usize,
+        pub error: ErrorType,
+    }
+
+    #[derive(Debug)]
+    pub enum ErrorType {
+        UnexpectedToken(Token),
+        InvalidCharacter(char),
+        InvalidNumber,
+    }
+
+    impl Display for SyntaxError {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            match &self.error {
+                ErrorType::UnexpectedToken(token) => write!(
+                    f,
+                    "SyntaxError: Unexpected token `{}` at {}",
+                    token, self.pos
+                ),
+                ErrorType::InvalidCharacter(char) => write!(
+                    f,
+                    "SyntaxError: Invalid character `{}` at {}",
+                    char, self.pos
+                ),
+                InvalidNumber => write!(f, "SyntaxError: Invalid number at {}", self.pos),
+            }
+        }
+    }
+
+    impl Error for SyntaxError {}
+
+    #[derive(Clone, Eq, PartialEq, Debug)]
     pub enum TokenType {
         // Predicates
         EqualEqual,
@@ -343,18 +424,45 @@ mod conditions {
         Number,
     }
 
-    #[derive(Eq, PartialEq, Debug)]
+    #[derive(Clone, Eq, PartialEq, Debug)]
     pub enum Literal {
         Identifier(String),
         String(String),
         Number(i64),
     }
 
-    #[derive(Eq, PartialEq, Debug)]
+    impl Display for Literal {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Literal::Identifier(id) => write!(f, "{}", id),
+                Literal::String(string) => write!(f, "'{}'", string),
+                Literal::Number(number) => write!(f, "{}", number),
+            }
+        }
+    }
+
+    #[derive(Clone, Eq, PartialEq, Debug)]
     pub struct Token {
         pub token_type: TokenType,
         pub literal: Option<Literal>,
         pub pos: usize,
+    }
+
+    impl Display for Token {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            match self.token_type {
+                TokenType::EqualEqual => write!(f, "Equality (==)"),
+                TokenType::Identifier => {
+                    write!(f, "Identifier: {}", self.literal.as_ref().unwrap())
+                }
+                TokenType::String => {
+                    write!(f, "String literal: {}", self.literal.as_ref().unwrap())
+                }
+                TokenType::Number => {
+                    write!(f, "Number literal: {}", self.literal.as_ref().unwrap())
+                }
+            }
+        }
     }
 
     pub struct Scanner {
@@ -363,7 +471,7 @@ mod conditions {
     }
 
     impl Scanner {
-        pub fn scan(condition: String) -> Result<Vec<Token>, usize> {
+        pub fn scan(condition: String) -> Result<Vec<Token>, SyntaxError> {
             let mut tokens: Vec<Token> = Vec::with_capacity(3);
             let mut scanner = Scanner {
                 input: condition.chars().collect(),
@@ -384,7 +492,7 @@ mod conditions {
             Ok(tokens)
         }
 
-        fn next_token(&mut self) -> Result<Option<Token>, usize> {
+        fn next_token(&mut self) -> Result<Option<Token>, SyntaxError> {
             let character = self.advance();
             match character {
                 '=' => {
@@ -395,7 +503,10 @@ mod conditions {
                             pos: self.pos - 1,
                         }))
                     } else {
-                        Err(self.pos)
+                        Err(SyntaxError {
+                            pos: self.pos,
+                            error: ErrorType::InvalidCharacter(self.input[self.pos]),
+                        })
                     }
                 }
                 '"' | '\'' => self.scan_string(character).map(Some),
@@ -406,13 +517,16 @@ mod conditions {
                     } else if character.is_numeric() {
                         self.scan_number().map(Some)
                     } else {
-                        Err(self.pos)
+                        Err(SyntaxError {
+                            pos: self.pos,
+                            error: ErrorType::InvalidCharacter(character),
+                        })
                     }
                 }
             }
         }
 
-        fn scan_identifier(&mut self) -> Result<Token, usize> {
+        fn scan_identifier(&mut self) -> Result<Token, SyntaxError> {
             let start = self.pos;
             while !self.done() && self.valid_id_char() {
                 self.advance();
@@ -431,7 +545,7 @@ mod conditions {
             char.is_alphanumeric() || char == '.' || char == '_'
         }
 
-        fn scan_string(&mut self, until: char) -> Result<Token, usize> {
+        fn scan_string(&mut self, until: char) -> Result<Token, SyntaxError> {
             let start = self.pos;
             while !self.done() && self.advance() != until {}
             Ok(Token {
@@ -443,7 +557,7 @@ mod conditions {
             })
         }
 
-        fn scan_number(&mut self) -> Result<Token, usize> {
+        fn scan_number(&mut self) -> Result<Token, SyntaxError> {
             let start = self.pos;
             while !self.done() && self.input[self.pos].is_numeric() {
                 self.advance();
@@ -455,7 +569,21 @@ mod conditions {
                     literal: Some(Literal::Number(number)),
                     pos: start,
                 }),
-                Err(_) => Err(start),
+                Err(err) => {
+                    let syntax_error = match err.kind() {
+                        IntErrorKind::Empty => {
+                            unreachable!("This means a bug in the scanner!")
+                        }
+                        IntErrorKind::Zero => {
+                            unreachable!("We're parsing Numbers as i64, so 0 should always work!")
+                        }
+                        _ => SyntaxError {
+                            pos: start,
+                            error: InvalidNumber,
+                        },
+                    };
+                    Err(syntax_error)
+                }
             }
         }
 
@@ -761,7 +889,7 @@ mod tests {
             .expect("should fail parsing");
         assert_eq!(
             result.to_string(),
-            "Invalid character at 3 for: `x != 5`".to_string()
+            "Invalid condition: \"x != 5\"\n └ SyntaxError: Invalid character `!` at 3".to_string()
         );
     }
 
@@ -772,7 +900,8 @@ mod tests {
             .expect("should fail parsing");
         assert_eq!(
             result.to_string(),
-            "Invalid character at 3 for: `x != 5 && x > 12`".to_string()
+            "Invalid condition: \"x != 5 && x > 12\"\n └ SyntaxError: Invalid character `!` at 3"
+                .to_string()
         );
     }
 
