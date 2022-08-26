@@ -396,12 +396,13 @@ mod conditions {
         pub error: ErrorType,
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Eq, PartialEq)]
     pub enum ErrorType {
         UnexpectedToken(Token),
         MissingToken,
         InvalidCharacter(char),
         InvalidNumber,
+        UnclosedStringLiteral(char),
     }
 
     impl Display for SyntaxError {
@@ -422,6 +423,9 @@ mod conditions {
                 }
                 ErrorType::MissingToken => {
                     write!(f, "SyntaxError: Expected token at offset {}", self.pos)
+                }
+                ErrorType::UnclosedStringLiteral(char) => {
+                    write!(f, "SyntaxError: Missing closing `{}` for string literal starting at offset {}", char, self.pos)
                 }
             }
         }
@@ -563,14 +567,23 @@ mod conditions {
 
         fn scan_string(&mut self, until: char) -> Result<Token, SyntaxError> {
             let start = self.pos;
-            while !self.done() && self.advance() != until {}
-            Ok(Token {
-                token_type: TokenType::String,
-                literal: Some(Literal::String(
-                    self.input[start..self.pos - 1].iter().collect(),
-                )),
-                pos: start,
-            })
+            loop {
+                if self.done() {
+                    return Err(SyntaxError {
+                        pos: start,
+                        error: ErrorType::UnclosedStringLiteral(until),
+                    });
+                }
+                if self.advance() == until {
+                    return Ok(Token {
+                        token_type: TokenType::String,
+                        literal: Some(Literal::String(
+                            self.input[start..self.pos - 1].iter().collect(),
+                        )),
+                        pos: start,
+                    });
+                }
+            }
         }
 
         fn scan_number(&mut self) -> Result<Token, SyntaxError> {
@@ -626,7 +639,7 @@ mod conditions {
     #[cfg(test)]
     mod tests {
         use crate::limit::conditions::Literal::Identifier;
-        use crate::limit::conditions::{Literal, Scanner, Token, TokenType};
+        use crate::limit::conditions::{ErrorType, Literal, Scanner, Token, TokenType};
 
         #[test]
         fn test_scanner() {
@@ -741,6 +754,15 @@ mod conditions {
                 }
             );
         }
+
+        #[test]
+        fn unclosed_string_literal() {
+            let error = Scanner::scan("foo == 'ba".to_owned())
+                .err()
+                .expect("Should fail!");
+            assert_eq!(error.pos, 8);
+            assert_eq!(error.error, ErrorType::UnclosedStringLiteral('\''));
+        }
     }
 }
 
@@ -851,30 +873,6 @@ mod tests {
     }
 
     #[test]
-    fn valid_condition_positional_parsing() {
-        let result: Condition = serde_json::from_str(r#""x == '5'""#).expect("Should deserialize");
-        assert_eq!(
-            result,
-            Condition {
-                var_name: "x".to_string(),
-                predicate: Predicate::EQUAL,
-                operand: "5".to_string(),
-            }
-        );
-
-        let result: Condition =
-            serde_json::from_str(r#""  foobar  ==   'ok'  ""#).expect("Should deserialize");
-        assert_eq!(
-            result,
-            Condition {
-                var_name: "foobar".to_string(),
-                predicate: Predicate::EQUAL,
-                operand: "ok".to_string(),
-            }
-        );
-    }
-
-    #[test]
     fn valid_condition_literal_parsing() {
         let result: Condition = serde_json::from_str(r#""x == '5'""#).expect("Should deserialize");
         assert_eq!(
@@ -888,6 +886,17 @@ mod tests {
 
         let result: Condition =
             serde_json::from_str(r#""  foobar=='ok' ""#).expect("Should deserialize");
+        assert_eq!(
+            result,
+            Condition {
+                var_name: "foobar".to_string(),
+                predicate: Predicate::EQUAL,
+                operand: "ok".to_string(),
+            }
+        );
+
+        let result: Condition =
+            serde_json::from_str(r#""  foobar  ==   'ok'  ""#).expect("Should deserialize");
         assert_eq!(
             result,
             Condition {
