@@ -211,7 +211,7 @@ fn generate_test_data(
     let mut conditions = vec![];
     for idx_cond in 0..scenario.n_conds_per_limit {
         let cond_name = format!("cond_{}", idx_cond);
-        conditions.push(format!("{} == 1", cond_name));
+        conditions.push(format!("{} == '1'", cond_name));
         test_values.insert(cond_name, "1".into());
     }
 

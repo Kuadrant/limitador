@@ -150,14 +150,14 @@ mod test {
                 "first_namespace",
                 10,
                 60,
-                vec!["req.method == GET"],
+                vec!["req.method == 'GET'"],
                 vec!["app_id"],
             ),
             Limit::new(
                 "second_namespace",
                 20,
                 60,
-                vec!["req.method == GET"],
+                vec!["req.method == 'GET'"],
                 vec!["app_id"],
             ),
         ];
@@ -182,7 +182,7 @@ mod test {
             "first_namespace",
             10,
             60,
-            vec!["req.method == GET"],
+            vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
 
@@ -190,7 +190,7 @@ mod test {
             "second_namespace",
             20,
             60,
-            vec!["req.method == GET"],
+            vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
 
@@ -214,7 +214,7 @@ mod test {
             "test_namespace",
             10,
             60,
-            vec!["req.method == GET"],
+            vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
 
@@ -234,7 +234,7 @@ mod test {
             "test_namespace",
             10,
             60,
-            vec!["req.method == GET"],
+            vec!["req.method == 'GET'"],
             Vec::<String>::new(),
         );
 
@@ -256,11 +256,17 @@ mod test {
             namespace,
             10,
             60,
-            vec!["req.method == POST"],
+            vec!["req.method == 'POST'"],
             vec!["app_id"],
         );
 
-        let limit_2 = Limit::new(namespace, 5, 60, vec!["req.method == GET"], vec!["app_id"]);
+        let limit_2 = Limit::new(
+            namespace,
+            5,
+            60,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
 
         rate_limiter.add_limit(&limit_1).await;
         rate_limiter.add_limit(&limit_2).await;
@@ -277,7 +283,7 @@ mod test {
             "test_namespace",
             10,
             60,
-            vec!["req.method == GET"],
+            vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
 
@@ -290,7 +296,13 @@ mod test {
 
     async fn delete_limit_also_deletes_associated_counters(rate_limiter: &mut TestsLimiter) {
         let namespace = "test_namespace";
-        let limit = Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
+        let limit = Limit::new(
+            namespace,
+            10,
+            60,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
@@ -323,10 +335,16 @@ mod test {
                 namespace,
                 10,
                 60,
-                vec!["req.method == POST"],
+                vec!["req.method == 'POST'"],
                 vec!["app_id"],
             ),
-            Limit::new(namespace, 5, 60, vec!["req.method == GET"], vec!["app_id"]),
+            Limit::new(
+                namespace,
+                5,
+                60,
+                vec!["req.method == 'GET'"],
+                vec!["app_id"],
+            ),
         ];
 
         for limit in limits.iter() {
@@ -345,10 +363,16 @@ mod test {
         let namespace2 = "test_namespace_2";
 
         rate_limiter
-            .add_limit(&Limit::new(namespace1, 10, 60, vec!["x == 10"], vec!["z"]))
+            .add_limit(&Limit::new(
+                namespace1,
+                10,
+                60,
+                vec!["x == '10'"],
+                vec!["z"],
+            ))
             .await;
         rate_limiter
-            .add_limit(&Limit::new(namespace2, 5, 60, vec!["x == 10"], vec!["z"]))
+            .add_limit(&Limit::new(namespace2, 5, 60, vec!["x == '10'"], vec!["z"]))
             .await;
 
         rate_limiter.delete_limits(namespace1).await.unwrap();
@@ -359,7 +383,13 @@ mod test {
 
     async fn delete_limits_of_a_namespace_also_deletes_counters(rate_limiter: &mut TestsLimiter) {
         let namespace = "test_namespace";
-        let limit = Limit::new(namespace, 5, 60, vec!["req.method == GET"], vec!["app_id"]);
+        let limit = Limit::new(
+            namespace,
+            5,
+            60,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
@@ -391,7 +421,7 @@ mod test {
             namespace,
             max_hits,
             60,
-            vec!["req.method == GET"],
+            vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
 
@@ -419,7 +449,13 @@ mod test {
 
     async fn rate_limited_with_delta_higher_than_one(rate_limiter: &mut TestsLimiter) {
         let namespace = "test_namespace";
-        let limit = Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
+        let limit = Limit::new(
+            namespace,
+            10,
+            60,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
@@ -452,7 +488,7 @@ mod test {
             namespace,
             max,
             60,
-            vec!["req.method == GET"],
+            vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
 
@@ -475,7 +511,7 @@ mod test {
             namespace,
             max_hits,
             60,
-            vec!["req.method == GET"],
+            vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
 
@@ -526,7 +562,7 @@ mod test {
             namespace,
             0, // So reporting 1 more would not be allowed
             60,
-            vec!["req.method == GET"],
+            vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
 
@@ -573,7 +609,7 @@ mod test {
             namespace,
             max_hits,
             60,
-            vec!["req.method == GET"],
+            vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
 
@@ -601,7 +637,13 @@ mod test {
     ) {
         let namespace = "test_namespace";
 
-        let limit = Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
+        let limit = Limit::new(
+            namespace,
+            10,
+            60,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
@@ -650,7 +692,7 @@ mod test {
             namespace,
             max_hits,
             60,
-            vec!["req.method == GET"],
+            vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
 
@@ -707,7 +749,7 @@ mod test {
             "test_namespace",
             10,
             60,
-            vec!["req.method == GET"],
+            vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
 
@@ -728,7 +770,7 @@ mod test {
             "test_namespace",
             10,
             limit_time,
-            vec!["req.method == GET"],
+            vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
 
@@ -757,7 +799,7 @@ mod test {
             "first_namespace",
             10,
             60,
-            vec!["req.method == GET"],
+            vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
 
@@ -765,7 +807,7 @@ mod test {
             "second_namespace",
             20,
             60,
-            vec!["req.method == GET"],
+            vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
 
@@ -796,7 +838,7 @@ mod test {
             namespace,
             max_value,
             60,
-            vec!["req.method == GET"],
+            vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
 
@@ -831,11 +873,21 @@ mod test {
     async fn configure_with_deletes_all_except_the_limits_given(rate_limiter: &mut TestsLimiter) {
         let namespace = "test_namespace";
 
-        let limit_to_be_kept =
-            Limit::new(namespace, 10, 1, vec!["req.method == GET"], vec!["app_id"]);
+        let limit_to_be_kept = Limit::new(
+            namespace,
+            10,
+            1,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
 
-        let limit_to_be_deleted =
-            Limit::new(namespace, 20, 60, vec!["req.method == GET"], vec!["app_id"]);
+        let limit_to_be_deleted = Limit::new(
+            namespace,
+            20,
+            60,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
 
         for limit in [&limit_to_be_kept, &limit_to_be_deleted].iter() {
             rate_limiter.add_limit(limit).await;
@@ -855,9 +907,21 @@ mod test {
     async fn configure_with_updates_the_limits(rate_limiter: &mut TestsLimiter) {
         let namespace = "test_namespace";
 
-        let limit_orig = Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
+        let limit_orig = Limit::new(
+            namespace,
+            10,
+            60,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
 
-        let limit_update = Limit::new(namespace, 20, 60, vec!["req.method == GET"], vec!["app_id"]);
+        let limit_update = Limit::new(
+            namespace,
+            20,
+            60,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
 
         rate_limiter.add_limit(&limit_orig).await;
 
@@ -875,11 +939,29 @@ mod test {
     async fn add_limit_only_adds_if_not_present(rate_limiter: &mut TestsLimiter) {
         let namespace = "test_namespace";
 
-        let limit_1 = Limit::new(namespace, 10, 60, vec!["req.method == GET"], vec!["app_id"]);
+        let limit_1 = Limit::new(
+            namespace,
+            10,
+            60,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
 
-        let limit_2 = Limit::new(namespace, 20, 60, vec!["req.method == GET"], vec!["app_id"]);
+        let limit_2 = Limit::new(
+            namespace,
+            20,
+            60,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
 
-        let mut limit_3 = Limit::new(namespace, 20, 60, vec!["req.method == GET"], vec!["app_id"]);
+        let mut limit_3 = Limit::new(
+            namespace,
+            20,
+            60,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
         limit_3.set_name("Name is irrelevant too".to_owned());
 
         assert!(rate_limiter.add_limit(&limit_1).await);

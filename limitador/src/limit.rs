@@ -131,44 +131,45 @@ impl TryFrom<&str> for Condition {
                                 )
                             }
                         }
-                        // For backwards compatibility!
-                        (TokenType::Identifier, TokenType::EqualEqual, TokenType::Identifier) => {
-                            if let (
-                                Some(Literal::Identifier(var_name)),
-                                Some(Literal::Identifier(operand)),
-                            ) = (&tokens[0].literal, &tokens[2].literal)
-                            {
-                                Ok(Condition {
-                                    var_name: var_name.clone(),
-                                    predicate: Predicate::EQUAL,
-                                    operand: operand.clone(),
-                                })
-                            } else {
-                                panic!(
-                                    "Unexpected state {:?} returned from Scanner for: `{}`",
-                                    tokens, value
-                                )
-                            }
-                        }
-                        // For backwards compatibility!
-                        (TokenType::Identifier, TokenType::EqualEqual, TokenType::Number) => {
-                            if let (
-                                Some(Literal::Identifier(var_name)),
-                                Some(Literal::Number(operand)),
-                            ) = (&tokens[0].literal, &tokens[2].literal)
-                            {
-                                Ok(Condition {
-                                    var_name: var_name.clone(),
-                                    predicate: Predicate::EQUAL,
-                                    operand: operand.to_string(),
-                                })
-                            } else {
-                                panic!(
-                                    "Unexpected state {:?} returned from Scanner for: `{}`",
-                                    tokens, value
-                                )
-                            }
-                        }
+                        /*                        // For backwards compatibility!
+                                                (TokenType::Identifier, TokenType::EqualEqual, TokenType::Identifier) => {
+                                                    if let (
+                                                        Some(Literal::Identifier(var_name)),
+                                                        Some(Literal::Identifier(operand)),
+                                                    ) = (&tokens[0].literal, &tokens[2].literal)
+                                                    {
+                                                        Ok(Condition {
+                                                            var_name: var_name.clone(),
+                                                            predicate: Predicate::EQUAL,
+                                                            operand: operand.clone(),
+                                                        })
+                                                    } else {
+                                                        panic!(
+                                                            "Unexpected state {:?} returned from Scanner for: `{}`",
+                                                            tokens, value
+                                                        )
+                                                    }
+                                                }
+                                                // For backwards compatibility!
+                                                (TokenType::Identifier, TokenType::EqualEqual, TokenType::Number) => {
+                                                    if let (
+                                                        Some(Literal::Identifier(var_name)),
+                                                        Some(Literal::Number(operand)),
+                                                    ) = (&tokens[0].literal, &tokens[2].literal)
+                                                    {
+                                                        Ok(Condition {
+                                                            var_name: var_name.clone(),
+                                                            predicate: Predicate::EQUAL,
+                                                            operand: operand.to_string(),
+                                                        })
+                                                    } else {
+                                                        panic!(
+                                                            "Unexpected state {:?} returned from Scanner for: `{}`",
+                                                            tokens, value
+                                                        )
+                                                    }
+                                                }
+                        */
                         (_, _, _) => Err(ConditionParsingError {
                             error: SyntaxError {
                                 pos: tokens[0].pos,
@@ -273,7 +274,7 @@ impl Limit {
             name: None,
             conditions: conditions
                 .into_iter()
-                .map(|cond| cond.try_into().expect("Duh!"))
+                .map(|cond| cond.try_into().expect("Invalid condition"))
                 .collect(),
             variables: variables.into_iter().map(|var| var.into()).collect(),
         }
@@ -766,7 +767,7 @@ mod tests {
 
     #[test]
     fn limit_does_apply_when_cond_is_false_deprecated_style() {
-        let limit = Limit::new("test_namespace", 10, 60, vec!["x == foobar"], vec!["y"]);
+        let limit = Limit::new("test_namespace", 10, 60, vec!["x == 'foobar'"], vec!["y"]);
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "foobar".into());
