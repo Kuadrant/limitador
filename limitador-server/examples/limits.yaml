@@ -4,7 +4,7 @@
   max_value: 10
   seconds: 60
   conditions:
-    - "req.method == 'GET'"
+    - "req.method == GET"
   variables:
     - user_id
 -
@@ -12,6 +12,6 @@
   max_value: 5
   seconds: 60
   conditions:
-    - "req.method == 'POST'"
+    - "req.method == POST"
   variables:
     - user_id

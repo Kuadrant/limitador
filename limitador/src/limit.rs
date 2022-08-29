@@ -6,6 +6,28 @@ use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
+#[cfg(feature = "lenient_conditions")]
+mod deprecated {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static DEPRECATED_SYNTAX: AtomicBool = AtomicBool::new(false);
+
+    pub fn check_deprecated_syntax_usages_and_reset() -> bool {
+        match DEPRECATED_SYNTAX.compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
+        {
+            Ok(previous) => previous,
+            Err(previous) => previous,
+        }
+    }
+
+    pub fn deprecated_syntax_used() {
+        DEPRECATED_SYNTAX.fetch_or(true, Ordering::SeqCst);
+    }
+}
+
+#[cfg(feature = "lenient_conditions")]
+pub use deprecated::check_deprecated_syntax_usages_and_reset;
+
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Namespace(String);
 
@@ -127,45 +149,46 @@ impl TryFrom<String> for Condition {
                                 )
                             }
                         }
-                        /*                        // For backwards compatibility!
-                                                (TokenType::Identifier, TokenType::EqualEqual, TokenType::Identifier) => {
-                                                    if let (
-                                                        Some(Literal::Identifier(var_name)),
-                                                        Some(Literal::Identifier(operand)),
-                                                    ) = (&tokens[0].literal, &tokens[2].literal)
-                                                    {
-                                                        Ok(Condition {
-                                                            var_name: var_name.clone(),
-                                                            predicate: Predicate::EQUAL,
-                                                            operand: operand.clone(),
-                                                        })
-                                                    } else {
-                                                        panic!(
-                                                            "Unexpected state {:?} returned from Scanner for: `{}`",
-                                                            tokens, value
-                                                        )
-                                                    }
-                                                }
-                                                // For backwards compatibility!
-                                                (TokenType::Identifier, TokenType::EqualEqual, TokenType::Number) => {
-                                                    if let (
-                                                        Some(Literal::Identifier(var_name)),
-                                                        Some(Literal::Number(operand)),
-                                                    ) = (&tokens[0].literal, &tokens[2].literal)
-                                                    {
-                                                        Ok(Condition {
-                                                            var_name: var_name.clone(),
-                                                            predicate: Predicate::EQUAL,
-                                                            operand: operand.to_string(),
-                                                        })
-                                                    } else {
-                                                        panic!(
-                                                            "Unexpected state {:?} returned from Scanner for: `{}`",
-                                                            tokens, value
-                                                        )
-                                                    }
-                                                }
-                        */
+                        #[cfg(feature = "lenient_conditions")]
+                        (TokenType::Identifier, TokenType::EqualEqual, TokenType::Identifier) => {
+                            if let (
+                                Some(Literal::Identifier(var_name)),
+                                Some(Literal::Identifier(operand)),
+                            ) = (&tokens[0].literal, &tokens[2].literal)
+                            {
+                                deprecated::deprecated_syntax_used();
+                                Ok(Condition {
+                                    var_name: var_name.clone(),
+                                    predicate: Predicate::EQUAL,
+                                    operand: operand.clone(),
+                                })
+                            } else {
+                                panic!(
+                                    "Unexpected state {:?} returned from Scanner for: `{}`",
+                                    tokens, value
+                                )
+                            }
+                        }
+                        #[cfg(feature = "lenient_conditions")]
+                        (TokenType::Identifier, TokenType::EqualEqual, TokenType::Number) => {
+                            if let (
+                                Some(Literal::Identifier(var_name)),
+                                Some(Literal::Number(operand)),
+                            ) = (&tokens[0].literal, &tokens[2].literal)
+                            {
+                                deprecated::deprecated_syntax_used();
+                                Ok(Condition {
+                                    var_name: var_name.clone(),
+                                    predicate: Predicate::EQUAL,
+                                    operand: operand.to_string(),
+                                })
+                            } else {
+                                panic!(
+                                    "Unexpected state {:?} returned from Scanner for: `{}`",
+                                    tokens, value
+                                )
+                            }
+                        }
                         (t1, t2, _) => {
                             let faulty = match (t1, t2) {
                                 (
@@ -799,14 +822,27 @@ mod tests {
     }
 
     #[test]
-    fn limit_does_apply_when_cond_is_false_deprecated_style() {
-        let limit = Limit::new("test_namespace", 10, 60, vec!["x == 'foobar'"], vec!["y"]);
+    #[cfg(feature = "lenient_conditions")]
+    fn limit_does_not_apply_when_cond_is_false_deprecated_style() {
+        let limit = Limit::new("test_namespace", 10, 60, vec!["x == 5"], vec!["y"]);
+
+        let mut values: HashMap<String, String> = HashMap::new();
+        values.insert("x".into(), "1".into());
+        values.insert("y".into(), "1".into());
+
+        assert!(!limit.applies(&values));
+        assert!(check_deprecated_syntax_usages_and_reset());
+        assert!(!check_deprecated_syntax_usages_and_reset());
+
+        let limit = Limit::new("test_namespace", 10, 60, vec!["x == foobar"], vec!["y"]);
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "foobar".into());
         values.insert("y".into(), "1".into());
 
-        assert!(limit.applies(&values))
+        assert!(limit.applies(&values));
+        assert!(check_deprecated_syntax_usages_and_reset());
+        assert!(!check_deprecated_syntax_usages_and_reset());
     }
 
     #[test]
@@ -904,6 +940,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "lenient_conditions"))]
     fn invalid_deprecated_condition_parsing() {
         let _result = serde_json::from_str::<Condition>(r#""x == 5""#)
             .err()

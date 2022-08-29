@@ -17,6 +17,7 @@ edition = "2021"
 default = ["redis_storage"]
 redis_storage = ["redis", "r2d2", "tokio"]
 infinispan_storage = ["infinispan", "reqwest"]
+lenient_conditions = []
 
 [dependencies]
 ttl_cache = "0.5"

@@ -18,7 +18,7 @@ infinispan = [ "limitador/infinispan_storage" ]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-limitador = { path = "../limitador", features = [] }
+limitador = { path = "../limitador", features = ['lenient_conditions'] }
 tokio = { version = "1", features = ["full"] }
 thiserror = "1"
 tonic = "0.8"
