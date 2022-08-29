@@ -61,11 +61,7 @@ pub struct ConditionParsingError {
 
 impl Display for ConditionParsingError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Invalid condition: \"{}\"\n └ {}",
-            self.condition, self.error
-        )
+        write!(f, "{} of condition \"{}\"", self.error, self.condition)
     }
 }
 
@@ -908,15 +904,10 @@ mod tests {
     }
 
     #[test]
-    fn invalid_predicate_condition_parsing() {
-        let result = serde_json::from_str::<Condition>(r#""x != 5""#)
+    fn invalid_deprecated_condition_parsing() {
+        let _result = serde_json::from_str::<Condition>(r#""x == 5""#)
             .err()
-            .expect("should fail parsing");
-        assert_eq!(
-            result.to_string(),
-            "Invalid condition: \"x != 5\"\n └ SyntaxError: Invalid character `!` at offset 3"
-                .to_string()
-        );
+            .expect("Should fail!");
     }
 
     #[test]
@@ -926,7 +917,7 @@ mod tests {
             .expect("should fail parsing");
         assert_eq!(
             result.to_string(),
-            "Invalid condition: \"x != 5 && x > 12\"\n └ SyntaxError: Invalid character `!` at offset 3"
+            "SyntaxError: Invalid character `!` at offset 3 of condition \"x != 5 && x > 12\""
                 .to_string()
         );
     }
