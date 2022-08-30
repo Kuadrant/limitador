@@ -43,7 +43,7 @@ RUN source $HOME/.cargo/env \
 
 FROM alpine:3.16
 
-RUN apk add libssl3 libgcc
+RUN apk add libgcc
 
 RUN addgroup -g 1000 limitador \
     && adduser -D -s /bin/sh -u 1000 -G limitador limitador
