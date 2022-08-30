@@ -31,6 +31,7 @@ use limitador::{AsyncRateLimiter, AsyncRateLimiterBuilder, RateLimiter, RateLimi
 use log::LevelFilter;
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use std::env::VarError;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -604,7 +605,11 @@ fn create_config() -> (Configuration, String) {
 
 fn storage_config_from_env() -> Result<StorageConfiguration, ()> {
     let redis_url = env::var("REDIS_URL");
-    let infinispan_url = env::var("INFINISPAN_URL");
+    let infinispan_url = if cfg!(feature = "infinispan") {
+        env::var("INFINISPAN_URL")
+    } else {
+        Err(VarError::NotPresent)
+    };
 
     match (redis_url, infinispan_url) {
         (Ok(_), Ok(_)) => Err(()),
