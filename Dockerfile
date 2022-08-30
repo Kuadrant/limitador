@@ -4,7 +4,7 @@
 
 FROM alpine:3.16 as limitador-build
 
-ARG RUSTC_VERSION=1.58.1
+ARG RUSTC_VERSION=1.63.0
 RUN apk update \
     && apk upgrade \
     && apk add build-base binutils-gold openssl3-dev protoc curl \
