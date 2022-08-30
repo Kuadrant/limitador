@@ -7,7 +7,7 @@ FROM alpine:3.16 as limitador-build
 ARG RUSTC_VERSION=1.63.0
 RUN apk update \
     && apk upgrade \
-    && apk add build-base binutils-gold openssl3-dev protoc curl \
+    && apk add build-base binutils-gold openssl3-dev protoc protobuf-dev curl \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --no-modify-path --profile minimal --default-toolchain ${RUSTC_VERSION} -c rustfmt -y
 
 WORKDIR /usr/src/limitador
