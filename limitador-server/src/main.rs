@@ -47,6 +47,7 @@ mod config;
 
 const LIMITADOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 const LIMITADOR_PROFILE: &str = env!("LIMITADOR_PROFILE");
+const LIMITADOR_FEATURES: Option<&'static str> = option_env!("LIMITADOR_FEATURES");
 const LIMITADOR_HEADER: &str = "Limitador Server";
 
 #[derive(Error, Debug)]
@@ -345,9 +346,10 @@ fn create_config() -> (Configuration, String) {
         };
 
         format!(
-            "v{} ({}){}",
+            "v{} ({}) {}{}",
             LIMITADOR_VERSION,
             env!("LIMITADOR_GIT_HASH"),
+            LIMITADOR_FEATURES.unwrap_or(""),
             build,
         )
     };
