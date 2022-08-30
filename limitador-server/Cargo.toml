@@ -6,7 +6,7 @@ license = "Apache-2.0"
 keywords = ["rate-limiting", "rate", "limiter", "envoy", "rls"]
 categories = ["web-programming"]
 description = "Rate limiting service that integrates with Envoy's RLS protocol"
-homepage = "https://github.com/kuadrant/limitador"
+homepage = "https://kuadrant.io"
 repository = "https://github.com/kuadrant/limitador"
 documentation = "https://docs.rs/limitador"
 readme = "README.md"
@@ -21,10 +21,10 @@ infinispan = [ "limitador/infinispan_storage" ]
 limitador = { path = "../limitador", features = [] }
 tokio = { version = "1", features = ["full"] }
 thiserror = "1"
-tonic = "0.6"
-prost = "0.9"
-prost-types = "0.9"
-serde_yaml = "0.8"
+tonic = "0.8"
+prost = "0.11"
+prost-types = "0.11"
+serde_yaml = "0.9"
 log = "0.4"
 env_logger = "0.9"
 url = "2"
@@ -32,8 +32,8 @@ actix-web = "4.1"
 actix-rt = "2"
 paperclip = { version = "0.7", features = ["actix4"] }
 serde = { version = "1", features = ["derive"] }
-notify = "5.0.0-pre.15"
+notify = "=5.0.0-pre.15"
 clap = "3.2"
 
 [build-dependencies]
-tonic-build = "0.6"
+tonic-build = "0.8"
