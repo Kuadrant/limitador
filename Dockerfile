@@ -35,7 +35,7 @@ RUN rm -f target/release/deps/limitador*
 COPY . .
 
 RUN source $HOME/.cargo/env \
-    && cargo build --release --all-features
+    && cargo build --release
 
 # ------------------------------------------------------------------------------
 # Run Stage
