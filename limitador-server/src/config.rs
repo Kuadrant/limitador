@@ -87,6 +87,7 @@ impl Default for Configuration {
 pub enum StorageConfiguration {
     InMemory,
     Redis(RedisStorageConfiguration),
+    #[cfg(feature = "infinispan")]
     Infinispan(InfinispanStorageConfiguration),
 }
 
@@ -105,6 +106,7 @@ pub struct RedisStorageCacheConfiguration {
 }
 
 #[derive(PartialEq, Eq, Debug)]
+#[cfg(feature = "infinispan")]
 pub struct InfinispanStorageConfiguration {
     pub url: String,
     pub cache: Option<String>,

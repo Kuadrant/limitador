@@ -1,12 +1,12 @@
 [package]
 name = "limitador"
 version = "0.3.0-dev"
-authors = ["David Ortiz <z.david.ortiz@gmail.com>"]
+authors = ["David Ortiz <z.david.ortiz@gmail.com>", "Eguzki Astiz Lezaun <eguzki@redhat.com>", "Alex Snaps <asnaps@redhat.com>"]
 license = "Apache-2.0"
 keywords = ["rate-limiting", "rate", "limiter"]
 categories = ["web-programming"]
 description = "Rate limiting library"
-homepage = "https://github.com/kuadrant/limitador"
+homepage = "https://kuadrant.io"
 repository = "https://github.com/kuadrant/limitador"
 documentation = "https://docs.rs/limitador"
 readme = "README.md"
@@ -44,7 +44,7 @@ infinispan = { version = "0.3", optional = true }
 reqwest = { version = "0.11", optional = true }
 
 [dev-dependencies]
-serial_test = "0.5"
+serial_test = "0.9"
 criterion = "0.3"
 paste = "1"
 rand = "0.8"

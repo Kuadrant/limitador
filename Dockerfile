@@ -4,10 +4,10 @@
 
 FROM alpine:3.16 as limitador-build
 
-ARG RUSTC_VERSION=1.58.1
+ARG RUSTC_VERSION=1.63.0
 RUN apk update \
     && apk upgrade \
-    && apk add build-base binutils-gold openssl3-dev protoc curl \
+    && apk add build-base binutils-gold openssl3-dev protoc protobuf-dev curl \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --no-modify-path --profile minimal --default-toolchain ${RUSTC_VERSION} -c rustfmt -y
 
 WORKDIR /usr/src/limitador
@@ -35,7 +35,7 @@ RUN rm -f target/release/deps/limitador*
 COPY . .
 
 RUN source $HOME/.cargo/env \
-    && cargo build --release --all-features
+    && cargo build --release
 
 # ------------------------------------------------------------------------------
 # Run Stage
@@ -43,7 +43,7 @@ RUN source $HOME/.cargo/env \
 
 FROM alpine:3.16
 
-RUN apk add libssl3 libgcc
+RUN apk add libgcc
 
 RUN addgroup -g 1000 limitador \
     && adduser -D -s /bin/sh -u 1000 -G limitador limitador
