@@ -1,6 +1,6 @@
 [package]
 name = "limitador"
-version = "0.2.0"
+version = "0.3.0-dev"
 authors = ["David Ortiz <z.david.ortiz@gmail.com>", "Eguzki Astiz Lezaun <eguzki@redhat.com>", "Alex Snaps <asnaps@redhat.com>"]
 license = "Apache-2.0"
 keywords = ["rate-limiting", "rate", "limiter"]
