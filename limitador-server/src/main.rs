@@ -211,7 +211,7 @@ impl Limiter {
                             Self::Async(limiter) => limiter.configure_with(limits).await?,
                         }
                         if limitador::limit::check_deprecated_syntax_usages_and_reset() {
-                            error!("You are using deprecated syntax for your condition! See guide https://kudrant.io/migration/limitador/constraints")
+                            error!("You are using deprecated syntax for your conditions! See the migration guide https://kudrant.io/migration/limitador/constraints")
                         }
                         Ok(())
                     }
