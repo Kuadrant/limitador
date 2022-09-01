@@ -50,9 +50,10 @@ impl From<String> for Namespace {
 }
 
 #[derive(Eq, Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Limit {
     namespace: Namespace,
-    #[serde(skip_serializing, default)]
+    #[serde(skip_serializing)]
     max_value: i64,
     seconds: u64,
     #[serde(skip_serializing, default)]
