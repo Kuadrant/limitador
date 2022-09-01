@@ -462,6 +462,12 @@ fn create_config() -> (Configuration, String) {
                 .display_order(6)
                 .help("Sets the level of verbosity"),
         )
+        .arg(
+            Arg::with_name("validate")
+                .long("validate")
+                .display_order(7)
+                .help("Validates the LIMITS_FILE and exits")
+        )
         .subcommand(
             SubCommand::with_name("memory")
                 .display_order(1)
@@ -552,6 +558,31 @@ fn create_config() -> (Configuration, String) {
     let matches = cmdline.get_matches();
 
     let limits_file = matches.value_of("LIMITS_FILE").unwrap();
+
+    if matches.is_present("validate") {
+        let result = match std::fs::File::open(limits_file) {
+            Ok(f) => {
+                let parsed_limits: Result<Vec<Limit>, _> = serde_yaml::from_reader(f);
+                match parsed_limits {
+                    Ok(limits) => {
+                        Ok(())
+                    }
+                    Err(e) => Err(LimitadorServerError::ConfigFile(format!(
+                        "Couldn't parse: {}",
+                        e
+                    ))),
+                }
+            }
+            Err(e) => Err(LimitadorServerError::ConfigFile(format!(
+                "Couldn't read file '{}': {}",
+                limits_file,
+                e
+            ))),
+        };
+        println!("{:?}", result);
+        process::exit(0);
+    }
+
     let storage = match matches.subcommand() {
         Some(("redis", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
             url: sub.value_of("URL").unwrap().to_owned(),
