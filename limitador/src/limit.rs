@@ -239,9 +239,14 @@ impl From<Condition> for String {
     fn from(condition: Condition) -> Self {
         let p = &condition.predicate;
         let predicate: String = p.clone().into();
+        let quotes = if condition.operand.contains('"') {
+            '\''
+        } else {
+            '"'
+        };
         format!(
-            "{} {} '{}'",
-            condition.var_name, predicate, condition.operand
+            "{} {} {}{}{}",
+            condition.var_name, predicate, quotes, condition.operand, quotes
         )
     }
 }
@@ -967,6 +972,6 @@ mod tests {
             operand: "ok".to_string(),
         };
         let result = serde_json::to_string(&condition).expect("Should serialize");
-        assert_eq!(result, r#""foobar == 'ok'""#.to_string());
+        assert_eq!(result, r#""foobar == \"ok\"""#.to_string());
     }
 }

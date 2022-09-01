@@ -466,7 +466,7 @@ fn create_config() -> (Configuration, String) {
             Arg::with_name("validate")
                 .long("validate")
                 .display_order(7)
-                .help("Validates the LIMITS_FILE and exits")
+                .help("Validates the LIMITS_FILE and exits"),
         )
         .subcommand(
             SubCommand::with_name("memory")
@@ -581,22 +581,17 @@ fn create_config() -> (Configuration, String) {
                         }
                         process::exit(0);
                     }
-                    Err(e) => LimitadorServerError::ConfigFile(format!(
-                        "Couldn't parse: {}",
-                        e
-                    )),
+                    Err(e) => LimitadorServerError::ConfigFile(format!("Couldn't parse: {}", e)),
                 }
             }
             Err(e) => LimitadorServerError::ConfigFile(format!(
                 "Couldn't read file '{}': {}",
-                limits_file,
-                e
+                limits_file, e
             )),
         };
         eprintln!("{}", error);
         process::exit(1);
     }
-
 
     let storage = match matches.subcommand() {
         Some(("redis", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
