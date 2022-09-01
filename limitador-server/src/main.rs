@@ -560,28 +560,43 @@ fn create_config() -> (Configuration, String) {
     let limits_file = matches.value_of("LIMITS_FILE").unwrap();
 
     if matches.is_present("validate") {
-        let result = match std::fs::File::open(limits_file) {
+        let error = match std::fs::File::open(limits_file) {
             Ok(f) => {
                 let parsed_limits: Result<Vec<Limit>, _> = serde_yaml::from_reader(f);
                 match parsed_limits {
                     Ok(limits) => {
-                        Ok(())
+                        if limitador::limit::check_deprecated_syntax_usages_and_reset() {
+                            eprintln!("Deprecated syntax for conditions corrected!\n")
+                        }
+
+                        let output: Vec<http_api::LimitVO> =
+                            limits.iter().map(|l| l.into()).collect();
+                        match serde_yaml::to_string(&output) {
+                            Ok(cfg) => {
+                                println!("{}", cfg);
+                            }
+                            Err(err) => {
+                                eprintln!("Config file is valid, but can't be output: {}", err);
+                            }
+                        }
+                        process::exit(0);
                     }
-                    Err(e) => Err(LimitadorServerError::ConfigFile(format!(
+                    Err(e) => LimitadorServerError::ConfigFile(format!(
                         "Couldn't parse: {}",
                         e
-                    ))),
+                    )),
                 }
             }
-            Err(e) => Err(LimitadorServerError::ConfigFile(format!(
+            Err(e) => LimitadorServerError::ConfigFile(format!(
                 "Couldn't read file '{}': {}",
                 limits_file,
                 e
-            ))),
+            )),
         };
-        println!("{:?}", result);
-        process::exit(0);
+        eprintln!("{}", error);
+        process::exit(1);
     }
+
 
     let storage = match matches.subcommand() {
         Some(("redis", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
