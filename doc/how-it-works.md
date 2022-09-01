@@ -13,7 +13,7 @@ One example to illustrate:
 Let's say we have 1 rate limit configuration (one counter per config):
 
 ```yaml
-conditions: ["KEY_A == VALUE_A"]
+conditions: ["KEY_A == 'VALUE_A'"]
 max_value: 1
 seconds: 60
 variables: []
@@ -60,7 +60,7 @@ descriptors:
 the following counters would **not** be activated.
 
 ```yaml
-conditions: ["KEY_B == VALUE_B"]
+conditions: ["KEY_B == 'VALUE_B'"]
 max_value: 1
 seconds: 60
 variables: []
@@ -70,8 +70,8 @@ Reason: conditions key does not exist
 
 ```yaml
 conditions:
-  - "KEY_A == VALUE_A"
-  - "OTHER_KEY = WRONG_VALUE"
+  - "KEY_A == 'VALUE_A'"
+  - "OTHER_KEY = 'WRONG_VALUE'"
 max_value: 1
 seconds: 60
 variables: []
@@ -89,7 +89,7 @@ namespace: example.org
 Reason: the variable name does not exist
 
 ```yaml
-conditions: ["KEY_B == VALUE_B"]
+conditions: ["KEY_B == 'VALUE_B'"]
 max_value: 1
 seconds: 60
 variables: ["MY_VAR"]

@@ -374,7 +374,7 @@ mod tests {
             namespace,
             max,
             60,
-            vec!["req.method == GET"],
+            vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
 
