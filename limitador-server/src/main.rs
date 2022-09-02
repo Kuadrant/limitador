@@ -320,8 +320,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 _ => (), // /dev/null
             }
-
-            if let EventKind::Modify(ModifyKind::Data(_)) = event.kind {};
         }
         Err(ref e) => {
             warn!("Something went wrong while watching limit file: {}", e);
