@@ -58,13 +58,13 @@ impl TryFrom<String> for Consistency {
 }
 
 pub struct CounterOpts {
-    initial_value: i64,
+    initial_value: u64,
     ttl: Duration,
     consistency: Consistency,
 }
 
 impl CounterOpts {
-    pub fn new(initial_value: i64, ttl: Duration, consistency: Consistency) -> Self {
+    pub fn new(initial_value: u64, ttl: Duration, consistency: Consistency) -> Self {
         Self {
             initial_value,
             ttl,
@@ -127,9 +127,12 @@ pub async fn decrement_by(
                 Consistency::Strong => request::counters::create_strong(&counter_key),
             };
 
-            let _ = infinispan
-                .run(&create_req.with_value(create_counter_opts.initial_value - delta))
-                .await?;
+            let _ =
+                infinispan
+                    .run(&create_req.with_value(
+                        (create_counter_opts.initial_value as i128 - delta as i128) as i64,
+                    ))
+                    .await?;
         }
 
         let _ = infinispan

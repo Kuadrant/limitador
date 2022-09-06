@@ -37,7 +37,7 @@ impl AsyncCounterStorage for InfinispanStorage {
 
         match counter_val {
             Some(val) => Ok(val - delta >= 0),
-            None => Ok(counter.max_value() - delta >= 0),
+            None => Ok(((counter.max_value() as i128) - delta as i128) as i64 >= 0),
         }
     }
 
