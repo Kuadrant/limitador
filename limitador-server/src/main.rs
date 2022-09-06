@@ -269,7 +269,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let limiter = Arc::clone(&rate_limiter);
     let handle = Handle::current();
     // it should not fail because the limits file has already been read
-    let limits_file_dir = Path::new(&limit_file).parent().unwrap();
+    let mut limits_file_dir = Path::new(&limit_file).parent().unwrap();
+    if limits_file_dir.as_os_str().is_empty() {
+        limits_file_dir = Path::new(".");
+    }
     let limits_file_path_cloned = limit_file.to_owned();
     // structure needed to keep state of the last known canonical limits file path
     let mut last_known_canonical_path = fs::canonicalize(&limit_file).unwrap();
