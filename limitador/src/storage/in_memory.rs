@@ -159,7 +159,7 @@ impl InMemoryStorage {
             None => {
                 counters.insert(
                     counter.clone(),
-                    counter.max_value() - delta,
+                    ((counter.max_value() as i128) - delta as i128) as i64,
                     Duration::from_secs(counter.seconds()),
                 );
 
@@ -171,7 +171,7 @@ impl InMemoryStorage {
     fn counter_is_within_limits(counter: &Counter, current_val: Option<&i64>, delta: i64) -> bool {
         match current_val {
             Some(current_val) => current_val - delta >= 0,
-            None => counter.max_value() - delta >= 0,
+            None => ((counter.max_value() as i128) - delta as i128) as i64 >= 0,
         }
     }
 }

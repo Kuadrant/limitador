@@ -127,7 +127,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
                         }
                     }
                     None => {
-                        if counter.max_value() - delta < 0 {
+                        if (((counter.max_value() as i128) - delta as i128) as i64) < 0 {
                             return Ok(Authorization::Limited(
                                 counter.limit().name().map(|n| n.to_owned()),
                             ));

@@ -53,7 +53,7 @@ impl From<String> for Namespace {
 pub struct Limit {
     namespace: Namespace,
     #[serde(skip_serializing, default)]
-    max_value: i64,
+    max_value: u64,
     seconds: u64,
     #[serde(skip_serializing, default)]
     name: Option<String>,
@@ -286,7 +286,7 @@ where
 impl Limit {
     pub fn new<N: Into<Namespace>, T: TryInto<Condition>>(
         namespace: N,
-        max_value: i64,
+        max_value: u64,
         seconds: u64,
         conditions: impl IntoIterator<Item = T>,
         variables: impl IntoIterator<Item = impl Into<String>>,
@@ -313,7 +313,7 @@ impl Limit {
         &self.namespace
     }
 
-    pub fn max_value(&self) -> i64 {
+    pub fn max_value(&self) -> u64 {
         self.max_value
     }
 
@@ -329,7 +329,7 @@ impl Limit {
         self.name = Some(name)
     }
 
-    pub fn set_max_value(&mut self, value: i64) {
+    pub fn set_max_value(&mut self, value: u64) {
         self.max_value = value;
     }
 

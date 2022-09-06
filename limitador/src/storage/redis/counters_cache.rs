@@ -63,7 +63,7 @@ impl CountersCache {
         redis_ttl_ms: i64,
         ttl_margin: Duration,
     ) {
-        let counter_val = Self::value_from_redis_val(redis_val, counter.max_value());
+        let counter_val = Self::value_from_redis_val(redis_val, counter.max_value() as i64);
         let counter_ttl = self.ttl_from_redis_ttl(redis_ttl_ms, counter.seconds(), counter_val);
         if let Some(ttl) = counter_ttl.checked_sub(ttl_margin) {
             if ttl > Duration::from_secs(0) {
@@ -196,12 +196,12 @@ mod tests {
         let mut cache = CountersCacheBuilder::new().build();
         cache.insert(
             counter.clone(),
-            Some(current_value),
+            Some(current_value as i64),
             10,
             Duration::from_secs(0),
         );
 
-        assert_eq!(cache.get(&counter).unwrap(), current_value);
+        assert_eq!(cache.get(&counter).unwrap(), current_value as i64);
     }
 
     #[test]
@@ -223,7 +223,7 @@ mod tests {
         let mut cache = CountersCacheBuilder::new().build();
         cache.insert(counter.clone(), None, 10, Duration::from_secs(0));
 
-        assert_eq!(cache.get(&counter).unwrap(), max_val);
+        assert_eq!(cache.get(&counter).unwrap(), max_val as i64);
     }
 
     #[test]
@@ -246,12 +246,15 @@ mod tests {
         let mut cache = CountersCacheBuilder::new().build();
         cache.insert(
             counter.clone(),
-            Some(current_val),
+            Some(current_val as i64),
             10,
             Duration::from_secs(0),
         );
         cache.decrease_by(&counter, decrease_by);
 
-        assert_eq!(cache.get(&counter).unwrap(), current_val - decrease_by);
+        assert_eq!(
+            cache.get(&counter).unwrap(),
+            (current_val as i64) - decrease_by
+        );
     }
 }

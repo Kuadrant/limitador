@@ -218,7 +218,7 @@ impl WasmStorage {
                     // TODO: remove duplication. "None" branch is identical.
                     counters.insert(
                         counter,
-                        counter.max_value() - delta,
+                        ((counter.max_value() as i128) - delta as i128) as i64,
                         self.clock.get_current_time() + Duration::from_secs(counter.seconds()),
                     );
                 } else {
@@ -228,7 +228,7 @@ impl WasmStorage {
             None => {
                 counters.insert(
                     counter,
-                    counter.max_value() - delta,
+                    ((counter.max_value() as i128) - delta as i128) as i64,
                     self.clock.get_current_time() + Duration::from_secs(counter.seconds()),
                 );
 
@@ -246,12 +246,12 @@ impl WasmStorage {
         match cache_entry {
             Some(entry) => {
                 if entry.is_expired(self.clock.get_current_time()) {
-                    counter.max_value() - delta >= 0
+                    ((counter.max_value() as i128) - delta as i128) as i64 >= 0
                 } else {
                     entry.value - delta >= 0
                 }
             }
-            None => counter.max_value() - delta >= 0,
+            None => ((counter.max_value() as i128) - delta as i128) as i64 >= 0,
         }
     }
 }

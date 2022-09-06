@@ -368,7 +368,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
-    async fn create_test_limit(limiter: &Limiter, namespace: &str, max: i64) -> LimitadorLimit {
+    async fn create_test_limit(limiter: &Limiter, namespace: &str, max: u64) -> LimitadorLimit {
         // Create a limit
         let limit = LimitadorLimit::new(
             namespace,

@@ -27,7 +27,7 @@ impl CounterStorage for RedisStorage {
 
         match con.get::<String, Option<i64>>(key_for_counter(counter))? {
             Some(val) => Ok(val - delta >= 0),
-            None => Ok(counter.max_value() - delta >= 0),
+            None => Ok((((counter.max_value() as i128) - delta as i128) as i64) >= 0),
         }
     }
 
@@ -67,7 +67,7 @@ impl CounterStorage for RedisStorage {
                     }
                 }
                 None => {
-                    if counter.max_value() - delta < 0 {
+                    if (((counter.max_value() as i128) - delta as i128) as i64) < 0 {
                         return Ok(Authorization::Limited(
                             counter.limit().name().map(|n| n.to_owned()),
                         ));

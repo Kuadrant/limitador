@@ -18,7 +18,7 @@ pub struct CheckAndReportInfo {
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize, Apiv2Schema)]
 pub struct Limit {
     namespace: String,
-    max_value: i64,
+    max_value: u64,
     seconds: u64,
     name: Option<String>,
     conditions: Vec<String>,

@@ -499,7 +499,7 @@ mod test {
         values.insert("app_id".to_string(), "test_app_id".to_string());
 
         assert!(rate_limiter
-            .is_rate_limited(namespace, &values, max + 1)
+            .is_rate_limited(namespace, &values, (max + 1) as i64)
             .await
             .unwrap())
     }
@@ -723,8 +723,8 @@ mod test {
             let remaining = counter.remaining().unwrap();
 
             match app_id.as_str() {
-                "1" => assert_eq!(remaining, max_hits - hits_app_1),
-                "2" => assert_eq!(remaining, max_hits - hits_app_2),
+                "1" => assert_eq!(remaining, max_hits as i64 - hits_app_1),
+                "2" => assert_eq!(remaining, max_hits as i64 - hits_app_2),
                 _ => panic!("Unexpected app ID"),
             }
         }
@@ -867,7 +867,10 @@ mod test {
             .collect();
 
         assert_eq!(counters.len(), 1);
-        assert_eq!(counters[0].remaining().unwrap(), max_value - hits_to_report);
+        assert_eq!(
+            counters[0].remaining().unwrap(),
+            max_value as i64 - hits_to_report
+        );
     }
 
     async fn configure_with_deletes_all_except_the_limits_given(rate_limiter: &mut TestsLimiter) {

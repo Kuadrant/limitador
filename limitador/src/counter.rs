@@ -44,7 +44,7 @@ impl Counter {
         &self.limit
     }
 
-    pub fn max_value(&self) -> i64 {
+    pub fn max_value(&self) -> u64 {
         self.limit.max_value()
     }
 
