@@ -205,16 +205,22 @@ impl Limiter {
             Ok(f) => {
                 let parsed_limits: Result<Vec<Limit>, _> = serde_yaml::from_reader(f);
                 match parsed_limits {
-                    Ok(limits) => {
-                        match &self {
-                            Self::Blocking(limiter) => limiter.configure_with(limits)?,
-                            Self::Async(limiter) => limiter.configure_with(limits).await?,
+                    Ok(limits) => match first_zero_or_negative(&limits) {
+                        None => {
+                            match &self {
+                                Self::Blocking(limiter) => limiter.configure_with(limits)?,
+                                Self::Async(limiter) => limiter.configure_with(limits).await?,
+                            }
+                            if limitador::limit::check_deprecated_syntax_usages_and_reset() {
+                                error!("You are using deprecated syntax for your conditions! See the migration guide https://kudrant.io/migration/limitador/constraints")
+                            }
+                            Ok(())
                         }
-                        if limitador::limit::check_deprecated_syntax_usages_and_reset() {
-                            error!("You are using deprecated syntax for your conditions! See the migration guide https://kudrant.io/migration/limitador/constraints")
-                        }
-                        Ok(())
-                    }
+                        Some(index) => Err(LimitadorServerError::ConfigFile(format!(
+                            ".[{}]: invalid value for `max_value`: positive integer expected",
+                            index
+                        ))),
+                    },
                     Err(e) => Err(LimitadorServerError::ConfigFile(format!(
                         "Couldn't parse: {}",
                         e
@@ -228,6 +234,15 @@ impl Limiter {
             ))),
         }
     }
+}
+
+fn first_zero_or_negative(limits: &[Limit]) -> Option<usize> {
+    for (index, limit) in limits.iter().enumerate() {
+        if limit.max_value() < 1 {
+            return Some(index);
+        }
+    }
+    None
 }
 
 #[actix_rt::main]
