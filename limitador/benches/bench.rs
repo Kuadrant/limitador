@@ -231,7 +231,7 @@ fn generate_test_data(
         for _ in 0..scenario.n_limits_per_ns {
             test_limits.push(Limit::new(
                 namespace.clone(),
-                i64::MAX,
+                u64::MAX,
                 10,
                 conditions.clone(),
                 variables.clone(),
