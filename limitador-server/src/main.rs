@@ -205,7 +205,7 @@ impl Limiter {
             Ok(f) => {
                 let parsed_limits: Result<Vec<Limit>, _> = serde_yaml::from_reader(f);
                 match parsed_limits {
-                    Ok(limits) => match first_zero_or_negative(&limits) {
+                    Ok(limits) => match first_negative(&limits) {
                         None => {
                             match &self {
                                 Self::Blocking(limiter) => limiter.configure_with(limits)?,
@@ -236,9 +236,9 @@ impl Limiter {
     }
 }
 
-fn first_zero_or_negative(limits: &[Limit]) -> Option<usize> {
+fn first_negative(limits: &[Limit]) -> Option<usize> {
     for (index, limit) in limits.iter().enumerate() {
-        if limit.max_value() < 1 {
+        if limit.max_value() < 0 {
             return Some(index);
         }
     }
