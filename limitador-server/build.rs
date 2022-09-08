@@ -33,15 +33,15 @@ fn set_profile(env: &str) {
 }
 
 fn set_git_hash(env: &str) {
-    let git_hash = Command::new("/usr/bin/git")
+    let git_sha = Command::new("/usr/bin/git")
         .args(&["rev-parse", "HEAD"])
         .output()
         .ok()
         .filter(|output| output.status.success())
         .and_then(|x| String::from_utf8(x.stdout).ok())
-        .map(|hash| hash[..8].to_owned());
+        .map(|sha| sha[..8].to_owned());
 
-    if let Some(hash) = git_hash {
+    if let Some(sha) = git_sha {
         let dirty = Command::new("git")
             .args(&["diff", "--stat"])
             .output()
@@ -50,8 +50,8 @@ fn set_git_hash(env: &str) {
             .map(|output| !matches!(output.stdout.len(), 0));
 
         match dirty {
-            Some(true) => println!("cargo:rustc-env={}={}-dirty", env, hash),
-            Some(false) => println!("cargo:rustc-env={}={}", env, hash),
+            Some(true) => println!("cargo:rustc-env={}={}-dirty", env, sha),
+            Some(false) => println!("cargo:rustc-env={}={}", env, sha),
             _ => unreachable!("How can we have a git hash, yet not know if the tree is dirty?"),
         }
     } else {

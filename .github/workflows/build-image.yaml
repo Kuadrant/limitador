@@ -32,6 +32,8 @@ jobs:
           tags: ${{ env.IMG_TAGS }}
           dockerfiles: |
             ./Dockerfile
+          build-args: |
+            GITHUB_SHA=${{ github.sha }}
       - name: Push Image
         if: ${{ !env.ACT }}
         id: push-to-quay
