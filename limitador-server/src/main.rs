@@ -205,7 +205,7 @@ impl Limiter {
             Ok(f) => {
                 let parsed_limits: Result<Vec<Limit>, _> = serde_yaml::from_reader(f);
                 match parsed_limits {
-                    Ok(limits) => match first_negative(&limits) {
+                    Ok(limits) => match find_first_negative_limit(&limits) {
                         None => {
                             match &self {
                                 Self::Blocking(limiter) => limiter.configure_with(limits)?,
@@ -236,7 +236,7 @@ impl Limiter {
     }
 }
 
-fn first_negative(limits: &[Limit]) -> Option<usize> {
+fn find_first_negative_limit(limits: &[Limit]) -> Option<usize> {
     for (index, limit) in limits.iter().enumerate() {
         if limit.max_value() < 0 {
             return Some(index);
@@ -719,7 +719,7 @@ fn env_option_is_enabled(env_name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::first_negative;
+    use crate::find_first_negative_limit;
     use limitador::limit::Limit;
 
     #[test]
@@ -730,15 +730,15 @@ mod tests {
             Limit::new::<_, &str>("foo", -42, 10, [], variables),
         ];
 
-        assert_eq!(first_negative(&limits), Some(1));
+        assert_eq!(find_first_negative_limit(&limits), Some(1));
         limits[0].set_max_value(-42);
-        assert_eq!(first_negative(&limits), Some(0));
+        assert_eq!(find_first_negative_limit(&limits), Some(0));
         limits[1].set_max_value(42);
-        assert_eq!(first_negative(&limits), Some(0));
+        assert_eq!(find_first_negative_limit(&limits), Some(0));
         limits[0].set_max_value(42);
-        assert_eq!(first_negative(&limits), None);
+        assert_eq!(find_first_negative_limit(&limits), None);
 
         let nothing: [Limit; 0] = [];
-        assert_eq!(first_negative(&nothing), None);
+        assert_eq!(find_first_negative_limit(&nothing), None);
     }
 }
