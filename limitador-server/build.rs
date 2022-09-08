@@ -33,7 +33,7 @@ fn set_profile(env: &str) {
 }
 
 fn set_git_hash(env: &str) {
-    let git_hash = Command::new("git")
+    let git_hash = Command::new("/usr/bin/git")
         .args(&["rev-parse", "HEAD"])
         .output()
         .ok()
@@ -55,6 +55,9 @@ fn set_git_hash(env: &str) {
             _ => unreachable!("How can we have a git hash, yet not know if the tree is dirty?"),
         }
     } else {
-        println!("cargo:rustc-env={}=unknown", env);
+        let fallback = option_env!("GITHUB_SHA")
+            .map(|sha| if sha.len() > 8 { &sha[..8] } else { sha })
+            .unwrap_or("NO_SHA");
+        println!("cargo:rustc-env={}={}", env, fallback);
     }
 }
