@@ -579,23 +579,29 @@ fn create_config() -> (Configuration, String) {
             Ok(f) => {
                 let parsed_limits: Result<Vec<Limit>, _> = serde_yaml::from_reader(f);
                 match parsed_limits {
-                    Ok(limits) => {
-                        if limitador::limit::check_deprecated_syntax_usages_and_reset() {
-                            eprintln!("Deprecated syntax for conditions corrected!\n")
-                        }
+                    Ok(limits) => match find_first_negative_limit(&limits) {
+                        Some(index) => LimitadorServerError::ConfigFile(format!(
+                            ".[{}]: invalid value for `max_value`: positive integer expected",
+                            index
+                        )),
+                        None => {
+                            if limitador::limit::check_deprecated_syntax_usages_and_reset() {
+                                eprintln!("Deprecated syntax for conditions corrected!\n")
+                            }
 
-                        let output: Vec<http_api::LimitVO> =
-                            limits.iter().map(|l| l.into()).collect();
-                        match serde_yaml::to_string(&output) {
-                            Ok(cfg) => {
-                                println!("{}", cfg);
+                            let output: Vec<http_api::LimitVO> =
+                                limits.iter().map(|l| l.into()).collect();
+                            match serde_yaml::to_string(&output) {
+                                Ok(cfg) => {
+                                    println!("{}", cfg);
+                                }
+                                Err(err) => {
+                                    eprintln!("Config file is valid, but can't be output: {}", err);
+                                }
                             }
-                            Err(err) => {
-                                eprintln!("Config file is valid, but can't be output: {}", err);
-                            }
+                            process::exit(0);
                         }
-                        process::exit(0);
-                    }
+                    },
                     Err(e) => LimitadorServerError::ConfigFile(format!("Couldn't parse: {}", e)),
                 }
             }
