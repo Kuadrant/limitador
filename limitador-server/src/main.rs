@@ -716,3 +716,29 @@ fn env_option_is_enabled(env_name: &str) -> bool {
         Err(_) => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::first_negative;
+    use limitador::limit::Limit;
+
+    #[test]
+    fn finds_negative_limits() {
+        let variables: [&str; 0] = [];
+        let mut limits: Vec<Limit> = vec![
+            Limit::new::<_, &str>("foo", 42, 10, [], variables),
+            Limit::new::<_, &str>("foo", -42, 10, [], variables),
+        ];
+
+        assert_eq!(first_negative(&limits), Some(1));
+        limits[0].set_max_value(-42);
+        assert_eq!(first_negative(&limits), Some(0));
+        limits[1].set_max_value(42);
+        assert_eq!(first_negative(&limits), Some(0));
+        limits[0].set_max_value(42);
+        assert_eq!(first_negative(&limits), None);
+
+        let nothing: [Limit; 0] = [];
+        assert_eq!(first_negative(&nothing), None);
+    }
+}
