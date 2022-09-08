@@ -57,7 +57,7 @@ jobs:
           command: |
             ip=$(kubectl get nodes -lkubernetes.io/hostname!=kind-control-plane -ojsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}')
             port=$(kubectl get service limitador -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
-            curl "http://${ip}:${port}/limits/test" -o output-limits.json 2>/dev/null
+            curl -s "http://${ip}:${port}/limits/test" | tee output-limits.json 
             jq --exit-status '.[] | select(.max_value == 1000)' output-limits.json
       - name: Update limit in the configmap
         run: |
@@ -77,5 +77,5 @@ jobs:
           command: |
             ip=$(kubectl get nodes -lkubernetes.io/hostname!=kind-control-plane -ojsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}')
             port=$(kubectl get service limitador -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
-            curl "http://${ip}:${port}/limits/test" -o output-limits-new.json 2>/dev/null
+            curl -s "http://${ip}:${port}/limits/test" | tee output-limits-new.json 
             jq --exit-status '.[] | select(.max_value == 2000)' output-limits-new.json
