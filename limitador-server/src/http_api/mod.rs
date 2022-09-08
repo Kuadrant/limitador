@@ -4,4 +4,6 @@
 #[allow(clippy::field_reassign_with_default)]
 mod request_types;
 
+pub use request_types::Limit as LimitVO;
+
 pub mod server;
