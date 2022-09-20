@@ -18,6 +18,8 @@ COPY ./Cargo.toml ./Cargo.toml
 COPY limitador/Cargo.toml ./limitador/Cargo.toml
 COPY limitador-server/Cargo.toml ./limitador-server/Cargo.toml
 
+ARG GITHUB_SHA
+ENV GITHUB_SHA=${GITHUB_SHA:-unknown}
 ENV RUSTFLAGS="-C target-feature=-crt-static"
 
 RUN mkdir -p limitador/src limitador-server/src
