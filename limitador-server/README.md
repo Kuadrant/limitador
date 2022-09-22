@@ -65,7 +65,7 @@ that there's an upstream API deployed on port 1323. You can use
 [echo](https://github.com/labstack/echo), for example.
 
 Limitador has several options that can be configured via ENV. This
-[doc](docs/configuration.md) specifies them.
+[doc](../doc/server/configuration.md) specifies them.
 
 ## Limits storage
 
