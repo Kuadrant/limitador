@@ -10,7 +10,7 @@ can be configured with these ENVs: `ENVOY_RLS_HOST`, `ENVOY_RLS_PORT`,
 
 Or using the command line arguments:
 
-```commandline
+```
 Limitador Server
 The Kuadrant team - github.com/Kuadrant
 Rate Limiting Server
