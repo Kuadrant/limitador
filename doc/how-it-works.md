@@ -37,8 +37,8 @@ otherwise accepted.
 Note that the counter is being activated even though it does not match *all* the entries of the
 descriptor. The same rule applies for the *variables* field.
 
-Currently, *condition* implementation only allows *equal* operator.
-More operators can be implemented if there are use cases.
+Currently, the implementation of *condition* only allow for *equal* (`==`) and *not equal* (`!=`) operators.
+More operators will be implemented based off the use cases for them.
 
 The *variables* field is a list of keys.
 The matching rule is defined just as the existence of the list of descriptor entries with the
