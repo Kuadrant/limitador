@@ -2,7 +2,7 @@
 
 ## Command line configuration
 
-The preferred way of starting and configuring the Limitador instance is using the command line:
+The preferred way of starting and configuring the Limitador server is using the command line:
 
 ```
 USAGE:
@@ -41,48 +41,33 @@ reload, or the server will fail to start.
 When starting the server, you point it to a `LIMITS_FILE`, which is expected to be a _yaml_ file with an array of
 `limit` definitions, with the following format:
 
-```json
-{
-  "$schema": "http://json-schema.org/draft-04/schema#",
-  "type": "object",
-  "properties": {
-    "name": {
-      "type": "string"
-    },
-    "namespace": {
-      "type": "string"
-    },
-    "seconds": {
-      "type": "integer"
-    },
-    "max_value": {
-      "type": "integer"
-    },
-    "conditions": {
-      "type": "array",
-      "items": [
-        {
-          "type": "string"
-        }
-      ]
-    },
-    "variables": {
-      "type": "array",
-      "items": [
-        {
-          "type": "string"
-        }
-      ]
-    }
-  },
-  "required": [
-    "namespace",
-    "seconds",
-    "max_value",
-    "conditions",
-    "variables"
-  ]
-}
+```yaml
+---
+"$schema": http://json-schema.org/draft-04/schema#
+type: object
+properties:
+  name:
+    type: string
+  namespace:
+    type: string
+  seconds:
+    type: integer
+  max_value:
+    type: integer
+  conditions:
+    type: array
+    items:
+      - type: string
+  variables:
+    type: array
+    items:
+      - type: string
+required:
+  - namespace
+  - seconds
+  - max_value
+  - conditions
+  - variables
 ```
 
 Here is an example of such a limit definition:
@@ -136,16 +121,16 @@ limits as if no traffic had been rate limited, which can be fine for short-lived
 
 #### `redis`
 
-When you want persistence of your counters, such as for DR or across restarts, using `redis` will store the counters in 
-a redis instance using the provided `URL`. Increments to _individual_ counters is made within redis itself, providing 
-accuracy over these, races tho can occur when multiple limitador servers are used against a single redis and using 
-"stacked" limits (i.e. over different periods). Latency is also impacted, as it results in one additional hop to talk 
-to redis and maintain the counters.
+When you want persistence of your counters, such as for disaster recovery or across restarts, using `redis` will store 
+the counters in a redis instance using the provided `URL`. Increments to _individual_ counters is made within redis 
+itself, providing accuracy over these, races tho can occur when multiple Limitador servers are used against a single 
+redis and using "stacked" limits (i.e. over different periods). Latency is also impacted, as it results in one 
+additional hop to talk to redis and maintain the counters.
 
 #### `redis_cached`
 
 In order to avoid some communication overhead to redis, `redis_cached` adds an in memory caching layer within the 
-limitador servers. This lowers the latency, but sacrifices some accuracy as it will not only cache counters, but also
+Limitador servers. This lowers the latency, but sacrifices some accuracy as it will not only cache counters, but also
 coalesce counters updates to redis over time. See [this configuration](#redis_local_cache_enabled) option for more 
 information.
 
@@ -213,8 +198,8 @@ environment variables.
 
 #### `LIMITS_FILE`
 
-- YAML file that contains the limits to create when limitador boots. If the
-limits specified already have counters associated, limitador will not delete them.
+- YAML file that contains the limits to create when Limitador boots. If the
+limits specified already have counters associated, Limitador will not delete them.
 Changes to the file will be picked up by the running server.
 - *Required*. No default
 - Format: `string`, file path.
