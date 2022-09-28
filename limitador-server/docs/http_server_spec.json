@@ -206,56 +206,6 @@
         ]
       }
     },
-    "/limits": {
-      "post": {
-        "responses": {
-          "200": {
-            "description": "OK",
-            "schema": {}
-          },
-          "429": {
-            "description": "Too Many Requests"
-          },
-          "500": {
-            "description": "Internal Server Error"
-          }
-        },
-        "parameters": [
-          {
-            "in": "body",
-            "name": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/Limit"
-            }
-          }
-        ]
-      },
-      "delete": {
-        "responses": {
-          "200": {
-            "description": "OK",
-            "schema": {}
-          },
-          "429": {
-            "description": "Too Many Requests"
-          },
-          "500": {
-            "description": "Internal Server Error"
-          }
-        },
-        "parameters": [
-          {
-            "in": "body",
-            "name": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/Limit"
-            }
-          }
-        ]
-      }
-    },
     "/limits/{namespace}": {
       "get": {
         "responses": {
@@ -345,7 +295,7 @@
     }
   },
   "info": {
-    "version": "",
-    "title": ""
+    "version": "1.0.0",
+    "title": "Limitador server endpoints"
   }
 }

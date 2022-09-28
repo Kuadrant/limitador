@@ -180,7 +180,7 @@
 //!
 //! # Limits accuracy
 //!
-//! When storing the limits in memory, Limitador guarantees that we'll never go
+//! When storing the counters in memory, Limitador guarantees that we'll never go
 //! over the limits defined. However, when using Redis that's not the case. The
 //! Redis driver sacrifices a bit of accuracy when applying the limits to be
 //! more performant.

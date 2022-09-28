@@ -13,7 +13,7 @@ use std::collections::HashSet;
 use std::str::FromStr;
 use std::time::Duration;
 
-// Note: this implementation does no guarantee exact limits. Ensuring that we
+// Note: this implementation does not guarantee exact limits. Ensuring that we
 // never go over the limits would hurt performance. This implementation
 // sacrifices a bit of accuracy to be more performant.
 

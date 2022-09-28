@@ -58,7 +58,7 @@ The image will be tagged with `limitador-testing:latest`
 The `LIMITADOR_IMAGE` environment variable overrides the default image. For example:
 
 ```bash
-make deploy-in-memory LIMITADOR_IMAGE=quay.io/3scale/limitador:latest
+make deploy-in-memory LIMITADOR_IMAGE=quay.io/kuadrant/limitador:latest
 ```
 
 ### Tear Down

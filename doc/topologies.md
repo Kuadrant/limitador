@@ -1,16 +1,17 @@
-# Redis active-active storage
+# Deployment topologies
+
+## In-memory
+
+## Redis
+
+### Redis active-active storage
 
 The RedisLabs version of Redis supports [active-active
 replication](https://docs.redislabs.com/latest/rs/concepts/intercluster-replication/).
 Limitador is compatible with that deployment mode, but there are a few things to
 take into account regarding limit accuracy.
 
-## Set up
-
-In order to try active-active replication, you can follow this [tutorial from
-RedisLabs](https://docs.redislabs.com/latest/rs/getting-started/getting-started-active-active/).
-
-## Considerations
+#### Considerations
 
 With an active-active deployment, the data needs to be replicated between
 instances. An update in an instance takes a short time to be reflected in the
@@ -25,3 +26,8 @@ hand, if we have defined limits with a high number of hits and a long period,
 the effect will be basically negligible. For example, if we define a limit of
 one hour, and we know that the data takes around one second to be replicated,
 the accuracy loss is going to be negligible.
+
+#### Set up
+
+In order to try active-active replication, you can follow this [tutorial from
+RedisLabs](https://docs.redislabs.com/latest/rs/getting-started/getting-started-active-active/).

@@ -34,11 +34,11 @@ The counter's condition will match. Then, the counter will be increased and the 
 If the limit is exceeded, the request will be rejected with `429 Too Many Requests`,
 otherwise accepted.
 
-Note that the counter is being activated eventhough it does not match *all* the entries of the
+Note that the counter is being activated even though it does not match *all* the entries of the
 descriptor. The same rule applies for the *variables* field.
 
-Currently *condition* implementation only allows *equal* operator.
-More operators can be implemented if there are use cases.
+Currently, the implementation of *condition* only allow for *equal* (`==`) and *not equal* (`!=`) operators.
+More operators will be implemented based off the use cases for them.
 
 The *variables* field is a list of keys.
 The matching rule is defined just as the existence of the list of descriptor entries with the
@@ -71,7 +71,7 @@ Reason: conditions key does not exist
 ```yaml
 conditions:
   - "KEY_A == 'VALUE_A'"
-  - "OTHER_KEY = 'WRONG_VALUE'"
+  - "OTHER_KEY == 'WRONG_VALUE'"
 max_value: 1
 seconds: 60
 variables: []
