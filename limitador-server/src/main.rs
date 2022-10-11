@@ -112,7 +112,7 @@ impl Limiter {
         match AsyncRedisStorage::new(redis_url).await {
             Ok(storage) => storage,
             Err(err) => {
-                eprintln!("Failed to connect to Redis: {}", err);
+                eprintln!("Failed to connect to Redis at {}: {}", redis_url, err);
                 process::exit(1)
             }
         }
