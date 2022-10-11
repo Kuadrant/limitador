@@ -8,7 +8,7 @@ use crate::storage::keys::*;
 use crate::storage::redis::scripts::SCRIPT_UPDATE_COUNTER;
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
-use redis::AsyncCommands;
+use redis::{AsyncCommands, RedisError};
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::time::Duration;
@@ -145,14 +145,14 @@ impl AsyncCounterStorage for AsyncRedisStorage {
 }
 
 impl AsyncRedisStorage {
-    pub async fn new(redis_url: &str) -> Self {
-        Self {
+    pub async fn new(redis_url: &str) -> Result<Self, RedisError> {
+        let info = ConnectionInfo::from_str(redis_url)?;
+        Ok(Self {
             conn_manager: ConnectionManager::new(
-                redis::Client::open(ConnectionInfo::from_str(redis_url).unwrap()).unwrap(),
+                redis::Client::open(info).expect("Somehow couldn't create Redis client!"),
             )
-            .await
-            .unwrap(),
-        }
+            .await?,
+        })
     }
 
     pub fn new_with_conn_manager(conn_manager: ConnectionManager) -> Self {

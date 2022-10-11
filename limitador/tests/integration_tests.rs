@@ -38,12 +38,12 @@ macro_rules! test_with_all_storage_impls {
             #[tokio::test]
             #[serial]
             async fn [<$function _with_async_redis>]() {
-                let storage = AsyncRedisStorage::new("redis://127.0.0.1:6379").await;
+                let storage = AsyncRedisStorage::new("redis://127.0.0.1:6379").await.expect("We need a Redis running locally");
                 storage.clear().await.unwrap();
                 let rate_limiter = AsyncRateLimiter::new_with_storage(
                     Box::new(storage)
                 );
-                AsyncRedisStorage::new("redis://127.0.0.1:6379").await.clear().await.unwrap();
+                AsyncRedisStorage::new("redis://127.0.0.1:6379").await.expect("We need a Redis running locally").clear().await.unwrap();
                 $function(&mut TestsLimiter::new_from_async_impl(rate_limiter)).await;
             }
 

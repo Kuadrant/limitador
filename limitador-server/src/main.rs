@@ -109,7 +109,13 @@ impl Limiter {
     }
 
     async fn storage_using_async_redis(redis_url: &str) -> AsyncRedisStorage {
-        AsyncRedisStorage::new(redis_url).await
+        match AsyncRedisStorage::new(redis_url).await {
+            Ok(storage) => storage,
+            Err(err) => {
+                eprintln!("Failed to connect to Redis: {}", err);
+                process::exit(1)
+            }
+        }
     }
 
     async fn storage_using_redis_and_local_cache(
