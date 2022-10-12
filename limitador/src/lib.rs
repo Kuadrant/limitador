@@ -25,7 +25,7 @@
 //!
 //! // Custom redis URL
 //! let rate_limiter = RateLimiter::new_with_storage(
-//!     Box::new(RedisStorage::new("redis://127.0.0.1:7777"))
+//!     Box::new(RedisStorage::new("redis://127.0.0.1:7777").unwrap())
 //! );
 //! # }
 //! ```

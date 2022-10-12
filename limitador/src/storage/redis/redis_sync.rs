@@ -139,15 +139,15 @@ impl CounterStorage for RedisStorage {
 }
 
 impl RedisStorage {
-    pub fn new(redis_url: &str) -> Self {
-        let conn_manager = RedisConnectionManager::new(redis_url).unwrap();
+    pub fn new(redis_url: &str) -> Result<Self, RedisError> {
+        let conn_manager = RedisConnectionManager::new(redis_url)?;
         let conn_pool = Pool::builder()
             .connection_timeout(Duration::from_secs(3))
             .max_size(MAX_REDIS_CONNS)
             .build(conn_manager)
             .unwrap();
 
-        Self { conn_pool }
+        Ok(Self { conn_pool })
     }
 }
 
@@ -190,7 +190,7 @@ impl ManageConnection for RedisConnectionManager {
 
 impl Default for RedisStorage {
     fn default() -> Self {
-        Self::new(DEFAULT_REDIS_URL)
+        Self::new(DEFAULT_REDIS_URL).unwrap()
     }
 }
 

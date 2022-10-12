@@ -12,7 +12,7 @@ use crate::storage::redis::{
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
 use redis::aio::ConnectionManager;
-use redis::ConnectionInfo;
+use redis::{ConnectionInfo, RedisError};
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -174,7 +174,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
 }
 
 impl CachedRedisStorage {
-    pub async fn new(redis_url: &str) -> Self {
+    pub async fn new(redis_url: &str) -> Result<Self, RedisError> {
         Self::new_with_options(
             redis_url,
             Some(Duration::from_secs(DEFAULT_FLUSHING_PERIOD_SEC)),
@@ -191,12 +191,9 @@ impl CachedRedisStorage {
         max_cached_counters: usize,
         ttl_cached_counters: Duration,
         ttl_ratio_cached_counters: u64,
-    ) -> Self {
-        let redis_conn_manager = ConnectionManager::new(
-            redis::Client::open(ConnectionInfo::from_str(redis_url).unwrap()).unwrap(),
-        )
-        .await
-        .unwrap();
+    ) -> Result<Self, RedisError> {
+        let info = ConnectionInfo::from_str(redis_url)?;
+        let redis_conn_manager = ConnectionManager::new(redis::Client::open(info).unwrap()).await?;
 
         let async_redis_storage =
             AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone());
@@ -222,13 +219,13 @@ impl CachedRedisStorage {
             .ttl_ratio_cached_counter(ttl_ratio_cached_counters)
             .build();
 
-        Self {
+        Ok(Self {
             cached_counters: Mutex::new(cached_counters),
             batcher_counter_updates: batcher,
             redis_conn_manager,
             async_redis_storage,
             batching_is_enabled: flushing_period.is_some(),
-        }
+        })
     }
 
     async fn values_with_ttls(
@@ -302,7 +299,7 @@ impl CachedRedisStorageBuilder {
         self
     }
 
-    pub async fn build(self) -> CachedRedisStorage {
+    pub async fn build(self) -> Result<CachedRedisStorage, RedisError> {
         CachedRedisStorage::new_with_options(
             &self.redis_url,
             self.flushing_period,
