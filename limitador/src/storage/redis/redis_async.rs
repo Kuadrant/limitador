@@ -173,3 +173,25 @@ impl AsyncRedisStorage {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::storage::redis::AsyncRedisStorage;
+    use redis::ErrorKind;
+
+    #[tokio::test]
+    async fn errs_on_bad_url() {
+        let result = AsyncRedisStorage::new("cassandra://127.0.0.1:6379").await;
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap().kind(), ErrorKind::InvalidClientConfig);
+    }
+
+    #[tokio::test]
+    async fn errs_on_connection_issue() {
+        let result = AsyncRedisStorage::new("redis://127.0.0.1:21").await;
+        assert!(result.is_err());
+        let error = result.err().unwrap();
+        assert_eq!(error.kind(), ErrorKind::IoError);
+        assert!(error.is_connection_refusal())
+    }
+}

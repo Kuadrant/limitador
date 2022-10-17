@@ -310,3 +310,25 @@ impl CachedRedisStorageBuilder {
         .await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::storage::redis::CachedRedisStorage;
+    use redis::ErrorKind;
+
+    #[tokio::test]
+    async fn errs_on_bad_url() {
+        let result = CachedRedisStorage::new("cassandra://127.0.0.1:6379").await;
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap().kind(), ErrorKind::InvalidClientConfig);
+    }
+
+    #[tokio::test]
+    async fn errs_on_connection_issue() {
+        let result = CachedRedisStorage::new("redis://127.0.0.1:21").await;
+        assert!(result.is_err());
+        let error = result.err().unwrap();
+        assert_eq!(error.kind(), ErrorKind::IoError);
+        assert!(error.is_connection_refusal())
+    }
+}

@@ -139,15 +139,21 @@ impl CounterStorage for RedisStorage {
 }
 
 impl RedisStorage {
-    pub fn new(redis_url: &str) -> Result<Self, RedisError> {
-        let conn_manager = RedisConnectionManager::new(redis_url)?;
-        let conn_pool = Pool::builder()
+    pub fn new(redis_url: &str) -> Result<Self, String> {
+        let conn_manager = match RedisConnectionManager::new(redis_url) {
+            Ok(conn_manager) => conn_manager,
+            Err(err) => {
+                return Err(err.to_string());
+            }
+        };
+        match Pool::builder()
             .connection_timeout(Duration::from_secs(3))
             .max_size(MAX_REDIS_CONNS)
             .build(conn_manager)
-            .unwrap();
-
-        Ok(Self { conn_pool })
+        {
+            Ok(conn_pool) => Ok(Self { conn_pool }),
+            Err(err) => Err(err.to_string()),
+        }
     }
 }
 
@@ -199,8 +205,21 @@ mod test {
     use crate::storage::redis::RedisStorage;
 
     #[test]
-    fn create_default() {
-        let _ = RedisStorage::default();
+    fn errs_on_bad_url() {
+        let result = RedisStorage::new("cassandra://127.0.0.1:6379");
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), "Redis URL did not parse".to_string())
+    }
+
+    #[test]
+    fn errs_on_connection_issue() {
+        // this panic!s And I really don't see how to bubble the redis error back up:
+        // r2d2 consumes it
+        // RedisError are not publicly constructable
+        // So using String as error type… sad
+        let result = RedisStorage::new("redis://127.0.0.1:21");
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("Connection refused"));
     }
 
     #[test]
