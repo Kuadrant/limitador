@@ -8,7 +8,7 @@ use crate::storage::keys::*;
 use crate::storage::redis::scripts::SCRIPT_UPDATE_COUNTER;
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
-use redis::AsyncCommands;
+use redis::{AsyncCommands, RedisError};
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::time::Duration;
@@ -145,14 +145,15 @@ impl AsyncCounterStorage for AsyncRedisStorage {
 }
 
 impl AsyncRedisStorage {
-    pub async fn new(redis_url: &str) -> Self {
-        Self {
+    pub async fn new(redis_url: &str) -> Result<Self, RedisError> {
+        let info = ConnectionInfo::from_str(redis_url)?;
+        Ok(Self {
             conn_manager: ConnectionManager::new(
-                redis::Client::open(ConnectionInfo::from_str(redis_url).unwrap()).unwrap(),
+                redis::Client::open(info)
+                    .expect("This couldn't fail in the past, yet now it did somehow!"),
             )
-            .await
-            .unwrap(),
-        }
+            .await?,
+        })
     }
 
     pub fn new_with_conn_manager(conn_manager: ConnectionManager) -> Self {
@@ -171,5 +172,27 @@ impl AsyncRedisStorage {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::storage::redis::AsyncRedisStorage;
+    use redis::ErrorKind;
+
+    #[tokio::test]
+    async fn errs_on_bad_url() {
+        let result = AsyncRedisStorage::new("cassandra://127.0.0.1:6379").await;
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap().kind(), ErrorKind::InvalidClientConfig);
+    }
+
+    #[tokio::test]
+    async fn errs_on_connection_issue() {
+        let result = AsyncRedisStorage::new("redis://127.0.0.1:21").await;
+        assert!(result.is_err());
+        let error = result.err().unwrap();
+        assert_eq!(error.kind(), ErrorKind::IoError);
+        assert!(error.is_connection_refusal())
     }
 }

@@ -109,7 +109,13 @@ impl Limiter {
     }
 
     async fn storage_using_async_redis(redis_url: &str) -> AsyncRedisStorage {
-        AsyncRedisStorage::new(redis_url).await
+        match AsyncRedisStorage::new(redis_url).await {
+            Ok(storage) => storage,
+            Err(err) => {
+                eprintln!("Failed to connect to Redis at {}: {}", redis_url, err);
+                process::exit(1)
+            }
+        }
     }
 
     async fn storage_using_redis_and_local_cache(
@@ -134,7 +140,13 @@ impl Limiter {
         cached_redis_storage = cached_redis_storage.ttl_ratio_cached_counters(cache_cfg.ttl_ratio);
         cached_redis_storage = cached_redis_storage.max_cached_counters(cache_cfg.max_counters);
 
-        cached_redis_storage.build().await
+        match cached_redis_storage.build().await {
+            Ok(storage) => storage,
+            Err(err) => {
+                eprintln!("Failed to connect to Redis at {}: {}", redis_url, err);
+                process::exit(1)
+            }
+        }
     }
 
     #[cfg(feature = "infinispan")]
