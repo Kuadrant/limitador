@@ -213,7 +213,7 @@ mod test {
 
     #[test]
     fn errs_on_connection_issue() {
-        // this panic!s And I really don't see how to bubble the redis error back up:
+        // this used to panic! And I really don't see how to bubble the redis error back up:
         // r2d2 consumes it
         // RedisError are not publicly constructable
         // So using String as error type… sad

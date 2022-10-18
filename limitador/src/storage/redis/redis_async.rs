@@ -149,7 +149,8 @@ impl AsyncRedisStorage {
         let info = ConnectionInfo::from_str(redis_url)?;
         Ok(Self {
             conn_manager: ConnectionManager::new(
-                redis::Client::open(info).expect("Somehow couldn't create Redis client!"),
+                redis::Client::open(info)
+                    .expect("This couldn't fail in the past, yet now it did somehow!"),
             )
             .await?,
         })

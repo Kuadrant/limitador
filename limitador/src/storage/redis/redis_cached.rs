@@ -195,7 +195,7 @@ impl CachedRedisStorage {
         let info = ConnectionInfo::from_str(redis_url)?;
         let redis_conn_manager = ConnectionManager::new(
             redis::Client::open(info)
-                .expect("This couldn't fail in the past, yet not it did somehow!"),
+                .expect("This couldn't fail in the past, yet now it did somehow!"),
         )
         .await?;
 
