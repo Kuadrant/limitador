@@ -193,7 +193,11 @@ impl CachedRedisStorage {
         ttl_ratio_cached_counters: u64,
     ) -> Result<Self, RedisError> {
         let info = ConnectionInfo::from_str(redis_url)?;
-        let redis_conn_manager = ConnectionManager::new(redis::Client::open(info).unwrap()).await?;
+        let redis_conn_manager = ConnectionManager::new(
+            redis::Client::open(info)
+                .expect("This couldn't fail in the past, yet not it did somehow!"),
+        )
+        .await?;
 
         let async_redis_storage =
             AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone());
