@@ -2010,7 +2010,7 @@
   "schemaVersion": 18,
   "style": "dark",
   "tags": [
-    "kuadrant",
+    "3scale",
     "backend"
   ],
   "templating": {
@@ -2149,6 +2149,6 @@
     ]
   },
   "timezone": "",
-  "title": "Kuadrant Limitador",
+  "title": "3scale Limitador",
   "version": 8
 }

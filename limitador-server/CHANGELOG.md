@@ -2,26 +2,6 @@
 
 Notable changes to the Limitador server will be tracked in this document.
 
-## 1.0.0 - 2022-10-21
-
-### Added
-
-- Support for command line arguments and options
-- Validation of the complete environment on start
-- `LIMIT_FILE` is monitored for changes and hot-reloaded
-
-### Changed
-
-- [Syntax for condition](../doc/migrations/conditions.md) within `Limit`s changed
-- Removed the HTTP endpoints to mutate `Limit`s
-- `Limit`s are solely loaded from the `LIMIT_FILE`
-- Only `Counter`s to `Limit`s are persisted, `Limit`s loaded from file are held in memory
-- Duplicated `Limit`s with same namespace, conditions and variables is now impossible
-
-### Removed
-
-- By default, Infinispan support isn't compiled in. Use feature `infinispan` at build time
-
 ## 0.5.1 - 2022-05-25
 
 ### Changed
