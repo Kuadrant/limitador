@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          ref: ${{ github.event.inputs.version }}
+          ref: v${{ github.event.inputs.version }}
       - name: Build
         run: cargo build --verbose --release
       - name: Check
