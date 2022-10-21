@@ -14,6 +14,9 @@ jobs:
     name: Publish Limitador crate to crates.io
     runs-on: ubuntu-latest
     steps:
+      - uses: abelfodil/protoc-action@v1
+        with:
+          protoc-version: '3.19.4'
       - uses: actions/checkout@v3
         with:
           ref: crate-v${{ github.event.inputs.version }}
