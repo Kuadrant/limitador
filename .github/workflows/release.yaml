@@ -30,4 +30,4 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
       - name: Publish
-        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }} -p limitador
+        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }} -p limitador:${{ github.event.inputs.version }}
