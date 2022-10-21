@@ -1,0 +1,28 @@
+---
+name: Release crate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "version (no `v` prefix)"
+        required: true
+        default: "1.0.0"
+
+jobs:
+  publish:
+    name: Publish Limitador crate to crates.io
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: crate-v${{ github.event.inputs.version }}
+      - name: Build
+        run: cargo build --verbose --release
+      - name: Check
+        run: cargo fmt --all -- --check && cargo clippy -- -D warnings
+      - name: Run tests
+        run: cargo test --verbose
+      - name: Publish
+        if: ${{ success() }}
+        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }} -p limitador --dry-run
