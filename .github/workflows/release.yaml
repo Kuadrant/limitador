@@ -17,6 +17,9 @@ jobs:
       - uses: abelfodil/protoc-action@v1
         with:
           protoc-version: '3.19.4'
+      - uses: supercharge/redis-github-action@1.1.0
+        with:
+          redis-version: 5
       - uses: actions/checkout@v3
         with:
           ref: crate-v${{ github.event.inputs.version }}
