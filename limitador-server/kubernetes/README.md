@@ -116,7 +116,7 @@ kubectl apply -f limitador-podmonitor.yaml
 ```
 
 ### Grafana dashboard
-Then, if you have grafana deployed in the cluster, you can import a [Kuadrant Limitador](limitador-grafanadashboard.json) grafana dashboard that we have prepared, which includes:
+Then, if you have grafana deployed in the cluster, you can import a [3scale Limitador](limitador-grafanadashboard.json) grafana dashboard that we have prepared, which includes:
 - Kuard envoyproxy sidecar metrics (globally and per pod)
 - Limitador metrics (globally and per pod)
 - And for every deployed component (limitador, kuard, redis):
