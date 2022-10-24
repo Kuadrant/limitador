@@ -1,0 +1,46 @@
+---
+name: Release server container image
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "version (no `v` prefix)"
+        required: true
+        default: "1.0.0"
+
+env:
+  IMG_REGISTRY_HOST: quay.io
+  IMG_REGISTRY_ORG: kuadrant
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+        with:
+          ref: server-v${{ github.event.inputs.version }}
+      - name: Build Image
+        id: build-image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: limitador
+          tags: v${{ github.event.inputs.version }}
+          dockerfiles: |
+            ./Dockerfile
+          build-args: |
+            GITHUB_SHA=${{ github.sha }}
+      - name: Push Image
+        if: ${{ !env.ACT }}
+        id: push-to-quay
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ${{ steps.build-image.outputs.image }}
+          tags: ${{ github.event.inputs.version }}
+          registry: ${{ env.IMG_REGISTRY_HOST }}/${{ env.IMG_REGISTRY_ORG }}
+          username: ${{ secrets.IMG_REGISTRY_USERNAME }}
+          password: ${{ secrets.IMG_REGISTRY_TOKEN }}
+      - name: Print Image URL
+        run: echo "Image pushed to ${{ steps.push-to-quay.outputs.registry-paths }}"
