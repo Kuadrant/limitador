@@ -2,6 +2,30 @@
 
 Notable changes to Limitador will be tracked in this document.
 
+## 0.3.0 - 2022-10-21
+
+### Added 
+
+ - Infinispan as an alternate storage for counters `feature = "infinispan_storage"`
+ - `lenient_conditions` feature to allow for deprecated `Condition` syntax
+ - Added _not equal_ (`!=`) operator support in `Condition`s
+
+### Changed
+
+ - `Limit`s are now _only_ held in memory, `Counter`s for there are stored using the `Storage` used
+ - `Limit` identity now ignores the `max_value` and `name` field. So that they can be replaced properly
+ - Serialized form for `Limit`s, used to lookup `Counter`s, changed. Upgrading to this version, existing persisted `Counter`s are lost 
+ - New `Condition` syntax within `Limit`s: `KEY_B == 'VALUE_B'`
+ - Simplified some function signatures to avoid explicit lifetimes 
+ - Functions now take `Into<Namespace>` instead of `TryInto` as the conversion can't ever fail
+ - Only require a reference `&Namespace` when ownership over the value isn't needed
+ - Defaults for `(Async)CounterStorage` configurations are now public
+ - Errors when creating a `CounterStorage` or `AsyncCounterStorage` are returned, instead of `panic!`ing
+
+### Deleted
+
+- Merge pull request #130 from Kuadrant/issue_100
+
 ## 0.2.0 - 2021-03-08
 
 ### Added

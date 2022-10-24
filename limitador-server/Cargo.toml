@@ -1,6 +1,6 @@
 [package]
 name = "limitador-server"
-version = "1.0.0-rc1"
+version = "1.0.0"
 authors = ["Alex Snaps <asnaps@redhat.com>", "Eguzki Astiz Lezaun <eguzki@redhat.com>", "David Ortiz <z.david.ortiz@gmail.com>"]
 license = "Apache-2.0"
 keywords = ["rate-limiting", "rate", "limiter", "envoy", "rls"]
