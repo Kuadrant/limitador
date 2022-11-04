@@ -34,7 +34,7 @@ fn set_profile(env: &str) {
 
 fn set_git_hash(env: &str) {
     let git_sha = Command::new("/usr/bin/git")
-        .args(&["rev-parse", "HEAD"])
+        .args(["rev-parse", "HEAD"])
         .output()
         .ok()
         .filter(|output| output.status.success())
@@ -43,7 +43,7 @@ fn set_git_hash(env: &str) {
 
     if let Some(sha) = git_sha {
         let dirty = Command::new("git")
-            .args(&["diff", "--stat"])
+            .args(["diff", "--stat"])
             .output()
             .ok()
             .filter(|output| output.status.success())

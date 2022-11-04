@@ -153,7 +153,7 @@ impl InfinispanStorage {
                 let cache_name = DEFAULT_INFINISPAN_LIMITS_CACHE_NAME;
 
                 let _ = infinispan
-                    .run(&request::caches::create_local(&cache_name))
+                    .run(&request::caches::create_local(cache_name))
                     .await
                     .unwrap();
 
