@@ -37,7 +37,7 @@ impl Storage {
     pub fn new() -> Self {
         Self {
             limits: RwLock::new(HashMap::new()),
-            counters: Box::new(InMemoryStorage::default()),
+            counters: Box::<InMemoryStorage>::default(),
         }
     }
 
