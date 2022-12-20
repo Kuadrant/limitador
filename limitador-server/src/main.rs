@@ -159,7 +159,7 @@ impl Limiter {
         let parsed_url = Url::parse(&cfg.url).unwrap();
 
         let mut builder = InfinispanStorageBuilder::new(
-            &format!(
+            format!(
                 "{}://{}:{}",
                 parsed_url.scheme(),
                 parsed_url.host_str().unwrap(),
