@@ -17,8 +17,8 @@ use crate::limit::Limit;
 
 pub fn key_for_counter(counter: &Counter) -> String {
     format!(
-        "namespace:{{{}}},counter:{}",
-        counter.namespace().as_ref(),
+        "{},counter:{}",
+        prefix_for_namespace(counter.namespace().as_ref()),
         serde_json::to_string(counter).unwrap()
     )
 }
@@ -31,11 +31,12 @@ pub fn key_for_counters_of_limit(limit: &Limit) -> String {
     )
 }
 
-pub fn counter_from_counter_key(key: &str, limit: &Limit) -> Counter {
-    let counter_prefix = "counter:";
-    let start_pos_counter = key.find(counter_prefix).unwrap() + counter_prefix.len();
+pub fn prefix_for_namespace(namespace: &str) -> String {
+    format!("namespace:{{{namespace}}},")
+}
 
-    let mut counter: Counter = serde_json::from_str(&key[start_pos_counter..]).unwrap();
+pub fn counter_from_counter_key(key: &str, limit: &Limit) -> Counter {
+    let mut counter = partial_counter_from_counter_key(key, limit.namespace().as_ref());
     if !counter.update_to_limit(limit) {
         // this means some kind of data corruption _or_ most probably
         // an out of sync `impl PartialEq for Limit` vs `pub fn key_for_counter(counter: &Counter) -> String`
@@ -48,10 +49,23 @@ pub fn counter_from_counter_key(key: &str, limit: &Limit) -> Counter {
     counter
 }
 
+pub fn partial_counter_from_counter_key(key: &str, namespace: &str) -> Counter {
+    let offset = ",counter:".len();
+    let start_pos_counter = prefix_for_namespace(namespace).len() + offset;
+
+    let counter: Counter = serde_json::from_str(&key[start_pos_counter..]).unwrap();
+    counter
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::storage::keys::key_for_counters_of_limit;
+    use crate::counter::Counter;
+    use crate::storage::keys::{
+        key_for_counter, key_for_counters_of_limit, partial_counter_from_counter_key,
+        prefix_for_namespace,
+    };
     use crate::Limit;
+    use std::collections::HashMap;
 
     #[test]
     fn key_for_limit_format() {
@@ -65,5 +79,16 @@ mod tests {
         assert_eq!(
             "namespace:{example.com},counters_of_limit:{\"namespace\":\"example.com\",\"seconds\":60,\"conditions\":[\"req.method == \\\"GET\\\"\"],\"variables\":[\"app_id\"]}",
             key_for_counters_of_limit(&limit))
+    }
+
+    #[test]
+    fn counter_key_and_counter_are_symmetric() {
+        let namespace = "ns_counter:";
+        let limit = Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"]);
+        let counter = Counter::new(limit.clone(), HashMap::default());
+        let raw = key_for_counter(&counter);
+        assert_eq!(counter, partial_counter_from_counter_key(&raw, namespace));
+        let prefix = prefix_for_namespace(namespace);
+        assert_eq!(&raw[0..prefix.len()], &prefix);
     }
 }

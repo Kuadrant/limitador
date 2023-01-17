@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 use thiserror::Error;
 
+pub mod disk;
 pub mod in_memory;
 pub mod wasm;
 
@@ -15,7 +16,6 @@ pub mod redis;
 #[cfg(feature = "infinispan_storage")]
 pub mod infinispan;
 
-#[cfg(any(feature = "redis_storage", feature = "infinispan_storage"))]
 mod keys;
 
 pub enum Authorization {

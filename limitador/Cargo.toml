@@ -29,6 +29,7 @@ async-trait = "0.1"
 cfg-if = "1"
 prometheus = "0.13"
 lazy_static = "1"
+sled = "0.34.7"
 
 # Optional dependencies
 redis = { version = "0.21", optional = true, features = [
@@ -49,6 +50,7 @@ serial_test = "0.9"
 criterion = { version = "0.4", features = ["html_reports"] }
 paste = "1"
 rand = "0.8"
+tempdir = "0.3.7"
 tokio = { version = "1", features = [
     "rt-multi-thread",
     "macros",
