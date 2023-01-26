@@ -22,13 +22,13 @@ fn generate_protobuf() -> Result<(), Box<dyn Error>> {
 
 fn set_features(env: &str) {
     if cfg!(feature = "infinispan") {
-        println!("cargo:rustc-env={}=[+infinispan]", env);
+        println!("cargo:rustc-env={env}=[+infinispan]");
     }
 }
 
 fn set_profile(env: &str) {
     if let Ok(profile) = std::env::var("PROFILE") {
-        println!("cargo:rustc-env={}={}", env, profile);
+        println!("cargo:rustc-env={env}={profile}");
     }
 }
 
@@ -50,14 +50,14 @@ fn set_git_hash(env: &str) {
             .map(|output| !matches!(output.stdout.len(), 0));
 
         match dirty {
-            Some(true) => println!("cargo:rustc-env={}={}-dirty", env, sha),
-            Some(false) => println!("cargo:rustc-env={}={}", env, sha),
+            Some(true) => println!("cargo:rustc-env={env}={sha}-dirty"),
+            Some(false) => println!("cargo:rustc-env={env}={sha}"),
             _ => unreachable!("How can we have a git hash, yet not know if the tree is dirty?"),
         }
     } else {
         let fallback = option_env!("GITHUB_SHA")
             .map(|sha| if sha.len() > 8 { &sha[..8] } else { sha })
             .unwrap_or("NO_SHA");
-        println!("cargo:rustc-env={}={}", env, fallback);
+        println!("cargo:rustc-env={env}={fallback}");
     }
 }

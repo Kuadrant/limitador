@@ -261,7 +261,7 @@ mod tests {
 
         // Read limit created
         let req = test::TestRequest::get()
-            .uri(&format!("/limits/{}", namespace))
+            .uri(&format!("/limits/{namespace}"))
             .data(data.clone())
             .to_request();
         let resp_limits: Vec<Limit> = test::call_and_read_body_json(&app, req).await;

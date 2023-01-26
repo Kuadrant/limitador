@@ -69,7 +69,7 @@ fn bench_in_mem(c: &mut Criterion) {
             BenchmarkId::new("is_rate_limited", scenario),
             scenario,
             |b: &mut Bencher, test_scenario: &&TestScenario| {
-                let storage = Box::new(InMemoryStorage::default());
+                let storage = Box::<limitador::storage::in_memory::InMemoryStorage>::default();
                 bench_is_rate_limited(b, test_scenario, storage);
             },
         );
@@ -77,7 +77,7 @@ fn bench_in_mem(c: &mut Criterion) {
             BenchmarkId::new("update_counters", scenario),
             scenario,
             |b: &mut Bencher, test_scenario: &&TestScenario| {
-                let storage = Box::new(InMemoryStorage::default());
+                let storage = Box::<limitador::storage::in_memory::InMemoryStorage>::default();
                 bench_update_counters(b, test_scenario, storage);
             },
         );
@@ -85,7 +85,7 @@ fn bench_in_mem(c: &mut Criterion) {
             BenchmarkId::new("check_rate_limited_and_update", scenario),
             scenario,
             |b: &mut Bencher, test_scenario: &&TestScenario| {
-                let storage = Box::new(InMemoryStorage::default());
+                let storage = Box::<limitador::storage::in_memory::InMemoryStorage>::default();
                 bench_check_rate_limited_and_update(b, test_scenario, storage);
             },
         );
@@ -101,7 +101,7 @@ fn bench_redis(c: &mut Criterion) {
             BenchmarkId::new("is_rate_limited", scenario),
             scenario,
             |b: &mut Bencher, test_scenario: &&TestScenario| {
-                let storage = Box::new(RedisStorage::default());
+                let storage = Box::<limitador::storage::redis::RedisStorage>::default();
                 bench_is_rate_limited(b, test_scenario, storage);
             },
         );
@@ -109,7 +109,7 @@ fn bench_redis(c: &mut Criterion) {
             BenchmarkId::new("update_counters", scenario),
             scenario,
             |b: &mut Bencher, test_scenario: &&TestScenario| {
-                let storage = Box::new(RedisStorage::default());
+                let storage = Box::<limitador::storage::redis::RedisStorage>::default();
                 bench_update_counters(b, test_scenario, storage);
             },
         );
@@ -117,7 +117,7 @@ fn bench_redis(c: &mut Criterion) {
             BenchmarkId::new("check_rate_limited_and_update", scenario),
             scenario,
             |b: &mut Bencher, test_scenario: &&TestScenario| {
-                let storage = Box::new(RedisStorage::default());
+                let storage = Box::<limitador::storage::redis::RedisStorage>::default();
                 bench_check_rate_limited_and_update(b, test_scenario, storage);
             },
         );
@@ -210,14 +210,14 @@ fn generate_test_data(
 
     let mut conditions = vec![];
     for idx_cond in 0..scenario.n_conds_per_limit {
-        let cond_name = format!("cond_{}", idx_cond);
-        conditions.push(format!("{} == '1'", cond_name));
+        let cond_name = format!("cond_{idx_cond}");
+        conditions.push(format!("{cond_name} == '1'"));
         test_values.insert(cond_name, "1".into());
     }
 
     let mut variables = vec![];
     for idx_var in 0..scenario.n_vars_per_limit {
-        let var_name = format!("var_{}", idx_var);
+        let var_name = format!("var_{idx_var}");
         variables.push(var_name.clone());
         test_values.insert(var_name, "1".into());
     }

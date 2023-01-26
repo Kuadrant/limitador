@@ -112,7 +112,7 @@ impl Limiter {
         match AsyncRedisStorage::new(redis_url).await {
             Ok(storage) => storage,
             Err(err) => {
-                eprintln!("Failed to connect to Redis at {}: {}", redis_url, err);
+                eprintln!("Failed to connect to Redis at {redis_url}: {err}");
                 process::exit(1)
             }
         }
@@ -143,7 +143,7 @@ impl Limiter {
         match cached_redis_storage.build().await {
             Ok(storage) => storage,
             Err(err) => {
-                eprintln!("Failed to connect to Redis at {}: {}", redis_url, err);
+                eprintln!("Failed to connect to Redis at {redis_url}: {err}");
                 process::exit(1)
             }
         }
@@ -229,13 +229,11 @@ impl Limiter {
                             Ok(())
                         }
                         Some(index) => Err(LimitadorServerError::ConfigFile(format!(
-                            ".[{}]: invalid value for `max_value`: positive integer expected",
-                            index
+                            ".[{index}]: invalid value for `max_value`: positive integer expected"
                         ))),
                     },
                     Err(e) => Err(LimitadorServerError::ConfigFile(format!(
-                        "Couldn't parse: {}",
-                        e
+                        "Couldn't parse: {e}"
                     ))),
                 }
             }
@@ -261,7 +259,7 @@ fn find_first_negative_limit(limits: &[Limit]) -> Option<usize> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = {
         let (config, version) = create_config();
-        println!("{} {}", LIMITADOR_HEADER, version);
+        println!("{LIMITADOR_HEADER} {version}");
         let mut builder = Builder::new();
         if let Some(level) = config.log_level {
             builder.filter(None, level);
@@ -282,14 +280,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rate_limiter: Arc<Limiter> = match Limiter::new(config).await {
         Ok(limiter) => Arc::new(limiter),
         Err(e) => {
-            eprintln!("Error: {}", e);
+            eprintln!("Error: {e}");
             process::exit(1)
         }
     };
 
     info!("limits file path: {}", limit_file);
     if let Err(e) = rate_limiter.load_limits_from_file(&limit_file).await {
-        eprintln!("Failed to load limit file: {}", e);
+        eprintln!("Failed to load limit file: {e}");
         process::exit(1)
     }
 
@@ -373,7 +371,7 @@ fn create_config() -> (Configuration, String) {
     let full_version = {
         let build = match LIMITADOR_PROFILE {
             "release" => "".to_owned(),
-            other => format!(" {} build", other),
+            other => format!(" {other} build"),
         };
 
         format!(
@@ -594,8 +592,7 @@ fn create_config() -> (Configuration, String) {
                 match parsed_limits {
                     Ok(limits) => match find_first_negative_limit(&limits) {
                         Some(index) => LimitadorServerError::ConfigFile(format!(
-                            ".[{}]: invalid value for `max_value`: positive integer expected",
-                            index
+                            ".[{index}]: invalid value for `max_value`: positive integer expected"
                         )),
                         None => {
                             if limitador::limit::check_deprecated_syntax_usages_and_reset() {
@@ -606,24 +603,23 @@ fn create_config() -> (Configuration, String) {
                                 limits.iter().map(|l| l.into()).collect();
                             match serde_yaml::to_string(&output) {
                                 Ok(cfg) => {
-                                    println!("{}", cfg);
+                                    println!("{cfg}");
                                 }
                                 Err(err) => {
-                                    eprintln!("Config file is valid, but can't be output: {}", err);
+                                    eprintln!("Config file is valid, but can't be output: {err}");
                                 }
                             }
                             process::exit(0);
                         }
                     },
-                    Err(e) => LimitadorServerError::ConfigFile(format!("Couldn't parse: {}", e)),
+                    Err(e) => LimitadorServerError::ConfigFile(format!("Couldn't parse: {e}")),
                 }
             }
-            Err(e) => LimitadorServerError::ConfigFile(format!(
-                "Couldn't read file '{}': {}",
-                limits_file, e
-            )),
+            Err(e) => {
+                LimitadorServerError::ConfigFile(format!("Couldn't read file '{limits_file}': {e}"))
+            }
         };
-        eprintln!("{}", error);
+        eprintln!("{error}");
         process::exit(1);
     }
 

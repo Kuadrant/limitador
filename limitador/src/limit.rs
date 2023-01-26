@@ -136,8 +136,7 @@ impl TryFrom<String> for Condition {
                                 })
                             } else {
                                 panic!(
-                                    "Unexpected state {:?} returned from Scanner for: `{}`",
-                                    tokens, value
+                                    "Unexpected state {tokens:?} returned from Scanner for: `{value}`"
                                 )
                             }
                         }
@@ -163,8 +162,7 @@ impl TryFrom<String> for Condition {
                                 })
                             } else {
                                 panic!(
-                                    "Unexpected state {:?} returned from Scanner for: `{}`",
-                                    tokens, value
+                                    "Unexpected state {tokens:?} returned from Scanner for: `{value}`"
                                 )
                             }
                         }
@@ -183,8 +181,7 @@ impl TryFrom<String> for Condition {
                                 })
                             } else {
                                 panic!(
-                                    "Unexpected state {:?} returned from Scanner for: `{}`",
-                                    tokens, value
+                                    "Unexpected state {tokens:?} returned from Scanner for: `{value}`"
                                 )
                             }
                         }
@@ -203,8 +200,7 @@ impl TryFrom<String> for Condition {
                                 })
                             } else {
                                 panic!(
-                                    "Unexpected state {:?} returned from Scanner for: `{}`",
-                                    tokens, value
+                                    "Unexpected state {tokens:?} returned from Scanner for: `{value}`"
                                 )
                             }
                         }
@@ -501,9 +497,9 @@ mod conditions {
     impl Display for Literal {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             match self {
-                Literal::Identifier(id) => write!(f, "{}", id),
-                Literal::String(string) => write!(f, "'{}'", string),
-                Literal::Number(number) => write!(f, "{}", number),
+                Literal::Identifier(id) => write!(f, "{id}"),
+                Literal::String(string) => write!(f, "'{string}'"),
+                Literal::Number(number) => write!(f, "{number}"),
             }
         }
     }
@@ -819,9 +815,7 @@ mod conditions {
 
         #[test]
         fn unclosed_string_literal() {
-            let error = Scanner::scan("foo == 'ba".to_owned())
-                .err()
-                .expect("Should fail!");
+            let error = Scanner::scan("foo == 'ba".to_owned()).expect_err("Should fail!");
             assert_eq!(error.pos, 8);
             assert_eq!(error.error, ErrorType::UnclosedStringLiteral('\''));
         }
@@ -993,8 +987,7 @@ mod tests {
     #[test]
     fn invalid_condition_parsing() {
         let result = serde_json::from_str::<Condition>(r#""x != 5 && x > 12""#)
-            .err()
-            .expect("should fail parsing");
+            .expect_err("should fail parsing");
         assert_eq!(
             result.to_string(),
             "SyntaxError: Invalid character `&` at offset 8 of condition \"x != 5 && x > 12\""
