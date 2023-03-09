@@ -23,7 +23,7 @@ jobs:
         if: ${{ github.ref_name == env.MAIN_BRANCH_NAME }}
         id: add-latest-tag
         run: |
-          echo "IMG_TAGS=latest ${{ env.IMG_TAGS }}" >> $GITHUB_ENV
+          echo "IMG_TAGS=latest" >> $GITHUB_ENV
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2        
