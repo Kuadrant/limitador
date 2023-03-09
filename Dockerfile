@@ -3,11 +3,12 @@
 # ------------------------------------------------------------------------------
 
 FROM alpine:3.16 as limitador-build
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
-ARG RUSTC_VERSION=1.63.0
+ARG RUSTC_VERSION=1.67.1
 RUN apk update \
     && apk upgrade \
-    && apk add build-base binutils-gold openssl3-dev protoc protobuf-dev curl \
+    && apk add build-base binutils-gold openssl3-dev protoc protobuf-dev curl git \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --no-modify-path --profile minimal --default-toolchain ${RUSTC_VERSION} -c rustfmt -y
 
 WORKDIR /usr/src/limitador
