@@ -2,9 +2,6 @@ use criterion::{black_box, criterion_group, criterion_main, Bencher, BenchmarkId
 use rand::seq::SliceRandom;
 
 use limitador::limit::Limit;
-use limitador::storage::in_memory::InMemoryStorage;
-#[cfg(feature = "redis")]
-use limitador::storage::redis::RedisStorage;
 use limitador::storage::CounterStorage;
 use limitador::RateLimiter;
 use std::collections::HashMap;
