@@ -13,27 +13,9 @@ RUN apk update \
 
 WORKDIR /usr/src/limitador
 
-COPY ./Cargo.lock ./Cargo.lock
-COPY ./Cargo.toml ./Cargo.toml
-
-COPY limitador/Cargo.toml ./limitador/Cargo.toml
-COPY limitador-server/Cargo.toml ./limitador-server/Cargo.toml
-
 ARG GITHUB_SHA
 ENV GITHUB_SHA=${GITHUB_SHA:-unknown}
 ENV RUSTFLAGS="-C target-feature=-crt-static"
-
-RUN mkdir -p limitador/src limitador-server/src
-
-RUN echo "fn main() {println!(\"if you see this, the build broke\")}" > limitador/src/main.rs \
-    && echo "fn main() {println!(\"if you see this, the build broke\")}" > limitador-server/src/main.rs
-
-RUN source $HOME/.cargo/env \
-    && cargo build --release --all-features
-
-# avoid downloading and compiling all the dependencies when there's a change in
-# our code.
-RUN rm -f target/release/deps/limitador*
 
 COPY . .
 
