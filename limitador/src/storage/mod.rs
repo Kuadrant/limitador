@@ -127,6 +127,17 @@ impl Storage {
         self.counters.check_and_update(counters, delta)
     }
 
+    pub fn load_counters(
+        &self,
+        counters: HashSet<Counter>,
+    ) -> Result<HashSet<Counter>, StorageErr> {
+        let limits: HashSet<Limit> = counters
+            .into_iter()
+            .map(|counter| counter.limit().to_owned())
+            .collect();
+        self.counters.get_counters(&limits)
+    }
+
     pub fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
         match self.limits.read().unwrap().get(namespace) {
             Some(limits) => self.counters.get_counters(limits),
@@ -243,6 +254,17 @@ impl AsyncStorage {
         delta: i64,
     ) -> Result<Authorization, StorageErr> {
         self.counters.check_and_update(counters, delta).await
+    }
+
+    pub async fn load_counters(
+        &self,
+        counters: HashSet<Counter>,
+    ) -> Result<HashSet<Counter>, StorageErr> {
+        let limits: HashSet<Limit> = counters
+            .into_iter()
+            .map(|counter| counter.limit().to_owned())
+            .collect();
+        self.counters.get_counters(limits).await
     }
 
     pub async fn get_counters(

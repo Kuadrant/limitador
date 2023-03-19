@@ -1,3 +1,4 @@
+use crate::envoy_rls::server::envoy::config::core::v3::HeaderValue;
 use crate::envoy_rls::server::envoy::service::ratelimit::v3::rate_limit_response::Code;
 use crate::envoy_rls::server::envoy::service::ratelimit::v3::rate_limit_service_server::{
     RateLimitService, RateLimitServiceServer,
@@ -6,7 +7,8 @@ use crate::envoy_rls::server::envoy::service::ratelimit::v3::{
     RateLimitRequest, RateLimitResponse,
 };
 use crate::Limiter;
-use std::collections::HashMap;
+use limitador::counter::Counter;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tonic::{transport, transport::Server, Request, Response, Status};
 
@@ -62,23 +64,29 @@ impl RateLimitService for MyRateLimiter {
             req.hits_addend
         };
 
-        let is_rate_limited_res = match &*self.limiter {
-            Limiter::Blocking(limiter) => {
-                limiter.check_rate_limited_and_update(&namespace, &values, i64::from(hits_addend))
-            }
+        let rate_limited_resp = match &*self.limiter {
+            Limiter::Blocking(limiter) => limiter.check_rate_limited_and_update_getting_counters(
+                &namespace,
+                &values,
+                i64::from(hits_addend),
+            ),
             Limiter::Async(limiter) => {
                 limiter
-                    .check_rate_limited_and_update(&namespace, &values, i64::from(hits_addend))
+                    .check_rate_limited_and_update_getting_counters(
+                        &namespace,
+                        &values,
+                        i64::from(hits_addend),
+                    )
                     .await
             }
         };
 
-        let resp_code = match is_rate_limited_res {
-            Ok(rate_limited) => {
+        let (resp_code, counters) = match rate_limited_resp {
+            Ok((rate_limited, counters)) => {
                 if rate_limited {
-                    Code::OverLimit
+                    (Code::OverLimit, counters)
                 } else {
-                    Code::Ok
+                    (Code::Ok, counters)
                 }
             }
             Err(e) => {
@@ -100,7 +108,7 @@ impl RateLimitService for MyRateLimiter {
             overall_code: resp_code.into(),
             statuses: vec![],
             request_headers_to_add: vec![],
-            response_headers_to_add: vec![],
+            response_headers_to_add: to_response_header(counters),
             raw_body: vec![],
             dynamic_metadata: None,
             quota: None,
@@ -108,6 +116,39 @@ impl RateLimitService for MyRateLimiter {
 
         Ok(Response::new(reply))
     }
+}
+
+// create response headers per https://datatracker.ietf.org/doc/id/draft-polli-ratelimit-headers-03.html
+pub fn to_response_header(counters: HashSet<Counter>) -> Vec<HeaderValue> {
+    let mut headers = Vec::new();
+
+    counters.into_iter().for_each(|counter| {
+        let mut buf = String::with_capacity(40);
+        let limit = counter.limit().max_value();
+        let window = counter.limit().seconds();
+        buf.push_str(format!("{}, {};w={}", limit, limit, window).as_str());
+
+        if let Some(name) = counter.limit().name() {
+            buf.push_str(format!(";name=\"{}\"", name).as_str());
+        }
+        headers.push(HeaderValue {
+            key: "X-RateLimit-Limit".to_string(),
+            value: buf,
+        });
+        if let Some(remaining) = counter.remaining() {
+            headers.push(HeaderValue {
+                key: "X-RateLimit-Remaining".to_string(),
+                value: format!("{}", remaining),
+            });
+        }
+        if let Some(duration) = counter.expires_in() {
+            headers.push(HeaderValue {
+                key: "X-RateLimit-Reset".to_string(),
+                value: format!("{}", duration.as_secs()),
+            });
+        }
+    });
+    headers
 }
 
 pub async fn run_envoy_rls_server(

@@ -400,6 +400,39 @@ impl RateLimiter {
         }
     }
 
+    pub fn check_rate_limited_and_update_getting_counters(
+        &self,
+        namespace: &Namespace,
+        values: &HashMap<String, String>,
+        delta: i64,
+    ) -> Result<(bool, HashSet<Counter>), LimitadorError> {
+        let counters: HashSet<Counter> = self
+            .counters_that_apply(namespace, values)?
+            .into_iter()
+            .collect();
+
+        if counters.is_empty() {
+            self.prometheus_metrics.incr_authorized_calls(namespace);
+            return Ok((false, HashSet::new()));
+        }
+
+        let check_result = self.storage.check_and_update(counters.clone(), delta)?;
+
+        let counters = self.storage.load_counters(counters)?;
+
+        match check_result {
+            Authorization::Ok => {
+                self.prometheus_metrics.incr_authorized_calls(namespace);
+                Ok((false, counters))
+            }
+            Authorization::Limited(name) => {
+                self.prometheus_metrics
+                    .incr_limited_calls(namespace, name.as_deref());
+                Ok((true, counters))
+            }
+        }
+    }
+
     pub fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, LimitadorError> {
         self.storage
             .get_counters(namespace)
@@ -574,6 +607,41 @@ impl AsyncRateLimiter {
                 self.prometheus_metrics
                     .incr_limited_calls(namespace, name.as_deref());
                 Ok(true)
+            }
+        }
+    }
+
+    pub async fn check_rate_limited_and_update_getting_counters(
+        &self,
+        namespace: &Namespace,
+        values: &HashMap<String, String>,
+        delta: i64,
+    ) -> Result<(bool, HashSet<Counter>), LimitadorError> {
+        // the above where-clause is needed in order to call unwrap().
+        let counters = self.counters_that_apply(namespace, values).await?;
+        let counters: HashSet<Counter> = counters.into_iter().collect();
+
+        if counters.is_empty() {
+            self.prometheus_metrics.incr_authorized_calls(namespace);
+            return Ok((false, HashSet::new()));
+        }
+
+        let check_result = self
+            .storage
+            .check_and_update(counters.clone(), delta)
+            .await?;
+
+        let counters = self.storage.load_counters(counters).await?;
+
+        match check_result {
+            Authorization::Ok => {
+                self.prometheus_metrics.incr_authorized_calls(namespace);
+                Ok((false, counters))
+            }
+            Authorization::Limited(name) => {
+                self.prometheus_metrics
+                    .incr_limited_calls(namespace, name.as_deref());
+                Ok((true, counters))
             }
         }
     }
