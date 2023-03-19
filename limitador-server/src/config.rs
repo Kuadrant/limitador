@@ -18,6 +18,7 @@
 // HTTP_API_HOST: host // just to become HTTP_API_HOST:HTTP_API_PORT as &str
 // HTTP_API_PORT: port
 
+use crate::envoy_rls::server::RateLimitHeaders;
 use log::LevelFilter;
 
 #[derive(Debug)]
@@ -30,6 +31,7 @@ pub struct Configuration {
     http_port: u16,
     pub limit_name_in_labels: bool,
     pub log_level: Option<LevelFilter>,
+    pub rate_limit_headers: RateLimitHeaders,
 }
 
 impl Configuration {
@@ -37,6 +39,7 @@ impl Configuration {
     pub const DEFAULT_HTTP_PORT: &'static str = "8080";
     pub const DEFAULT_IP_BIND: &'static str = "0.0.0.0";
 
+    #[allow(clippy::too_many_arguments)]
     pub fn with(
         storage: StorageConfiguration,
         limits_file: String,
@@ -45,6 +48,7 @@ impl Configuration {
         http_host: String,
         http_port: u16,
         limit_name_in_labels: bool,
+        rate_limit_headers: RateLimitHeaders,
     ) -> Self {
         Self {
             limits_file,
@@ -55,6 +59,7 @@ impl Configuration {
             http_port,
             limit_name_in_labels,
             log_level: None,
+            rate_limit_headers,
         }
     }
 
@@ -79,6 +84,7 @@ impl Default for Configuration {
             http_port: 0,
             limit_name_in_labels: false,
             log_level: None,
+            rate_limit_headers: RateLimitHeaders::None,
         }
     }
 }

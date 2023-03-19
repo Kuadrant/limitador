@@ -1,3 +1,12 @@
+use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use tonic::{transport, transport::Server, Request, Response, Status};
+
+use limitador::counter::Counter;
+
+use crate::envoy_rls::server::envoy::config::core::v3::HeaderValue;
 use crate::envoy_rls::server::envoy::service::ratelimit::v3::rate_limit_response::Code;
 use crate::envoy_rls::server::envoy::service::ratelimit::v3::rate_limit_service_server::{
     RateLimitService, RateLimitServiceServer,
@@ -6,19 +15,26 @@ use crate::envoy_rls::server::envoy::service::ratelimit::v3::{
     RateLimitRequest, RateLimitResponse,
 };
 use crate::Limiter;
-use std::collections::HashMap;
-use std::sync::Arc;
-use tonic::{transport, transport::Server, Request, Response, Status};
 
 include!("envoy_types.rs");
 
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub enum RateLimitHeaders {
+    None,
+    DraftVersion03,
+}
+
 pub struct MyRateLimiter {
     limiter: Arc<Limiter>,
+    rate_limit_headers: RateLimitHeaders,
 }
 
 impl MyRateLimiter {
-    pub fn new(limiter: Arc<Limiter>) -> Self {
-        Self { limiter }
+    pub fn new(limiter: Arc<Limiter>, rate_limit_headers: RateLimitHeaders) -> Self {
+        Self {
+            limiter,
+            rate_limit_headers,
+        }
     }
 }
 
@@ -62,45 +78,54 @@ impl RateLimitService for MyRateLimiter {
             req.hits_addend
         };
 
-        let is_rate_limited_res = match &*self.limiter {
-            Limiter::Blocking(limiter) => {
-                limiter.check_rate_limited_and_update(&namespace, &values, i64::from(hits_addend))
-            }
+        let rate_limited_resp = match &*self.limiter {
+            Limiter::Blocking(limiter) => limiter.check_rate_limited_and_update_getting_counters(
+                &namespace,
+                &values,
+                i64::from(hits_addend),
+                self.rate_limit_headers != RateLimitHeaders::None,
+            ),
             Limiter::Async(limiter) => {
                 limiter
-                    .check_rate_limited_and_update(&namespace, &values, i64::from(hits_addend))
+                    .check_rate_limited_and_update_getting_counters(
+                        &namespace,
+                        &values,
+                        i64::from(hits_addend),
+                        self.rate_limit_headers != RateLimitHeaders::None,
+                    )
                     .await
             }
         };
 
-        let resp_code = match is_rate_limited_res {
-            Ok(rate_limited) => {
-                if rate_limited {
-                    Code::OverLimit
-                } else {
-                    Code::Ok
-                }
-            }
-            Err(e) => {
-                // In this case we could return "Code::Unknown" but that's not
-                // very helpful. When envoy receives "Unknown" it simply lets
-                // the request pass and this cannot be configured using the
-                // "failure_mode_deny" attribute, so it's equivalent to
-                // returning "Code::Ok". That's why we return an "unavailable"
-                // error here. What envoy does after receiving that kind of
-                // error can be configured with "failure_mode_deny". The only
-                // errors that can happen here have to do with connecting to the
-                // limits storage, which should be temporary.
-                error!("Error: {:?}", e);
-                return Err(Status::unavailable("Service unavailable"));
-            }
+        if let Err(e) = rate_limited_resp {
+            // In this case we could return "Code::Unknown" but that's not
+            // very helpful. When envoy receives "Unknown" it simply lets
+            // the request pass and this cannot be configured using the
+            // "failure_mode_deny" attribute, so it's equivalent to
+            // returning "Code::Ok". That's why we return an "unavailable"
+            // error here. What envoy does after receiving that kind of
+            // error can be configured with "failure_mode_deny". The only
+            // errors that can happen here have to do with connecting to the
+            // limits storage, which should be temporary.
+            error!("Error: {:?}", e);
+            return Err(Status::unavailable("Service unavailable"));
+        }
+
+        let mut rate_limited_resp = rate_limited_resp.unwrap();
+        let resp_code = if rate_limited_resp.limited {
+            Code::OverLimit
+        } else {
+            Code::Ok
         };
 
         let reply = RateLimitResponse {
             overall_code: resp_code.into(),
             statuses: vec![],
             request_headers_to_add: vec![],
-            response_headers_to_add: vec![],
+            response_headers_to_add: to_response_header(
+                &self.rate_limit_headers,
+                &mut rate_limited_resp.counters,
+            ),
             raw_body: vec![],
             dynamic_metadata: None,
             quota: None,
@@ -110,11 +135,71 @@ impl RateLimitService for MyRateLimiter {
     }
 }
 
+pub fn to_response_header(
+    rate_limit_headers: &RateLimitHeaders,
+    counters: &mut Vec<Counter>,
+) -> Vec<HeaderValue> {
+    let mut headers = Vec::new();
+    match rate_limit_headers {
+        RateLimitHeaders::None => {}
+
+        // creates response headers per https://datatracker.ietf.org/doc/id/draft-polli-ratelimit-headers-03.html
+        RateLimitHeaders::DraftVersion03 => {
+            // sort by the limit remaining..
+            counters.sort_by(|a, b| {
+                let a_remaining = a.remaining().unwrap_or(a.max_value());
+                let b_remaining = b.remaining().unwrap_or(b.max_value());
+                if a_remaining - b_remaining < 0 {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            });
+
+            let mut all_limits_text = String::with_capacity(20 * counters.len());
+            counters.iter_mut().for_each(|counter| {
+                all_limits_text.push_str(
+                    format!(", {};w={}", counter.max_value(), counter.seconds()).as_str(),
+                );
+                if let Some(name) = counter.limit().name() {
+                    all_limits_text
+                        .push_str(format!(";name=\"{}\"", name.replace('"', "'")).as_str());
+                }
+            });
+
+            if let Some(counter) = counters.first() {
+                headers.push(HeaderValue {
+                    key: "X-RateLimit-Limit".to_string(),
+                    value: format!("{}{}", counter.max_value(), all_limits_text),
+                });
+
+                let mut remaining = counter.remaining().unwrap_or(counter.max_value());
+                if remaining < 0 {
+                    remaining = 0
+                }
+                headers.push(HeaderValue {
+                    key: "X-RateLimit-Remaining".to_string(),
+                    value: format!("{}", remaining),
+                });
+
+                if let Some(duration) = counter.expires_in() {
+                    headers.push(HeaderValue {
+                        key: "X-RateLimit-Reset".to_string(),
+                        value: format!("{}", duration.as_secs()),
+                    });
+                }
+            }
+        }
+    };
+    headers
+}
+
 pub async fn run_envoy_rls_server(
     address: String,
     limiter: Arc<Limiter>,
+    rate_limit_headers: RateLimitHeaders,
 ) -> Result<(), transport::Error> {
-    let rate_limiter = MyRateLimiter::new(limiter);
+    let rate_limiter = MyRateLimiter::new(limiter, rate_limit_headers);
     let svc = RateLimitServiceServer::new(rate_limiter);
 
     Server::builder()
@@ -125,13 +210,23 @@ pub async fn run_envoy_rls_server(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use tonic::IntoRequest;
+
+    use limitador::limit::Limit;
+    use limitador::RateLimiter;
+
     use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::rate_limit_descriptor::Entry;
     use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::RateLimitDescriptor;
     use crate::Configuration;
-    use limitador::limit::Limit;
-    use limitador::RateLimiter;
-    use tonic::IntoRequest;
+
+    use super::*;
+
+    fn header_value(key: &str, value: &str) -> HeaderValue {
+        HeaderValue {
+            key: key.to_string(),
+            value: value.to_string(),
+        }
+    }
 
     // All these tests use the in-memory storage implementation to simplify. We
     // know that some storage implementations like the Redis one trade
@@ -154,7 +249,10 @@ mod tests {
         let limiter = RateLimiter::default();
         limiter.add_limit(limit);
 
-        let rate_limiter = MyRateLimiter::new(Arc::new(Limiter::Blocking(limiter)));
+        let rate_limiter = MyRateLimiter::new(
+            Arc::new(Limiter::Blocking(limiter)),
+            RateLimitHeaders::DraftVersion03,
+        );
 
         let req = RateLimitRequest {
             domain: namespace.to_string(),
@@ -177,33 +275,42 @@ mod tests {
         // There's a limit of 1, so the first request should return "OK" and the
         // second "OverLimit".
 
+        let response = rate_limiter
+            .should_rate_limit(req.clone().into_request())
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(response.overall_code, i32::from(Code::Ok));
         assert_eq!(
-            rate_limiter
-                .should_rate_limit(req.clone().into_request())
-                .await
-                .unwrap()
-                .into_inner()
-                .overall_code,
-            i32::from(Code::Ok)
+            response.response_headers_to_add,
+            vec![
+                header_value("X-RateLimit-Limit", "1, 1;w=60"),
+                header_value("X-RateLimit-Remaining", "0"),
+            ],
         );
 
+        let response = rate_limiter
+            .should_rate_limit(req.clone().into_request())
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(response.overall_code, i32::from(Code::OverLimit));
         assert_eq!(
-            rate_limiter
-                .should_rate_limit(req.clone().into_request())
-                .await
-                .unwrap()
-                .into_inner()
-                .overall_code,
-            i32::from(Code::OverLimit)
+            response.response_headers_to_add,
+            vec![
+                header_value("X-RateLimit-Limit", "1, 1;w=60"),
+                header_value("X-RateLimit-Remaining", "0"),
+            ],
         );
     }
 
     #[tokio::test]
     async fn test_returns_ok_when_no_limits_apply() {
         // No limits saved
-        let rate_limiter = MyRateLimiter::new(Arc::new(
-            Limiter::new(Configuration::default()).await.unwrap(),
-        ));
+        let rate_limiter = MyRateLimiter::new(
+            Arc::new(Limiter::new(Configuration::default()).await.unwrap()),
+            RateLimitHeaders::DraftVersion03,
+        );
 
         let req = RateLimitRequest {
             domain: "test_namespace".to_string(),
@@ -218,22 +325,22 @@ mod tests {
         }
         .into_request();
 
-        assert_eq!(
-            rate_limiter
-                .should_rate_limit(req)
-                .await
-                .unwrap()
-                .into_inner()
-                .overall_code,
-            i32::from(Code::Ok)
-        );
+        let response = rate_limiter
+            .should_rate_limit(req)
+            .await
+            .unwrap()
+            .into_inner();
+
+        assert_eq!(response.overall_code, i32::from(Code::Ok));
+        assert_eq!(response.response_headers_to_add, vec![],);
     }
 
     #[tokio::test]
     async fn test_returns_unknown_when_domain_is_empty() {
-        let rate_limiter = MyRateLimiter::new(Arc::new(
-            Limiter::new(Configuration::default()).await.unwrap(),
-        ));
+        let rate_limiter = MyRateLimiter::new(
+            Arc::new(Limiter::new(Configuration::default()).await.unwrap()),
+            RateLimitHeaders::DraftVersion03,
+        );
 
         let req = RateLimitRequest {
             domain: "".to_string(),
@@ -248,15 +355,13 @@ mod tests {
         }
         .into_request();
 
-        assert_eq!(
-            rate_limiter
-                .should_rate_limit(req)
-                .await
-                .unwrap()
-                .into_inner()
-                .overall_code,
-            i32::from(Code::Unknown)
-        );
+        let response = rate_limiter
+            .should_rate_limit(req)
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(response.overall_code, i32::from(Code::Unknown));
+        assert_eq!(response.response_headers_to_add, vec![],);
     }
 
     #[tokio::test]
@@ -274,7 +379,10 @@ mod tests {
             limiter.add_limit(limit);
         });
 
-        let rate_limiter = MyRateLimiter::new(Arc::new(Limiter::Blocking(limiter)));
+        let rate_limiter = MyRateLimiter::new(
+            Arc::new(Limiter::Blocking(limiter)),
+            RateLimitHeaders::DraftVersion03,
+        );
 
         let req = RateLimitRequest {
             domain: namespace.to_string(),
@@ -305,14 +413,19 @@ mod tests {
             hits_addend: 1,
         };
 
+        let response = rate_limiter
+            .should_rate_limit(req.clone().into_request())
+            .await
+            .unwrap()
+            .into_inner();
+
+        assert_eq!(response.overall_code, i32::from(Code::OverLimit));
         assert_eq!(
-            rate_limiter
-                .should_rate_limit(req.clone().into_request())
-                .await
-                .unwrap()
-                .into_inner()
-                .overall_code,
-            i32::from(Code::OverLimit)
+            response.response_headers_to_add,
+            vec![
+                header_value("X-RateLimit-Limit", "0, 0;w=60, 10;w=60"),
+                header_value("X-RateLimit-Remaining", "0"),
+            ],
         );
     }
 
@@ -324,7 +437,10 @@ mod tests {
         let limiter = RateLimiter::default();
         limiter.add_limit(limit);
 
-        let rate_limiter = MyRateLimiter::new(Arc::new(Limiter::Blocking(limiter)));
+        let rate_limiter = MyRateLimiter::new(
+            Arc::new(Limiter::Blocking(limiter)),
+            RateLimitHeaders::DraftVersion03,
+        );
 
         let req = RateLimitRequest {
             domain: namespace.to_string(),
@@ -347,24 +463,32 @@ mod tests {
         // There's a limit of 10, "hits_addend" is 6, so the first request
         // should return "Ok" and the second "OverLimit".
 
+        let response = rate_limiter
+            .should_rate_limit(req.clone().into_request())
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(response.overall_code, i32::from(Code::Ok));
         assert_eq!(
-            rate_limiter
-                .should_rate_limit(req.clone().into_request())
-                .await
-                .unwrap()
-                .into_inner()
-                .overall_code,
-            i32::from(Code::Ok)
+            response.response_headers_to_add,
+            vec![
+                header_value("X-RateLimit-Limit", "10, 10;w=60"),
+                header_value("X-RateLimit-Remaining", "4"),
+            ],
         );
 
+        let response = rate_limiter
+            .should_rate_limit(req.clone().into_request())
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(response.overall_code, i32::from(Code::OverLimit));
         assert_eq!(
-            rate_limiter
-                .should_rate_limit(req.clone().into_request())
-                .await
-                .unwrap()
-                .into_inner()
-                .overall_code,
-            i32::from(Code::OverLimit)
+            response.response_headers_to_add,
+            vec![
+                header_value("X-RateLimit-Limit", "10, 10;w=60"),
+                header_value("X-RateLimit-Remaining", "0"),
+            ],
         );
     }
 
@@ -378,7 +502,10 @@ mod tests {
         let limiter = RateLimiter::default();
         limiter.add_limit(limit);
 
-        let rate_limiter = MyRateLimiter::new(Arc::new(Limiter::Blocking(limiter)));
+        let rate_limiter = MyRateLimiter::new(
+            Arc::new(Limiter::Blocking(limiter)),
+            RateLimitHeaders::DraftVersion03,
+        );
 
         let req = RateLimitRequest {
             domain: namespace.to_string(),
@@ -401,24 +528,32 @@ mod tests {
         // There's a limit of 1, and hits_addend is converted to 1, so the first
         // request should return "OK" and the second "OverLimit".
 
+        let response = rate_limiter
+            .should_rate_limit(req.clone().into_request())
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(response.overall_code, i32::from(Code::Ok));
         assert_eq!(
-            rate_limiter
-                .should_rate_limit(req.clone().into_request())
-                .await
-                .unwrap()
-                .into_inner()
-                .overall_code,
-            i32::from(Code::Ok)
+            response.response_headers_to_add,
+            vec![
+                header_value("X-RateLimit-Limit", "1, 1;w=60"),
+                header_value("X-RateLimit-Remaining", "0"),
+            ],
         );
 
+        let response = rate_limiter
+            .should_rate_limit(req.clone().into_request())
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(response.overall_code, i32::from(Code::OverLimit));
         assert_eq!(
-            rate_limiter
-                .should_rate_limit(req.clone().into_request())
-                .await
-                .unwrap()
-                .into_inner()
-                .overall_code,
-            i32::from(Code::OverLimit)
+            response.response_headers_to_add,
+            vec![
+                header_value("X-RateLimit-Limit", "1, 1;w=60"),
+                header_value("X-RateLimit-Remaining", "0"),
+            ],
         );
     }
 }

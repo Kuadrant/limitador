@@ -65,23 +65,34 @@ impl AsyncCounterStorage for CachedRedisStorage {
     // This function trades accuracy for speed.
     async fn check_and_update(
         &self,
-        counters: HashSet<Counter>,
+        counters: &mut Vec<Counter>,
         delta: i64,
+        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let mut con = self.redis_conn_manager.clone();
 
-        let mut not_cached: Vec<&Counter> = vec![];
+        let mut not_cached: Vec<&mut Counter> = vec![];
+        let mut first_limited = None;
 
         // Check cached counters
         {
             let cached_counters = self.cached_counters.lock().await;
-            for counter in counters.iter() {
+            for counter in counters.iter_mut() {
                 match cached_counters.get(counter) {
                     Some(val) => {
-                        if val - delta < 0 {
-                            return Ok(Authorization::Limited(
+                        if first_limited.is_none() && val - delta < 0 {
+                            let a = Authorization::Limited(
                                 counter.limit().name().map(|n| n.to_owned()),
-                            ));
+                            );
+                            if !load_counters {
+                                return Ok(a);
+                            }
+                            first_limited = Some(a);
+                        }
+                        if load_counters {
+                            counter.set_remaining(val);
+                            // todo: how do we get the ttl for this entry?
+                            // counter.set_expires_in(Duration::from_secs(counter.seconds()));
                         }
                     }
                     None => {
@@ -107,34 +118,29 @@ impl AsyncCounterStorage for CachedRedisStorage {
 
             {
                 let mut cached_counters = self.cached_counters.lock().await;
-                for (i, &counter) in not_cached.iter().enumerate() {
+                for (i, counter) in not_cached.iter_mut().enumerate() {
                     cached_counters.insert(
                         counter.clone(),
                         counter_vals[i],
                         counter_ttls_msecs[i],
                         ttl_margin,
                     );
+                    let remaining = counter_vals[i].unwrap_or(counter.max_value()) - delta;
+                    if first_limited.is_none() && remaining < 0 {
+                        first_limited = Some(Authorization::Limited(
+                            counter.limit().name().map(|n| n.to_owned()),
+                        ));
+                    }
+                    if load_counters {
+                        counter.set_remaining(remaining);
+                        counter.set_expires_in(Duration::from_millis(counter_ttls_msecs[i] as u64));
+                    }
                 }
             }
+        }
 
-            for (i, counter) in not_cached.into_iter().enumerate() {
-                match counter_vals[i] {
-                    Some(val) => {
-                        if val - delta < 0 {
-                            return Ok(Authorization::Limited(
-                                counter.limit().name().map(|n| n.to_owned()),
-                            ));
-                        }
-                    }
-                    None => {
-                        if counter.max_value() - delta < 0 {
-                            return Ok(Authorization::Limited(
-                                counter.limit().name().map(|n| n.to_owned()),
-                            ));
-                        }
-                    }
-                }
-            }
+        if let Some(l) = first_limited {
+            return Ok(l);
         }
 
         // Update cached values
@@ -148,12 +154,12 @@ impl AsyncCounterStorage for CachedRedisStorage {
         // Batch or update depending on configuration
         if self.batching_is_enabled {
             let batcher = self.batcher_counter_updates.lock().await;
-            for counter in counters {
-                batcher.add_counter(&counter, delta).await
+            for counter in counters.iter() {
+                batcher.add_counter(counter, delta).await
             }
         } else {
-            for counter in counters {
-                self.update_counter(&counter, delta).await?
+            for counter in counters.iter() {
+                self.update_counter(counter, delta).await?
             }
         }
 
@@ -233,7 +239,7 @@ impl CachedRedisStorage {
     }
 
     async fn values_with_ttls(
-        counters: &[&Counter],
+        counters: &[&mut Counter],
         redis_con: &mut ConnectionManager,
     ) -> Result<(Vec<Option<i64>>, Vec<i64>), StorageErr> {
         let counter_keys: Vec<String> = counters

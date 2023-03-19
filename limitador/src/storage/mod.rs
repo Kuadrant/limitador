@@ -121,10 +121,12 @@ impl Storage {
 
     pub fn check_and_update(
         &self,
-        counters: HashSet<Counter>,
+        counters: &mut Vec<Counter>,
         delta: i64,
+        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
-        self.counters.check_and_update(counters, delta)
+        self.counters
+            .check_and_update(counters, delta, load_counters)
     }
 
     pub fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
@@ -239,10 +241,13 @@ impl AsyncStorage {
 
     pub async fn check_and_update(
         &self,
-        counters: HashSet<Counter>,
+        counters: &mut Vec<Counter>,
         delta: i64,
+        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
-        self.counters.check_and_update(counters, delta).await
+        self.counters
+            .check_and_update(counters, delta, load_counters)
+            .await
     }
 
     pub async fn get_counters(
@@ -264,8 +269,9 @@ pub trait CounterStorage: Sync + Send {
     fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
     fn check_and_update(
         &self,
-        counters: HashSet<Counter>,
+        counters: &mut Vec<Counter>,
         delta: i64,
+        load_counters: bool,
     ) -> Result<Authorization, StorageErr>;
     fn get_counters(&self, limits: &HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr>;
     fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr>;
@@ -278,8 +284,9 @@ pub trait AsyncCounterStorage: Sync + Send {
     async fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
     async fn check_and_update(
         &self,
-        counters: HashSet<Counter>,
+        counters: &mut Vec<Counter>,
         delta: i64,
+        load_counters: bool,
     ) -> Result<Authorization, StorageErr>;
     async fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr>;
     async fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr>;

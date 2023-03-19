@@ -5,7 +5,8 @@ use self::redis::ConnectionInfo;
 use crate::counter::Counter;
 use crate::limit::Limit;
 use crate::storage::keys::*;
-use crate::storage::redis::scripts::SCRIPT_UPDATE_COUNTER;
+use crate::storage::redis::is_limited;
+use crate::storage::redis::scripts::{SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS};
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
 use redis::{AsyncCommands, RedisError};
@@ -58,40 +59,44 @@ impl AsyncCounterStorage for AsyncRedisStorage {
 
     async fn check_and_update(
         &self,
-        counters: HashSet<Counter>,
+        counters: &mut Vec<Counter>,
         delta: i64,
+        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let mut con = self.conn_manager.clone();
-
         let counter_keys: Vec<String> = counters.iter().map(key_for_counter).collect();
 
-        let counter_vals: Vec<Option<i64>> = redis::cmd("MGET")
-            .arg(counter_keys)
-            .query_async(&mut con)
-            .await?;
+        if load_counters {
+            let script = redis::Script::new(VALUES_AND_TTLS);
+            let mut script_invocation = script.prepare_invoke();
 
-        for (i, counter) in counters.iter().enumerate() {
-            match counter_vals[i] {
-                Some(val) => {
-                    if val - delta < 0 {
-                        return Ok(Authorization::Limited(
-                            counter.limit().name().map(|n| n.to_owned()),
-                        ));
-                    }
-                }
-                None => {
-                    if counter.max_value() - delta < 0 {
-                        return Ok(Authorization::Limited(
-                            counter.limit().name().map(|n| n.to_owned()),
-                        ));
-                    }
+            for counter_key in counter_keys {
+                script_invocation.key(counter_key);
+            }
+
+            let script_res: Vec<Option<i64>> = script_invocation.invoke_async(&mut con).await?;
+            if let Some(res) = is_limited(counters, delta, script_res) {
+                return Ok(res);
+            }
+        } else {
+            let counter_vals: Vec<Option<i64>> = redis::cmd("MGET")
+                .arg(counter_keys)
+                .query_async(&mut con)
+                .await?;
+
+            for (i, counter) in counters.iter().enumerate() {
+                let remaining = counter_vals[i].unwrap_or(counter.max_value()) - delta;
+                if remaining < 0 {
+                    return Ok(Authorization::Limited(
+                        counter.limit().name().map(|n| n.to_owned()),
+                    ));
                 }
             }
         }
 
         // TODO: this can be optimized by using pipelines with multiple updates
         for counter in counters {
-            self.update_counter(&counter, delta).await?
+            self.update_counter(counter, delta).await?
         }
 
         Ok(Authorization::Ok)

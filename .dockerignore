@@ -3,3 +3,6 @@ Dockerfile
 *.swp
 .dockerignore
 .git
+
+# OSX files
+.DS_Store

@@ -6,21 +6,43 @@ The preferred way of starting and configuring the Limitador server is using the 
 
 ```
 USAGE:
-    limitador-server [OPTIONS] <LIMITS_FILE> [STORAGE]
+    limitador-server [OPTIONS] [LIMITS_FILE] [STORAGE]
 
 ARGS:
-    <LIMITS_FILE>    The limit file to use
+    <LIMITS_FILE>    The limit file to use [default:
+                     ../apex/deploy/nexodus/components/limitador/files/limits.yaml]
 
 OPTIONS:
-    -b, --rls-ip <ip>              The IP to listen on for RLS [default: 0.0.0.0]
-    -p, --rls-port <port>          The port to listen on for RLS [default: 8081]
-    -B, --http-ip <http_ip>        The IP to listen on for HTTP [default: 0.0.0.0]
-    -P, --http-port <http_port>    The port to listen on for HTTP [default: 8080]
-    -l, --limit-name-in-labels     Include the Limit Name in prometheus label
-    -v                             Sets the level of verbosity
-        --validate                 Validates the LIMITS_FILE and exits
-    -h, --help                     Print help information
-    -V, --version                  Print version information
+    -b, --rls-ip <ip>
+            The IP to listen on for RLS [default: 0.0.0.0]
+
+    -p, --rls-port <port>
+            The port to listen on for RLS [default: 8081]
+
+    -B, --http-ip <http_ip>
+            The IP to listen on for HTTP [default: 0.0.0.0]
+
+    -P, --http-port <http_port>
+            The port to listen on for HTTP [default: 8080]
+
+    -l, --limit-name-in-labels
+            Include the Limit Name in prometheus label
+
+    -v
+            Sets the level of verbosity
+
+        --validate
+            Validates the LIMITS_FILE and exits
+
+    -H, --rate-limit-headers <rate_limit_headers>
+            Enables rate limit response headers [default: NONE] [possible values: NONE,
+            DRAFT_VERSION_03]
+
+    -h, --help
+            Print help information
+
+    -V, --version
+            Print version information
 
 STORAGES:
     memory          Counters are held in Limitador (ephemeral)
@@ -319,3 +341,13 @@ require Redis.
 - Optional. By default, Limitador stores the limits in memory and does not
   require Infinispan.
 - Format: `URL`, in the format of `http://username:password@127.0.0.1:11222`.
+
+
+#### `RATE_LIMIT_HEADERS`
+
+- Enables rate limit response headers. Only supported by the RLS server.
+- Optional. Defaults to `"NONE"`.
+- Must be one of: 
+  - `"NONE"` - Does not add any additional headers to the http response. 
+  - `"DRAFT_VERSION_03"`.  Adds response headers per https://datatracker.ietf.org/doc/id/draft-polli-ratelimit-headers-03.html
+    

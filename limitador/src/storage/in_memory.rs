@@ -31,22 +31,40 @@ impl CounterStorage for InMemoryStorage {
 
     fn check_and_update(
         &self,
-        counters: HashSet<Counter>,
+        counters: &mut Vec<Counter>,
         delta: i64,
+        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         // This makes the operator of check + update atomic
         let mut stored_counters = self.counters.write().unwrap();
 
-        for counter in counters.iter() {
-            if !Self::counter_is_within_limits(counter, stored_counters.get(counter), delta) {
-                return Ok(Authorization::Limited(
-                    counter.limit().name().map(|n| n.to_owned()),
-                ));
+        if load_counters {
+            let mut first_limited = None;
+            for counter in counters.iter_mut() {
+                let remaining =
+                    *stored_counters.get(counter).unwrap_or(&counter.max_value()) - delta;
+                counter.set_remaining(remaining);
+                if first_limited.is_none() && remaining < 0 {
+                    first_limited = Some(Authorization::Limited(
+                        counter.limit().name().map(|n| n.to_owned()),
+                    ))
+                }
+            }
+            if let Some(l) = first_limited {
+                return Ok(l);
+            }
+        } else {
+            for counter in counters.iter() {
+                if !Self::counter_is_within_limits(counter, stored_counters.get(counter), delta) {
+                    return Ok(Authorization::Limited(
+                        counter.limit().name().map(|n| n.to_owned()),
+                    ));
+                }
             }
         }
 
         for counter in counters {
-            self.insert_or_update_counter(&mut stored_counters, &counter, delta)
+            self.insert_or_update_counter(&mut stored_counters, counter, delta)
         }
 
         Ok(Authorization::Ok)

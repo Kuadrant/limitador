@@ -9,7 +9,7 @@ use crate::config::InfinispanStorageConfiguration;
 use crate::config::{
     Configuration, RedisStorageCacheConfiguration, RedisStorageConfiguration, StorageConfiguration,
 };
-use crate::envoy_rls::server::run_envoy_rls_server;
+use crate::envoy_rls::server::{run_envoy_rls_server, RateLimitHeaders};
 use crate::http_api::server::run_http_server;
 use clap::{App, Arg, SubCommand};
 use env_logger::Builder;
@@ -276,6 +276,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let limit_file = config.limits_file.clone();
     let envoy_rls_address = config.rlp_address();
     let http_api_address = config.http_address();
+    let rate_limit_headers = config.rate_limit_headers.clone();
 
     let rate_limiter: Arc<Limiter> = match Limiter::new(config).await {
         Ok(limiter) => Arc::new(limiter),
@@ -363,6 +364,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(run_envoy_rls_server(
         envoy_rls_address.to_string(),
         rate_limiter.clone(),
+        rate_limit_headers,
     ));
 
     info!("HTTP server starting on {}", http_api_address);
@@ -416,6 +418,8 @@ fn create_config() -> (Configuration, String) {
     #[cfg(feature = "infinispan")]
     let infinispan_consistency_default = env::var("INFINISPAN_COUNTERS_CONSISTENCY")
         .unwrap_or_else(|_| DEFAULT_INFINISPAN_CONSISTENCY.to_string());
+
+    let rate_limit_headers_default = env::var("RATE_LIMIT_HEADERS").unwrap_or("NONE".to_string());
 
     // wire args based of defaults
     let limit_arg = Arg::with_name("LIMITS_FILE")
@@ -497,6 +501,18 @@ fn create_config() -> (Configuration, String) {
                 .long("validate")
                 .display_order(7)
                 .help("Validates the LIMITS_FILE and exits"),
+        )
+        .arg(
+            Arg::with_name("rate_limit_headers")
+                .long("rate-limit-headers")
+                .short('H')
+                .display_order(8)
+                .default_value(&rate_limit_headers_default)
+                .value_parser(clap::builder::PossibleValuesParser::new([
+                    "NONE",
+                    "DRAFT_VERSION_03",
+                ]))
+                .help("Enables rate limit response headers"),
         )
         .subcommand(
             SubCommand::with_name("memory")
@@ -660,6 +676,12 @@ fn create_config() -> (Configuration, String) {
         _ => unreachable!("Some storage wasn't configured!"),
     };
 
+    let rate_limit_headers = match matches.value_of("rate_limit_headers").unwrap() {
+        "NONE" => RateLimitHeaders::None,
+        "DRAFT_VERSION_03" => RateLimitHeaders::DraftVersion03,
+        _ => unreachable!("invalid --rate-limit-headers value"),
+    };
+
     let mut config = Configuration::with(
         storage,
         limits_file.to_string(),
@@ -669,6 +691,7 @@ fn create_config() -> (Configuration, String) {
         matches.value_of("http_port").unwrap().parse().unwrap(),
         matches.value_of("limit_name_in_labels").is_some()
             || env_option_is_enabled("LIMIT_NAME_IN_PROMETHEUS_LABELS"),
+        rate_limit_headers,
     );
 
     config.log_level = match matches.occurrences_of("v") {

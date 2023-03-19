@@ -224,6 +224,11 @@ pub struct RateLimiterBuilder {
     prometheus_limit_name_labels_enabled: bool,
 }
 
+pub struct CheckResult {
+    pub limited: bool,
+    pub counters: Vec<Counter>,
+}
+
 impl RateLimiterBuilder {
     pub fn new() -> Self {
         Self {
@@ -376,16 +381,14 @@ impl RateLimiter {
         values: &HashMap<String, String>,
         delta: i64,
     ) -> Result<bool, LimitadorError> {
-        let counters = self.counters_that_apply(namespace, values)?;
+        let mut counters = self.counters_that_apply(namespace, values)?;
 
         if counters.is_empty() {
             self.prometheus_metrics.incr_authorized_calls(namespace);
             return Ok(false);
         }
 
-        let check_result = self
-            .storage
-            .check_and_update(counters.into_iter().collect(), delta)?;
+        let check_result = self.storage.check_and_update(&mut counters, delta, false)?;
 
         match check_result {
             Authorization::Ok => {
@@ -396,6 +399,46 @@ impl RateLimiter {
                 self.prometheus_metrics
                     .incr_limited_calls(namespace, name.as_deref());
                 Ok(true)
+            }
+        }
+    }
+
+    pub fn check_rate_limited_and_update_getting_counters(
+        &self,
+        namespace: &Namespace,
+        values: &HashMap<String, String>,
+        delta: i64,
+        load_counters: bool,
+    ) -> Result<CheckResult, LimitadorError> {
+        let mut counters = self.counters_that_apply(namespace, values)?;
+
+        if counters.is_empty() {
+            self.prometheus_metrics.incr_authorized_calls(namespace);
+            return Ok(CheckResult {
+                limited: false,
+                counters,
+            });
+        }
+
+        let check_result = self
+            .storage
+            .check_and_update(&mut counters, delta, load_counters)?;
+
+        match check_result {
+            Authorization::Ok => {
+                self.prometheus_metrics.incr_authorized_calls(namespace);
+                Ok(CheckResult {
+                    limited: false,
+                    counters,
+                })
+            }
+            Authorization::Limited(name) => {
+                self.prometheus_metrics
+                    .incr_limited_calls(namespace, name.as_deref());
+                Ok(CheckResult {
+                    limited: true,
+                    counters,
+                })
             }
         }
     }
@@ -553,7 +596,7 @@ impl AsyncRateLimiter {
         delta: i64,
     ) -> Result<bool, LimitadorError> {
         // the above where-clause is needed in order to call unwrap().
-        let counters = self.counters_that_apply(namespace, values).await?;
+        let mut counters = self.counters_that_apply(namespace, values).await?;
 
         if counters.is_empty() {
             self.prometheus_metrics.incr_authorized_calls(namespace);
@@ -562,7 +605,7 @@ impl AsyncRateLimiter {
 
         let check_result = self
             .storage
-            .check_and_update(counters.into_iter().collect(), delta)
+            .check_and_update(&mut counters, delta, false)
             .await?;
 
         match check_result {
@@ -574,6 +617,50 @@ impl AsyncRateLimiter {
                 self.prometheus_metrics
                     .incr_limited_calls(namespace, name.as_deref());
                 Ok(true)
+            }
+        }
+    }
+
+    pub async fn check_rate_limited_and_update_getting_counters(
+        &self,
+        namespace: &Namespace,
+        values: &HashMap<String, String>,
+        delta: i64,
+        load_counters: bool,
+    ) -> Result<CheckResult, LimitadorError> {
+        // the above where-clause is needed in order to call unwrap().
+        let mut counters = self.counters_that_apply(namespace, values).await?;
+
+        if counters.is_empty() {
+            self.prometheus_metrics.incr_authorized_calls(namespace);
+            return Ok(CheckResult {
+                limited: false,
+                counters,
+            });
+        }
+
+        let check_result = self
+            .storage
+            .check_and_update(&mut counters, delta, load_counters)
+            .await?;
+
+        // self.storage.load_counters(&mut counters).await?;
+
+        match check_result {
+            Authorization::Ok => {
+                self.prometheus_metrics.incr_authorized_calls(namespace);
+                Ok(CheckResult {
+                    limited: false,
+                    counters,
+                })
+            }
+            Authorization::Limited(name) => {
+                self.prometheus_metrics
+                    .incr_limited_calls(namespace, name.as_deref());
+                Ok(CheckResult {
+                    limited: true,
+                    counters,
+                })
             }
         }
     }
