@@ -152,18 +152,18 @@ async fn check_and_report(
     let namespace = namespace.into();
     let rate_limited_and_update_result = match data.get_ref().as_ref() {
         Limiter::Blocking(limiter) => {
-            limiter.check_rate_limited_and_update(&namespace, &values, delta)
+            limiter.check_rate_limited_and_update(&namespace, &values, delta, false)
         }
         Limiter::Async(limiter) => {
             limiter
-                .check_rate_limited_and_update(&namespace, &values, delta)
+                .check_rate_limited_and_update(&namespace, &values, delta, false)
                 .await
         }
     };
 
     match rate_limited_and_update_result {
         Ok(is_rate_limited) => {
-            if is_rate_limited {
+            if is_rate_limited.limited {
                 Err(ErrorResponse::TooManyRequests)
             } else {
                 Ok(Json(()))

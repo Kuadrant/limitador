@@ -185,6 +185,7 @@ fn bench_check_rate_limited_and_update(
                     &params.namespace.to_owned().into(),
                     &params.values,
                     params.delta,
+                    false,
                 )
                 .unwrap(),
         )

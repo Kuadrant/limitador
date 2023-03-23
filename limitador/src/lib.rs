@@ -129,7 +129,7 @@
 //! // You can also check and report if not limited in a single call. It's useful
 //! // for example, when calling Limitador from a proxy. Instead of doing 2
 //! // separate calls, we can issue just one:
-//! rate_limiter.check_rate_limited_and_update(&namespace, &values_to_report, 1).unwrap();
+//! rate_limiter.check_rate_limited_and_update(&namespace, &values_to_report, 1, false).unwrap();
 //! ```
 //!
 //! # Async
@@ -227,6 +227,12 @@ pub struct RateLimiterBuilder {
 pub struct CheckResult {
     pub limited: bool,
     pub counters: Vec<Counter>,
+}
+
+impl From<CheckResult> for bool {
+    fn from(value: CheckResult) -> Self {
+        value.limited
+    }
 }
 
 impl RateLimiterBuilder {
@@ -376,34 +382,6 @@ impl RateLimiter {
     }
 
     pub fn check_rate_limited_and_update(
-        &self,
-        namespace: &Namespace,
-        values: &HashMap<String, String>,
-        delta: i64,
-    ) -> Result<bool, LimitadorError> {
-        let mut counters = self.counters_that_apply(namespace, values)?;
-
-        if counters.is_empty() {
-            self.prometheus_metrics.incr_authorized_calls(namespace);
-            return Ok(false);
-        }
-
-        let check_result = self.storage.check_and_update(&mut counters, delta, false)?;
-
-        match check_result {
-            Authorization::Ok => {
-                self.prometheus_metrics.incr_authorized_calls(namespace);
-                Ok(false)
-            }
-            Authorization::Limited(name) => {
-                self.prometheus_metrics
-                    .incr_limited_calls(namespace, name.as_deref());
-                Ok(true)
-            }
-        }
-    }
-
-    pub fn check_rate_limited_and_update_getting_counters(
         &self,
         namespace: &Namespace,
         values: &HashMap<String, String>,
@@ -590,38 +568,6 @@ impl AsyncRateLimiter {
     }
 
     pub async fn check_rate_limited_and_update(
-        &self,
-        namespace: &Namespace,
-        values: &HashMap<String, String>,
-        delta: i64,
-    ) -> Result<bool, LimitadorError> {
-        // the above where-clause is needed in order to call unwrap().
-        let mut counters = self.counters_that_apply(namespace, values).await?;
-
-        if counters.is_empty() {
-            self.prometheus_metrics.incr_authorized_calls(namespace);
-            return Ok(false);
-        }
-
-        let check_result = self
-            .storage
-            .check_and_update(&mut counters, delta, false)
-            .await?;
-
-        match check_result {
-            Authorization::Ok => {
-                self.prometheus_metrics.incr_authorized_calls(namespace);
-                Ok(false)
-            }
-            Authorization::Limited(name) => {
-                self.prometheus_metrics
-                    .incr_limited_calls(namespace, name.as_deref());
-                Ok(true)
-            }
-        }
-    }
-
-    pub async fn check_rate_limited_and_update_getting_counters(
         &self,
         namespace: &Namespace,
         values: &HashMap<String, String>,

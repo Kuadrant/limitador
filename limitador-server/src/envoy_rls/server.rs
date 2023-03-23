@@ -79,7 +79,7 @@ impl RateLimitService for MyRateLimiter {
         };
 
         let rate_limited_resp = match &*self.limiter {
-            Limiter::Blocking(limiter) => limiter.check_rate_limited_and_update_getting_counters(
+            Limiter::Blocking(limiter) => limiter.check_rate_limited_and_update(
                 &namespace,
                 &values,
                 i64::from(hits_addend),
@@ -87,7 +87,7 @@ impl RateLimitService for MyRateLimiter {
             ),
             Limiter::Async(limiter) => {
                 limiter
-                    .check_rate_limited_and_update_getting_counters(
+                    .check_rate_limited_and_update(
                         &namespace,
                         &values,
                         i64::from(hits_addend),
