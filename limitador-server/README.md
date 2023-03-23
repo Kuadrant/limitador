@@ -22,15 +22,36 @@ ARGS:
     <LIMITS_FILE>    The limit file to use
 
 OPTIONS:
-    -b, --rls-ip <ip>              The IP to listen on for RLS [default: 0.0.0.0]
-    -p, --rls-port <port>          The port to listen on for RLS [default: 8081]
-    -B, --http-ip <http_ip>        The IP to listen on for HTTP [default: 0.0.0.0]
-    -P, --http-port <http_port>    The port to listen on for HTTP [default: 8080]
-    -l, --limit-name-in-labels     Include the Limit Name in prometheus label
-    -v                             Sets the level of verbosity
-        --validate                 Validates the LIMITS_FILE and exits
-    -h, --help                     Print help information
-    -V, --version                  Print version information
+    -b, --rls-ip <ip>
+            The IP to listen on for RLS [default: 0.0.0.0]
+
+    -p, --rls-port <port>
+            The port to listen on for RLS [default: 8081]
+
+    -B, --http-ip <http_ip>
+            The IP to listen on for HTTP [default: 0.0.0.0]
+
+    -P, --http-port <http_port>
+            The port to listen on for HTTP [default: 8080]
+
+    -l, --limit-name-in-labels
+            Include the Limit Name in prometheus label
+
+    -v
+            Sets the level of verbosity
+
+        --validate
+            Validates the LIMITS_FILE and exits
+
+    -H, --rate-limit-headers <rate_limit_headers>
+            Enables rate limit response headers [default: NONE] [possible values: NONE,
+            DRAFT_VERSION_03]
+
+    -h, --help
+            Print help information
+
+    -V, --version
+            Print version information
 
 STORAGES:
     memory          Counters are held in Limitador (ephemeral)

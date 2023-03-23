@@ -6,11 +6,10 @@ The preferred way of starting and configuring the Limitador server is using the 
 
 ```
 USAGE:
-    limitador-server [OPTIONS] [LIMITS_FILE] [STORAGE]
+    limitador-server [OPTIONS] <LIMITS_FILE> [STORAGE]
 
 ARGS:
-    <LIMITS_FILE>    The limit file to use [default:
-                     ../apex/deploy/nexodus/components/limitador/files/limits.yaml]
+    <LIMITS_FILE>    The limit file to use
 
 OPTIONS:
     -b, --rls-ip <ip>
