@@ -402,6 +402,12 @@ impl RateLimiter {
             .storage
             .check_and_update(&mut counters, delta, load_counters)?;
 
+        let counters = if load_counters {
+            counters
+        } else {
+            Vec::default()
+        };
+
         match check_result {
             Authorization::Ok => {
                 self.prometheus_metrics.incr_authorized_calls(namespace);
@@ -590,9 +596,16 @@ impl AsyncRateLimiter {
             .check_and_update(&mut counters, delta, load_counters)
             .await?;
 
+        let counters = if load_counters {
+            counters
+        } else {
+            Vec::default()
+        };
+
         match check_result {
             Authorization::Ok => {
                 self.prometheus_metrics.incr_authorized_calls(namespace);
+
                 Ok(CheckResult {
                     limited: false,
                     counters,
