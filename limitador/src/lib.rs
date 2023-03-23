@@ -129,7 +129,7 @@
 //! // You can also check and report if not limited in a single call. It's useful
 //! // for example, when calling Limitador from a proxy. Instead of doing 2
 //! // separate calls, we can issue just one:
-//! rate_limiter.check_rate_limited_and_update(&namespace, &values_to_report, 1).unwrap();
+//! rate_limiter.check_rate_limited_and_update(&namespace, &values_to_report, 1, false).unwrap();
 //! ```
 //!
 //! # Async
@@ -222,6 +222,17 @@ pub struct AsyncRateLimiter {
 pub struct RateLimiterBuilder {
     storage: Storage,
     prometheus_limit_name_labels_enabled: bool,
+}
+
+pub struct CheckResult {
+    pub limited: bool,
+    pub counters: Vec<Counter>,
+}
+
+impl From<CheckResult> for bool {
+    fn from(value: CheckResult) -> Self {
+        value.limited
+    }
 }
 
 impl RateLimiterBuilder {
@@ -375,27 +386,43 @@ impl RateLimiter {
         namespace: &Namespace,
         values: &HashMap<String, String>,
         delta: i64,
-    ) -> Result<bool, LimitadorError> {
-        let counters = self.counters_that_apply(namespace, values)?;
+        load_counters: bool,
+    ) -> Result<CheckResult, LimitadorError> {
+        let mut counters = self.counters_that_apply(namespace, values)?;
 
         if counters.is_empty() {
             self.prometheus_metrics.incr_authorized_calls(namespace);
-            return Ok(false);
+            return Ok(CheckResult {
+                limited: false,
+                counters,
+            });
         }
 
         let check_result = self
             .storage
-            .check_and_update(counters.into_iter().collect(), delta)?;
+            .check_and_update(&mut counters, delta, load_counters)?;
+
+        let counters = if load_counters {
+            counters
+        } else {
+            Vec::default()
+        };
 
         match check_result {
             Authorization::Ok => {
                 self.prometheus_metrics.incr_authorized_calls(namespace);
-                Ok(false)
+                Ok(CheckResult {
+                    limited: false,
+                    counters,
+                })
             }
             Authorization::Limited(name) => {
                 self.prometheus_metrics
                     .incr_limited_calls(namespace, name.as_deref());
-                Ok(true)
+                Ok(CheckResult {
+                    limited: true,
+                    counters,
+                })
             }
         }
     }
@@ -551,29 +578,46 @@ impl AsyncRateLimiter {
         namespace: &Namespace,
         values: &HashMap<String, String>,
         delta: i64,
-    ) -> Result<bool, LimitadorError> {
+        load_counters: bool,
+    ) -> Result<CheckResult, LimitadorError> {
         // the above where-clause is needed in order to call unwrap().
-        let counters = self.counters_that_apply(namespace, values).await?;
+        let mut counters = self.counters_that_apply(namespace, values).await?;
 
         if counters.is_empty() {
             self.prometheus_metrics.incr_authorized_calls(namespace);
-            return Ok(false);
+            return Ok(CheckResult {
+                limited: false,
+                counters,
+            });
         }
 
         let check_result = self
             .storage
-            .check_and_update(counters.into_iter().collect(), delta)
+            .check_and_update(&mut counters, delta, load_counters)
             .await?;
+
+        let counters = if load_counters {
+            counters
+        } else {
+            Vec::default()
+        };
 
         match check_result {
             Authorization::Ok => {
                 self.prometheus_metrics.incr_authorized_calls(namespace);
-                Ok(false)
+
+                Ok(CheckResult {
+                    limited: false,
+                    counters,
+                })
             }
             Authorization::Limited(name) => {
                 self.prometheus_metrics
                     .incr_limited_calls(namespace, name.as_deref());
-                Ok(true)
+                Ok(CheckResult {
+                    limited: true,
+                    counters,
+                })
             }
         }
     }

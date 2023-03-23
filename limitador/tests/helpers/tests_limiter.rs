@@ -111,14 +111,15 @@ impl TestsLimiter {
     ) -> Result<bool, LimitadorError> {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => {
-                limiter.check_rate_limited_and_update(&namespace.into(), values, delta)
+                limiter.check_rate_limited_and_update(&namespace.into(), values, delta, false)
             }
             LimiterImpl::Async(limiter) => {
                 limiter
-                    .check_rate_limited_and_update(&namespace.into(), values, delta)
+                    .check_rate_limited_and_update(&namespace.into(), values, delta, false)
                     .await
             }
         }
+        .map(|cr| cr.into())
     }
 
     pub async fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, LimitadorError> {

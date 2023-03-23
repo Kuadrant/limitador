@@ -67,20 +67,42 @@ impl AsyncCounterStorage for InfinispanStorage {
 
     async fn check_and_update(
         &self,
-        counters: HashSet<Counter>,
+        counters: &mut Vec<Counter>,
         delta: i64,
+        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
-        for counter in counters.iter() {
-            if !self.is_within_limits(counter, delta).await? {
-                return Ok(Authorization::Limited(
-                    counter.limit().name().map(|n| n.to_owned()),
-                ));
+        if load_counters {
+            let mut first_limited = None;
+            for counter in counters.iter_mut() {
+                let counter_key = key_for_counter(counter);
+                let counter_val =
+                    counters::get_value(&self.infinispan, &self.cache_name, &counter_key).await?;
+
+                let remaining = counter_val.unwrap_or(counter.max_value()) - delta;
+                counter.set_remaining(remaining);
+
+                if first_limited.is_none() && remaining < 0 {
+                    first_limited = Some(Authorization::Limited(
+                        counter.limit().name().map(|n| n.to_owned()),
+                    ))
+                }
+            }
+            if let Some(l) = first_limited {
+                return Ok(l);
+            }
+        } else {
+            for counter in counters.iter() {
+                if !self.is_within_limits(counter, delta).await? {
+                    return Ok(Authorization::Limited(
+                        counter.limit().name().map(|n| n.to_owned()),
+                    ));
+                }
             }
         }
 
         // Update only if all are withing limits
         for counter in counters {
-            self.update_counter(&counter, delta).await?
+            self.update_counter(counter, delta).await?
         }
 
         Ok(Authorization::Ok)
