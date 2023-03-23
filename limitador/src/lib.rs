@@ -644,8 +644,6 @@ impl AsyncRateLimiter {
             .check_and_update(&mut counters, delta, load_counters)
             .await?;
 
-        // self.storage.load_counters(&mut counters).await?;
-
         match check_result {
             Authorization::Ok => {
                 self.prometheus_metrics.incr_authorized_calls(namespace);
