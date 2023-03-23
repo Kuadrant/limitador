@@ -4,8 +4,11 @@ use rand::seq::SliceRandom;
 use limitador::limit::Limit;
 use limitador::storage::CounterStorage;
 use limitador::RateLimiter;
+use rand::SeedableRng;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
+
+const SEED: u64 = 42;
 
 #[cfg(not(feature = "redis"))]
 criterion_group!(benches, bench_in_mem);
@@ -131,8 +134,9 @@ fn bench_is_rate_limited(
 
     let (rate_limiter, call_params) = generate_test_data(test_scenario, storage);
 
+    let rng = &mut rand::rngs::StdRng::seed_from_u64(SEED);
     b.iter(|| {
-        let params = call_params.choose(&mut rand::thread_rng()).unwrap();
+        let params = call_params.choose(rng).unwrap();
 
         black_box(
             rate_limiter
@@ -154,8 +158,9 @@ fn bench_update_counters(
     storage.clear().unwrap();
     let (rate_limiter, call_params) = generate_test_data(test_scenario, storage);
 
+    let rng = &mut rand::rngs::StdRng::seed_from_u64(SEED);
     b.iter(|| {
-        let params = call_params.choose(&mut rand::thread_rng()).unwrap();
+        let params = call_params.choose(rng).unwrap();
 
         rate_limiter
             .update_counters(
@@ -176,8 +181,9 @@ fn bench_check_rate_limited_and_update(
     storage.clear().unwrap();
     let (rate_limiter, call_params) = generate_test_data(test_scenario, storage);
 
+    let rng = &mut rand::rngs::StdRng::seed_from_u64(SEED);
     b.iter(|| {
-        let params = call_params.choose(&mut rand::thread_rng()).unwrap();
+        let params = call_params.choose(rng).unwrap();
 
         black_box(
             rate_limiter
