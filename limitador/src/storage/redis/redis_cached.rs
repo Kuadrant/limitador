@@ -133,7 +133,13 @@ impl AsyncCounterStorage for CachedRedisStorage {
                     }
                     if load_counters {
                         counter.set_remaining(remaining);
-                        counter.set_expires_in(Duration::from_millis(counter_ttls_msecs[i] as u64));
+                        let ttl = counter_ttls_msecs[i];
+                        counter.set_expires_in(Duration::from_secs(if ttl < 0 {
+                            // if key expired
+                            counter.seconds()
+                        } else {
+                            ttl as u64
+                        }));
                     }
                 }
             }

@@ -49,12 +49,21 @@ pub fn is_limited(
     for (i, counter) in counters.iter_mut().enumerate() {
         let remaining = counter_vals[i].unwrap_or(counter.max_value()) - delta;
         counter.set_remaining(remaining);
+
         let expires_in = Duration::from_secs(
             counter_ttls_msecs[i]
-                .map(|x| x as u64)
+                .map(|ttl| {
+                    if ttl < 0 {
+                        // if key expired
+                        counter.seconds()
+                    } else {
+                        ttl as u64
+                    }
+                })
                 .unwrap_or(counter.seconds()),
         );
         counter.set_expires_in(expires_in);
+
         if first_limited.is_none() && remaining < 0 {
             first_limited = Some(Authorization::Limited(
                 counter.limit().name().map(|n| n.to_owned()),

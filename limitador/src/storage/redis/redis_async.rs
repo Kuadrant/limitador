@@ -126,7 +126,6 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                     counter.set_remaining(val);
                     let ttl = con.ttl(&counter_key).await?;
                     counter.set_expires_in(Duration::from_secs(ttl));
-
                     res.insert(counter);
                 }
             }

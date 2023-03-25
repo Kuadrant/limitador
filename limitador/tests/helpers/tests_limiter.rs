@@ -1,7 +1,7 @@
 use limitador::counter::Counter;
 use limitador::errors::LimitadorError;
 use limitador::limit::{Limit, Namespace};
-use limitador::{AsyncRateLimiter, RateLimiter};
+use limitador::{AsyncRateLimiter, CheckResult, RateLimiter};
 use std::collections::{HashMap, HashSet};
 
 // This exposes a struct that wraps both implementations of the rate limiter,
@@ -108,18 +108,21 @@ impl TestsLimiter {
         namespace: &str,
         values: &HashMap<String, String>,
         delta: i64,
-    ) -> Result<bool, LimitadorError> {
+        load_counters: bool,
+    ) -> Result<CheckResult, LimitadorError> {
         match &self.limiter_impl {
-            LimiterImpl::Blocking(limiter) => {
-                limiter.check_rate_limited_and_update(&namespace.into(), values, delta, false)
-            }
+            LimiterImpl::Blocking(limiter) => limiter.check_rate_limited_and_update(
+                &namespace.into(),
+                values,
+                delta,
+                load_counters,
+            ),
             LimiterImpl::Async(limiter) => {
                 limiter
-                    .check_rate_limited_and_update(&namespace.into(), values, delta, false)
+                    .check_rate_limited_and_update(&namespace.into(), values, delta, load_counters)
                     .await
             }
         }
-        .map(|cr| cr.into())
     }
 
     pub async fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, LimitadorError> {
