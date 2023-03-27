@@ -58,7 +58,7 @@ impl CounterStorage for RedisStorage {
         if load_counters {
             let script = redis::Script::new(VALUES_AND_TTLS);
             let mut script_invocation = script.prepare_invoke();
-            for counter_key in counter_keys {
+            for counter_key in &counter_keys {
                 script_invocation.key(counter_key);
             }
             let script_res: Vec<Option<i64>> = script_invocation.invoke(&mut *con)?;
@@ -67,8 +67,9 @@ impl CounterStorage for RedisStorage {
                 return Ok(res);
             }
         } else {
-            let counter_vals: Vec<Option<i64>> =
-                redis::cmd("MGET").arg(counter_keys).query(&mut *con)?;
+            let counter_vals: Vec<Option<i64>> = redis::cmd("MGET")
+                .arg(counter_keys.clone())
+                .query(&mut *con)?;
 
             for (i, counter) in counters.iter().enumerate() {
                 let remaining = counter_vals[i].unwrap_or(counter.max_value()) - delta;
@@ -81,8 +82,15 @@ impl CounterStorage for RedisStorage {
         }
 
         // TODO: this can be optimized by using pipelines with multiple updates
-        for counter in counters.iter() {
-            self.update_counter(counter, delta)?
+        for (counter_idx, key) in counter_keys.into_iter().enumerate() {
+            let counter = &counters[counter_idx];
+            redis::Script::new(SCRIPT_UPDATE_COUNTER)
+                .key(key)
+                .key(key_for_counters_of_limit(counter.limit()))
+                .arg(counter.max_value())
+                .arg(counter.seconds())
+                .arg(delta)
+                .invoke(&mut *con)?;
         }
 
         Ok(Authorization::Ok)

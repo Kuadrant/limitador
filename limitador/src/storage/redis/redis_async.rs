@@ -70,7 +70,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             let script = redis::Script::new(VALUES_AND_TTLS);
             let mut script_invocation = script.prepare_invoke();
 
-            for counter_key in counter_keys {
+            for counter_key in &counter_keys {
                 script_invocation.key(counter_key);
             }
 
@@ -80,7 +80,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             }
         } else {
             let counter_vals: Vec<Option<i64>> = redis::cmd("MGET")
-                .arg(counter_keys)
+                .arg(counter_keys.clone())
                 .query_async(&mut con)
                 .await?;
 
@@ -95,8 +95,16 @@ impl AsyncCounterStorage for AsyncRedisStorage {
         }
 
         // TODO: this can be optimized by using pipelines with multiple updates
-        for counter in counters {
-            self.update_counter(counter, delta).await?
+        for (counter_idx, key) in counter_keys.into_iter().enumerate() {
+            let counter = &counters[counter_idx];
+            redis::Script::new(SCRIPT_UPDATE_COUNTER)
+                .key(key)
+                .key(key_for_counters_of_limit(counter.limit()))
+                .arg(counter.max_value())
+                .arg(counter.seconds())
+                .arg(delta)
+                .invoke_async::<_, _>(&mut con)
+                .await?;
         }
 
         Ok(Authorization::Ok)

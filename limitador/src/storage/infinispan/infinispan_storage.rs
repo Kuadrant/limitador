@@ -71,12 +71,16 @@ impl AsyncCounterStorage for InfinispanStorage {
         delta: i64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
+        let mut counter_keys = Vec::with_capacity(counters.len());
+
         if load_counters {
             let mut first_limited = None;
             for counter in counters.iter_mut() {
-                let counter_key = key_for_counter(counter);
+                let idx = counter_keys.len();
+                counter_keys.push(key_for_counter(counter));
                 let counter_val =
-                    counters::get_value(&self.infinispan, &self.cache_name, &counter_key).await?;
+                    counters::get_value(&self.infinispan, &self.cache_name, &counter_keys[idx])
+                        .await?;
 
                 let remaining = counter_val.unwrap_or(counter.max_value()) - delta;
                 counter.set_remaining(remaining);
@@ -97,12 +101,30 @@ impl AsyncCounterStorage for InfinispanStorage {
                         counter.limit().name().map(|n| n.to_owned()),
                     ));
                 }
+                counter_keys.push(key_for_counter(counter));
             }
         }
 
         // Update only if all are withing limits
-        for counter in counters {
-            self.update_counter(counter, delta).await?
+        for (counter_idx, counter_key) in counter_keys.into_iter().enumerate() {
+            let counter = &counters[counter_idx];
+            let counter_created = counters::decrement_by(
+                &self.infinispan,
+                &self.cache_name,
+                &counter_key,
+                delta,
+                &CounterOpts::new(
+                    counter.max_value(),
+                    Duration::from_secs(counter.seconds()),
+                    self.counters_consistency,
+                ),
+            )
+            .await?;
+
+            if counter_created {
+                self.add_to_set(key_for_counters_of_limit(counter.limit()), counter_key)
+                    .await?;
+            }
         }
 
         Ok(Authorization::Ok)
