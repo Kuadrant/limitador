@@ -129,6 +129,7 @@ mod test {
     test_with_all_storage_impls!(is_rate_limited_returns_false_when_no_matching_limits);
     test_with_all_storage_impls!(is_rate_limited_applies_limit_if_its_unconditional);
     test_with_all_storage_impls!(check_rate_limited_and_update);
+    test_with_all_storage_impls!(check_rate_limited_and_update_load_counters);
     test_with_all_storage_impls!(check_rate_limited_and_update_returns_true_if_no_limits_apply);
     test_with_all_storage_impls!(check_rate_limited_and_update_applies_limit_if_its_unconditional);
     test_with_all_storage_impls!(get_counters);
@@ -620,16 +621,59 @@ mod test {
         values.insert("app_id".to_string(), "test_app_id".to_string());
 
         for _ in 0..max_hits {
-            assert!(!rate_limiter
-                .check_rate_limited_and_update(namespace, &values, 1)
-                .await
-                .unwrap());
+            assert!(
+                !rate_limiter
+                    .check_rate_limited_and_update(namespace, &values, 1, false)
+                    .await
+                    .unwrap()
+                    .limited
+            );
         }
 
-        assert!(rate_limiter
-            .check_rate_limited_and_update(namespace, &values, 1)
-            .await
-            .unwrap());
+        assert!(
+            rate_limiter
+                .check_rate_limited_and_update(namespace, &values, 1, false)
+                .await
+                .unwrap()
+                .limited
+        );
+    }
+
+    async fn check_rate_limited_and_update_load_counters(rate_limiter: &mut TestsLimiter) {
+        let namespace = "test_namespace";
+        let max_hits = 3;
+
+        let limit = Limit::new(
+            namespace,
+            max_hits,
+            60,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
+
+        rate_limiter.add_limit(&limit).await;
+
+        let mut values: HashMap<String, String> = HashMap::new();
+        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("app_id".to_string(), "test_app_id".to_string());
+
+        for _ in 0..max_hits {
+            assert!(
+                !rate_limiter
+                    .check_rate_limited_and_update(namespace, &values, 1, true)
+                    .await
+                    .unwrap()
+                    .limited
+            );
+        }
+
+        assert!(
+            rate_limiter
+                .check_rate_limited_and_update(namespace, &values, 1, true)
+                .await
+                .unwrap()
+                .limited
+        );
     }
 
     async fn check_rate_limited_and_update_returns_true_if_no_limits_apply(
@@ -652,10 +696,13 @@ mod test {
         // Does not match the limit defined
         values.insert("req.method".to_string(), "POST".to_string());
 
-        assert!(!rate_limiter
-            .check_rate_limited_and_update(namespace, &values, 1)
-            .await
-            .unwrap());
+        assert!(
+            !rate_limiter
+                .check_rate_limited_and_update(namespace, &values, 1, false)
+                .await
+                .unwrap()
+                .limited
+        );
     }
 
     async fn check_rate_limited_and_update_applies_limit_if_its_unconditional(
@@ -676,10 +723,13 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("app_id".to_string(), "test_app_id".to_string());
 
-        assert!(rate_limiter
-            .check_rate_limited_and_update(namespace, &values, 1)
-            .await
-            .unwrap());
+        assert!(
+            rate_limiter
+                .check_rate_limited_and_update(namespace, &values, 1, false)
+                .await
+                .unwrap()
+                .limited
+        );
     }
 
     async fn get_counters(rate_limiter: &mut TestsLimiter) {
