@@ -657,23 +657,35 @@ mod test {
         values.insert("req.method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
 
-        for _ in 0..max_hits {
-            assert!(
-                !rate_limiter
-                    .check_rate_limited_and_update(namespace, &values, 1, true)
-                    .await
-                    .unwrap()
-                    .limited
-            );
-        }
-
-        assert!(
-            rate_limiter
+        for hit in 0..max_hits {
+            let result = rate_limiter
                 .check_rate_limited_and_update(namespace, &values, 1, true)
                 .await
-                .unwrap()
-                .limited
-        );
+                .unwrap();
+            assert!(!result.limited);
+            assert_eq!(result.counters.len(), 1);
+
+            for counter in result.counters.iter() {
+                if let Some(ttl) = counter.expires_in() {
+                    assert!(ttl.as_secs() <= 60);
+                }
+                assert_eq!(counter.remaining().unwrap(), 3 - (hit + 1));
+            }
+        }
+
+        let result = rate_limiter
+            .check_rate_limited_and_update(namespace, &values, 1, true)
+            .await
+            .unwrap();
+        assert!(result.limited);
+        assert_eq!(result.counters.len(), 1);
+
+        for counter in result.counters.iter() {
+            if let Some(ttl) = counter.expires_in() {
+                assert!(ttl.as_secs() <= 60);
+            }
+            assert_eq!(counter.remaining().unwrap(), -1);
+        }
     }
 
     async fn check_rate_limited_and_update_returns_true_if_no_limits_apply(
