@@ -6,6 +6,7 @@ use crate::storage::keys::{
 use crate::storage::sled::expiring_value::ExpiringValue;
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 use sled::{Db, IVec};
+use std::array::TryFromSliceError;
 use std::collections::{BTreeSet, HashSet};
 use std::time::{Duration, SystemTime};
 
@@ -39,7 +40,7 @@ impl CounterStorage for SledStorage {
             let (val, ttl) = match self.db.get(&key)? {
                 None => (0, Duration::from_secs(counter.limit().seconds())),
                 Some(raw) => {
-                    let value: ExpiringValue = raw.as_ref().into();
+                    let value: ExpiringValue = raw.as_ref().try_into()?;
                     (value.value(), value.ttl())
                 }
             };
@@ -76,7 +77,7 @@ impl CounterStorage for SledStorage {
                     break;
                 }
                 let mut counter = partial_counter_from_counter_key(raw.as_ref());
-                let value: ExpiringValue = value.as_ref().into();
+                let value: ExpiringValue = value.as_ref().try_into()?;
                 for limit in limits {
                     if limit == counter.limit() {
                         counter.update_to_limit(limit);
@@ -120,25 +121,39 @@ impl SledStorage {
         delta: i64,
     ) -> Result<ExpiringValue, StorageErr> {
         Ok(self.db.update_and_fetch(key, |prev| {
-            let new = match prev {
+            let updated_value = match prev {
                 Some(raw) => {
-                    let value: ExpiringValue = raw.into();
-                    value.update(delta, counter.seconds())
+                    let value: ExpiringValue = match TryInto::<ExpiringValue>::try_into(raw) {
+                        Ok(val) => val.update(delta, counter.seconds()),
+                        Err(_) => ExpiringValue::new(
+                            delta,
+                            SystemTime::now() + Duration::from_secs(counter.limit().seconds()),
+                        ),
+                    };
+                    value
                 }
                 None => ExpiringValue::new(
                     delta,
                     SystemTime::now() + Duration::from_secs(counter.limit().seconds()),
                 ),
             };
-            let new_value: IVec = new.into();
-            Some(new_value)
+            Some::<IVec>(updated_value.into())
         })?)
         .map(|option| {
             option
                 .expect("we always have a counter now!")
                 .as_ref()
-                .into()
+                .try_into()
+                .expect("This has to work!")
         })
+    }
+}
+
+impl From<TryFromSliceError> for StorageErr {
+    fn from(_: TryFromSliceError) -> Self {
+        Self {
+            msg: "Corrupted byte sequence while reading 8 bytes for 64-bit integer".to_owned(),
+        }
     }
 }
 

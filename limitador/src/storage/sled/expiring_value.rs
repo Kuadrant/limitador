@@ -1,4 +1,5 @@
 use sled::IVec;
+use std::array::TryFromSliceError;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub struct ExpiringValue {
@@ -42,18 +43,20 @@ impl ExpiringValue {
     }
 }
 
-impl From<&[u8]> for ExpiringValue {
-    fn from(raw: &[u8]) -> Self {
-        let raw_val: [u8; 8] = raw[0..8].try_into().expect("We need 8 bytes!");
-        let raw_exp: [u8; 8] = raw[8..16].try_into().expect("We need 8 bytes!");
+impl TryFrom<&[u8]> for ExpiringValue {
+    type Error = TryFromSliceError;
+
+    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
+        let raw_val: [u8; 8] = raw[0..8].try_into()?;
+        let raw_exp: [u8; 8] = raw[8..16].try_into()?;
 
         let val = i64::from_be_bytes(raw_val);
         let exp = u64::from_be_bytes(raw_exp);
 
-        Self {
+        Ok(Self {
             value: val,
             expiry: UNIX_EPOCH + Duration::from_secs(exp),
-        }
+        })
     }
 }
 
@@ -118,7 +121,7 @@ mod tests {
         let now = SystemTime::now();
         let val = ExpiringValue::new(42, now);
         let raw: IVec = val.into();
-        let back: ExpiringValue = raw.as_ref().into();
+        let back: ExpiringValue = raw.as_ref().try_into().unwrap();
 
         assert_eq!(back.value, 42);
         assert_eq!(
