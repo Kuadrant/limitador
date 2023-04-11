@@ -12,3 +12,8 @@ impl From<sled::Error> for StorageErr {
         }
     }
 }
+
+pub enum OptimizeFor {
+    Space,
+    Throughput,
+}

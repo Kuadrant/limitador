@@ -1,11 +1,12 @@
 use crate::counter::Counter;
 use crate::limit::Limit;
 use crate::storage::disk::expiring_value::ExpiringValue;
+use crate::storage::disk::OptimizeFor;
 use crate::storage::keys::{
     key_for_counter, partial_counter_from_counter_key, prefix_for_namespace,
 };
 use crate::storage::{Authorization, CounterStorage, StorageErr};
-use sled::{Db, IVec};
+use sled::{Config, Db, IVec, Mode};
 use std::collections::{BTreeSet, HashSet};
 use std::time::{Duration, SystemTime};
 
@@ -107,9 +108,18 @@ impl CounterStorage for SledStorage {
     }
 }
 
+impl From<OptimizeFor> for Mode {
+    fn from(value: OptimizeFor) -> Self {
+        match value {
+            OptimizeFor::Space => Mode::LowSpace,
+            OptimizeFor::Throughput => Mode::HighThroughput,
+        }
+    }
+}
+
 impl SledStorage {
-    pub fn open<P: AsRef<std::path::Path>>(path: P) -> Result<Self, StorageErr> {
-        let db = sled::open(path)?;
+    pub fn open<P: AsRef<std::path::Path>>(path: P, mode: OptimizeFor) -> Result<Self, StorageErr> {
+        let db = Config::new().mode(mode.into()).path(path).open()?;
         Ok(Self { db })
     }
 
@@ -153,6 +163,7 @@ mod tests {
     use super::SledStorage;
     use crate::counter::Counter;
     use crate::limit::Limit;
+    use crate::storage::disk::OptimizeFor;
     use crate::storage::CounterStorage;
     use std::collections::HashMap;
     use std::fs;
@@ -167,7 +178,8 @@ mod tests {
 
         let tmp = TempDir::new("limitador-disk-tests").expect("We should have a dir!");
         {
-            let storage = SledStorage::open(tmp.path()).expect("We should have a storage");
+            let storage = SledStorage::open(tmp.path(), OptimizeFor::Space)
+                .expect("We should have a storage");
             let mut files = fs::read_dir(tmp.as_ref()).expect("Couldn't access data dir");
             assert!(files.next().is_some());
 
@@ -191,7 +203,8 @@ mod tests {
         }
 
         {
-            let storage = SledStorage::open(tmp.path()).expect("We should still have a storage");
+            let storage = SledStorage::open(tmp.path(), OptimizeFor::Space)
+                .expect("We should still have a storage");
             assert!(
                 !storage.is_within_limits(&counter, 1).unwrap(),
                 "Should be above threshold still!"

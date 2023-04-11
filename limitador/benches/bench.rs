@@ -2,7 +2,7 @@ use criterion::{black_box, criterion_group, criterion_main, Bencher, BenchmarkId
 use rand::seq::SliceRandom;
 
 use limitador::limit::Limit;
-use limitador::storage::disk::DiskStorage;
+use limitador::storage::disk::{DiskStorage, OptimizeFor};
 use limitador::storage::in_memory::InMemoryStorage;
 use limitador::storage::CounterStorage;
 use limitador::RateLimiter;
@@ -105,7 +105,8 @@ fn bench_sled(c: &mut Criterion) {
             |b: &mut Bencher, test_scenario: &&TestScenario| {
                 let prefix = format!("limitador-disk-bench-{index}-is_rate_limited");
                 let tmp = TempDir::new(&prefix).expect("We should have a dir!");
-                let storage = Box::new(DiskStorage::open(tmp.path()).unwrap());
+                let storage =
+                    Box::new(DiskStorage::open(tmp.path(), OptimizeFor::Throughput).unwrap());
                 bench_is_rate_limited(b, test_scenario, storage);
             },
         );
@@ -115,7 +116,8 @@ fn bench_sled(c: &mut Criterion) {
             |b: &mut Bencher, test_scenario: &&TestScenario| {
                 let prefix = format!("limitador-disk-bench-{index}-update_counters");
                 let tmp = TempDir::new(&prefix).expect("We should have a dir!");
-                let storage = Box::new(DiskStorage::open(tmp.path()).unwrap());
+                let storage =
+                    Box::new(DiskStorage::open(tmp.path(), OptimizeFor::Throughput).unwrap());
                 bench_update_counters(b, test_scenario, storage);
             },
         );
@@ -125,7 +127,8 @@ fn bench_sled(c: &mut Criterion) {
             |b: &mut Bencher, test_scenario: &&TestScenario| {
                 let prefix = format!("limitador-disk-bench-{index}-check_rate_limited_and_update");
                 let tmp = TempDir::new(&prefix).expect("We should have a dir!");
-                let storage = Box::new(DiskStorage::open(tmp.path()).unwrap());
+                let storage =
+                    Box::new(DiskStorage::open(tmp.path(), OptimizeFor::Throughput).unwrap());
                 bench_check_rate_limited_and_update(b, test_scenario, storage);
             },
         );
