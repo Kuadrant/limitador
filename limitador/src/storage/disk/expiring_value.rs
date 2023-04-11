@@ -1,3 +1,4 @@
+use crate::storage::StorageErr;
 use sled::IVec;
 use std::array::TryFromSliceError;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -70,6 +71,14 @@ impl From<ExpiringValue> for IVec {
             .as_secs()
             .to_be_bytes();
         IVec::from([val, exp].concat())
+    }
+}
+
+impl From<TryFromSliceError> for StorageErr {
+    fn from(_: TryFromSliceError) -> Self {
+        Self {
+            msg: "Corrupted byte sequence while reading 8 bytes for 64-bit integer".to_owned(),
+        }
     }
 }
 

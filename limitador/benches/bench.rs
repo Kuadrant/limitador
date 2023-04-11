@@ -2,10 +2,8 @@ use criterion::{black_box, criterion_group, criterion_main, Bencher, BenchmarkId
 use rand::seq::SliceRandom;
 
 use limitador::limit::Limit;
+use limitador::storage::disk::DiskStorage;
 use limitador::storage::in_memory::InMemoryStorage;
-#[cfg(feature = "redis")]
-use limitador::storage::redis::RedisStorage;
-use limitador::storage::sled::SledStorage;
 use limitador::storage::CounterStorage;
 use limitador::RateLimiter;
 use rand::SeedableRng;
@@ -74,7 +72,7 @@ fn bench_in_mem(c: &mut Criterion) {
             BenchmarkId::new("is_rate_limited", scenario),
             scenario,
             |b: &mut Bencher, test_scenario: &&TestScenario| {
-                let storage = Box::<limitador::storage::in_memory::InMemoryStorage>::default();
+                let storage = Box::<InMemoryStorage>::default();
                 bench_is_rate_limited(b, test_scenario, storage);
             },
         );
@@ -82,7 +80,7 @@ fn bench_in_mem(c: &mut Criterion) {
             BenchmarkId::new("update_counters", scenario),
             scenario,
             |b: &mut Bencher, test_scenario: &&TestScenario| {
-                let storage = Box::<limitador::storage::in_memory::InMemoryStorage>::default();
+                let storage = Box::<InMemoryStorage>::default();
                 bench_update_counters(b, test_scenario, storage);
             },
         );
@@ -90,7 +88,7 @@ fn bench_in_mem(c: &mut Criterion) {
             BenchmarkId::new("check_rate_limited_and_update", scenario),
             scenario,
             |b: &mut Bencher, test_scenario: &&TestScenario| {
-                let storage = Box::<limitador::storage::in_memory::InMemoryStorage>::default();
+                let storage = Box::<InMemoryStorage>::default();
                 bench_check_rate_limited_and_update(b, test_scenario, storage);
             },
         );
@@ -105,10 +103,9 @@ fn bench_sled(c: &mut Criterion) {
             BenchmarkId::new("is_rate_limited", scenario),
             scenario,
             |b: &mut Bencher, test_scenario: &&TestScenario| {
-                let prefix = format!("limitador-sled-bench-{index}-is_rate_limited");
+                let prefix = format!("limitador-disk-bench-{index}-is_rate_limited");
                 let tmp = TempDir::new(&prefix).expect("We should have a dir!");
-                let storage =
-                    Box::new(limitador::storage::sled::SledStorage::open(tmp.path()).unwrap());
+                let storage = Box::new(DiskStorage::open(tmp.path()).unwrap());
                 bench_is_rate_limited(b, test_scenario, storage);
             },
         );
@@ -116,10 +113,9 @@ fn bench_sled(c: &mut Criterion) {
             BenchmarkId::new("update_counters", scenario),
             scenario,
             |b: &mut Bencher, test_scenario: &&TestScenario| {
-                let prefix = format!("limitador-sled-bench-{index}-update_counters");
+                let prefix = format!("limitador-disk-bench-{index}-update_counters");
                 let tmp = TempDir::new(&prefix).expect("We should have a dir!");
-                let storage =
-                    Box::new(limitador::storage::sled::SledStorage::open(tmp.path()).unwrap());
+                let storage = Box::new(DiskStorage::open(tmp.path()).unwrap());
                 bench_update_counters(b, test_scenario, storage);
             },
         );
@@ -127,9 +123,9 @@ fn bench_sled(c: &mut Criterion) {
             BenchmarkId::new("check_rate_limited_and_update", scenario),
             scenario,
             |b: &mut Bencher, test_scenario: &&TestScenario| {
-                let prefix = format!("limitador-sled-bench-{index}-check_rate_limited_and_update");
+                let prefix = format!("limitador-disk-bench-{index}-check_rate_limited_and_update");
                 let tmp = TempDir::new(&prefix).expect("We should have a dir!");
-                let storage = Box::new(SledStorage::open(tmp.path()).unwrap());
+                let storage = Box::new(DiskStorage::open(tmp.path()).unwrap());
                 bench_check_rate_limited_and_update(b, test_scenario, storage);
             },
         );

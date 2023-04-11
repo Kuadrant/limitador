@@ -1,12 +1,11 @@
 use crate::counter::Counter;
 use crate::limit::Limit;
+use crate::storage::disk::expiring_value::ExpiringValue;
 use crate::storage::keys::{
     key_for_counter, partial_counter_from_counter_key, prefix_for_namespace,
 };
-use crate::storage::sled::expiring_value::ExpiringValue;
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 use sled::{Db, IVec};
-use std::array::TryFromSliceError;
 use std::collections::{BTreeSet, HashSet};
 use std::time::{Duration, SystemTime};
 
@@ -149,14 +148,6 @@ impl SledStorage {
     }
 }
 
-impl From<TryFromSliceError> for StorageErr {
-    fn from(_: TryFromSliceError) -> Self {
-        Self {
-            msg: "Corrupted byte sequence while reading 8 bytes for 64-bit integer".to_owned(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::SledStorage;
@@ -174,7 +165,7 @@ mod tests {
         let limit = Limit::new(namespace, 1, 2, vec!["req.method == 'GET'"], vec!["app_id"]);
         let counter = Counter::new(limit, HashMap::default());
 
-        let tmp = TempDir::new("limitador-sled-tests").expect("We should have a dir!");
+        let tmp = TempDir::new("limitador-disk-tests").expect("We should have a dir!");
         {
             let storage = SledStorage::open(tmp.path()).expect("We should have a storage");
             let mut files = fs::read_dir(tmp.as_ref()).expect("Couldn't access data dir");

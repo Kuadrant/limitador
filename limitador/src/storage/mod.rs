@@ -6,8 +6,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 use thiserror::Error;
 
+pub mod disk;
 pub mod in_memory;
-pub mod sled;
 pub mod wasm;
 
 #[cfg(feature = "redis_storage")]

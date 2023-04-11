@@ -15,7 +15,7 @@ macro_rules! test_with_all_storage_impls {
 
             #[tokio::test]
             async fn [<$function _sled_storage>]() {
-                let dir = TempDir::new("limitador-sled-integration-tests").expect("We should have a dir!");
+                let dir = TempDir::new("limitador-disk-integration-tests").expect("We should have a dir!");
                 let rate_limiter =
                     RateLimiter::new_with_storage(Box::new(SledStorage::open(dir.path()).expect("Couldn't open temp dir")));
                 $function(&mut TestsLimiter::new_from_blocking_impl(rate_limiter)).await;
@@ -102,8 +102,8 @@ mod test {
     use self::limitador::RateLimiter;
     use crate::helpers::tests_limiter::*;
     use limitador::limit::Limit;
+    use limitador::storage::disk::SledStorage;
     use limitador::storage::in_memory::InMemoryStorage;
-    use limitador::storage::sled::SledStorage;
     use limitador::storage::wasm::WasmStorage;
     use std::collections::{HashMap, HashSet};
     use std::thread::sleep;
