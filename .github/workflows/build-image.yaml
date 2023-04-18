@@ -7,7 +7,7 @@ on:
     tags: ['*']
 
 env:
-  IMG_TAGS: ${{ github.ref_name }}
+  IMG_TAGS: ${{ github.sha }} ${{ github.ref_name }}
   IMG_REGISTRY_HOST: quay.io
   IMG_REGISTRY_ORG: kuadrant
   MAIN_BRANCH_NAME: main
