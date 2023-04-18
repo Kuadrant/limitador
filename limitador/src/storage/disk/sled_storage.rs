@@ -2,7 +2,7 @@ use crate::counter::Counter;
 use crate::limit::Limit;
 use crate::storage::disk::expiring_value::ExpiringValue;
 use crate::storage::disk::OptimizeFor;
-use crate::storage::keys::{
+use crate::storage::keys::bin::{
     key_for_counter, partial_counter_from_counter_key, prefix_for_namespace,
 };
 use crate::storage::{Authorization, CounterStorage, StorageErr};
@@ -33,7 +33,7 @@ impl CounterStorage for SledStorage {
         delta: i64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
-        let mut keys: Vec<String> = Vec::with_capacity(counters.len());
+        let mut keys: Vec<Vec<u8>> = Vec::with_capacity(counters.len());
 
         for counter in &mut *counters {
             let key = key_for_counter(counter);
@@ -72,11 +72,10 @@ impl CounterStorage for SledStorage {
         for ns in namepaces {
             for entry in self.db.range(prefix_for_namespace(ns)..) {
                 let (key, value) = entry?;
-                let raw = String::from_utf8_lossy(key.as_ref());
-                if !raw.starts_with(&prefix_for_namespace(ns)) {
+                let mut counter = partial_counter_from_counter_key(key.as_ref());
+                if counter.namespace().as_ref() != ns {
                     break;
                 }
-                let mut counter = partial_counter_from_counter_key(raw.as_ref(), ns);
                 let value: ExpiringValue = value.as_ref().try_into()?;
                 for limit in limits {
                     if limit == counter.limit() {
@@ -125,7 +124,7 @@ impl SledStorage {
 
     fn insert_or_update(
         &self,
-        key: &str,
+        key: &[u8],
         counter: &Counter,
         delta: i64,
     ) -> Result<ExpiringValue, StorageErr> {

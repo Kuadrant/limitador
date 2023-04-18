@@ -86,6 +86,15 @@ impl Counter {
     pub fn set_expires_in(&mut self, duration: Duration) {
         self.expires_in = Some(duration)
     }
+
+    pub(crate) fn variables_for_key(&self) -> Vec<(&str, &str)> {
+        let mut variables = Vec::with_capacity(self.set_variables.len());
+        for (var, value) in &self.set_variables {
+            variables.push((var.as_str(), value.as_str()));
+        }
+        variables.sort_by(|(key1, _), (key2, _)| key1.cmp(key2));
+        variables
+    }
 }
 
 impl Hash for Counter {
