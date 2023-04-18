@@ -15,27 +15,31 @@
 use crate::counter::Counter;
 use crate::limit::Limit;
 
-pub fn key_for_counter(counter: &Counter) -> String {
+pub fn key_for_counter(counter: &Counter) -> Vec<u8> {
     format!(
         "{},counter:{}",
         prefix_for_namespace(counter.namespace().as_ref()),
         serde_json::to_string(counter).unwrap()
     )
+    .as_bytes()
+    .to_vec()
 }
 
-pub fn key_for_counters_of_limit(limit: &Limit) -> String {
+pub fn key_for_counters_of_limit(limit: &Limit) -> Vec<u8> {
     format!(
         "namespace:{{{}}},counters_of_limit:{}",
         limit.namespace().as_ref(),
         serde_json::to_string(limit).unwrap()
     )
+    .as_bytes()
+    .to_vec()
 }
 
 pub fn prefix_for_namespace(namespace: &str) -> String {
     format!("namespace:{{{namespace}}},")
 }
 
-pub fn counter_from_counter_key(key: &str, limit: &Limit) -> Counter {
+pub fn counter_from_counter_key(key: &[u8], limit: &Limit) -> Counter {
     let mut counter = partial_counter_from_counter_key(key, limit.namespace().as_ref());
     if !counter.update_to_limit(limit) {
         // this means some kind of data corruption _or_ most probably
@@ -49,11 +53,12 @@ pub fn counter_from_counter_key(key: &str, limit: &Limit) -> Counter {
     counter
 }
 
-pub fn partial_counter_from_counter_key(key: &str, namespace: &str) -> Counter {
+pub fn partial_counter_from_counter_key(key: &[u8], namespace: &str) -> Counter {
     let offset = ",counter:".len();
     let start_pos_counter = prefix_for_namespace(namespace).len() + offset;
 
-    let counter: Counter = serde_json::from_str(&key[start_pos_counter..]).unwrap();
+    let counter: Counter =
+        serde_json::from_str(&String::from_utf8_lossy(&key[start_pos_counter..])).unwrap();
     counter
 }
 
@@ -77,8 +82,8 @@ mod tests {
             vec!["app_id"],
         );
         assert_eq!(
-            "namespace:{example.com},counters_of_limit:{\"namespace\":\"example.com\",\"seconds\":60,\"conditions\":[\"req.method == \\\"GET\\\"\"],\"variables\":[\"app_id\"]}",
-            key_for_counters_of_limit(&limit))
+            &key_for_counters_of_limit(&limit),
+            b"namespace:{example.com},counters_of_limit:{\"namespace\":\"example.com\",\"seconds\":60,\"conditions\":[\"req.method == \\\"GET\\\"\"],\"variables\":[\"app_id\"]}")
     }
 
     #[test]
@@ -89,6 +94,6 @@ mod tests {
         let raw = key_for_counter(&counter);
         assert_eq!(counter, partial_counter_from_counter_key(&raw, namespace));
         let prefix = prefix_for_namespace(namespace);
-        assert_eq!(&raw[0..prefix.len()], &prefix);
+        assert_eq!(&raw[0..prefix.len()], prefix.as_bytes());
     }
 }

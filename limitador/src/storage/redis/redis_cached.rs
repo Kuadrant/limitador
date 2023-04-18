@@ -242,7 +242,7 @@ impl CachedRedisStorage {
         counters: &[&mut Counter],
         redis_con: &mut ConnectionManager,
     ) -> Result<(Vec<Option<i64>>, Vec<i64>), StorageErr> {
-        let counter_keys: Vec<String> = counters
+        let counter_keys: Vec<Vec<u8>> = counters
             .iter()
             .map(|counter| key_for_counter(counter))
             .collect();

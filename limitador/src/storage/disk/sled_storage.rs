@@ -33,7 +33,7 @@ impl CounterStorage for SledStorage {
         delta: i64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
-        let mut keys: Vec<String> = Vec::with_capacity(counters.len());
+        let mut keys: Vec<Vec<u8>> = Vec::with_capacity(counters.len());
 
         for counter in &mut *counters {
             let key = key_for_counter(counter);
@@ -76,7 +76,7 @@ impl CounterStorage for SledStorage {
                 if !raw.starts_with(&prefix_for_namespace(ns)) {
                     break;
                 }
-                let mut counter = partial_counter_from_counter_key(raw.as_ref(), ns);
+                let mut counter = partial_counter_from_counter_key(raw.as_bytes(), ns);
                 let value: ExpiringValue = value.as_ref().try_into()?;
                 for limit in limits {
                     if limit == counter.limit() {
@@ -125,7 +125,7 @@ impl SledStorage {
 
     fn insert_or_update(
         &self,
-        key: &str,
+        key: &[u8],
         counter: &Counter,
         delta: i64,
     ) -> Result<ExpiringValue, StorageErr> {

@@ -34,7 +34,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
         let mut con = self.conn_manager.clone();
 
         match con
-            .get::<String, Option<i64>>(key_for_counter(counter))
+            .get::<Vec<u8>, Option<i64>>(key_for_counter(counter))
             .await?
         {
             Some(val) => Ok(val - delta >= 0),
@@ -64,7 +64,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let mut con = self.conn_manager.clone();
-        let counter_keys: Vec<String> = counters.iter().map(key_for_counter).collect();
+        let counter_keys: Vec<Vec<u8>> = counters.iter().map(key_for_counter).collect();
 
         if load_counters {
             let script = redis::Script::new(VALUES_AND_TTLS);
@@ -117,7 +117,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
 
         for limit in limits {
             let counter_keys = con
-                .smembers::<String, HashSet<String>>(key_for_counters_of_limit(&limit))
+                .smembers::<Vec<u8>, HashSet<Vec<u8>>>(key_for_counters_of_limit(&limit))
                 .await?;
 
             for counter_key in counter_keys {
@@ -130,7 +130,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                 // do the "get" + "delete if none" atomically.
                 // This does not cause any bugs, but consumes memory
                 // unnecessarily.
-                if let Some(val) = con.get::<String, Option<i64>>(counter_key.clone()).await? {
+                if let Some(val) = con.get::<Vec<u8>, Option<i64>>(counter_key.clone()).await? {
                     counter.set_remaining(val);
                     let ttl = con.ttl(&counter_key).await?;
                     counter.set_expires_in(Duration::from_secs(ttl));
@@ -177,7 +177,7 @@ impl AsyncRedisStorage {
         let mut con = self.conn_manager.clone();
 
         let counter_keys = con
-            .smembers::<String, HashSet<String>>(key_for_counters_of_limit(limit))
+            .smembers::<Vec<u8>, HashSet<Vec<u8>>>(key_for_counters_of_limit(limit))
             .await?;
 
         for counter_key in counter_keys {
