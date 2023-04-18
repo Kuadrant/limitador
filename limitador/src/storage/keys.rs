@@ -36,7 +36,7 @@ pub fn prefix_for_namespace(namespace: &str) -> String {
 }
 
 pub fn counter_from_counter_key(key: &str, limit: &Limit) -> Counter {
-    let mut counter = partial_counter_from_counter_key(key);
+    let mut counter = partial_counter_from_counter_key(key, limit.namespace().as_ref());
     if !counter.update_to_limit(limit) {
         // this means some kind of data corruption _or_ most probably
         // an out of sync `impl PartialEq for Limit` vs `pub fn key_for_counter(counter: &Counter) -> String`
@@ -49,9 +49,9 @@ pub fn counter_from_counter_key(key: &str, limit: &Limit) -> Counter {
     counter
 }
 
-pub fn partial_counter_from_counter_key(key: &str) -> Counter {
-    let counter_prefix = "counter:";
-    let start_pos_counter = key.find(counter_prefix).unwrap() + counter_prefix.len();
+pub fn partial_counter_from_counter_key(key: &str, namespace: &str) -> Counter {
+    let offset = ",counter:".len();
+    let start_pos_counter = prefix_for_namespace(namespace).len() + offset;
 
     let counter: Counter = serde_json::from_str(&key[start_pos_counter..]).unwrap();
     counter
@@ -59,10 +59,13 @@ pub fn partial_counter_from_counter_key(key: &str) -> Counter {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use crate::counter::Counter;
-    use crate::storage::keys::{key_for_counter, key_for_counters_of_limit, partial_counter_from_counter_key, prefix_for_namespace};
+    use crate::storage::keys::{
+        key_for_counter, key_for_counters_of_limit, partial_counter_from_counter_key,
+        prefix_for_namespace,
+    };
     use crate::Limit;
+    use std::collections::HashMap;
 
     #[test]
     fn key_for_limit_format() {
@@ -80,11 +83,11 @@ mod tests {
 
     #[test]
     fn counter_key_and_counter_are_symmetric() {
-        let namespace = "our_ns";
+        let namespace = "ns_counter:";
         let limit = Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"]);
         let counter = Counter::new(limit.clone(), HashMap::default());
         let raw = key_for_counter(&counter);
-        assert_eq!(counter, partial_counter_from_counter_key(&raw));
+        assert_eq!(counter, partial_counter_from_counter_key(&raw, namespace));
         let prefix = prefix_for_namespace(namespace);
         assert_eq!(&raw[0..prefix.len()], &prefix);
     }

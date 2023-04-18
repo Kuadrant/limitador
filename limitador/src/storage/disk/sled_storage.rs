@@ -76,7 +76,7 @@ impl CounterStorage for SledStorage {
                 if !raw.starts_with(&prefix_for_namespace(ns)) {
                     break;
                 }
-                let mut counter = partial_counter_from_counter_key(raw.as_ref());
+                let mut counter = partial_counter_from_counter_key(raw.as_ref(), ns);
                 let value: ExpiringValue = value.as_ref().try_into()?;
                 for limit in limits {
                     if limit == counter.limit() {
