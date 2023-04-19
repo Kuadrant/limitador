@@ -5,9 +5,10 @@ use crate::storage::infinispan::response::response_to_string;
 use crate::storage::infinispan::{
     counters, sets, DEFAULT_INFINISPAN_CONSISTENCY, DEFAULT_INFINISPAN_LIMITS_CACHE_NAME,
 };
-use crate::storage::keys::*;
+use crate::storage::keys;
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
+use base64::{engine::general_purpose::STANDARD_NO_PAD as base64engine, Engine};
 use infinispan::errors::InfinispanError;
 use infinispan::request;
 use infinispan::Infinispan;
@@ -290,4 +291,23 @@ impl InfinispanStorageBuilder {
         )
         .await
     }
+}
+
+fn key_for_counter(counter: &Counter) -> String {
+    to_base64(keys::key_for_counter(counter))
+}
+
+fn key_for_counters_of_limit(limit: &Limit) -> String {
+    to_base64(keys::key_for_counters_of_limit(limit))
+}
+
+fn counter_from_counter_key(key: &str, limit: &Limit) -> Counter {
+    keys::counter_from_counter_key(from_base64(key.to_string()).as_slice(), limit)
+}
+fn to_base64(data: Vec<u8>) -> String {
+    base64engine.encode(data)
+}
+
+fn from_base64(data: String) -> Vec<u8> {
+    base64engine.decode(data).unwrap()
 }
