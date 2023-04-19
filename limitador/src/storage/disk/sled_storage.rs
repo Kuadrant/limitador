@@ -72,11 +72,10 @@ impl CounterStorage for SledStorage {
         for ns in namepaces {
             for entry in self.db.range(prefix_for_namespace(ns)..) {
                 let (key, value) = entry?;
-                let raw = String::from_utf8_lossy(key.as_ref());
-                if !raw.starts_with(&prefix_for_namespace(ns)) {
+                let mut counter = partial_counter_from_counter_key(key.as_ref());
+                if counter.namespace().as_ref() != ns {
                     break;
                 }
-                let mut counter = partial_counter_from_counter_key(raw.as_bytes(), ns);
                 let value: ExpiringValue = value.as_ref().try_into()?;
                 for limit in limits {
                     if limit == counter.limit() {
