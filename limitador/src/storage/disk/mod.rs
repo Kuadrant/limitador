@@ -13,6 +13,7 @@ impl From<sled::Error> for StorageErr {
     }
 }
 
+#[derive(PartialEq, Eq, Debug)]
 pub enum OptimizeFor {
     Space,
     Throughput,

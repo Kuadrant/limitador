@@ -7,7 +7,8 @@ extern crate clap;
 #[cfg(feature = "infinispan")]
 use crate::config::InfinispanStorageConfiguration;
 use crate::config::{
-    Configuration, RedisStorageCacheConfiguration, RedisStorageConfiguration, StorageConfiguration,
+    Configuration, DiskStorageConfiguration, RedisStorageCacheConfiguration,
+    RedisStorageConfiguration, StorageConfiguration,
 };
 use crate::envoy_rls::server::{run_envoy_rls_server, RateLimitHeaders};
 use crate::http_api::server::run_http_server;
@@ -15,6 +16,7 @@ use clap::{App, Arg, SubCommand};
 use env_logger::Builder;
 use limitador::errors::LimitadorError;
 use limitador::limit::Limit;
+use limitador::storage::disk::DiskStorage;
 #[cfg(feature = "infinispan")]
 use limitador::storage::infinispan::{Consistency, InfinispanStorageBuilder};
 #[cfg(feature = "infinispan")]
@@ -26,8 +28,10 @@ use limitador::storage::redis::{
     DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC,
     DEFAULT_TTL_RATIO_CACHED_COUNTERS,
 };
-use limitador::storage::{AsyncCounterStorage, AsyncStorage};
-use limitador::{AsyncRateLimiter, AsyncRateLimiterBuilder, RateLimiter, RateLimiterBuilder};
+use limitador::storage::{AsyncCounterStorage, AsyncStorage, Storage};
+use limitador::{
+    storage, AsyncRateLimiter, AsyncRateLimiterBuilder, RateLimiter, RateLimiterBuilder,
+};
 use log::LevelFilter;
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
@@ -82,6 +86,7 @@ impl Limiter {
                 Self::infinispan_limiter(cfg, config.limit_name_in_labels).await
             }
             StorageConfiguration::InMemory => Self::in_memory_limiter(config),
+            StorageConfiguration::Disk(cfg) => Self::disk_limiter(cfg, config.limit_name_in_labels),
         };
 
         Ok(rate_limiter)
@@ -197,6 +202,24 @@ impl Limiter {
         }
 
         Self::Async(rate_limiter_builder.build())
+    }
+
+    fn disk_limiter(cfg: DiskStorageConfiguration, limit_name_in_labels: bool) -> Self {
+        let storage = match DiskStorage::open(cfg.path.as_str(), cfg.optimization) {
+            Ok(storage) => storage,
+            Err(err) => {
+                eprintln!("Failed to open DB at {}: {err}", cfg.path);
+                process::exit(1)
+            }
+        };
+        let mut rate_limiter_builder =
+            RateLimiterBuilder::new().storage(Storage::with_counter_storage(Box::new(storage)));
+
+        if limit_name_in_labels {
+            rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
+        }
+
+        Self::Blocking(rate_limiter_builder.build())
     }
 
     fn in_memory_limiter(cfg: Configuration) -> Self {
@@ -402,6 +425,9 @@ fn create_config() -> (Configuration, String) {
     let default_http_port =
         env::var("HTTP_API_PORT").unwrap_or_else(|_| Configuration::DEFAULT_HTTP_PORT.to_string());
 
+    let disk_path = env::var("DISK_PATH").unwrap_or_else(|_| "".to_string());
+    let disk_optimize = env::var("DISK_OPTIMIZE").unwrap_or_else(|_| "throughput".to_string());
+
     let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "".to_string());
 
     let redis_cached_ttl_default = env::var("REDIS_LOCAL_CACHE_MAX_TTL_CACHED_COUNTERS_MS")
@@ -436,6 +462,13 @@ fn create_config() -> (Configuration, String) {
         redis_url_arg.required(true)
     } else {
         redis_url_arg.default_value(&redis_url)
+    };
+
+    let disk_path_arg = Arg::with_name("PATH").help("Path to counter DB").index(1);
+    let disk_path_arg = if disk_path.is_empty() {
+        disk_path_arg.required(true)
+    } else {
+        disk_path_arg.default_value(&disk_path)
     };
 
     // build app
@@ -520,15 +553,33 @@ fn create_config() -> (Configuration, String) {
                 .about("Counters are held in Limitador (ephemeral)"),
         )
         .subcommand(
-            SubCommand::with_name("redis")
+            SubCommand::with_name("disk")
                 .display_order(2)
+                .about("Counters are held on disk (persistent)")
+                .arg(disk_path_arg)
+                .arg(
+                    Arg::with_name("OPTIMIZE")
+                        .long("optimize")
+                        .takes_value(true)
+                        .display_order(1)
+                        .default_value(&disk_optimize)
+                        .value_parser(clap::builder::PossibleValuesParser::new([
+                            "throughput",
+                            "disk",
+                        ]))
+                        .help("Optimizes either to save disk space or higher throughput"),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("redis")
+                .display_order(3)
                 .about("Uses Redis to store counters")
                 .arg(redis_url_arg.clone()),
         )
         .subcommand(
             SubCommand::with_name("redis_cached")
                 .about("Uses Redis to store counters, with an in-memory cache")
-                .display_order(3)
+                .display_order(4)
                 .arg(redis_url_arg)
                 .arg(
                     Arg::with_name("TTL")
@@ -572,7 +623,7 @@ fn create_config() -> (Configuration, String) {
     let cmdline = cmdline.subcommand(
         SubCommand::with_name("infinispan")
             .about("Uses Infinispan to store counters")
-            .display_order(4)
+            .display_order(5)
             .arg(
                 Arg::with_name("URL")
                     .help("Infinispan URL to use")
@@ -647,6 +698,14 @@ fn create_config() -> (Configuration, String) {
         Some(("redis", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
             url: sub.value_of("URL").unwrap().to_owned(),
             cache: None,
+        }),
+        Some(("disk", sub)) => StorageConfiguration::Disk(DiskStorageConfiguration {
+            path: sub.value_of("PATH").expect("We need a path!").to_string(),
+            optimization: match sub.value_of("OPTIMIZE") {
+                Some("disk") => storage::disk::OptimizeFor::Space,
+                Some("throughput") => storage::disk::OptimizeFor::Throughput,
+                _ => unreachable!("Some disk OptimizeFor wasn't configured!"),
+            },
         }),
         Some(("redis_cached", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
             url: sub.value_of("URL").unwrap().to_owned(),
