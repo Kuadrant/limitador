@@ -19,6 +19,7 @@
 // HTTP_API_PORT: port
 
 use crate::envoy_rls::server::RateLimitHeaders;
+use limitador::storage;
 use log::LevelFilter;
 
 #[derive(Debug)]
@@ -92,9 +93,16 @@ impl Default for Configuration {
 #[derive(PartialEq, Eq, Debug)]
 pub enum StorageConfiguration {
     InMemory,
+    Disk(DiskStorageConfiguration),
     Redis(RedisStorageConfiguration),
     #[cfg(feature = "infinispan")]
     Infinispan(InfinispanStorageConfiguration),
+}
+
+#[derive(PartialEq, Eq, Debug)]
+pub struct DiskStorageConfiguration {
+    pub path: String,
+    pub optimization: storage::disk::OptimizeFor,
 }
 
 #[derive(PartialEq, Eq, Debug)]
