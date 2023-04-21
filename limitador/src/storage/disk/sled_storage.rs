@@ -2,7 +2,7 @@ use crate::counter::Counter;
 use crate::limit::Limit;
 use crate::storage::disk::expiring_value::ExpiringValue;
 use crate::storage::disk::OptimizeFor;
-use crate::storage::keys::{
+use crate::storage::keys::bin::{
     key_for_counter, partial_counter_from_counter_key, prefix_for_namespace,
 };
 use crate::storage::{Authorization, CounterStorage, StorageErr};
