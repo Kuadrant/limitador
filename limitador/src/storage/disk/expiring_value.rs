@@ -1,5 +1,4 @@
 use crate::storage::StorageErr;
-use sled::IVec;
 use std::array::TryFromSliceError;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -61,7 +60,7 @@ impl TryFrom<&[u8]> for ExpiringValue {
     }
 }
 
-impl From<ExpiringValue> for IVec {
+impl From<ExpiringValue> for Vec<u8> {
     fn from(value: ExpiringValue) -> Self {
         let val: [u8; 8] = value.value.to_be_bytes();
         let exp: [u8; 8] = value
@@ -70,7 +69,7 @@ impl From<ExpiringValue> for IVec {
             .expect("Can't expire before Epoch")
             .as_secs()
             .to_be_bytes();
-        IVec::from([val, exp].concat())
+        [val, exp].concat()
     }
 }
 
@@ -85,7 +84,6 @@ impl From<TryFromSliceError> for StorageErr {
 #[cfg(test)]
 mod tests {
     use super::ExpiringValue;
-    use sled::IVec;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -126,11 +124,11 @@ mod tests {
     }
 
     #[test]
-    fn from_into_ivec() {
+    fn from_into_vec() {
         let now = SystemTime::now();
         let val = ExpiringValue::new(42, now);
-        let raw: IVec = val.into();
-        let back: ExpiringValue = raw.as_ref().try_into().unwrap();
+        let raw: Vec<u8> = val.into();
+        let back: ExpiringValue = raw.as_slice().try_into().unwrap();
 
         assert_eq!(back.value, 42);
         assert_eq!(

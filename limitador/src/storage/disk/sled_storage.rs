@@ -145,7 +145,9 @@ impl SledStorage {
                     SystemTime::now() + Duration::from_secs(counter.limit().seconds()),
                 ),
             };
-            Some::<IVec>(updated_value.into())
+            Some::<IVec>(IVec::from(<ExpiringValue as Into<Vec<u8>>>::into(
+                updated_value,
+            )))
         })?)
         .map(|option| {
             option
