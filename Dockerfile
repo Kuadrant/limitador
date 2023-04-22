@@ -14,7 +14,7 @@ RUN dnf -y --setopt=install_weak_deps=False --setopt=tsflags=nodocs install \
  && dnf -y --setopt=install_weak_deps=False --setopt=tsflags=nodocs install epel-release \
  && dnf config-manager --set-enabled powertools
 
-RUN PKGS="gcc-c++ gcc-toolset-12-binutils-gold openssl3-devel protobuf-c protobuf-devel git" \
+RUN PKGS="gcc-c++ gcc-toolset-12-binutils-gold openssl3-devel protobuf-c protobuf-devel git clang kernel-headers" \
     && dnf install --nodocs --assumeyes $PKGS \
     && rpm --verify --nogroup --nouser $PKGS \
     && yum -y clean all
@@ -39,7 +39,7 @@ RUN source $HOME/.cargo/env \
 FROM registry.access.redhat.com/ubi8/ubi-minimal:8.7
 
 # shadow-utils is required for `useradd`
-RUN PKGS="libgcc shadow-utils" \
+RUN PKGS="libgcc libstdc++ shadow-utils" \
     && microdnf --assumeyes install --nodocs $PKGS \
     && rpm --verify --nogroup --nouser $PKGS \
     && microdnf -y clean all

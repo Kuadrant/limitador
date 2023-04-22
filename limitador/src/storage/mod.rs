@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 use thiserror::Error;
 
+#[cfg(feature = "disk_storage")]
 pub mod disk;
 pub mod in_memory;
 pub mod wasm;

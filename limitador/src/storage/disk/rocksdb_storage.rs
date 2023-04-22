@@ -6,15 +6,18 @@ use crate::storage::keys::bin::{
     key_for_counter, partial_counter_from_counter_key, prefix_for_namespace,
 };
 use crate::storage::{Authorization, CounterStorage, StorageErr};
-use sled::{Config, Db, IVec, Mode};
+use rocksdb::{
+    CompactionDecision, DBCompressionType, DBWithThreadMode, IteratorMode, MultiThreaded, Options,
+    DB,
+};
 use std::collections::{BTreeSet, HashSet};
 use std::time::{Duration, SystemTime};
 
-pub struct SledStorage {
-    db: Db,
+pub struct RocksDbStorage {
+    db: DBWithThreadMode<MultiThreaded>,
 }
 
-impl CounterStorage for SledStorage {
+impl CounterStorage for RocksDbStorage {
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
         let key = key_for_counter(counter);
         let value = self.insert_or_update(&key, counter, 0)?;
@@ -37,10 +40,12 @@ impl CounterStorage for SledStorage {
 
         for counter in &mut *counters {
             let key = key_for_counter(counter);
-            let (val, ttl) = match self.db.get(&key)? {
+            let slice: &[u8] = key.as_ref();
+            let (val, ttl) = match self.db.get(slice)? {
                 None => (0, Duration::from_secs(counter.limit().seconds())),
                 Some(raw) => {
-                    let value: ExpiringValue = raw.as_ref().try_into()?;
+                    let slice: &[u8] = raw.as_ref();
+                    let value: ExpiringValue = slice.try_into()?;
                     (value.value(), value.ttl())
                 }
             };
@@ -70,7 +75,7 @@ impl CounterStorage for SledStorage {
         let mut counters = HashSet::default();
         let namepaces: BTreeSet<&str> = limits.iter().map(|l| l.namespace().as_ref()).collect();
         for ns in namepaces {
-            for entry in self.db.range(prefix_for_namespace(ns)..) {
+            for entry in self.db.prefix_iterator(prefix_for_namespace(ns)) {
                 let (key, value) = entry?;
                 let mut counter = partial_counter_from_counter_key(key.as_ref());
                 if counter.namespace().as_ref() != ns {
@@ -97,28 +102,53 @@ impl CounterStorage for SledStorage {
     fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr> {
         let counters = self.get_counters(&limits)?;
         for counter in &counters {
-            self.db.remove(key_for_counter(counter))?;
+            self.db.delete(key_for_counter(counter))?;
         }
         Ok(())
     }
 
     fn clear(&self) -> Result<(), StorageErr> {
-        Ok(self.db.clear()?)
-    }
-}
-
-impl From<OptimizeFor> for Mode {
-    fn from(value: OptimizeFor) -> Self {
-        match value {
-            OptimizeFor::Space => Mode::LowSpace,
-            OptimizeFor::Throughput => Mode::HighThroughput,
+        for entry in self.db.iterator(IteratorMode::Start) {
+            self.db.delete(entry?.0)?
         }
+        Ok(())
     }
 }
 
-impl SledStorage {
+impl RocksDbStorage {
     pub fn open<P: AsRef<std::path::Path>>(path: P, mode: OptimizeFor) -> Result<Self, StorageErr> {
-        let db = Config::new().mode(mode.into()).path(path).open()?;
+        let mut opts = Options::default();
+        match mode {
+            OptimizeFor::Space => {
+                opts.set_compression_type(DBCompressionType::Bz2);
+                opts.set_compaction_filter("ExpiredValueFilter", |_level, _key, value| {
+                    if let Ok(value) = ExpiringValue::try_from(value) {
+                        if value.value_at(SystemTime::now()) != 0 {
+                            return CompactionDecision::Keep;
+                        }
+                    }
+                    CompactionDecision::Remove
+                });
+            }
+            OptimizeFor::Throughput => {
+                opts.set_compression_type(DBCompressionType::None);
+            }
+        }
+        opts.set_merge_operator_associative("ExpiringValueMerge", |_key, start, operands| {
+            let now = SystemTime::now();
+            let mut value: ExpiringValue = start
+                .map(|raw: &[u8]| raw.try_into().unwrap_or_default())
+                .unwrap_or_default();
+            for op in operands {
+                // ignore (corrupted?) values pending merges
+                if let Ok(pending) = ExpiringValue::try_from(op) {
+                    value = value.merge(pending, now);
+                }
+            }
+            Some(Vec::from(value))
+        });
+        opts.create_if_missing(true);
+        let db = DB::open(&opts, path).unwrap();
         Ok(Self { db })
     }
 
@@ -128,38 +158,28 @@ impl SledStorage {
         counter: &Counter,
         delta: i64,
     ) -> Result<ExpiringValue, StorageErr> {
-        Ok(self.db.update_and_fetch(key, |prev| {
-            let updated_value = match prev {
-                Some(raw) => {
-                    let value: ExpiringValue = match TryInto::<ExpiringValue>::try_into(raw) {
-                        Ok(val) => val.update(delta, counter.seconds()),
-                        Err(_) => ExpiringValue::new(
-                            delta,
-                            SystemTime::now() + Duration::from_secs(counter.limit().seconds()),
-                        ),
-                    };
-                    value
-                }
-                None => ExpiringValue::new(
-                    delta,
-                    SystemTime::now() + Duration::from_secs(counter.limit().seconds()),
-                ),
-            };
-            Some::<IVec>(updated_value.into())
-        })?)
-        .map(|option| {
-            option
-                .expect("we always have a counter now!")
-                .as_ref()
-                .try_into()
-                .expect("This has to work!")
-        })
+        let now = SystemTime::now();
+        let value = match self.db.get(key)? {
+            None => ExpiringValue::default(),
+            Some(raw) => {
+                let slice: &[u8] = raw.as_ref();
+                slice.try_into()?
+            }
+        };
+        if value.value_at(now) + delta <= counter.max_value() {
+            let expiring_value =
+                ExpiringValue::new(delta, now + Duration::from_secs(counter.limit().seconds()));
+            self.db
+                .merge(key, <ExpiringValue as Into<Vec<u8>>>::into(expiring_value))?;
+            return Ok(value.update(delta, counter.seconds(), now));
+        }
+        Ok(value)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::SledStorage;
+    use super::RocksDbStorage;
     use crate::counter::Counter;
     use crate::limit::Limit;
     use crate::storage::disk::OptimizeFor;
@@ -177,7 +197,7 @@ mod tests {
 
         let tmp = TempDir::new("limitador-disk-tests").expect("We should have a dir!");
         {
-            let storage = SledStorage::open(tmp.path(), OptimizeFor::Space)
+            let storage = RocksDbStorage::open(tmp.path(), OptimizeFor::Space)
                 .expect("We should have a storage");
             let mut files = fs::read_dir(tmp.as_ref()).expect("Couldn't access data dir");
             assert!(files.next().is_some());
@@ -202,7 +222,7 @@ mod tests {
         }
 
         {
-            let storage = SledStorage::open(tmp.path(), OptimizeFor::Space)
+            let storage = RocksDbStorage::open(tmp.path(), OptimizeFor::Space)
                 .expect("We should still have a storage");
             assert!(
                 !storage.is_within_limits(&counter, 1).unwrap(),

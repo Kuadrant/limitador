@@ -1,9 +1,9 @@
 use crate::storage::StorageErr;
-use sled::IVec;
 use std::array::TryFromSliceError;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-pub struct ExpiringValue {
+#[derive(Clone, Debug)]
+pub(crate) struct ExpiringValue {
     value: i64,
     expiry: SystemTime,
 }
@@ -24,9 +24,7 @@ impl ExpiringValue {
         self.value_at(SystemTime::now())
     }
 
-    pub fn update(self, delta: i64, ttl: u64) -> Self {
-        let now = SystemTime::now();
-
+    pub fn update(self, delta: i64, ttl: u64, now: SystemTime) -> Self {
         let expiry = if self.expiry <= now {
             now + Duration::from_secs(ttl)
         } else {
@@ -37,10 +35,30 @@ impl ExpiringValue {
         Self { value, expiry }
     }
 
+    pub fn merge(self, other: ExpiringValue, now: SystemTime) -> Self {
+        if self.expiry > now {
+            ExpiringValue {
+                value: self.value + other.value,
+                expiry: self.expiry,
+            }
+        } else {
+            other
+        }
+    }
+
     pub fn ttl(&self) -> Duration {
         self.expiry
             .duration_since(SystemTime::now())
             .unwrap_or(Duration::ZERO)
+    }
+}
+
+impl Default for ExpiringValue {
+    fn default() -> Self {
+        ExpiringValue {
+            value: 0,
+            expiry: SystemTime::UNIX_EPOCH,
+        }
     }
 }
 
@@ -61,7 +79,7 @@ impl TryFrom<&[u8]> for ExpiringValue {
     }
 }
 
-impl From<ExpiringValue> for IVec {
+impl From<ExpiringValue> for Vec<u8> {
     fn from(value: ExpiringValue) -> Self {
         let val: [u8; 8] = value.value.to_be_bytes();
         let exp: [u8; 8] = value
@@ -70,7 +88,7 @@ impl From<ExpiringValue> for IVec {
             .expect("Can't expire before Epoch")
             .as_secs()
             .to_be_bytes();
-        IVec::from([val, exp].concat())
+        [val, exp].concat()
     }
 }
 
@@ -85,7 +103,6 @@ impl From<TryFromSliceError> for StorageErr {
 #[cfg(test)]
 mod tests {
     use super::ExpiringValue;
-    use sled::IVec;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -112,7 +129,7 @@ mod tests {
     #[test]
     fn updates_when_valid() {
         let now = SystemTime::now();
-        let val = ExpiringValue::new(42, now + Duration::from_secs(1)).update(3, 10);
+        let val = ExpiringValue::new(42, now + Duration::from_secs(1)).update(3, 10, now);
         assert_eq!(val.value_at(now - Duration::from_secs(1)), 45);
     }
 
@@ -121,16 +138,16 @@ mod tests {
         let now = SystemTime::now();
         let val = ExpiringValue::new(42, now);
         assert_eq!(val.ttl(), Duration::ZERO);
-        let val = val.update(3, 10);
+        let val = val.update(3, 10, now);
         assert_eq!(val.value_at(now - Duration::from_secs(1)), 3);
     }
 
     #[test]
-    fn from_into_ivec() {
+    fn from_into_vec() {
         let now = SystemTime::now();
         let val = ExpiringValue::new(42, now);
-        let raw: IVec = val.into();
-        let back: ExpiringValue = raw.as_ref().try_into().unwrap();
+        let raw: Vec<u8> = val.into();
+        let back: ExpiringValue = raw.as_slice().try_into().unwrap();
 
         assert_eq!(back.value, 42);
         assert_eq!(

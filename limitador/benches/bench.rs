@@ -14,9 +14,9 @@ use tempdir::TempDir;
 const SEED: u64 = 42;
 
 #[cfg(not(feature = "redis"))]
-criterion_group!(benches, bench_in_mem, bench_sled);
+criterion_group!(benches, bench_in_mem, bench_disk);
 #[cfg(feature = "redis")]
-criterion_group!(benches, bench_in_mem, bench_sled, bench_redis);
+criterion_group!(benches, bench_in_mem, bench_disk, bench_redis);
 
 criterion_main!(benches);
 
@@ -96,8 +96,8 @@ fn bench_in_mem(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_sled(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Sled");
+fn bench_disk(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Disk");
     for (index, scenario) in TEST_SCENARIOS.iter().enumerate() {
         group.bench_with_input(
             BenchmarkId::new("is_rate_limited", scenario),
