@@ -702,10 +702,9 @@ fn create_config() -> (Configuration, String) {
         Some(("disk", sub)) => StorageConfiguration::Disk(DiskStorageConfiguration {
             path: sub.value_of("PATH").expect("We need a path!").to_string(),
             optimization: match sub.value_of("OPTIMIZE") {
-                None => panic!("WTF?>!"),
                 Some("disk") => storage::disk::OptimizeFor::Space,
                 Some("throughput") => storage::disk::OptimizeFor::Throughput,
-                Some(_) => unreachable!("Some disk OptimizeFor::Throughput wasn't configured!"),
+                _ => unreachable!("Some disk OptimizeFor wasn't configured!"),
             },
         }),
         Some(("redis_cached", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
