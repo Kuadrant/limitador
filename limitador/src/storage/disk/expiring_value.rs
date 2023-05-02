@@ -2,7 +2,8 @@ use crate::storage::StorageErr;
 use std::array::TryFromSliceError;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-pub struct ExpiringValue {
+#[derive(Clone, Debug)]
+pub(crate) struct ExpiringValue {
     value: i64,
     expiry: SystemTime,
 }
@@ -23,9 +24,7 @@ impl ExpiringValue {
         self.value_at(SystemTime::now())
     }
 
-    pub fn update(self, delta: i64, ttl: u64) -> Self {
-        let now = SystemTime::now();
-
+    pub fn update(self, delta: i64, ttl: u64, now: SystemTime) -> Self {
         let expiry = if self.expiry <= now {
             now + Duration::from_secs(ttl)
         } else {
@@ -36,10 +35,30 @@ impl ExpiringValue {
         Self { value, expiry }
     }
 
+    pub fn merge(self, other: ExpiringValue, now: SystemTime) -> Self {
+        if self.expiry > now {
+            ExpiringValue {
+                value: self.value + other.value,
+                expiry: self.expiry,
+            }
+        } else {
+            other
+        }
+    }
+
     pub fn ttl(&self) -> Duration {
         self.expiry
             .duration_since(SystemTime::now())
             .unwrap_or(Duration::ZERO)
+    }
+}
+
+impl Default for ExpiringValue {
+    fn default() -> Self {
+        ExpiringValue {
+            value: 0,
+            expiry: SystemTime::UNIX_EPOCH,
+        }
     }
 }
 
@@ -110,7 +129,7 @@ mod tests {
     #[test]
     fn updates_when_valid() {
         let now = SystemTime::now();
-        let val = ExpiringValue::new(42, now + Duration::from_secs(1)).update(3, 10);
+        let val = ExpiringValue::new(42, now + Duration::from_secs(1)).update(3, 10, now);
         assert_eq!(val.value_at(now - Duration::from_secs(1)), 45);
     }
 
@@ -119,7 +138,7 @@ mod tests {
         let now = SystemTime::now();
         let val = ExpiringValue::new(42, now);
         assert_eq!(val.ttl(), Duration::ZERO);
-        let val = val.update(3, 10);
+        let val = val.update(3, 10, now);
         assert_eq!(val.value_at(now - Duration::from_secs(1)), 3);
     }
 

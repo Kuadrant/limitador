@@ -14,7 +14,7 @@ macro_rules! test_with_all_storage_impls {
             }
 
             #[tokio::test]
-            async fn [<$function _sled_storage>]() {
+            async fn [<$function _disk_storage>]() {
                 let dir = TempDir::new("limitador-disk-integration-tests").expect("We should have a dir!");
                 let rate_limiter =
                     RateLimiter::new_with_storage(Box::new(DiskStorage::open(dir.path(), OptimizeFor::Throughput).expect("Couldn't open temp dir")));

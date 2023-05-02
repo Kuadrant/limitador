@@ -1,12 +1,12 @@
 use crate::storage::StorageErr;
 
 mod expiring_value;
-mod sled_storage;
+mod rocksdb_storage;
 
-pub use sled_storage::SledStorage as DiskStorage;
+pub use rocksdb_storage::RocksDbStorage as DiskStorage;
 
-impl From<sled::Error> for StorageErr {
-    fn from(error: sled::Error) -> Self {
+impl From<rocksdb::Error> for StorageErr {
+    fn from(error: rocksdb::Error) -> Self {
         Self {
             msg: format!("Underlying storage error: {error}"),
         }
