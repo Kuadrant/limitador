@@ -38,6 +38,9 @@ jobs:
             ./Dockerfile
           build-args: |
             GITHUB_SHA=${{ github.sha }}
+      - name: Smoke Test
+        run: |
+          podman run --rm -t ${{ steps.build-image.outputs.image }}:${{ github.sha }} limitador-server --help
       - name: Push Image
         if: ${{ !env.ACT }}
         id: push-to-quay
