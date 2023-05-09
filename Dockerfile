@@ -57,4 +57,6 @@ RUN chown limitador:limitador limitador-server
 
 USER limitador
 
+ENTRYPOINT ["/bin/sh", "-c"]
+
 CMD ["limitador-server"]
