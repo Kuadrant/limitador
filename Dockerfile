@@ -53,7 +53,10 @@ ENV PATH="/home/limitador/bin:${PATH}"
 COPY --from=limitador-build /usr/src/limitador/limitador-server/examples/limits.yaml ../
 COPY --from=limitador-build /usr/src/limitador/target/release/limitador-server ./limitador-server
 
-RUN chown limitador:limitador limitador-server
+# Group members must be able to r-x in the directory due to OpenShift SCC constraints (https://docs.openshift.com/container-platform/4.12/authentication/managing-security-context-constraints.html)
+# Make sure to set supplementalGroups: [1000] in the security context of the pod when running on OpenShift (https://docs.openshift.com/container-platform/4.12/storage/persistent_storage/persistent-storage-nfs.html#storage-persistent-storage-nfs-group-ids_persistent-storage-nfs)
+RUN chown -R limitador:limitador /home/limitador \
+    && chmod -R 750 /home/limitador
 
 USER limitador
 
