@@ -40,7 +40,7 @@ FROM registry.access.redhat.com/ubi8/ubi-minimal:8.7
 
 # shadow-utils is required for `groupadd`, etc.
 RUN PKGS="libgcc shadow-utils" \
-    && microdnf install --nodocs $PKGS \
+    && microdnf --assumeyes install --nodocs $PKGS \
     && rpm --verify --nogroup --nouser $PKGS \
     && microdnf -y clean all
 
