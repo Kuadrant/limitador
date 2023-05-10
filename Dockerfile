@@ -38,14 +38,12 @@ RUN source $HOME/.cargo/env \
 
 FROM registry.access.redhat.com/ubi8/ubi-minimal:8.7
 
-# shadow-utils is required for `groupadd`, etc.
+# shadow-utils is required for `useradd`
 RUN PKGS="libgcc shadow-utils" \
-    && microdnf install --nodocs $PKGS \
+    && microdnf --assumeyes install --nodocs $PKGS \
     && rpm --verify --nogroup --nouser $PKGS \
     && microdnf -y clean all
-
-RUN groupadd -g 1000 limitador \
-    && useradd -u 1000 -g limitador -s /bin/sh -m -d /home/limitador limitador
+RUN useradd -u 1000 -s /bin/sh -m -d /home/limitador limitador
 
 WORKDIR /home/limitador/bin/
 ENV PATH="/home/limitador/bin:${PATH}"
@@ -53,7 +51,8 @@ ENV PATH="/home/limitador/bin:${PATH}"
 COPY --from=limitador-build /usr/src/limitador/limitador-server/examples/limits.yaml ../
 COPY --from=limitador-build /usr/src/limitador/target/release/limitador-server ./limitador-server
 
-RUN chown limitador:limitador limitador-server
+RUN chown -R limitador:root /home/limitador \
+    && chmod -R 750 /home/limitador
 
 USER limitador
 
