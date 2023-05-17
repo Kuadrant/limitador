@@ -13,6 +13,14 @@ macro_rules! test_with_all_storage_impls {
                 $function(&mut TestsLimiter::new_from_blocking_impl(rate_limiter)).await;
             }
 
+            #[tokio::test]
+            async fn [<$function _disk_storage>]() {
+                let dir = TempDir::new("limitador-disk-integration-tests").expect("We should have a dir!");
+                let rate_limiter =
+                    RateLimiter::new_with_storage(Box::new(DiskStorage::open(dir.path(), OptimizeFor::Throughput).expect("Couldn't open temp dir")));
+                $function(&mut TestsLimiter::new_from_blocking_impl(rate_limiter)).await;
+            }
+
             #[cfg(feature = "redis_storage")]
             #[tokio::test]
             #[serial]
@@ -94,11 +102,13 @@ mod test {
     use self::limitador::RateLimiter;
     use crate::helpers::tests_limiter::*;
     use limitador::limit::Limit;
+    use limitador::storage::disk::{DiskStorage, OptimizeFor};
     use limitador::storage::in_memory::InMemoryStorage;
     use limitador::storage::wasm::WasmStorage;
     use std::collections::{HashMap, HashSet};
     use std::thread::sleep;
     use std::time::{Duration, SystemTime};
+    use tempdir::TempDir;
 
     // This is only needed for the WASM-compatible storage.
     pub struct TestClock {}
@@ -432,11 +442,14 @@ mod test {
         values.insert("req.method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
 
-        for _ in 0..max_hits {
-            assert!(!rate_limiter
-                .is_rate_limited(namespace, &values, 1)
-                .await
-                .unwrap());
+        for i in 0..max_hits {
+            assert!(
+                !rate_limiter
+                    .is_rate_limited(namespace, &values, 1)
+                    .await
+                    .unwrap(),
+                "Must not be limited after {i}"
+            );
             rate_limiter
                 .update_counters(namespace, &values, 1)
                 .await
@@ -829,7 +842,7 @@ mod test {
         let limit_time = 1;
 
         let limit = Limit::new(
-            "test_namespace",
+            namespace,
             10,
             limit_time,
             vec!["req.method == 'GET'"],
@@ -849,11 +862,7 @@ mod test {
         // Give it some extra time to expire
         sleep(Duration::from_secs(limit_time + 1));
 
-        assert!(rate_limiter
-            .get_counters(namespace)
-            .await
-            .unwrap()
-            .is_empty());
+        assert_eq!(rate_limiter.get_counters(namespace).await.unwrap().len(), 0);
     }
 
     async fn configure_with_creates_the_given_limits(rate_limiter: &mut TestsLimiter) {

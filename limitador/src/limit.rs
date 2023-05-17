@@ -50,7 +50,6 @@ impl From<String> for Namespace {
 }
 
 #[derive(Eq, Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Limit {
     namespace: Namespace,
     #[serde(skip_serializing, default)]
@@ -365,6 +364,16 @@ impl Limit {
 
     pub fn variables(&self) -> HashSet<String> {
         self.variables.iter().map(|var| var.into()).collect()
+    }
+
+    #[cfg(feature = "disk_storage")]
+    pub(crate) fn variables_for_key(&self) -> Vec<&str> {
+        let mut variables = Vec::with_capacity(self.variables.len());
+        for var in &self.variables {
+            variables.push(var.as_str());
+        }
+        variables.sort();
+        variables
     }
 
     pub fn has_variable(&self, var: &str) -> bool {
