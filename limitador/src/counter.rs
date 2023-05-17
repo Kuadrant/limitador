@@ -87,6 +87,7 @@ impl Counter {
         self.expires_in = Some(duration)
     }
 
+    #[cfg(feature = "disk_storage")]
     pub(crate) fn variables_for_key(&self) -> Vec<(&str, &str)> {
         let mut variables = Vec::with_capacity(self.set_variables.len());
         for (var, value) in &self.set_variables {

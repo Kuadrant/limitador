@@ -366,6 +366,7 @@ impl Limit {
         self.variables.iter().map(|var| var.into()).collect()
     }
 
+    #[cfg(feature = "disk_storage")]
     pub(crate) fn variables_for_key(&self) -> Vec<&str> {
         let mut variables = Vec::with_capacity(self.variables.len());
         for var in &self.variables {

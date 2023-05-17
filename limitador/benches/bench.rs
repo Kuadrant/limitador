@@ -2,6 +2,7 @@ use criterion::{black_box, criterion_group, criterion_main, Bencher, BenchmarkId
 use rand::seq::SliceRandom;
 
 use limitador::limit::Limit;
+#[cfg(feature = "disk_storage")]
 use limitador::storage::disk::{DiskStorage, OptimizeFor};
 use limitador::storage::in_memory::InMemoryStorage;
 use limitador::storage::CounterStorage;
@@ -9,13 +10,16 @@ use limitador::RateLimiter;
 use rand::SeedableRng;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use tempdir::TempDir;
 
 const SEED: u64 = 42;
 
-#[cfg(not(feature = "redis"))]
+#[cfg(all(not(feature = "disk_storage"), not(feature = "redis_storage")))]
+criterion_group!(benches, bench_in_mem);
+#[cfg(all(feature = "disk_storage", not(feature = "redis_storage")))]
 criterion_group!(benches, bench_in_mem, bench_disk);
-#[cfg(feature = "redis")]
+#[cfg(all(not(feature = "disk_storage"), feature = "redis_storage"))]
+criterion_group!(benches, bench_in_mem, bench_redis);
+#[cfg(all(feature = "disk_storage", feature = "redis_storage"))]
 criterion_group!(benches, bench_in_mem, bench_disk, bench_redis);
 
 criterion_main!(benches);
@@ -96,6 +100,7 @@ fn bench_in_mem(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(feature = "disk_storage")]
 fn bench_disk(c: &mut Criterion) {
     let mut group = c.benchmark_group("Disk");
     for (index, scenario) in TEST_SCENARIOS.iter().enumerate() {
@@ -104,7 +109,7 @@ fn bench_disk(c: &mut Criterion) {
             scenario,
             |b: &mut Bencher, test_scenario: &&TestScenario| {
                 let prefix = format!("limitador-disk-bench-{index}-is_rate_limited");
-                let tmp = TempDir::new(&prefix).expect("We should have a dir!");
+                let tmp = tempdir::TempDir::new(&prefix).expect("We should have a dir!");
                 let storage =
                     Box::new(DiskStorage::open(tmp.path(), OptimizeFor::Throughput).unwrap());
                 bench_is_rate_limited(b, test_scenario, storage);
@@ -115,7 +120,7 @@ fn bench_disk(c: &mut Criterion) {
             scenario,
             |b: &mut Bencher, test_scenario: &&TestScenario| {
                 let prefix = format!("limitador-disk-bench-{index}-update_counters");
-                let tmp = TempDir::new(&prefix).expect("We should have a dir!");
+                let tmp = tempdir::TempDir::new(&prefix).expect("We should have a dir!");
                 let storage =
                     Box::new(DiskStorage::open(tmp.path(), OptimizeFor::Throughput).unwrap());
                 bench_update_counters(b, test_scenario, storage);
@@ -126,7 +131,7 @@ fn bench_disk(c: &mut Criterion) {
             scenario,
             |b: &mut Bencher, test_scenario: &&TestScenario| {
                 let prefix = format!("limitador-disk-bench-{index}-check_rate_limited_and_update");
-                let tmp = TempDir::new(&prefix).expect("We should have a dir!");
+                let tmp = tempdir::TempDir::new(&prefix).expect("We should have a dir!");
                 let storage =
                     Box::new(DiskStorage::open(tmp.path(), OptimizeFor::Throughput).unwrap());
                 bench_check_rate_limited_and_update(b, test_scenario, storage);
@@ -136,7 +141,7 @@ fn bench_disk(c: &mut Criterion) {
     group.finish();
 }
 
-#[cfg(feature = "redis")]
+#[cfg(feature = "redis_storage")]
 fn bench_redis(c: &mut Criterion) {
     let mut group = c.benchmark_group("Redis");
     for scenario in TEST_SCENARIOS {

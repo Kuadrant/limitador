@@ -93,6 +93,7 @@ mod tests {
     }
 }
 
+#[cfg(feature = "disk_storage")]
 pub mod bin {
     use serde::{Deserialize, Serialize};
     use std::collections::HashMap;
