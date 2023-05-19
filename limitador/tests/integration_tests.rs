@@ -15,7 +15,7 @@ macro_rules! test_with_all_storage_impls {
 
             #[tokio::test]
             async fn [<$function _disk_storage>]() {
-                let dir = TempDir::new("limitador-disk-integration-tests").expect("We should have a dir!");
+                let dir = TempDir::new().expect("We should have a dir!");
                 let rate_limiter =
                     RateLimiter::new_with_storage(Box::new(DiskStorage::open(dir.path(), OptimizeFor::Throughput).expect("Couldn't open temp dir")));
                 $function(&mut TestsLimiter::new_from_blocking_impl(rate_limiter)).await;
@@ -108,7 +108,7 @@ mod test {
     use std::collections::{HashMap, HashSet};
     use std::thread::sleep;
     use std::time::{Duration, SystemTime};
-    use tempdir::TempDir;
+    use tempfile::TempDir;
 
     // This is only needed for the WASM-compatible storage.
     pub struct TestClock {}

@@ -108,8 +108,7 @@ fn bench_disk(c: &mut Criterion) {
             BenchmarkId::new("is_rate_limited", scenario),
             scenario,
             |b: &mut Bencher, test_scenario: &&TestScenario| {
-                let prefix = format!("limitador-disk-bench-{index}-is_rate_limited");
-                let tmp = tempdir::TempDir::new(&prefix).expect("We should have a dir!");
+                let tmp = tempfile::TempDir::new().expect("We should have a dir!");
                 let storage =
                     Box::new(DiskStorage::open(tmp.path(), OptimizeFor::Throughput).unwrap());
                 bench_is_rate_limited(b, test_scenario, storage);
@@ -119,8 +118,7 @@ fn bench_disk(c: &mut Criterion) {
             BenchmarkId::new("update_counters", scenario),
             scenario,
             |b: &mut Bencher, test_scenario: &&TestScenario| {
-                let prefix = format!("limitador-disk-bench-{index}-update_counters");
-                let tmp = tempdir::TempDir::new(&prefix).expect("We should have a dir!");
+                let tmp = tempfile::TempDir::new().expect("We should have a dir!");
                 let storage =
                     Box::new(DiskStorage::open(tmp.path(), OptimizeFor::Throughput).unwrap());
                 bench_update_counters(b, test_scenario, storage);
@@ -130,8 +128,7 @@ fn bench_disk(c: &mut Criterion) {
             BenchmarkId::new("check_rate_limited_and_update", scenario),
             scenario,
             |b: &mut Bencher, test_scenario: &&TestScenario| {
-                let prefix = format!("limitador-disk-bench-{index}-check_rate_limited_and_update");
-                let tmp = tempdir::TempDir::new(&prefix).expect("We should have a dir!");
+                let tmp = tempfile::TempDir::new().expect("We should have a dir!");
                 let storage =
                     Box::new(DiskStorage::open(tmp.path(), OptimizeFor::Throughput).unwrap());
                 bench_check_rate_limited_and_update(b, test_scenario, storage);

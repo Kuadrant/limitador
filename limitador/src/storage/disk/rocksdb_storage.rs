@@ -187,7 +187,7 @@ mod tests {
     use std::collections::HashMap;
     use std::fs;
     use std::time::Duration;
-    use tempdir::TempDir;
+    use tempfile::TempDir;
 
     #[test]
     fn opens_db_on_disk() {
@@ -195,7 +195,7 @@ mod tests {
         let limit = Limit::new(namespace, 1, 2, vec!["req.method == 'GET'"], vec!["app_id"]);
         let counter = Counter::new(limit, HashMap::default());
 
-        let tmp = TempDir::new("limitador-disk-tests").expect("We should have a dir!");
+        let tmp = TempDir::new().expect("We should have a dir!");
         {
             let storage = RocksDbStorage::open(tmp.path(), OptimizeFor::Space)
                 .expect("We should have a storage");
