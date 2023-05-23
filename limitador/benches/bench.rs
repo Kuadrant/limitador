@@ -277,11 +277,11 @@ fn generate_test_data(
     for idx_namespace in 0..scenario.n_namespaces {
         let namespace = idx_namespace.to_string();
 
-        for _ in 0..scenario.n_limits_per_ns {
+        for limit_idx in 0..scenario.n_limits_per_ns {
             test_limits.push(Limit::new(
                 namespace.clone(),
                 i64::MAX,
-                10,
+                ((limit_idx * 60) + 10) as u64,
                 conditions.clone(),
                 variables.clone(),
             ))
