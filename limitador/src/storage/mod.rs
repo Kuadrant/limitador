@@ -83,7 +83,7 @@ impl Storage {
 
     pub fn get_limits(&self, namespace: &Namespace) -> HashSet<Limit> {
         match self.limits.read().unwrap().get(namespace) {
-            Some(limits) => limits.iter().cloned().collect(),
+            Some(limits) => limits.clone(),
             None => HashSet::new(),
         }
     }
