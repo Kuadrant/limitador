@@ -1,6 +1,5 @@
 use crate::storage::StorageErr;
 
-mod expiring_value;
 mod rocksdb_storage;
 
 pub use rocksdb_storage::RocksDbStorage as DiskStorage;
