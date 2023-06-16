@@ -62,38 +62,50 @@ impl CounterStorage for InMemoryStorage {
         let mut limits_by_namespace = self.limits_for_namespace.write().unwrap();
         let mut first_limited = None;
 
-        for counter in counters.iter_mut() {
-            match limits_by_namespace
-                .entry(counter.limit().namespace().clone())
-                .or_insert_with(HashMap::new)
-                .entry(counter.limit().clone())
-                .or_insert_with(HashMap::new)
-                .entry(counter.clone())
-            {
-                Entry::Occupied(o) => {
-                    let value = o.get().value();
-                    if load_counters {
-                        let remaining = counter.max_value() - (value + delta);
-                        counter.set_remaining(remaining);
-                        if first_limited.is_none() && remaining < 0 {
-                            first_limited = Some(Authorization::Limited(
-                                counter.limit().name().map(|n| n.to_owned()),
-                            ))
-                        }
-                    } else if !Self::counter_is_within_limits(counter, Some(&value), delta) {
-                        return Ok(Authorization::Limited(
+        let mut process_counter =
+            |counter: &mut Counter, value: i64, delta: i64| -> Option<Authorization> {
+                if load_counters {
+                    let remaining = counter.max_value() - (value + delta);
+                    counter.set_remaining(remaining);
+                    if first_limited.is_none() && remaining < 0 {
+                        first_limited = Some(Authorization::Limited(
                             counter.limit().name().map(|n| n.to_owned()),
                         ));
                     }
                 }
-                Entry::Vacant(_v) => {
-                    if load_counters {
-                        counter.set_remaining(counter.max_value() - delta);
-                    } else if !Self::counter_is_within_limits(counter, None, delta) {
-                        return Ok(Authorization::Limited(
-                            counter.limit().name().map(|n| n.to_owned()),
-                        ));
+                if !Self::counter_is_within_limits(counter, Some(&value), delta) {
+                    return Some(Authorization::Limited(
+                        counter.limit().name().map(|n| n.to_owned()),
+                    ));
+                }
+                None
+            };
+
+        for counter in counters.iter_mut() {
+            if let Some(limits) = limits_by_namespace.get(counter.limit().namespace()) {
+                if let Some(counters) = limits.get(counter.limit()) {
+                    if let Some(expiring_value) = counters.get(counter) {
+                        let value = expiring_value.value();
+                        if let Some(Authorization::Limited(counter_limited)) =
+                            process_counter(counter, value, delta)
+                        {
+                            if !load_counters {
+                                return Ok(Authorization::Limited(counter_limited));
+                            }
+                        }
+                    } else if let Some(limited) = process_counter(counter, 0, delta) {
+                        if !load_counters {
+                            return Ok(limited);
+                        }
                     }
+                } else if let Some(limited) = process_counter(counter, 0, delta) {
+                    if !load_counters {
+                        return Ok(limited);
+                    }
+                }
+            } else if let Some(limited) = process_counter(counter, 0, delta) {
+                if !load_counters {
+                    return Ok(limited);
                 }
             }
         }
@@ -102,7 +114,7 @@ impl CounterStorage for InMemoryStorage {
             return Ok(limited);
         }
 
-        for counter in counters.iter() {
+        for counter in counters.iter_mut() {
             let now = SystemTime::now();
             match limits_by_namespace
                 .entry(counter.limit().namespace().clone())
