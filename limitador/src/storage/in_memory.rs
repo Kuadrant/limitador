@@ -37,14 +37,10 @@ impl From<&mut Counter> for CounterKey {
 
 impl Hash for CounterKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let mut encoded_vars = self
-            .set_variables
-            .iter()
-            .map(|(k, v)| k.to_owned() + ":" + v)
-            .collect::<Vec<String>>();
-
-        encoded_vars.sort();
-        encoded_vars.hash(state);
+        self.set_variables.iter().for_each(|(k, v)| {
+            k.hash(state);
+            v.hash(state);
+        });
     }
 }
 
