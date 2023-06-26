@@ -406,24 +406,8 @@ impl Hash for Limit {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.namespace.hash(state);
         self.seconds.hash(state);
-
-        let mut encoded_conditions = self
-            .conditions
-            .iter()
-            .map(|c| c.clone().into())
-            .collect::<Vec<String>>();
-
-        encoded_conditions.sort();
-        encoded_conditions.hash(state);
-
-        let mut encoded_vars = self
-            .variables
-            .iter()
-            .map(|c| c.to_string())
-            .collect::<Vec<String>>();
-
-        encoded_vars.sort();
-        encoded_vars.hash(state);
+        self.conditions.iter().for_each(|e| e.hash(state));
+        self.variables.iter().for_each(|e| e.hash(state));
     }
 }
 
