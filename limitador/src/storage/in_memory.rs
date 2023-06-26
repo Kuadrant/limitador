@@ -4,14 +4,61 @@ use crate::storage::expiring_value::ExpiringValue;
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime};
+
+#[derive(Eq, Clone)]
+struct CounterKey {
+    set_variables: HashMap<String, String>,
+}
+
+impl CounterKey {
+    fn to_counter(&self, limit: &Limit) -> Counter {
+        Counter::new(limit.clone(), self.set_variables.clone())
+    }
+}
+
+impl From<&Counter> for CounterKey {
+    fn from(counter: &Counter) -> Self {
+        CounterKey {
+            set_variables: counter.set_variables().clone(),
+        }
+    }
+}
+
+impl From<&mut Counter> for CounterKey {
+    fn from(counter: &mut Counter) -> Self {
+        CounterKey {
+            set_variables: counter.set_variables().clone(),
+        }
+    }
+}
+
+impl Hash for CounterKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let mut encoded_vars = self
+            .set_variables
+            .iter()
+            .map(|(k, v)| k.to_owned() + ":" + v)
+            .collect::<Vec<String>>();
+
+        encoded_vars.sort();
+        encoded_vars.hash(state);
+    }
+}
+
+impl PartialEq for CounterKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.set_variables == other.set_variables
+    }
+}
 
 pub struct InMemoryStorage {
     //TODO: This is a bit ugly, to address in the future
     #[allow(clippy::type_complexity)]
     limits_for_namespace:
-        RwLock<HashMap<Namespace, HashMap<Limit, HashMap<Counter, ExpiringValue>>>>,
+        RwLock<HashMap<Namespace, HashMap<Limit, HashMap<CounterKey, ExpiringValue>>>>,
 }
 
 impl CounterStorage for InMemoryStorage {
@@ -21,7 +68,7 @@ impl CounterStorage for InMemoryStorage {
         let mut value = 0;
         if let Some(limits) = limits_by_namespace.get(counter.limit().namespace()) {
             if let Some(counters) = limits.get(counter.limit()) {
-                if let Some(expiring_value) = counters.get(counter) {
+                if let Some(expiring_value) = counters.get(&counter.into()) {
                     value = expiring_value.value();
                 }
             }
@@ -82,9 +129,17 @@ impl CounterStorage for InMemoryStorage {
             };
 
         for counter in counters.iter_mut() {
+            if counter.max_value() < delta {
+                if let Some(limited) = process_counter(counter, 0, delta) {
+                    if !load_counters {
+                        return Ok(limited);
+                    }
+                }
+                continue;
+            }
             if let Some(limits) = limits_by_namespace.get(counter.limit().namespace()) {
                 if let Some(counters) = limits.get(counter.limit()) {
-                    if let Some(expiring_value) = counters.get(counter) {
+                    if let Some(expiring_value) = counters.get(&counter.into()) {
                         let value = expiring_value.value();
                         if let Some(Authorization::Limited(counter_limited)) =
                             process_counter(counter, value, delta)
@@ -121,7 +176,7 @@ impl CounterStorage for InMemoryStorage {
                 .or_insert_with(HashMap::new)
                 .entry(counter.limit().clone())
                 .or_insert_with(HashMap::new)
-                .entry(counter.clone())
+                .entry(counter.into())
             {
                 Entry::Vacant(v) => {
                     v.insert(ExpiringValue::new(
@@ -189,8 +244,10 @@ impl InMemoryStorage {
         let mut res: HashMap<Counter, ExpiringValue> = HashMap::new();
 
         if let Some(counters_by_limit) = self.limits_for_namespace.read().unwrap().get(namespace) {
-            for (counter, value) in counters_by_limit.values().flatten() {
-                res.insert(counter.clone(), value.clone());
+            for (limit, values) in counters_by_limit {
+                for (counter_key, expiring_value) in values {
+                    res.insert(counter_key.to_counter(limit), expiring_value.clone());
+                }
             }
         }
 
@@ -210,12 +267,12 @@ impl InMemoryStorage {
 
     fn insert_or_update_counter(
         &self,
-        counters: &mut HashMap<Counter, ExpiringValue>,
+        counters: &mut HashMap<CounterKey, ExpiringValue>,
         counter: &Counter,
         delta: i64,
     ) {
         let now = SystemTime::now();
-        match counters.entry(counter.clone()) {
+        match counters.entry(counter.into()) {
             Entry::Vacant(v) => {
                 v.insert(ExpiringValue::new(
                     delta,
