@@ -8,3 +8,6 @@
 
 # OSX files
 .DS_Store
+
+# JetBrains IDEA
+.idea/
