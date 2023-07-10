@@ -144,14 +144,6 @@ impl CounterStorage for InMemoryStorage {
                                 return Ok(Authorization::Limited(counter_limited));
                             }
                         }
-                    } else if let Some(limited) = process_counter(counter, 0, delta) {
-                        if !load_counters {
-                            return Ok(limited);
-                        }
-                    }
-                } else if let Some(limited) = process_counter(counter, 0, delta) {
-                    if !load_counters {
-                        return Ok(limited);
                     }
                 }
             } else if let Some(limited) = process_counter(counter, 0, delta) {
