@@ -50,11 +50,10 @@ impl PartialEq for CounterKey {
     }
 }
 
+type NamespacedLimitCounters<T> = HashMap<Namespace, HashMap<Limit, HashMap<CounterKey, T>>>;
+
 pub struct InMemoryStorage {
-    //TODO: This is a bit ugly, to address in the future
-    #[allow(clippy::type_complexity)]
-    limits_for_namespace:
-        RwLock<HashMap<Namespace, HashMap<Limit, HashMap<CounterKey, ExpiringValue>>>>,
+    limits_for_namespace: RwLock<NamespacedLimitCounters<ExpiringValue>>,
 }
 
 impl CounterStorage for InMemoryStorage {
