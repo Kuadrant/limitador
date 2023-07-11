@@ -540,10 +540,13 @@ mod test {
             // iteration. It should not affect.
             values.insert("does_not_apply".to_string(), i.to_string());
 
-            assert!(!rate_limiter
-                .is_rate_limited(namespace, &values, 1)
-                .await
-                .unwrap());
+            assert!(
+                !rate_limiter
+                    .is_rate_limited(namespace, &values, 1)
+                    .await
+                    .unwrap(),
+                "Must not be limited after {i}"
+            );
             rate_limiter
                 .update_counters(namespace, &values, 1)
                 .await
