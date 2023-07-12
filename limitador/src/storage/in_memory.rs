@@ -132,20 +132,17 @@ impl CounterStorage for InMemoryStorage {
                 }
                 continue;
             }
-            if let Some(limits) = limits_by_namespace.get(counter.limit().namespace()) {
-                if let Some(counters) = limits.get(counter.limit()) {
-                    if let Some(expiring_value) = counters.get(&counter.into()) {
-                        let value = expiring_value.value();
-                        if let Some(Authorization::Limited(counter_limited)) =
-                            process_counter(counter, value, delta)
-                        {
-                            if !load_counters {
-                                return Ok(Authorization::Limited(counter_limited));
-                            }
-                        }
-                    }
-                }
-            } else if let Some(limited) = process_counter(counter, 0, delta) {
+
+            let value = Some(
+                limits_by_namespace
+                    .get(counter.limit().namespace())
+                    .and_then(|limits| limits.get(counter.limit()))
+                    .and_then(|counters| counters.get(&counter.into()))
+                    .map(|expiring_value| expiring_value.value())
+                    .unwrap_or(0),
+            );
+
+            if let Some(limited) = process_counter(counter, value.unwrap(), delta) {
                 if !load_counters {
                     return Ok(limited);
                 }
