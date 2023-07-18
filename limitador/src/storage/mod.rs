@@ -17,6 +17,7 @@ pub mod redis;
 #[cfg(feature = "infinispan_storage")]
 pub mod infinispan;
 
+mod atomic_expiring_value;
 mod expiring_value;
 mod keys;
 
