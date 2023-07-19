@@ -36,17 +36,6 @@ impl ExpiringValue {
         Self { value, expiry }
     }
 
-    pub fn update_mut(&mut self, delta: i64, ttl: u64, now: SystemTime) {
-        let expiry = if self.expiry <= now {
-            now + Duration::from_secs(ttl)
-        } else {
-            self.expiry
-        };
-
-        self.value = self.value_at(now) + delta;
-        self.expiry = expiry;
-    }
-
     #[must_use]
     pub fn merge(self, other: ExpiringValue, now: SystemTime) -> Self {
         if self.expiry > now {

@@ -1,6 +1,6 @@
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
-use crate::storage::expiring_value::ExpiringValue;
+use crate::storage::atomic_expiring_value::AtomicExpiringValue;
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
@@ -53,7 +53,7 @@ impl PartialEq for CounterKey {
 type NamespacedLimitCounters<T> = HashMap<Namespace, HashMap<Limit, HashMap<CounterKey, T>>>;
 
 pub struct InMemoryStorage {
-    limits_for_namespace: RwLock<NamespacedLimitCounters<ExpiringValue>>,
+    limits_for_namespace: RwLock<NamespacedLimitCounters<AtomicExpiringValue>>,
 }
 
 impl CounterStorage for InMemoryStorage {
@@ -163,13 +163,13 @@ impl CounterStorage for InMemoryStorage {
                 .entry(counter.into())
             {
                 Entry::Vacant(v) => {
-                    v.insert(ExpiringValue::new(
+                    v.insert(AtomicExpiringValue::new(
                         delta,
                         now + Duration::from_secs(counter.seconds()),
                     ));
                 }
-                Entry::Occupied(mut o) => {
-                    o.get_mut().update_mut(delta, counter.seconds(), now);
+                Entry::Occupied(o) => {
+                    o.get().update(delta, counter.seconds(), now);
                 }
             }
         }
@@ -224,8 +224,11 @@ impl InMemoryStorage {
         }
     }
 
-    fn counters_in_namespace(&self, namespace: &Namespace) -> HashMap<Counter, ExpiringValue> {
-        let mut res: HashMap<Counter, ExpiringValue> = HashMap::new();
+    fn counters_in_namespace(
+        &self,
+        namespace: &Namespace,
+    ) -> HashMap<Counter, AtomicExpiringValue> {
+        let mut res: HashMap<Counter, AtomicExpiringValue> = HashMap::new();
 
         if let Some(counters_by_limit) = self.limits_for_namespace.read().unwrap().get(namespace) {
             for (limit, values) in counters_by_limit {
@@ -251,20 +254,20 @@ impl InMemoryStorage {
 
     fn insert_or_update_counter(
         &self,
-        counters: &mut HashMap<CounterKey, ExpiringValue>,
+        counters: &mut HashMap<CounterKey, AtomicExpiringValue>,
         counter: &Counter,
         delta: i64,
     ) {
         let now = SystemTime::now();
         match counters.entry(counter.into()) {
             Entry::Vacant(v) => {
-                v.insert(ExpiringValue::new(
+                v.insert(AtomicExpiringValue::new(
                     delta,
                     now + Duration::from_secs(counter.seconds()),
                 ));
             }
-            Entry::Occupied(mut o) => {
-                o.get_mut().update_mut(delta, counter.seconds(), now);
+            Entry::Occupied(o) => {
+                o.get().update(delta, counter.seconds(), now);
             }
         }
     }
