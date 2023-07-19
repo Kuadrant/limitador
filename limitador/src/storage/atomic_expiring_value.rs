@@ -74,6 +74,15 @@ impl Default for AtomicExpiringValue {
     }
 }
 
+impl Clone for AtomicExpiringValue {
+    fn clone(&self) -> Self {
+        AtomicExpiringValue {
+            value: AtomicI64::new(self.value.load(Ordering::SeqCst)),
+            expiry: AtomicU64::new(self.expiry.load(Ordering::SeqCst)),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::AtomicExpiringValue;
