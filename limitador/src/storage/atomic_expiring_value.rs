@@ -27,6 +27,7 @@ impl AtomicExpiringValue {
             .expect("SystemTime before UNIX EPOCH!")
             .as_micros() as u64;
         if expiry <= when {
+            self.value.swap(0, Ordering::SeqCst);
             return 0;
         }
         self.value.load(Ordering::SeqCst)
@@ -37,17 +38,38 @@ impl AtomicExpiringValue {
     }
 
     pub fn update(&self, delta: i64, ttl: u64, when: SystemTime) {
-        let new = self.value_at(when) + delta;
-        self.value.swap(new, Ordering::SeqCst);
-
         let ttl_micros = ttl * 1_000_000;
         let when_micros = when
             .duration_since(UNIX_EPOCH)
             .expect("SystemTime before UNIX EPOCH!")
             .as_micros() as u64;
-        let expiry = self.expiry.load(Ordering::SeqCst);
-        if expiry <= when_micros {
-            self.expiry.swap(when_micros + ttl_micros, Ordering::SeqCst);
+
+        let mut expiry = self.expiry.load(Ordering::SeqCst);
+        let mut current = self.value_at(when);
+
+        loop {
+            let new_value = current + delta;
+            let value_result =
+                self.value
+                    .compare_exchange(current, new_value, Ordering::SeqCst, Ordering::SeqCst);
+            let expiry_result: Result<u64, u64> = if expiry <= when_micros {
+                self.expiry.compare_exchange(
+                    expiry,
+                    when_micros + ttl_micros,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+            } else {
+                Ok(expiry)
+            };
+            match (value_result, expiry_result) {
+                (Ok(_), Ok(_)) => break,
+                (Err(_), Err(e)) => {
+                    current = self.value_at(when);
+                    expiry = e;
+                }
+                _ => {}
+            }
         }
     }
 
