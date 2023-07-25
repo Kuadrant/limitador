@@ -53,10 +53,15 @@ jobs:
       - uses: abelfodil/protoc-action@v1
         with:
           protoc-version: '3.19.4'
-      - uses: actions-rs/cargo@v1
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Test and Generate code coverage
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+      - name: Codecov
+        uses: codecov/codecov-action@v3
         with:
-          command: test
-          args: --all-features
+          verbose: true
+          fail_ci_if_error: true
 
   fmt:
     name: Rustfmt
