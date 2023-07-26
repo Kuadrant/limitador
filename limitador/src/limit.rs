@@ -613,7 +613,7 @@ mod conditions {
 
         fn valid_id_char(&mut self) -> bool {
             let char = self.input[self.pos];
-            char.is_alphanumeric() || char == '.' || char == '_'
+            char.is_alphanumeric() || char == '.' || char == '_' || char == '-' || char == '/'
         }
 
         fn scan_string(&mut self, until: char) -> Result<Token, SyntaxError> {
