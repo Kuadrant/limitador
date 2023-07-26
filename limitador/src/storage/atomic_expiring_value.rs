@@ -21,13 +21,12 @@ impl AtomicExpiringValue {
     }
 
     pub fn value_at(&self, when: SystemTime) -> i64 {
-        let expiry = self.expiry.load(Ordering::SeqCst);
         let when = when
             .duration_since(UNIX_EPOCH)
             .expect("SystemTime before UNIX EPOCH!")
             .as_micros() as u64;
+        let expiry = self.expiry.load(Ordering::SeqCst);
         if expiry <= when {
-            self.value.swap(0, Ordering::SeqCst);
             return 0;
         }
         self.value.load(Ordering::SeqCst)
@@ -44,33 +43,19 @@ impl AtomicExpiringValue {
             .expect("SystemTime before UNIX EPOCH!")
             .as_micros() as u64;
 
-        let mut expiry = self.expiry.load(Ordering::SeqCst);
-        let mut current = self.value_at(when);
-
-        loop {
-            let new_value = current + delta;
-            let value_result =
-                self.value
-                    .compare_exchange(current, new_value, Ordering::SeqCst, Ordering::SeqCst);
-            let expiry_result: Result<u64, u64> = if expiry <= when_micros {
-                self.expiry.compare_exchange(
-                    expiry,
-                    when_micros + ttl_micros,
-                    Ordering::SeqCst,
-                    Ordering::SeqCst,
-                )
-            } else {
-                Ok(expiry)
-            };
-            match (value_result, expiry_result) {
-                (Ok(_), Ok(_)) => break,
-                (Err(_), Err(e)) => {
-                    current = self.value_at(when);
-                    expiry = e;
-                }
-                _ => {}
+        let expiry = self.expiry.load(Ordering::SeqCst);
+        if expiry <= when_micros {
+            let new_expiry = when_micros + ttl_micros;
+            if self
+                .expiry
+                .compare_exchange(expiry, new_expiry, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                self.value.store(delta, Ordering::SeqCst);
             }
+            return;
         }
+        self.value.fetch_add(delta, Ordering::SeqCst);
     }
 
     pub fn ttl(&self) -> Duration {
