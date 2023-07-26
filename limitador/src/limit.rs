@@ -777,14 +777,14 @@ mod conditions {
 
         #[test]
         fn test_charset() {
-            let tokens =
-                Scanner::scan(" 変数 == '  💖 '".to_owned()).expect("Should parse alright!");
+            let tokens = Scanner::scan(" love.en-US/愛.jp == '  💖 '".to_owned())
+                .expect("Should parse alright!");
             assert_eq!(tokens.len(), 3);
             assert_eq!(
                 tokens[0],
                 Token {
                     token_type: TokenType::Identifier,
-                    literal: Some(Identifier("変数".to_owned())),
+                    literal: Some(Identifier("love.en-US/愛.jp".to_owned())),
                     pos: 2,
                 }
             );
@@ -793,7 +793,7 @@ mod conditions {
                 Token {
                     token_type: TokenType::EqualEqual,
                     literal: None,
-                    pos: 5,
+                    pos: 18,
                 }
             );
             assert_eq!(
@@ -801,7 +801,7 @@ mod conditions {
                 Token {
                     token_type: TokenType::String,
                     literal: Some(Literal::String("  💖 ".to_owned())),
-                    pos: 8,
+                    pos: 21,
                 }
             );
         }
