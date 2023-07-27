@@ -5,7 +5,7 @@
 [![Crates.io](https://img.shields.io/crates/v/limitador)](https://crates.io/crates/limitador)
 [![Docker Repository on Quay](https://quay.io/repository/kuadrant/limitador/status
 "Docker Repository on Quay")](https://quay.io/repository/kuadrant/limitador)
-[![codecov](https://codecov.io/gh/Kuadrant/limitador/branch/master/graph/badge.svg?token=CE9LD3XCJT)](https://codecov.io/gh/Kuadrant/limitador)
+[![codecov](https://codecov.io/gh/Kuadrant/limitador/branch/main/graph/badge.svg?token=CE9LD3XCJT)](https://codecov.io/gh/Kuadrant/limitador)
 
 Limitador is a generic rate-limiter written in Rust. It can be used as a
 library, or as a service. The service exposes HTTP endpoints to apply and observe
