@@ -84,7 +84,9 @@ impl Clone for AtomicExpiringValue {
 
 #[cfg(test)]
 mod tests {
-    use super::AtomicExpiringValue;
+    use super::*;
+    use std::sync::{Arc, Barrier};
+    use std::thread;
     use std::time::{Duration, SystemTime};
 
     #[test]
@@ -123,5 +125,35 @@ mod tests {
         assert_eq!(val.ttl(), Duration::ZERO);
         val.update(3, 10, now);
         assert_eq!(val.value_at(now - Duration::from_secs(1)), 3);
+    }
+
+    #[test]
+    fn test_overlapping_updates() {
+        let now = SystemTime::now();
+        let atomic_expiring_value =
+            Arc::new(AtomicExpiringValue::new(42, now + Duration::from_secs(10)));
+
+        let barrier = Arc::new(Barrier::new(2));
+
+        let atomic_expiring_value_clone = Arc::clone(&atomic_expiring_value);
+        let barrier_clone = Arc::clone(&barrier);
+        let thread1 = thread::spawn(move || {
+            barrier_clone.wait();
+            atomic_expiring_value_clone.update(2, 1, now + Duration::from_secs(11));
+        });
+
+        let atomic_expiring_value_clone2 = Arc::clone(&atomic_expiring_value);
+        let barrier_clone2 = Arc::clone(&barrier);
+        let thread2 = thread::spawn(move || {
+            barrier_clone2.wait();
+            atomic_expiring_value_clone2.update(1, 1, now);
+        });
+
+        assert_eq!(atomic_expiring_value.value.load(Ordering::SeqCst), 42);
+
+        thread2.join().unwrap();
+        thread1.join().unwrap();
+
+        assert_eq!(atomic_expiring_value.value.load(Ordering::SeqCst), 3);
     }
 }
