@@ -220,7 +220,10 @@ mod test {
     fn errs_on_bad_url() {
         let result = RedisStorage::new("cassandra://127.0.0.1:6379");
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap(), "Redis URL did not parse".to_string())
+        assert_eq!(
+            result.err().unwrap(),
+            "Redis URL did not parse- InvalidClientConfig".to_string()
+        )
     }
 
     #[test]
