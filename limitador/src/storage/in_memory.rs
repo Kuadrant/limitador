@@ -133,9 +133,7 @@ impl CounterStorage for InMemoryStorage {
                 .entry(counter.limit().clone())
                 .or_insert_with(HashMap::new)
                 .entry(counter.into())
-                .or_insert_with(|| {
-                    AtomicExpiringValue::new(0, now + Duration::from_secs(counter.seconds()))
-                });
+                .or_insert_with(AtomicExpiringValue::default);
         }
 
         // Process counters
@@ -160,9 +158,9 @@ impl CounterStorage for InMemoryStorage {
         }
 
         // Update counters
-        counter_values_to_update
-            .iter()
-            .for_each(|(v, ttl)| v.update(delta, *ttl, now));
+        counter_values_to_update.iter().for_each(|(v, ttl)| {
+            v.update(delta, *ttl, now);
+        });
 
         Ok(Authorization::Ok)
     }

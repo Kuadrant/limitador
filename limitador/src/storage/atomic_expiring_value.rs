@@ -10,10 +10,7 @@ pub(crate) struct AtomicExpiringValue {
 
 impl AtomicExpiringValue {
     pub fn new(value: i64, expiry: SystemTime) -> Self {
-        let expiry = expiry
-            .duration_since(UNIX_EPOCH)
-            .expect("SystemTime before UNIX EPOCH!")
-            .as_micros() as u64;
+        let expiry = Self::get_duration_micros(expiry);
         Self {
             value: AtomicI64::new(value),
             expiry: AtomicU64::new(expiry),
@@ -21,10 +18,7 @@ impl AtomicExpiringValue {
     }
 
     pub fn value_at(&self, when: SystemTime) -> i64 {
-        let when = when
-            .duration_since(UNIX_EPOCH)
-            .expect("SystemTime before UNIX EPOCH!")
-            .as_micros() as u64;
+        let when = Self::get_duration_micros(when);
         let expiry = self.expiry.load(Ordering::SeqCst);
         if expiry <= when {
             return 0;
@@ -36,12 +30,9 @@ impl AtomicExpiringValue {
         self.value_at(SystemTime::now())
     }
 
-    pub fn update(&self, delta: i64, ttl: u64, when: SystemTime) {
+    pub fn update(&self, delta: i64, ttl: u64, when: SystemTime) -> i64 {
         let ttl_micros = ttl * 1_000_000;
-        let when_micros = when
-            .duration_since(UNIX_EPOCH)
-            .expect("SystemTime before UNIX EPOCH!")
-            .as_micros() as u64;
+        let when_micros = Self::get_duration_micros(when);
 
         let expiry = self.expiry.load(Ordering::SeqCst);
         if expiry <= when_micros {
@@ -53,9 +44,9 @@ impl AtomicExpiringValue {
             {
                 self.value.store(delta, Ordering::SeqCst);
             }
-            return;
+            return delta;
         }
-        self.value.fetch_add(delta, Ordering::SeqCst);
+        self.value.fetch_add(delta, Ordering::SeqCst) + delta
     }
 
     pub fn ttl(&self) -> Duration {
@@ -65,18 +56,19 @@ impl AtomicExpiringValue {
             .duration_since(SystemTime::now())
             .unwrap_or(Duration::ZERO)
     }
+
+    fn get_duration_micros(when: SystemTime) -> u64 {
+        when.duration_since(UNIX_EPOCH)
+            .expect("SystemTime before UNIX EPOCH!")
+            .as_micros() as u64
+    }
 }
 
 impl Default for AtomicExpiringValue {
     fn default() -> Self {
         AtomicExpiringValue {
             value: AtomicI64::new(0),
-            expiry: AtomicU64::new(
-                UNIX_EPOCH
-                    .duration_since(UNIX_EPOCH)
-                    .expect("SystemTime before UNIX EPOCH")
-                    .as_micros() as u64,
-            ),
+            expiry: AtomicU64::new(0),
         }
     }
 }
