@@ -2,58 +2,18 @@ use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
 use crate::storage::atomic_expiring_value::AtomicExpiringValue;
 use crate::storage::{Authorization, CounterStorage, StorageErr};
+use moka::sync::Cache;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
-use std::sync::RwLock;
+use std::ops::Deref;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
-#[derive(Eq, Clone)]
-struct CounterKey {
-    set_variables: HashMap<String, String>,
-}
-
-impl CounterKey {
-    fn to_counter(&self, limit: &Limit) -> Counter {
-        Counter::new(limit.clone(), self.set_variables.clone())
-    }
-}
-
-impl From<&Counter> for CounterKey {
-    fn from(counter: &Counter) -> Self {
-        CounterKey {
-            set_variables: counter.set_variables().clone(),
-        }
-    }
-}
-
-impl From<&mut Counter> for CounterKey {
-    fn from(counter: &mut Counter) -> Self {
-        CounterKey {
-            set_variables: counter.set_variables().clone(),
-        }
-    }
-}
-
-impl Hash for CounterKey {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.set_variables.iter().for_each(|(k, v)| {
-            k.hash(state);
-            v.hash(state);
-        });
-    }
-}
-
-impl PartialEq for CounterKey {
-    fn eq(&self, other: &Self) -> bool {
-        self.set_variables == other.set_variables
-    }
-}
-
-type NamespacedLimitCounters<T> = HashMap<Namespace, HashMap<Limit, HashMap<CounterKey, T>>>;
+type NamespacedLimitCounters<T> = HashMap<Namespace, HashMap<Limit, T>>;
 
 pub struct InMemoryStorage {
     limits_for_namespace: RwLock<NamespacedLimitCounters<AtomicExpiringValue>>,
+    qualified_counters: Cache<Counter, Arc<AtomicExpiringValue>>,
 }
 
 impl CounterStorage for InMemoryStorage {
@@ -61,36 +21,59 @@ impl CounterStorage for InMemoryStorage {
         let limits_by_namespace = self.limits_for_namespace.read().unwrap();
 
         let mut value = 0;
-        if let Some(limits) = limits_by_namespace.get(counter.limit().namespace()) {
-            if let Some(counters) = limits.get(counter.limit()) {
-                if let Some(expiring_value) = counters.get(&counter.into()) {
-                    value = expiring_value.value();
-                }
+
+        if counter.is_qualified() {
+            if let Some(counter) = self.qualified_counters.get(counter) {
+                value = counter.value();
+            }
+        } else if let Some(limits) = limits_by_namespace.get(counter.limit().namespace()) {
+            if let Some(counter) = limits.get(counter.limit()) {
+                value = counter.value();
             }
         }
+
         Ok(counter.max_value() >= value + delta)
     }
 
     fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
         let mut limits_by_namespace = self.limits_for_namespace.write().unwrap();
-        match limits_by_namespace.entry(counter.limit().namespace().clone()) {
-            Entry::Vacant(v) => {
-                let mut limits = HashMap::new();
-                let mut counters = HashMap::new();
-                self.insert_or_update_counter(&mut counters, counter, delta);
-                limits.insert(counter.limit().clone(), counters);
-                v.insert(limits);
-            }
-            Entry::Occupied(mut o) => match o.get_mut().entry(counter.limit().clone()) {
+        let now = SystemTime::now();
+        if counter.is_qualified() {
+            let value = match self.qualified_counters.get(counter) {
+                None => self.qualified_counters.get_with(counter.clone(), || {
+                    Arc::new(AtomicExpiringValue::new(
+                        0,
+                        now + Duration::from_secs(counter.seconds()),
+                    ))
+                }),
+                Some(counter) => counter,
+            };
+            value.update(delta, counter.seconds(), now);
+        } else {
+            match limits_by_namespace.entry(counter.limit().namespace().clone()) {
                 Entry::Vacant(v) => {
-                    let mut counters = HashMap::new();
-                    self.insert_or_update_counter(&mut counters, counter, delta);
-                    v.insert(counters);
+                    let mut limits = HashMap::new();
+                    limits.insert(
+                        counter.limit().clone(),
+                        AtomicExpiringValue::new(
+                            delta,
+                            now + Duration::from_secs(counter.seconds()),
+                        ),
+                    );
+                    v.insert(limits);
                 }
-                Entry::Occupied(mut o) => {
-                    self.insert_or_update_counter(o.get_mut(), counter, delta);
-                }
-            },
+                Entry::Occupied(mut o) => match o.get_mut().entry(counter.limit().clone()) {
+                    Entry::Vacant(v) => {
+                        v.insert(AtomicExpiringValue::new(
+                            delta,
+                            now + Duration::from_secs(counter.seconds()),
+                        ));
+                    }
+                    Entry::Occupied(o) => {
+                        o.get().update(delta, counter.seconds(), now);
+                    }
+                },
+            }
         }
         Ok(())
     }
@@ -104,6 +87,8 @@ impl CounterStorage for InMemoryStorage {
         let mut limits_by_namespace = self.limits_for_namespace.write().unwrap();
         let mut first_limited = None;
         let mut counter_values_to_update: Vec<(&AtomicExpiringValue, u64)> = Vec::new();
+        let mut qualified_counter_values_to_updated: Vec<(Arc<AtomicExpiringValue>, u64)> =
+            Vec::new();
         let now = SystemTime::now();
 
         let mut process_counter =
@@ -126,22 +111,19 @@ impl CounterStorage for InMemoryStorage {
             };
 
         // Normalize counters and values
-        for counter in counters.iter() {
+        for counter in counters.iter().filter(|c| !c.is_qualified()) {
             limits_by_namespace
                 .entry(counter.limit().namespace().clone())
                 .or_insert_with(HashMap::new)
                 .entry(counter.limit().clone())
-                .or_insert_with(HashMap::new)
-                .entry(counter.into())
                 .or_insert_with(AtomicExpiringValue::default);
         }
 
-        // Process counters
-        for counter in counters.iter_mut() {
+        // Process simple counters
+        for counter in counters.iter_mut().filter(|c| !c.is_qualified()) {
             let atomic_expiring_value: &AtomicExpiringValue = limits_by_namespace
                 .get(counter.limit().namespace())
                 .and_then(|limits| limits.get(counter.limit()))
-                .and_then(|counters| counters.get(&counter.into()))
                 .unwrap();
 
             if let Some(limited) = process_counter(counter, atomic_expiring_value.value(), delta) {
@@ -149,8 +131,28 @@ impl CounterStorage for InMemoryStorage {
                     return Ok(limited);
                 }
             }
-
             counter_values_to_update.push((atomic_expiring_value, counter.seconds()));
+        }
+
+        // Process qualified counters
+        for counter in counters.iter_mut().filter(|c| c.is_qualified()) {
+            let value = match self.qualified_counters.get(counter) {
+                None => self.qualified_counters.get_with(counter.clone(), || {
+                    Arc::new(AtomicExpiringValue::new(
+                        0,
+                        now + Duration::from_secs(counter.seconds()),
+                    ))
+                }),
+                Some(counter) => counter,
+            };
+
+            if let Some(limited) = process_counter(counter, value.value(), delta) {
+                if !load_counters {
+                    return Ok(limited);
+                }
+            }
+
+            qualified_counter_values_to_updated.push((value, counter.seconds()));
         }
 
         if let Some(limited) = first_limited {
@@ -161,6 +163,11 @@ impl CounterStorage for InMemoryStorage {
         counter_values_to_update.iter().for_each(|(v, ttl)| {
             v.update(delta, *ttl, now);
         });
+        qualified_counter_values_to_updated
+            .iter()
+            .for_each(|(v, ttl)| {
+                v.update(delta, *ttl, now);
+            });
 
         Ok(Authorization::Ok)
     }
@@ -189,6 +196,19 @@ impl CounterStorage for InMemoryStorage {
                 }
             }
         }
+
+        for (counter, expiring_value) in self.qualified_counters.iter() {
+            if limits.contains(counter.limit()) {
+                let mut counter_with_val = counter.deref().clone();
+                counter_with_val
+                    .set_remaining(counter_with_val.max_value() - expiring_value.value());
+                counter_with_val.set_expires_in(expiring_value.ttl());
+                if counter_with_val.expires_in().unwrap() > Duration::ZERO {
+                    res.insert(counter_with_val);
+                }
+            }
+        }
+
         Ok(res)
     }
 
@@ -209,6 +229,7 @@ impl InMemoryStorage {
     pub fn new() -> Self {
         Self {
             limits_for_namespace: RwLock::new(HashMap::new()),
+            qualified_counters: Cache::new(1000),
         }
     }
 
@@ -219,10 +240,17 @@ impl InMemoryStorage {
         let mut res: HashMap<Counter, AtomicExpiringValue> = HashMap::new();
 
         if let Some(counters_by_limit) = self.limits_for_namespace.read().unwrap().get(namespace) {
-            for (limit, values) in counters_by_limit {
-                for (counter_key, expiring_value) in values {
-                    res.insert(counter_key.to_counter(limit), expiring_value.clone());
-                }
+            for (limit, value) in counters_by_limit {
+                res.insert(
+                    Counter::new(limit.clone(), HashMap::default()),
+                    value.clone(),
+                );
+            }
+        }
+
+        for (counter, value) in self.qualified_counters.iter() {
+            if counter.namespace() == namespace {
+                res.insert(counter.deref().clone(), value.deref().clone());
             }
         }
 
@@ -237,26 +265,6 @@ impl InMemoryStorage {
             .get_mut(limit.namespace())
         {
             counters_by_limit.remove(limit);
-        }
-    }
-
-    fn insert_or_update_counter(
-        &self,
-        counters: &mut HashMap<CounterKey, AtomicExpiringValue>,
-        counter: &Counter,
-        delta: i64,
-    ) {
-        let now = SystemTime::now();
-        match counters.entry(counter.into()) {
-            Entry::Vacant(v) => {
-                v.insert(AtomicExpiringValue::new(
-                    delta,
-                    now + Duration::from_secs(counter.seconds()),
-                ));
-            }
-            Entry::Occupied(o) => {
-                o.get().update(delta, counter.seconds(), now);
-            }
         }
     }
 

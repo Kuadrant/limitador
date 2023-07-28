@@ -21,6 +21,7 @@ infinispan_storage = ["infinispan", "reqwest", "base64"]
 lenient_conditions = []
 
 [dependencies]
+moka = "0.11.2"
 ttl_cache = "0.5"
 serde = { version = "1", features = ["derive"] }
 postcard = { version = "1.0.4", features = ["use-std"] }
