@@ -1,6 +1,6 @@
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
-use crate::storage::expiring_value::ExpiringValue;
+use crate::storage::atomic_expiring_value::AtomicExpiringValue;
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
@@ -53,7 +53,7 @@ impl PartialEq for CounterKey {
 type NamespacedLimitCounters<T> = HashMap<Namespace, HashMap<Limit, HashMap<CounterKey, T>>>;
 
 pub struct InMemoryStorage {
-    limits_for_namespace: RwLock<NamespacedLimitCounters<ExpiringValue>>,
+    limits_for_namespace: RwLock<NamespacedLimitCounters<AtomicExpiringValue>>,
 }
 
 impl CounterStorage for InMemoryStorage {
@@ -103,6 +103,8 @@ impl CounterStorage for InMemoryStorage {
     ) -> Result<Authorization, StorageErr> {
         let mut limits_by_namespace = self.limits_for_namespace.write().unwrap();
         let mut first_limited = None;
+        let mut counter_values_to_update: Vec<(&AtomicExpiringValue, u64)> = Vec::new();
+        let now = SystemTime::now();
 
         let mut process_counter =
             |counter: &mut Counter, value: i64, delta: i64| -> Option<Authorization> {
@@ -123,56 +125,42 @@ impl CounterStorage for InMemoryStorage {
                 None
             };
 
+        // Normalize counters and values
+        for counter in counters.iter() {
+            limits_by_namespace
+                .entry(counter.limit().namespace().clone())
+                .or_insert_with(HashMap::new)
+                .entry(counter.limit().clone())
+                .or_insert_with(HashMap::new)
+                .entry(counter.into())
+                .or_insert_with(AtomicExpiringValue::default);
+        }
+
+        // Process counters
         for counter in counters.iter_mut() {
-            if counter.max_value() < delta {
-                if let Some(limited) = process_counter(counter, 0, delta) {
-                    if !load_counters {
-                        return Ok(limited);
-                    }
-                }
-                continue;
-            }
+            let atomic_expiring_value: &AtomicExpiringValue = limits_by_namespace
+                .get(counter.limit().namespace())
+                .and_then(|limits| limits.get(counter.limit()))
+                .and_then(|counters| counters.get(&counter.into()))
+                .unwrap();
 
-            let value = Some(
-                limits_by_namespace
-                    .get(counter.limit().namespace())
-                    .and_then(|limits| limits.get(counter.limit()))
-                    .and_then(|counters| counters.get(&counter.into()))
-                    .map(|expiring_value| expiring_value.value())
-                    .unwrap_or(0),
-            );
-
-            if let Some(limited) = process_counter(counter, value.unwrap(), delta) {
+            if let Some(limited) = process_counter(counter, atomic_expiring_value.value(), delta) {
                 if !load_counters {
                     return Ok(limited);
                 }
             }
+
+            counter_values_to_update.push((atomic_expiring_value, counter.seconds()));
         }
 
         if let Some(limited) = first_limited {
             return Ok(limited);
         }
 
-        for counter in counters.iter_mut() {
-            let now = SystemTime::now();
-            match limits_by_namespace
-                .entry(counter.limit().namespace().clone())
-                .or_insert_with(HashMap::new)
-                .entry(counter.limit().clone())
-                .or_insert_with(HashMap::new)
-                .entry(counter.into())
-            {
-                Entry::Vacant(v) => {
-                    v.insert(ExpiringValue::new(
-                        delta,
-                        now + Duration::from_secs(counter.seconds()),
-                    ));
-                }
-                Entry::Occupied(mut o) => {
-                    o.get_mut().update_mut(delta, counter.seconds(), now);
-                }
-            }
-        }
+        // Update counters
+        counter_values_to_update.iter().for_each(|(v, ttl)| {
+            v.update(delta, *ttl, now);
+        });
 
         Ok(Authorization::Ok)
     }
@@ -224,8 +212,11 @@ impl InMemoryStorage {
         }
     }
 
-    fn counters_in_namespace(&self, namespace: &Namespace) -> HashMap<Counter, ExpiringValue> {
-        let mut res: HashMap<Counter, ExpiringValue> = HashMap::new();
+    fn counters_in_namespace(
+        &self,
+        namespace: &Namespace,
+    ) -> HashMap<Counter, AtomicExpiringValue> {
+        let mut res: HashMap<Counter, AtomicExpiringValue> = HashMap::new();
 
         if let Some(counters_by_limit) = self.limits_for_namespace.read().unwrap().get(namespace) {
             for (limit, values) in counters_by_limit {
@@ -251,20 +242,20 @@ impl InMemoryStorage {
 
     fn insert_or_update_counter(
         &self,
-        counters: &mut HashMap<CounterKey, ExpiringValue>,
+        counters: &mut HashMap<CounterKey, AtomicExpiringValue>,
         counter: &Counter,
         delta: i64,
     ) {
         let now = SystemTime::now();
         match counters.entry(counter.into()) {
             Entry::Vacant(v) => {
-                v.insert(ExpiringValue::new(
+                v.insert(AtomicExpiringValue::new(
                     delta,
                     now + Duration::from_secs(counter.seconds()),
                 ));
             }
-            Entry::Occupied(mut o) => {
-                o.get_mut().update_mut(delta, counter.seconds(), now);
+            Entry::Occupied(o) => {
+                o.get().update(delta, counter.seconds(), now);
             }
         }
     }
