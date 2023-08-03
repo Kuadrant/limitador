@@ -21,9 +21,11 @@ fn generate_protobuf() -> Result<(), Box<dyn Error>> {
 }
 
 fn set_features(env: &str) {
+    let mut features = vec![];
     if cfg!(feature = "infinispan") {
-        println!("cargo:rustc-env={env}=[+infinispan]");
+        features.push("+infinispan");
     }
+    println!("cargo:rustc-env={env}={features:?}");
 }
 
 fn set_profile(env: &str) {

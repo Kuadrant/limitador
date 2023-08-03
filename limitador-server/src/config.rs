@@ -35,6 +35,39 @@ pub struct Configuration {
     pub rate_limit_headers: RateLimitHeaders,
 }
 
+pub mod env {
+    use lazy_static::lazy_static;
+
+    lazy_static! {
+        pub static ref LIMITS_FILE: Option<&'static str> = value_for("LIMITS_FILE");
+        pub static ref ENVOY_RLS_HOST: Option<&'static str> = value_for("ENVOY_RLS_HOST");
+        pub static ref ENVOY_RLS_PORT: Option<&'static str> = value_for("ENVOY_RLS_PORT");
+        pub static ref HTTP_API_HOST: Option<&'static str> = value_for("HTTP_API_HOST");
+        pub static ref HTTP_API_PORT: Option<&'static str> = value_for("HTTP_API_PORT");
+        pub static ref DISK_PATH: Option<&'static str> = value_for("DISK_PATH");
+        pub static ref DISK_OPTIMIZE: Option<&'static str> = value_for("DISK_OPTIMIZE");
+        pub static ref REDIS_URL: Option<&'static str> = value_for("REDIS_URL");
+        pub static ref REDIS_LOCAL_CACHE_MAX_TTL_CACHED_COUNTERS_MS: Option<&'static str> =
+            value_for("REDIS_LOCAL_CACHE_MAX_TTL_CACHED_COUNTERS_MS");
+        pub static ref REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS: Option<&'static str> =
+            value_for("REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS");
+        pub static ref REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS: Option<&'static str> =
+            value_for("REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS");
+        pub static ref RATE_LIMIT_HEADERS: Option<&'static str> = value_for("RATE_LIMIT_HEADERS");
+        pub static ref INFINISPAN_CACHE_NAME: Option<&'static str> =
+            value_for("INFINISPAN_CACHE_NAME");
+        pub static ref INFINISPAN_COUNTERS_CONSISTENCY: Option<&'static str> =
+            value_for("INFINISPAN_COUNTERS_CONSISTENCY");
+    }
+
+    fn value_for(env_key: &'static str) -> Option<&'static str> {
+        match std::env::var(env_key) {
+            Ok(s) => Some(Box::leak(s.into_boxed_str())),
+            Err(_) => None,
+        }
+    }
+}
+
 impl Configuration {
     pub const DEFAULT_RLS_PORT: &'static str = "8081";
     pub const DEFAULT_HTTP_PORT: &'static str = "8080";

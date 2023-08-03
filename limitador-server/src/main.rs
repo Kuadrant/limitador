@@ -12,17 +12,14 @@ use crate::config::{
 };
 use crate::envoy_rls::server::{run_envoy_rls_server, RateLimitHeaders};
 use crate::http_api::server::run_http_server;
-use clap::{App, Arg, SubCommand};
+use clap::{value_parser, Arg, ArgAction, Command};
+use const_format::formatcp;
 use env_logger::Builder;
 use limitador::errors::LimitadorError;
 use limitador::limit::Limit;
 use limitador::storage::disk::DiskStorage;
 #[cfg(feature = "infinispan")]
 use limitador::storage::infinispan::{Consistency, InfinispanStorageBuilder};
-#[cfg(feature = "infinispan")]
-use limitador::storage::infinispan::{
-    DEFAULT_INFINISPAN_CONSISTENCY, DEFAULT_INFINISPAN_LIMITS_CACHE_NAME,
-};
 use limitador::storage::redis::{
     AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder, DEFAULT_FLUSHING_PERIOD_SEC,
     DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC,
@@ -51,7 +48,7 @@ mod config;
 
 const LIMITADOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 const LIMITADOR_PROFILE: &str = env!("LIMITADOR_PROFILE");
-const LIMITADOR_FEATURES: Option<&'static str> = option_env!("LIMITADOR_FEATURES");
+const LIMITADOR_FEATURES: &str = env!("LIMITADOR_FEATURES");
 const LIMITADOR_HEADER: &str = "Limitador Server";
 
 #[derive(Error, Debug)]
@@ -396,84 +393,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn create_config() -> (Configuration, String) {
-    let full_version = {
-        let build = match LIMITADOR_PROFILE {
-            "release" => "".to_owned(),
-            other => format!(" {other} build"),
-        };
-
-        format!(
-            "v{} ({}) {}{}",
-            LIMITADOR_VERSION,
-            env!("LIMITADOR_GIT_HASH"),
-            LIMITADOR_FEATURES.unwrap_or(""),
-            build,
-        )
-    };
-
-    // figure defaults out
-    let default_limit_file = env::var("LIMITS_FILE").unwrap_or_else(|_| "".to_string());
-
-    let default_rls_host =
-        env::var("ENVOY_RLS_HOST").unwrap_or_else(|_| Configuration::DEFAULT_IP_BIND.to_string());
-    let default_rls_port =
-        env::var("ENVOY_RLS_PORT").unwrap_or_else(|_| Configuration::DEFAULT_RLS_PORT.to_string());
-
-    let default_http_host =
-        env::var("HTTP_API_HOST").unwrap_or_else(|_| Configuration::DEFAULT_IP_BIND.to_string());
-    let default_http_port =
-        env::var("HTTP_API_PORT").unwrap_or_else(|_| Configuration::DEFAULT_HTTP_PORT.to_string());
-
-    let disk_path = env::var("DISK_PATH").unwrap_or_else(|_| "".to_string());
-    let disk_optimize = env::var("DISK_OPTIMIZE").unwrap_or_else(|_| "throughput".to_string());
-
-    let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "".to_string());
-
-    let redis_cached_ttl_default = env::var("REDIS_LOCAL_CACHE_MAX_TTL_CACHED_COUNTERS_MS")
-        .unwrap_or_else(|_| (DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC * 1000).to_string());
-    let redis_flushing_period_default = env::var("REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS")
-        .unwrap_or_else(|_| (DEFAULT_FLUSHING_PERIOD_SEC * 1000).to_string());
-    let redis_max_cached_counters_default = DEFAULT_MAX_CACHED_COUNTERS.to_string();
-    let redis_ttl_ratio_default = env::var("REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS")
-        .unwrap_or_else(|_| DEFAULT_TTL_RATIO_CACHED_COUNTERS.to_string());
-
-    #[cfg(feature = "infinispan")]
-    let infinispan_cache_default = env::var("INFINISPAN_CACHE_NAME")
-        .unwrap_or_else(|_| DEFAULT_INFINISPAN_LIMITS_CACHE_NAME.to_string());
-    #[cfg(feature = "infinispan")]
-    let infinispan_consistency_default = env::var("INFINISPAN_COUNTERS_CONSISTENCY")
-        .unwrap_or_else(|_| DEFAULT_INFINISPAN_CONSISTENCY.to_string());
-
-    let rate_limit_headers_default = env::var("RATE_LIMIT_HEADERS").unwrap_or("NONE".to_string());
+fn create_config() -> (Configuration, &'static str) {
+    let full_version: &'static str = formatcp!(
+        "v{} ({}) {} {}",
+        LIMITADOR_VERSION,
+        env!("LIMITADOR_GIT_HASH"),
+        LIMITADOR_FEATURES,
+        LIMITADOR_PROFILE,
+    );
 
     // wire args based of defaults
-    let limit_arg = Arg::with_name("LIMITS_FILE")
+    let limit_arg = Arg::new("LIMITS_FILE")
+        .action(ArgAction::Set)
         .help("The limit file to use")
         .index(1);
-    let limit_arg = if default_limit_file.is_empty() {
-        limit_arg.required(true)
-    } else {
-        limit_arg.default_value(&default_limit_file)
+    let limit_arg = match *config::env::LIMITS_FILE {
+        None => limit_arg.required(true),
+        Some(file) => limit_arg.default_value(file),
     };
 
-    let redis_url_arg = Arg::with_name("URL").help("Redis URL to use").index(1);
-    let redis_url_arg = if redis_url.is_empty() {
-        redis_url_arg.required(true)
-    } else {
-        redis_url_arg.default_value(&redis_url)
+    let redis_url_arg = Arg::new("URL").help("Redis URL to use").index(1);
+    let redis_url_arg = match *config::env::REDIS_URL {
+        None => redis_url_arg.required(true),
+        Some(url) => redis_url_arg.default_value(url),
     };
 
-    let disk_path_arg = Arg::with_name("PATH").help("Path to counter DB").index(1);
-    let disk_path_arg = if disk_path.is_empty() {
-        disk_path_arg.required(true)
-    } else {
-        disk_path_arg.default_value(&disk_path)
+    let disk_path_arg = Arg::new("PATH").help("Path to counter DB").index(1);
+    let disk_path_arg = match *config::env::DISK_PATH {
+        None => disk_path_arg.required(true),
+        Some(path) => disk_path_arg.default_value(path),
     };
 
     // build app
-    let cmdline = App::new(LIMITADOR_HEADER)
-        .version(full_version.as_str())
+    let cmdline = Command::new(LIMITADOR_HEADER)
+        .version(full_version)
         .author("The Kuadrant team - github.com/Kuadrant")
         .about("Rate Limiting Server")
         .disable_help_subcommand(true)
@@ -483,64 +436,74 @@ fn create_config() -> (Configuration, String) {
         .subcommand_required(false)
         .arg(limit_arg)
         .arg(
-            Arg::with_name("ip")
+            Arg::new("ip")
                 .short('b')
                 .long("rls-ip")
-                .default_value(&default_rls_host)
+                .default_value(
+                    config::env::ENVOY_RLS_HOST.unwrap_or(Configuration::DEFAULT_IP_BIND),
+                )
                 .display_order(1)
                 .help("The IP to listen on for RLS"),
         )
         .arg(
-            Arg::with_name("port")
+            Arg::new("port")
                 .short('p')
                 .long("rls-port")
-                .default_value(&default_rls_port)
+                .default_value(
+                    config::env::ENVOY_RLS_PORT.unwrap_or(Configuration::DEFAULT_RLS_PORT),
+                )
+                .value_parser(value_parser!(u16))
                 .display_order(2)
                 .help("The port to listen on for RLS"),
         )
         .arg(
-            Arg::with_name("http_ip")
+            Arg::new("http_ip")
                 .short('B')
                 .long("http-ip")
-                .default_value(&default_http_host)
+                .default_value(config::env::HTTP_API_HOST.unwrap_or(Configuration::DEFAULT_IP_BIND))
                 .display_order(3)
                 .help("The IP to listen on for HTTP"),
         )
         .arg(
-            Arg::with_name("http_port")
+            Arg::new("http_port")
                 .short('P')
                 .long("http-port")
-                .default_value(&default_http_port)
+                .default_value(
+                    config::env::HTTP_API_PORT.unwrap_or(Configuration::DEFAULT_HTTP_PORT),
+                )
+                .value_parser(value_parser!(u16))
                 .display_order(4)
                 .help("The port to listen on for HTTP"),
         )
         .arg(
-            Arg::with_name("limit_name_in_labels")
+            Arg::new("limit_name_in_labels")
                 .short('l')
                 .long("limit-name-in-labels")
+                .action(ArgAction::SetTrue)
                 .display_order(5)
                 .help("Include the Limit Name in prometheus label"),
         )
         .arg(
-            Arg::with_name("v")
+            Arg::new("v")
                 .short('v')
-                .multiple_occurrences(true)
-                .max_occurrences(4)
+                .action(ArgAction::Count)
+                .value_parser(value_parser!(u8).range(..5))
                 .display_order(6)
                 .help("Sets the level of verbosity"),
         )
         .arg(
-            Arg::with_name("validate")
+            Arg::new("validate")
                 .long("validate")
+                .action(ArgAction::SetTrue)
                 .display_order(7)
                 .help("Validates the LIMITS_FILE and exits"),
         )
         .arg(
-            Arg::with_name("rate_limit_headers")
+            Arg::new("rate_limit_headers")
                 .long("rate-limit-headers")
                 .short('H')
                 .display_order(8)
-                .default_value(&rate_limit_headers_default)
+                .default_value(config::env::RATE_LIMIT_HEADERS.unwrap_or("NONE"))
                 .value_parser(clap::builder::PossibleValuesParser::new([
                     "NONE",
                     "DRAFT_VERSION_03",
@@ -548,21 +511,21 @@ fn create_config() -> (Configuration, String) {
                 .help("Enables rate limit response headers"),
         )
         .subcommand(
-            SubCommand::with_name("memory")
+            Command::new("memory")
                 .display_order(1)
                 .about("Counters are held in Limitador (ephemeral)"),
         )
         .subcommand(
-            SubCommand::with_name("disk")
+            Command::new("disk")
                 .display_order(2)
                 .about("Counters are held on disk (persistent)")
                 .arg(disk_path_arg)
                 .arg(
-                    Arg::with_name("OPTIMIZE")
+                    Arg::new("OPTIMIZE")
                         .long("optimize")
-                        .takes_value(true)
+                        .action(ArgAction::Set)
                         .display_order(1)
-                        .default_value(&disk_optimize)
+                        .default_value(config::env::DISK_OPTIMIZE.unwrap_or("throughput"))
                         .value_parser(clap::builder::PossibleValuesParser::new([
                             "throughput",
                             "disk",
@@ -571,49 +534,57 @@ fn create_config() -> (Configuration, String) {
                 ),
         )
         .subcommand(
-            SubCommand::with_name("redis")
+            Command::new("redis")
                 .display_order(3)
                 .about("Uses Redis to store counters")
                 .arg(redis_url_arg.clone()),
         )
         .subcommand(
-            SubCommand::with_name("redis_cached")
+            Command::new("redis_cached")
                 .about("Uses Redis to store counters, with an in-memory cache")
                 .display_order(4)
                 .arg(redis_url_arg)
                 .arg(
-                    Arg::with_name("TTL")
+                    Arg::new("TTL")
                         .long("ttl")
-                        .takes_value(true)
+                        .action(ArgAction::Set)
                         .value_parser(clap::value_parser!(u64))
-                        .default_value(&redis_cached_ttl_default)
+                        .default_value(
+                            config::env::REDIS_LOCAL_CACHE_MAX_TTL_CACHED_COUNTERS_MS
+                                .unwrap_or("5000"),
+                        )
                         .display_order(2)
                         .help("TTL for cached counters in milliseconds"),
                 )
                 .arg(
-                    Arg::with_name("ratio")
+                    Arg::new("ratio")
                         .long("ratio")
-                        .takes_value(true)
+                        .action(ArgAction::Set)
                         .value_parser(clap::value_parser!(u64))
-                        .default_value(&redis_ttl_ratio_default)
+                        .default_value(
+                            config::env::REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS
+                                .unwrap_or("10000"),
+                        )
                         .display_order(3)
                         .help("Ratio to apply to the TTL from Redis on cached counters"),
                 )
                 .arg(
-                    Arg::with_name("flush")
+                    Arg::new("flush")
                         .long("flush-period")
-                        .takes_value(true)
+                        .action(ArgAction::Set)
                         .value_parser(clap::value_parser!(i64))
-                        .default_value(&redis_flushing_period_default)
+                        .default_value(
+                            config::env::REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS.unwrap_or("1000"),
+                        )
                         .display_order(4)
                         .help("Flushing period for counters in milliseconds"),
                 )
                 .arg(
-                    Arg::with_name("max")
+                    Arg::new("max")
                         .long("max-cached")
-                        .takes_value(true)
+                        .action(ArgAction::Set)
                         .value_parser(clap::value_parser!(usize))
-                        .default_value(&redis_max_cached_counters_default)
+                        .default_value("10000")
                         .display_order(5)
                         .help("Maximum amount of counters cached"),
                 ),
@@ -621,31 +592,31 @@ fn create_config() -> (Configuration, String) {
 
     #[cfg(feature = "infinispan")]
     let cmdline = cmdline.subcommand(
-        SubCommand::with_name("infinispan")
+        Command::new("infinispan")
             .about("Uses Infinispan to store counters")
             .display_order(5)
             .arg(
-                Arg::with_name("URL")
+                Arg::new("URL")
                     .help("Infinispan URL to use")
                     .display_order(1)
                     .required(true)
                     .index(1),
             )
             .arg(
-                Arg::with_name("cache name")
+                Arg::new("cache name")
                     .short('n')
                     .long("cache-name")
-                    .takes_value(true)
-                    .default_value(&infinispan_cache_default)
+                    .action(ArgAction::Set)
+                    .default_value(config::env::INFINISPAN_CACHE_NAME.unwrap_or("infinispan"))
                     .display_order(2)
                     .help("Name of the cache to store counters in"),
             )
             .arg(
-                Arg::with_name("consistency")
+                Arg::new("consistency")
                     .short('c')
                     .long("consistency")
-                    .takes_value(true)
-                    .default_value(&infinispan_consistency_default)
+                    .action(ArgAction::Set)
+                    .default_value(config::env::INFINISPAN_COUNTERS_CONSISTENCY.unwrap_or("Strong"))
                     .value_parser(clap::builder::PossibleValuesParser::new(["Strong", "Weak"]))
                     .display_order(3)
                     .help("The consistency to use to read from the cache"),
@@ -654,9 +625,9 @@ fn create_config() -> (Configuration, String) {
 
     let matches = cmdline.get_matches();
 
-    let limits_file = matches.value_of("LIMITS_FILE").unwrap();
+    let limits_file = matches.get_one::<String>("LIMITS_FILE").unwrap();
 
-    if matches.is_present("validate") {
+    if matches.get_flag("validate") {
         let error = match std::fs::File::open(limits_file) {
             Ok(f) => {
                 let parsed_limits: Result<Vec<Limit>, _> = serde_yaml::from_reader(f);
@@ -696,19 +667,22 @@ fn create_config() -> (Configuration, String) {
 
     let storage = match matches.subcommand() {
         Some(("redis", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
-            url: sub.value_of("URL").unwrap().to_owned(),
+            url: sub.get_one::<String>("URL").unwrap().to_owned(),
             cache: None,
         }),
         Some(("disk", sub)) => StorageConfiguration::Disk(DiskStorageConfiguration {
-            path: sub.value_of("PATH").expect("We need a path!").to_string(),
-            optimization: match sub.value_of("OPTIMIZE") {
+            path: sub
+                .get_one::<String>("PATH")
+                .expect("We need a path!")
+                .to_string(),
+            optimization: match sub.get_one::<String>("OPTIMIZE").map(String::as_str) {
                 Some("disk") => storage::disk::OptimizeFor::Space,
                 Some("throughput") => storage::disk::OptimizeFor::Throughput,
                 _ => unreachable!("Some disk OptimizeFor wasn't configured!"),
             },
         }),
         Some(("redis_cached", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
-            url: sub.value_of("URL").unwrap().to_owned(),
+            url: sub.get_one::<String>("URL").unwrap().to_owned(),
             cache: Some(RedisStorageCacheConfiguration {
                 flushing_period: *sub.get_one("flush").unwrap(),
                 max_ttl: *sub.get_one("TTL").unwrap(),
@@ -719,9 +693,9 @@ fn create_config() -> (Configuration, String) {
         #[cfg(feature = "infinispan")]
         Some(("infinispan", sub)) => {
             StorageConfiguration::Infinispan(InfinispanStorageConfiguration {
-                url: sub.value_of("URL").unwrap().to_owned(),
-                cache: Some(sub.value_of("cache name").unwrap().to_string()),
-                consistency: Some(sub.value_of("consistency").unwrap().to_string()),
+                url: sub.get_one::<String>("URL").unwrap().to_owned(),
+                cache: Some(sub.get_one::<String>("cache name").unwrap().to_string()),
+                consistency: Some(sub.get_one::<String>("consistency").unwrap().to_string()),
             })
         }
         Some(("memory", _sub)) => StorageConfiguration::InMemory,
@@ -735,7 +709,11 @@ fn create_config() -> (Configuration, String) {
         _ => unreachable!("Some storage wasn't configured!"),
     };
 
-    let rate_limit_headers = match matches.value_of("rate_limit_headers").unwrap() {
+    let rate_limit_headers = match matches
+        .get_one::<String>("rate_limit_headers")
+        .unwrap()
+        .as_str()
+    {
         "NONE" => RateLimitHeaders::None,
         "DRAFT_VERSION_03" => RateLimitHeaders::DraftVersion03,
         _ => unreachable!("invalid --rate-limit-headers value"),
@@ -744,16 +722,16 @@ fn create_config() -> (Configuration, String) {
     let mut config = Configuration::with(
         storage,
         limits_file.to_string(),
-        matches.value_of("ip").unwrap().into(),
-        matches.value_of("port").unwrap().parse().unwrap(),
-        matches.value_of("http_ip").unwrap().into(),
-        matches.value_of("http_port").unwrap().parse().unwrap(),
-        matches.value_of("limit_name_in_labels").is_some()
+        matches.get_one::<String>("ip").unwrap().into(),
+        *matches.get_one::<u16>("port").unwrap(),
+        matches.get_one::<String>("http_ip").unwrap().into(),
+        *matches.get_one::<u16>("http_port").unwrap(),
+        matches.get_flag("limit_name_in_labels")
             || env_option_is_enabled("LIMIT_NAME_IN_PROMETHEUS_LABELS"),
         rate_limit_headers,
     );
 
-    config.log_level = match matches.occurrences_of("v") {
+    config.log_level = match matches.get_count("v") {
         0 => None,
         1 => Some(LevelFilter::Warn),
         2 => Some(LevelFilter::Info),
