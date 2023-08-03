@@ -35,6 +35,35 @@ pub struct Configuration {
     pub rate_limit_headers: RateLimitHeaders,
 }
 
+pub mod env {
+    pub const LIMITS_FILE: Option<&'static str> = option_env!("LIMITS_FILE");
+
+    pub const ENVOY_RLS_HOST: Option<&'static str> = option_env!("ENVOY_RLS_HOST");
+    pub const ENVOY_RLS_PORT: Option<&'static str> = option_env!("ENVOY_RLS_PORT");
+
+    pub const HTTP_API_HOST: Option<&'static str> = option_env!("HTTP_API_HOST");
+    pub const HTTP_API_PORT: Option<&'static str> = option_env!("HTTP_API_PORT");
+
+    pub const DISK_PATH: Option<&'static str> = option_env!("DISK_PATH");
+    pub const DISK_OPTIMIZE: Option<&'static str> = option_env!("DISK_OPTIMIZE");
+
+    pub const REDIS_URL: Option<&'static str> = option_env!("REDIS_URL");
+    pub const REDIS_LOCAL_CACHE_MAX_TTL_CACHED_COUNTERS_MS: Option<&'static str> =
+        option_env!("REDIS_LOCAL_CACHE_MAX_TTL_CACHED_COUNTERS_MS");
+    pub const REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS: Option<&'static str> =
+        option_env!("REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS");
+    pub const REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS: Option<&'static str> =
+        option_env!("REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS");
+
+    pub const RATE_LIMIT_HEADERS: Option<&'static str> = option_env!("RATE_LIMIT_HEADERS");
+
+    #[cfg(feature = "infinispan")]
+    pub const INFINISPAN_CACHE_NAME: Option<&'static str> = option_env!("INFINISPAN_CACHE_NAME");
+    #[cfg(feature = "infinispan")]
+    pub const INFINISPAN_COUNTERS_CONSISTENCY: Option<&'static str> =
+        option_env!("INFINISPAN_COUNTERS_CONSISTENCY");
+}
+
 impl Configuration {
     pub const DEFAULT_RLS_PORT: &'static str = "8081";
     pub const DEFAULT_HTTP_PORT: &'static str = "8080";
