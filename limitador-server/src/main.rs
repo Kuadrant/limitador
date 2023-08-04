@@ -7,14 +7,15 @@ extern crate clap;
 #[cfg(feature = "infinispan")]
 use crate::config::InfinispanStorageConfiguration;
 use crate::config::{
-    Configuration, DiskStorageConfiguration, RedisStorageCacheConfiguration,
-    RedisStorageConfiguration, StorageConfiguration,
+    Configuration, DiskStorageConfiguration, InMemoryStorageConfiguration,
+    RedisStorageCacheConfiguration, RedisStorageConfiguration, StorageConfiguration,
 };
 use crate::envoy_rls::server::{run_envoy_rls_server, RateLimitHeaders};
 use crate::http_api::server::run_http_server;
 use clap::{value_parser, Arg, ArgAction, Command};
 use const_format::formatcp;
 use env_logger::Builder;
+use limitador::counter::Counter;
 use limitador::errors::LimitadorError;
 use limitador::limit::Limit;
 use limitador::storage::disk::DiskStorage;
@@ -38,6 +39,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{env, process};
+use sysinfo::{RefreshKind, System, SystemExt};
 use thiserror::Error;
 use tokio::runtime::Handle;
 
@@ -82,7 +84,9 @@ impl Limiter {
             StorageConfiguration::Infinispan(cfg) => {
                 Self::infinispan_limiter(cfg, config.limit_name_in_labels).await
             }
-            StorageConfiguration::InMemory => Self::in_memory_limiter(config),
+            StorageConfiguration::InMemory(cfg) => {
+                Self::in_memory_limiter(cfg, config.limit_name_in_labels)
+            }
             StorageConfiguration::Disk(cfg) => Self::disk_limiter(cfg, config.limit_name_in_labels),
         };
 
@@ -210,7 +214,7 @@ impl Limiter {
             }
         };
         let mut rate_limiter_builder =
-            RateLimiterBuilder::new().storage(Storage::with_counter_storage(Box::new(storage)));
+            RateLimiterBuilder::with_storage(Storage::with_counter_storage(Box::new(storage)));
 
         if limit_name_in_labels {
             rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
@@ -219,10 +223,11 @@ impl Limiter {
         Self::Blocking(rate_limiter_builder.build())
     }
 
-    fn in_memory_limiter(cfg: Configuration) -> Self {
-        let mut rate_limiter_builder = RateLimiterBuilder::new();
+    fn in_memory_limiter(cfg: InMemoryStorageConfiguration, limit_name_in_labels: bool) -> Self {
+        let mut rate_limiter_builder =
+            RateLimiterBuilder::new(cfg.cache_size.or_else(guess_cache_size).unwrap());
 
-        if cfg.limit_name_in_labels {
+        if limit_name_in_labels {
             rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
         }
 
@@ -513,7 +518,16 @@ fn create_config() -> (Configuration, &'static str) {
         .subcommand(
             Command::new("memory")
                 .display_order(1)
-                .about("Counters are held in Limitador (ephemeral)"),
+                .about("Counters are held in Limitador (ephemeral)")
+                .arg(
+                    Arg::new("CACHE_SIZE")
+                        .long("cache")
+                        .short('c')
+                        .action(ArgAction::Set)
+                        .value_parser(value_parser!(u64))
+                        .display_order(1)
+                        .help("Sets the size of the cache for 'qualified counters'"),
+                ),
         )
         .subcommand(
             Command::new("disk")
@@ -698,7 +712,9 @@ fn create_config() -> (Configuration, &'static str) {
                 consistency: Some(sub.get_one::<String>("consistency").unwrap().to_string()),
             })
         }
-        Some(("memory", _sub)) => StorageConfiguration::InMemory,
+        Some(("memory", sub)) => StorageConfiguration::InMemory(InMemoryStorageConfiguration {
+            cache_size: sub.get_one::<u64>("CACHE_SIZE").copied(),
+        }),
         None => match storage_config_from_env() {
             Ok(storage_cfg) => storage_cfg,
             Err(_) => {
@@ -785,8 +801,24 @@ fn storage_config_from_env() -> Result<StorageConfiguration, ()> {
                 consistency: env::var("INFINISPAN_COUNTERS_CONSISTENCY").ok(),
             },
         )),
-        _ => Ok(StorageConfiguration::InMemory),
+        _ => Ok(StorageConfiguration::InMemory(
+            InMemoryStorageConfiguration { cache_size: None },
+        )),
     }
+}
+
+fn guess_cache_size() -> Option<u64> {
+    let sys = System::new_with_specifics(RefreshKind::new().with_memory());
+    let free_mem = sys.available_memory();
+    let memory = free_mem as f64 * 0.7;
+    let size = (memory
+        / (std::mem::size_of::<Counter>() + 16/* size_of::<AtomicExpiringValue>() */) as f64)
+        as u64;
+    warn!(
+        "No cache size provided, aiming at 70% of {}MB, i.e. {size} entries",
+        free_mem / 1024 / 1024
+    );
+    Some(size)
 }
 
 fn env_option_is_enabled(env_name: &str) -> bool {

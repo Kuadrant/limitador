@@ -246,7 +246,7 @@ mod tests {
             vec!["app_id"],
         );
 
-        let limiter = RateLimiter::default();
+        let limiter = RateLimiter::new(10_000);
         limiter.add_limit(limit);
 
         let rate_limiter = MyRateLimiter::new(
@@ -366,7 +366,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_takes_into_account_all_the_descriptors() {
-        let limiter = RateLimiter::default();
+        let limiter = RateLimiter::new(10_000);
 
         let namespace = "test_namespace";
 
@@ -434,7 +434,7 @@ mod tests {
         let namespace = "test_namespace";
         let limit = Limit::new(namespace, 10, 60, vec!["x == '1'"], vec!["y"]);
 
-        let limiter = RateLimiter::default();
+        let limiter = RateLimiter::new(10_000);
         limiter.add_limit(limit);
 
         let rate_limiter = MyRateLimiter::new(
@@ -499,7 +499,7 @@ mod tests {
         let namespace = "test_namespace";
         let limit = Limit::new(namespace, 1, 60, vec!["x == '1'"], vec!["y"]);
 
-        let limiter = RateLimiter::default();
+        let limiter = RateLimiter::new(10_000);
         limiter.add_limit(limit);
 
         let rate_limiter = MyRateLimiter::new(

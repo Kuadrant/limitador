@@ -141,4 +141,11 @@ mod tests {
         });
         assert!([2i64, 3i64].contains(&atomic_expiring_value.value.load(Ordering::SeqCst)));
     }
+
+    #[test]
+    fn size_of_struct() {
+        // This is ugly, but we don't have access to `AtomicExpiringValue` in the server,
+        // so this is hardcoded in main.rs
+        assert_eq!(16, std::mem::size_of::<AtomicExpiringValue>());
+    }
 }

@@ -111,7 +111,9 @@ impl Default for Configuration {
     fn default() -> Self {
         Configuration {
             limits_file: "".to_string(),
-            storage: StorageConfiguration::InMemory,
+            storage: StorageConfiguration::InMemory(InMemoryStorageConfiguration {
+                cache_size: Some(10_000),
+            }),
             rls_host: "".to_string(),
             rls_port: 0,
             http_host: "".to_string(),
@@ -125,11 +127,16 @@ impl Default for Configuration {
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum StorageConfiguration {
-    InMemory,
+    InMemory(InMemoryStorageConfiguration),
     Disk(DiskStorageConfiguration),
     Redis(RedisStorageConfiguration),
     #[cfg(feature = "infinispan")]
     Infinispan(InfinispanStorageConfiguration),
+}
+
+#[derive(PartialEq, Eq, Debug)]
+pub struct InMemoryStorageConfiguration {
+    pub cache_size: Option<u64>,
 }
 
 #[derive(PartialEq, Eq, Debug)]

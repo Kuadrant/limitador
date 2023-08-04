@@ -226,10 +226,10 @@ impl CounterStorage for InMemoryStorage {
 }
 
 impl InMemoryStorage {
-    pub fn new() -> Self {
+    pub fn new(cache_size: u64) -> Self {
         Self {
             limits_for_namespace: RwLock::new(HashMap::new()),
-            qualified_counters: Cache::new(1000),
+            qualified_counters: Cache::new(cache_size),
         }
     }
 
@@ -278,7 +278,7 @@ impl InMemoryStorage {
 
 impl Default for InMemoryStorage {
     fn default() -> Self {
-        Self::new()
+        Self::new(10_000)
     }
 }
 
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn counters_for_multiple_limit_per_ns() {
-        let storage = InMemoryStorage::new();
+        let storage = InMemoryStorage::default();
         let namespace = "test_namespace";
         let limit_1 = Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"]);
         let limit_2 = Limit::new(
