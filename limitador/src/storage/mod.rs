@@ -37,10 +37,10 @@ pub struct AsyncStorage {
 }
 
 impl Storage {
-    pub fn new() -> Self {
+    pub fn new(cache_size: u64) -> Self {
         Self {
             limits: RwLock::new(HashMap::new()),
-            counters: Box::<InMemoryStorage>::default(),
+            counters: Box::new(InMemoryStorage::new(cache_size)),
         }
     }
 
@@ -147,7 +147,7 @@ impl Storage {
 
 impl Default for Storage {
     fn default() -> Self {
-        Self::new()
+        Self::new(10_000)
     }
 }
 

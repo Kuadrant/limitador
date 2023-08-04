@@ -236,9 +236,16 @@ impl From<CheckResult> for bool {
 }
 
 impl RateLimiterBuilder {
-    pub fn new() -> Self {
+    pub fn with_storage(storage: Storage) -> Self {
         Self {
-            storage: Storage::new(),
+            storage,
+            prometheus_limit_name_labels_enabled: false,
+        }
+    }
+
+    pub fn new(cache_size: u64) -> Self {
+        Self {
+            storage: Storage::new(cache_size),
             prometheus_limit_name_labels_enabled: false,
         }
     }
@@ -264,12 +271,6 @@ impl RateLimiterBuilder {
             storage: self.storage,
             prometheus_metrics,
         }
-    }
-}
-
-impl Default for RateLimiterBuilder {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -306,9 +307,9 @@ impl AsyncRateLimiterBuilder {
 }
 
 impl RateLimiter {
-    pub fn new() -> Self {
+    pub fn new(cache_size: u64) -> Self {
         Self {
-            storage: Storage::new(),
+            storage: Storage::new(cache_size),
             prometheus_metrics: PrometheusMetrics::new(),
         }
     }
@@ -489,12 +490,6 @@ impl RateLimiter {
             .collect();
 
         Ok(counters)
-    }
-}
-
-impl Default for RateLimiter {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

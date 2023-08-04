@@ -125,11 +125,16 @@ impl Default for Configuration {
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum StorageConfiguration {
-    InMemory,
+    InMemory(InMemoryStorageConfiguration),
     Disk(DiskStorageConfiguration),
     Redis(RedisStorageConfiguration),
     #[cfg(feature = "infinispan")]
     Infinispan(InfinispanStorageConfiguration),
+}
+
+#[derive(PartialEq, Eq, Debug)]
+pub struct InMemoryStorageConfiguration {
+    pub cache_size: Option<u64>,
 }
 
 #[derive(PartialEq, Eq, Debug)]
