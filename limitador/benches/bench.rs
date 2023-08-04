@@ -103,7 +103,7 @@ fn bench_in_mem(c: &mut Criterion) {
 #[cfg(feature = "disk_storage")]
 fn bench_disk(c: &mut Criterion) {
     let mut group = c.benchmark_group("Disk");
-    for (index, scenario) in TEST_SCENARIOS.iter().enumerate() {
+    for scenario in TEST_SCENARIOS.iter() {
         group.bench_with_input(
             BenchmarkId::new("is_rate_limited", scenario),
             scenario,
