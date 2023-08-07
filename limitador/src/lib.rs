@@ -7,10 +7,12 @@
 //! Limitador. Storing the limits in Redis is slower, but they can be shared
 //! between instances.
 //!
-//! By default, the rate limiter is configured to store the counters in memory:
+//! By default, the rate limiter is configured to store the counters in memory.
+//! It'll store only a limited amount of "qualified counters", specified as a
+//! `u64` value in the constructor.
 //! ```
 //! use limitador::RateLimiter;
-//! let rate_limiter = RateLimiter::default();
+//! let rate_limiter = RateLimiter::new(1000);
 //! ```
 //!
 //! To use Redis:
@@ -72,7 +74,7 @@
 //!      vec!["req.method == 'GET'"],
 //!      vec!["user_id"],
 //! );
-//! let mut rate_limiter = RateLimiter::default();
+//! let mut rate_limiter = RateLimiter::new(1000);
 //!
 //! // Add a limit
 //! rate_limiter.add_limit(limit.clone());
@@ -95,7 +97,7 @@
 //! use limitador::limit::Limit;
 //! use std::collections::HashMap;
 //!
-//! let mut rate_limiter = RateLimiter::default();
+//! let mut rate_limiter = RateLimiter::new(1000);
 //!
 //! let limit = Limit::new(
 //!     "my_namespace",
@@ -236,9 +238,16 @@ impl From<CheckResult> for bool {
 }
 
 impl RateLimiterBuilder {
-    pub fn new() -> Self {
+    pub fn with_storage(storage: Storage) -> Self {
         Self {
-            storage: Storage::new(),
+            storage,
+            prometheus_limit_name_labels_enabled: false,
+        }
+    }
+
+    pub fn new(cache_size: u64) -> Self {
+        Self {
+            storage: Storage::new(cache_size),
             prometheus_limit_name_labels_enabled: false,
         }
     }
@@ -264,12 +273,6 @@ impl RateLimiterBuilder {
             storage: self.storage,
             prometheus_metrics,
         }
-    }
-}
-
-impl Default for RateLimiterBuilder {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -306,9 +309,9 @@ impl AsyncRateLimiterBuilder {
 }
 
 impl RateLimiter {
-    pub fn new() -> Self {
+    pub fn new(cache_size: u64) -> Self {
         Self {
-            storage: Storage::new(),
+            storage: Storage::new(cache_size),
             prometheus_metrics: PrometheusMetrics::new(),
         }
     }
@@ -489,12 +492,6 @@ impl RateLimiter {
             .collect();
 
         Ok(counters)
-    }
-}
-
-impl Default for RateLimiter {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
