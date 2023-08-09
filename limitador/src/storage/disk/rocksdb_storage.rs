@@ -24,6 +24,10 @@ impl CounterStorage for RocksDbStorage {
         Ok(counter.max_value() >= value.value() + delta)
     }
 
+    fn add_counter(&self, _limit: &Limit) -> Result<(), StorageErr> {
+        Ok(())
+    }
+
     fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
         let key = key_for_counter(counter);
         self.insert_or_update(&key, counter, delta)?;

@@ -32,6 +32,10 @@ impl CounterStorage for RedisStorage {
         }
     }
 
+    fn add_counter(&self, _limit: &Limit) -> Result<(), StorageErr> {
+        Ok(())
+    }
+
     fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
         let mut con = self.conn_pool.get()?;
 

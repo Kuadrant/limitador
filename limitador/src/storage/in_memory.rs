@@ -35,6 +35,18 @@ impl CounterStorage for InMemoryStorage {
         Ok(counter.max_value() >= value + delta)
     }
 
+    fn add_counter(&self, limit: &Limit) -> Result<(), StorageErr> {
+        if limit.variables().is_empty() {
+            let mut limits_by_namespace = self.limits_for_namespace.write().unwrap();
+            limits_by_namespace
+                .entry(limit.namespace().clone())
+                .or_insert_with(HashMap::new)
+                .entry(limit.clone())
+                .or_insert_with(AtomicExpiringValue::default);
+        }
+        Ok(())
+    }
+
     fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
         let mut limits_by_namespace = self.limits_for_namespace.write().unwrap();
         let now = SystemTime::now();

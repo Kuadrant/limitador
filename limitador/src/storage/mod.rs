@@ -57,12 +57,9 @@ impl Storage {
 
     pub fn add_limit(&self, limit: Limit) -> bool {
         let namespace = limit.namespace().clone();
-        self.limits
-            .write()
-            .unwrap()
-            .entry(namespace)
-            .or_default()
-            .insert(limit)
+        let mut limits = self.limits.write().unwrap();
+        self.counters.add_counter(&limit).unwrap();
+        limits.entry(namespace).or_default().insert(limit)
     }
 
     pub fn update_limit(&self, update: &Limit) -> bool {
@@ -263,6 +260,7 @@ impl AsyncStorage {
 
 pub trait CounterStorage: Sync + Send {
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr>;
+    fn add_counter(&self, limit: &Limit) -> Result<(), StorageErr>;
     fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
     fn check_and_update(
         &self,
