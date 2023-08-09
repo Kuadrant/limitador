@@ -96,7 +96,7 @@ impl CounterStorage for InMemoryStorage {
         delta: i64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
-        let mut limits_by_namespace = self.limits_for_namespace.write().unwrap();
+        let limits_by_namespace = self.limits_for_namespace.write().unwrap();
         let mut first_limited = None;
         let mut counter_values_to_update: Vec<(&AtomicExpiringValue, u64)> = Vec::new();
         let mut qualified_counter_values_to_updated: Vec<(Arc<AtomicExpiringValue>, u64)> =
@@ -121,15 +121,6 @@ impl CounterStorage for InMemoryStorage {
                 }
                 None
             };
-
-        // Normalize counters and values
-        for counter in counters.iter().filter(|c| !c.is_qualified()) {
-            limits_by_namespace
-                .entry(counter.limit().namespace().clone())
-                .or_insert_with(HashMap::new)
-                .entry(counter.limit().clone())
-                .or_insert_with(AtomicExpiringValue::default);
-        }
 
         // Process simple counters
         for counter in counters.iter_mut().filter(|c| !c.is_qualified()) {
