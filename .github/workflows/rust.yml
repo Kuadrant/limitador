@@ -60,6 +60,9 @@ jobs:
       - name: Test and Generate code coverage
         run: cargo +nightly llvm-cov --all-features --workspace --lcov --doctests --output-path lcov.info
       - name: Codecov
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        if: env.CODECOV_TOKEN != null
         uses: codecov/codecov-action@v3
         with:
           verbose: true
