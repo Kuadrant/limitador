@@ -85,6 +85,10 @@ impl CounterStorage for WasmStorage {
         Ok(self.counter_is_within_limits(counter, stored_counters.get(counter), delta))
     }
 
+    fn add_counter(&self, _limit: &Limit) -> Result<(), StorageErr> {
+        Ok(())
+    }
+
     fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
         let mut counters = self.counters.write().unwrap();
         self.insert_or_update_counter(&mut counters, counter, delta);
