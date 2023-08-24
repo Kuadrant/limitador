@@ -98,8 +98,8 @@ impl CounterStorage for InMemoryStorage {
     ) -> Result<Authorization, StorageErr> {
         let limits_by_namespace = self.limits_for_namespace.write().unwrap();
         let mut first_limited = None;
-        let mut counter_values_to_update: Vec<(&AtomicExpiringValue, u64)> = Vec::new();
-        let mut qualified_counter_values_to_updated: Vec<(Arc<AtomicExpiringValue>, u64)> =
+        let mut counter_values_to_update: Vec<(&AtomicExpiringValue, Counter)> = Vec::new();
+        let mut qualified_counter_values_to_updated: Vec<(Arc<AtomicExpiringValue>, Counter)> =
             Vec::new();
         let now = SystemTime::now();
 
@@ -122,6 +122,18 @@ impl CounterStorage for InMemoryStorage {
                 None
             };
 
+        let check_post_update = |counter: &Counter,
+                                 expiring_value: &AtomicExpiringValue,
+                                 delta: i64|
+         -> Option<Authorization> {
+            let value = expiring_value.update(delta, counter.seconds(), now);
+            if value > counter.max_value() {
+                return Option::from(Authorization::Limited(
+                    counter.limit().name().map(|n| n.to_owned()),
+                ));
+            }
+            None
+        };
         // Process simple counters
         for counter in counters.iter_mut().filter(|c| !c.is_qualified()) {
             let atomic_expiring_value: &AtomicExpiringValue = limits_by_namespace
@@ -134,7 +146,7 @@ impl CounterStorage for InMemoryStorage {
                     return Ok(limited);
                 }
             }
-            counter_values_to_update.push((atomic_expiring_value, counter.seconds()));
+            counter_values_to_update.push((atomic_expiring_value, counter.clone()));
         }
 
         // Process qualified counters
@@ -155,22 +167,25 @@ impl CounterStorage for InMemoryStorage {
                 }
             }
 
-            qualified_counter_values_to_updated.push((value, counter.seconds()));
+            qualified_counter_values_to_updated.push((value, counter.clone()));
         }
 
         if let Some(limited) = first_limited {
             return Ok(limited);
         }
 
-        // Update counters
-        counter_values_to_update.iter().for_each(|(v, ttl)| {
-            v.update(delta, *ttl, now);
-        });
-        qualified_counter_values_to_updated
-            .iter()
-            .for_each(|(v, ttl)| {
-                v.update(delta, *ttl, now);
-            });
+        // Update and check counters
+        for (expiring_value, counter) in counter_values_to_update {
+            if let Some(limited) = check_post_update(&counter, expiring_value, delta) {
+                return Ok(limited);
+            }
+        }
+
+        for (arc_expiring_value, counter) in qualified_counter_values_to_updated {
+            if let Some(limited) = check_post_update(&counter, &arc_expiring_value, delta) {
+                return Ok(limited);
+            }
+        }
 
         Ok(Authorization::Ok)
     }
