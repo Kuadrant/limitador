@@ -175,11 +175,16 @@ impl CounterStorage for InMemoryStorage {
         }
 
         // Update and check counters
+        counter_values_to_update.sort_by(|a, b| a.1.limit().seconds().cmp(&b.1.limit().seconds()));
+
         for (expiring_value, counter) in counter_values_to_update {
             if let Some(limited) = check_post_update(&counter, expiring_value, delta) {
                 return Ok(limited);
             }
         }
+
+        qualified_counter_values_to_updated
+            .sort_by(|a, b| a.1.limit().seconds().cmp(&b.1.limit().seconds()));
 
         for (arc_expiring_value, counter) in qualified_counter_values_to_updated {
             if let Some(limited) = check_post_update(&counter, &arc_expiring_value, delta) {
