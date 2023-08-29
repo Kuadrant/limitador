@@ -9,6 +9,22 @@ use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
+struct CounterAuthorizationValues {
+    max_value: i64,
+    seconds: u64,
+    limit_name: Option<String>,
+}
+
+impl From<&mut Counter> for CounterAuthorizationValues {
+    fn from(counter: &mut Counter) -> Self {
+        Self {
+            max_value: counter.max_value(),
+            seconds: counter.seconds(),
+            limit_name: counter.limit().name().map(|n| n.to_owned()),
+        }
+    }
+}
+
 type NamespacedLimitCounters<T> = HashMap<Namespace, HashMap<Limit, T>>;
 
 pub struct InMemoryStorage {
@@ -98,9 +114,12 @@ impl CounterStorage for InMemoryStorage {
     ) -> Result<Authorization, StorageErr> {
         let limits_by_namespace = self.limits_for_namespace.read().unwrap();
         let mut first_limited = None;
-        let mut counter_values_to_update: Vec<(&AtomicExpiringValue, Counter)> = Vec::new();
-        let mut qualified_counter_values_to_updated: Vec<(Arc<AtomicExpiringValue>, Counter)> =
+        let mut counter_values_to_update: Vec<(&AtomicExpiringValue, CounterAuthorizationValues)> =
             Vec::new();
+        let mut qualified_counter_values_to_updated: Vec<(
+            Arc<AtomicExpiringValue>,
+            CounterAuthorizationValues,
+        )> = Vec::new();
         let now = SystemTime::now();
 
         let mut process_counter =
@@ -122,15 +141,13 @@ impl CounterStorage for InMemoryStorage {
                 None
             };
 
-        let check_post_update = |counter: &Counter,
+        let check_post_update = |counter_values: CounterAuthorizationValues,
                                  expiring_value: &AtomicExpiringValue,
                                  delta: i64|
          -> Option<Authorization> {
-            let value = expiring_value.update(delta, counter.seconds(), now);
-            if value > counter.max_value() {
-                return Option::from(Authorization::Limited(
-                    counter.limit().name().map(|n| n.to_owned()),
-                ));
+            let value = expiring_value.update(delta, counter_values.seconds, now);
+            if value > counter_values.max_value {
+                return Option::from(Authorization::Limited(counter_values.limit_name));
             }
             None
         };
@@ -146,7 +163,7 @@ impl CounterStorage for InMemoryStorage {
                     return Ok(limited);
                 }
             }
-            counter_values_to_update.push((atomic_expiring_value, counter.clone()));
+            counter_values_to_update.push((atomic_expiring_value, counter.into()));
         }
 
         // Process qualified counters
@@ -167,7 +184,7 @@ impl CounterStorage for InMemoryStorage {
                 }
             }
 
-            qualified_counter_values_to_updated.push((value, counter.clone()));
+            qualified_counter_values_to_updated.push((value, counter.into()));
         }
 
         if let Some(limited) = first_limited {
@@ -177,16 +194,16 @@ impl CounterStorage for InMemoryStorage {
         // Update and check counters
         counter_values_to_update.sort_by(|a, b| a.0.ttl().cmp(&b.0.ttl()));
 
-        for (expiring_value, counter) in counter_values_to_update {
-            if let Some(limited) = check_post_update(&counter, expiring_value, delta) {
+        for (expiring_value, counter_values) in counter_values_to_update {
+            if let Some(limited) = check_post_update(counter_values, expiring_value, delta) {
                 return Ok(limited);
             }
         }
 
         qualified_counter_values_to_updated.sort_by(|a, b| a.0.ttl().cmp(&b.0.ttl()));
 
-        for (arc_expiring_value, counter) in qualified_counter_values_to_updated {
-            if let Some(limited) = check_post_update(&counter, &arc_expiring_value, delta) {
+        for (arc_expiring_value, counter_values) in qualified_counter_values_to_updated {
+            if let Some(limited) = check_post_update(counter_values, &arc_expiring_value, delta) {
                 return Ok(limited);
             }
         }
