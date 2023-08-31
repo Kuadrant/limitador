@@ -324,6 +324,8 @@ impl Default for InMemoryStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::Authorization::Limited;
+    use std::thread;
 
     #[test]
     fn counters_for_multiple_limit_per_ns() {
@@ -346,5 +348,33 @@ mod tests {
             storage.counters_in_namespace(counter_1.namespace()).len(),
             2
         );
+    }
+
+    #[test]
+    fn check_and_update_multi_threaded() {
+        let namespace = "test_namespace";
+        let storage = &InMemoryStorage::default();
+        let limit_1 = Limit::new(namespace, 2, 1, vec!["x == \"1\""], vec![""]);
+        let limit_2 = Limit::new(namespace, 3, 2, vec!["x == \"1\""], vec![""]);
+        let counter_1 = Counter::new(limit_1, HashMap::default());
+        let counter_2 = Counter::new(limit_2, HashMap::default());
+
+        storage.update_counter(&counter_1, 1).unwrap();
+        storage.update_counter(&counter_2, 1).unwrap();
+
+        let mut counters_1 = vec![counter_1.clone(), counter_2.clone()];
+        let mut counters_2 = counters_1.clone();
+
+        let results = thread::scope(|s| {
+            let res_1 = s.spawn(|| storage.check_and_update(&mut counters_1, 1, false).unwrap());
+            let res_2 = s.spawn(|| storage.check_and_update(&mut counters_2, 1, false).unwrap());
+            (res_1.join().unwrap(), res_2.join().unwrap())
+        });
+
+        // the order of the results is not guaranteed, one thread might finish before the other and its limited
+        assert!(matches!(
+            results,
+            (Authorization::Ok, Limited(None)) | (Limited(None), Authorization::Ok)
+        ));
     }
 }
