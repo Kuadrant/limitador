@@ -11,52 +11,40 @@ can be configured with these ENVs: `ENVOY_RLS_HOST`, `ENVOY_RLS_PORT`,
 Or using the command line arguments:
 
 ```
-Limitador Server
-The Kuadrant team - github.com/Kuadrant
 Rate Limiting Server
 
-USAGE:
-    limitador-server [OPTIONS] <LIMITS_FILE> [STORAGE]
-
-ARGS:
-    <LIMITS_FILE>    The limit file to use
-
-OPTIONS:
-    -b, --rls-ip <ip>
-            The IP to listen on for RLS [default: 0.0.0.0]
-
-    -p, --rls-port <port>
-            The port to listen on for RLS [default: 8081]
-
-    -B, --http-ip <http_ip>
-            The IP to listen on for HTTP [default: 0.0.0.0]
-
-    -P, --http-port <http_port>
-            The port to listen on for HTTP [default: 8080]
-
-    -l, --limit-name-in-labels
-            Include the Limit Name in prometheus label
-
-    -v
-            Sets the level of verbosity
-
-        --validate
-            Validates the LIMITS_FILE and exits
-
-    -H, --rate-limit-headers <rate_limit_headers>
-            Enables rate limit response headers [default: NONE] [possible values: NONE,
-            DRAFT_VERSION_03]
-
-    -h, --help
-            Print help information
-
-    -V, --version
-            Print version information
+Usage: limitador-server [OPTIONS] <LIMITS_FILE> [STORAGE]
 
 STORAGES:
-    memory          Counters are held in Limitador (ephemeral)
-    redis           Uses Redis to store counters
-    redis_cached    Uses Redis to store counters, with an in-memory cache
+  memory        Counters are held in Limitador (ephemeral)
+  disk          Counters are held on disk (persistent)
+  redis         Uses Redis to store counters
+  redis_cached  Uses Redis to store counters, with an in-memory cache
+
+Arguments:
+  <LIMITS_FILE>  The limit file to use
+
+Options:
+  -b, --rls-ip <ip>
+          The IP to listen on for RLS [default: 0.0.0.0]
+  -p, --rls-port <port>
+          The port to listen on for RLS [default: 8081]
+  -B, --http-ip <http_ip>
+          The IP to listen on for HTTP [default: 0.0.0.0]
+  -P, --http-port <http_port>
+          The port to listen on for HTTP [default: 8080]
+  -l, --limit-name-in-labels
+          Include the Limit Name in prometheus label
+  -v...
+          Sets the level of verbosity
+      --validate
+          Validates the LIMITS_FILE and exits
+  -H, --rate-limit-headers <rate_limit_headers>
+          Enables rate limit response headers [default: NONE] [possible values: NONE, DRAFT_VERSION_03]
+  -h, --help
+          Print help
+  -V, --version
+          Print version
 ```
 
 When using environment variables, these will override the defaults. While environment variable are themselves
@@ -90,6 +78,6 @@ Limitador has several options that can be configured via ENV. This
 
 ## Limits storage
 
-Limitador can store its limits and counters in-memory or in Redis. In-memory is
+Limitador can store its limits and counters in-memory, disk or in Redis. In-memory is
 faster, but the limits are applied per instance. When using Redis, multiple
 instances of Limitador can share the same limits, but it's slower.
