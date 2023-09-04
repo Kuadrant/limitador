@@ -325,6 +325,7 @@ impl Default for InMemoryStorage {
 mod tests {
     use super::*;
     use crate::storage::Authorization::Limited;
+    use std::sync::Barrier;
     use std::thread;
 
     #[test]
@@ -376,5 +377,52 @@ mod tests {
             results,
             (Authorization::Ok, Limited(None)) | (Limited(None), Authorization::Ok)
         ));
+    }
+
+    #[test]
+    fn check_and_update_counters_partially_updated() {
+        let namespace = "test_namespace";
+        let storage = Arc::new(InMemoryStorage::default());
+        let limit_1 = Limit::new(namespace, 2, 1, vec!["x == \"1\""], vec![""]);
+        let limit_2 = Limit::new(namespace, 3, 2, vec!["x == \"1\""], vec![""]);
+        let counter_1 = Counter::new(limit_1, HashMap::default());
+        let counter_2 = Counter::new(limit_2, HashMap::default());
+
+        let barrier = Arc::new(Barrier::new(2));
+
+        storage.update_counter(&counter_1, 1).unwrap();
+        storage.update_counter(&counter_2, 1).unwrap();
+
+        let mut counters_1 = vec![counter_1.clone(), counter_2.clone()];
+        let mut counters_2 = counters_1.clone();
+
+        let storage_clone = Arc::clone(&storage);
+        let barrier_clone = Arc::clone(&barrier);
+        let thread1 = thread::spawn(move || {
+            barrier_clone.wait();
+            storage_clone
+                .check_and_update(&mut counters_1, 1, false)
+                .unwrap();
+        });
+
+        let storage_clone2 = Arc::clone(&storage);
+        let barrier_clone2 = Arc::clone(&barrier);
+        let thread2 = thread::spawn(move || {
+            barrier_clone2.wait();
+            storage_clone2
+                .check_and_update(&mut counters_2, 1, false)
+                .unwrap();
+        });
+
+        thread1.join().unwrap();
+        thread2.join().unwrap();
+
+        let stored_counters = storage.counters_in_namespace(counter_1.namespace());
+
+        assert!([2i64].contains(&stored_counters[&counter_2].value()));
+
+        // a thread _might_ limit in the update phase, and not update the remaining counters
+        // that's why we check for 2 or 3
+        assert!([2i64, 3i64].contains(&stored_counters[&counter_1].value()));
     }
 }
