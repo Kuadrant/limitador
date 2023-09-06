@@ -31,3 +31,7 @@ the accuracy loss is going to be negligible.
 
 In order to try active-active replication, you can follow this [tutorial from
 RedisLabs](https://docs.redislabs.com/latest/rs/getting-started/getting-started-active-active/).
+
+## Disk
+
+Disk storage using [RocksDB](https://rocksdb.org/). Counters are held on disk (persistent).

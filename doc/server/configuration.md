@@ -5,57 +5,49 @@
 The preferred way of starting and configuring the Limitador server is using the command line:
 
 ```
-USAGE:
-    limitador-server [OPTIONS] <LIMITS_FILE> [STORAGE]
+Rate Limiting Server
 
-ARGS:
-    <LIMITS_FILE>    The limit file to use
-
-OPTIONS:
-    -b, --rls-ip <ip>
-            The IP to listen on for RLS [default: 0.0.0.0]
-
-    -p, --rls-port <port>
-            The port to listen on for RLS [default: 8081]
-
-    -B, --http-ip <http_ip>
-            The IP to listen on for HTTP [default: 0.0.0.0]
-
-    -P, --http-port <http_port>
-            The port to listen on for HTTP [default: 8080]
-
-    -l, --limit-name-in-labels
-            Include the Limit Name in prometheus label
-
-    -v
-            Sets the level of verbosity
-
-        --validate
-            Validates the LIMITS_FILE and exits
-
-    -H, --rate-limit-headers <rate_limit_headers>
-            Enables rate limit response headers [default: NONE] [possible values: NONE,
-            DRAFT_VERSION_03]
-
-    -h, --help
-            Print help information
-
-    -V, --version
-            Print version information
+Usage: limitador-server [OPTIONS] <LIMITS_FILE> [STORAGE]
 
 STORAGES:
-    memory          Counters are held in Limitador (ephemeral)
-    redis           Uses Redis to store counters
-    redis_cached    Uses Redis to store counters, with an in-memory cache
+  memory        Counters are held in Limitador (ephemeral)
+  disk          Counters are held on disk (persistent)
+  redis         Uses Redis to store counters
+  redis_cached  Uses Redis to store counters, with an in-memory cache
+
+Arguments:
+  <LIMITS_FILE>  The limit file to use
+
+Options:
+  -b, --rls-ip <ip>
+          The IP to listen on for RLS [default: 0.0.0.0]
+  -p, --rls-port <port>
+          The port to listen on for RLS [default: 8081]
+  -B, --http-ip <http_ip>
+          The IP to listen on for HTTP [default: 0.0.0.0]
+  -P, --http-port <http_port>
+          The port to listen on for HTTP [default: 8080]
+  -l, --limit-name-in-labels
+          Include the Limit Name in prometheus label
+  -v...
+          Sets the level of verbosity
+      --validate
+          Validates the LIMITS_FILE and exits
+  -H, --rate-limit-headers <rate_limit_headers>
+          Enables rate limit response headers [default: NONE] [possible values: NONE, DRAFT_VERSION_03]
+  -h, --help
+          Print help
+  -V, --version
+          Print version
 ```
 
 The values used are authoritative over any [environment variables](#configuration-using-environment-variables) independently set.
 
 ### Limit definitions
 
-The `LIMITS_FILE` provided is the source of truth for all the limits that will be enforced. The file location will be 
+The `LIMITS_FILE` provided is the source of truth for all the limits that will be enforced. The file location will be
 monitored by the server for any changes and be hot reloaded. If the changes are invalid, they will be ignored on hot
-reload, or the server will fail to start. 
+reload, or the server will fail to start.
 
 #### The `LIMITS_FILE`'s format
 
@@ -107,16 +99,16 @@ variables:
  - `seconds` is the duration for which the limit applies, in seconds: e.g. `60` is a span of time of one minute
  - `max_value` is the actual limit, e.g. `100` would limit to 100 requests
  - `name` lets the user _optionally_ name the limit
- - `variables` is an array of variables, which once resolved, will be used to qualify counters for the limit, 
+ - `variables` is an array of variables, which once resolved, will be used to qualify counters for the limit,
    e.g. `api_key` to limit per api keys
  - `conditions` is an array of conditions, which once evaluated will decide whether to apply the limit or not
 
 #### `condition` syntax
 
-Each `condition` is an expression producing a boolean value (`true` or `false`). All `conditions` _must_ evaluate to 
-`true` for the `limit` to be applied on a request. 
+Each `condition` is an expression producing a boolean value (`true` or `false`). All `conditions` _must_ evaluate to
+`true` for the `limit` to be applied on a request.
 
-Expressions follow the following syntax: `$IDENTIFIER $OP $STRING_LITERAL`, where: 
+Expressions follow the following syntax: `$IDENTIFIER $OP $STRING_LITERAL`, where:
 
  - `$IDENTIFIER` will be used to resolve the value at evaluation time, e.g. `role`
  - `$OP` is an operator, either `==` or `!=`
@@ -126,48 +118,90 @@ So that `role != "admin"` would apply the limit on request from all users, but `
 
 ### Counter storages
 
-Limitador will load all the `limit` definitions from the `LIMITS_FILE` and keep these in memory. To enforce these 
-limits, Limitador needs to track requests in the form of counters. There would be at least one counter per limit, but 
-that number grows when `variables` are used to qualify counters per some arbitrary values.  
+Limitador will load all the `limit` definitions from the `LIMITS_FILE` and keep these in memory. To enforce these
+limits, Limitador needs to track requests in the form of counters. There would be at least one counter per limit, but
+that number grows when `variables` are used to qualify counters per some arbitrary values.
 
 #### `memory`
 
-As the name implies, Limitador will keep all counters in memory. This yields the best results in terms of latency as 
+As the name implies, Limitador will keep all counters in memory. This yields the best results in terms of latency as
 well as accuracy. By default, only up to `1000` "concurrent" counters will be kept around, evicting the oldest entries.
-"Concurrent" in this context means counters that need to exist at the "same time", based of the period of the limit, 
+"Concurrent" in this context means counters that need to exist at the "same time", based of the period of the limit,
 as "expired" counters are discarded.
 
-This storage is ephemeral, as if the process is restarted, all the counters are lost and effectively "reset" all the 
+This storage is ephemeral, as if the process is restarted, all the counters are lost and effectively "reset" all the
 limits as if no traffic had been rate limited, which can be fine for short-lived limits, less for longer-lived ones.
 
 #### `redis`
 
-When you want persistence of your counters, such as for disaster recovery or across restarts, using `redis` will store 
-the counters in a redis instance using the provided `URL`. Increments to _individual_ counters is made within redis 
-itself, providing accuracy over these, races tho can occur when multiple Limitador servers are used against a single 
-redis and using "stacked" limits (i.e. over different periods). Latency is also impacted, as it results in one 
+When you want persistence of your counters, such as for disaster recovery or across restarts, using `redis` will store
+the counters in a redis instance using the provided `URL`. Increments to _individual_ counters is made within redis
+itself, providing accuracy over these, races tho can occur when multiple Limitador servers are used against a single
+redis and using "stacked" limits (i.e. over different periods). Latency is also impacted, as it results in one
 additional hop to talk to redis and maintain the counters.
+
+```
+Uses Redis to store counters
+
+Usage: limitador-server <LIMITS_FILE> redis <URL>
+
+Arguments:
+  <URL>  Redis URL to use
+
+Options:
+  -h, --help  Print help
+```
 
 #### `redis_cached`
 
-In order to avoid some communication overhead to redis, `redis_cached` adds an in memory caching layer within the 
+In order to avoid some communication overhead to redis, `redis_cached` adds an in memory caching layer within the
 Limitador servers. This lowers the latency, but sacrifices some accuracy as it will not only cache counters, but also
-coalesce counters updates to redis over time. See [this configuration](#redis_local_cache_enabled) option for more 
+coalesce counters updates to redis over time. See [this configuration](#redis_local_cache_enabled) option for more
 information.
 
-For an in-depth coverage of the different topologies supported and how they affect the behavior, see the 
-[topologies' document](../topologies.md).
+```
+Uses Redis to store counters, with an in-memory cache
+
+Usage: limitador-server <LIMITS_FILE> redis_cached [OPTIONS] <URL>
+
+Arguments:
+  <URL>  Redis URL to use
+
+Options:
+      --ttl <TTL>             TTL for cached counters in milliseconds [default: 5000]
+      --ratio <ratio>         Ratio to apply to the TTL from Redis on cached counters [default: 10000]
+      --flush-period <flush>  Flushing period for counters in milliseconds [default: 1000]
+      --max-cached <max>      Maximum amount of counters cached [default: 10000]
+  -h, --help                  Print help
+```
+
+#### `disk`
+
+Disk storage using [RocksDB](https://rocksdb.org/). Counters are held on disk (persistent).
+
+```
+Counters are held on disk (persistent)
+
+Usage: limitador-server <LIMITS_FILE> disk [OPTIONS] <PATH>
+
+Arguments:
+  <PATH>  Path to counter DB
+
+Options:
+      --optimize <OPTIMIZE>  Optimizes either to save disk space or higher throughput [default: throughput] [possible values: throughput, disk]
+  -h, --help                 Print help
+```
 
 #### `infinispan` optional storage - _experimental_
 
-The default binary will _not_ support [Infinispan](https://infinispan.org/) as a storage backend for counters. If you 
+The default binary will _not_ support [Infinispan](https://infinispan.org/) as a storage backend for counters. If you
 want to give it a try, you would need to build your own binary of the server using:
 
 ```commandline
 cargo build --release --features=infinispan
 ```
 
-Which will add the `infinispan` to the supported `STORAGES`. 
+Which will add the `infinispan` to the supported `STORAGES`.
 
 ```
 USAGE:
@@ -183,10 +217,13 @@ OPTIONS:
     -h, --help                         Print help information
 ```
 
+For an in-depth coverage of the different topologies supported and how they affect the behavior, see the
+[topologies' document](../topologies.md).
+
 ## Configuration using environment variables
 
-The Limitador server has some options that can be configured with environment variables. These will override the 
-_default_ values the server uses. [Any argument](#command-line-configuration) used when starting the server will prevail over the 
+The Limitador server has some options that can be configured with environment variables. These will override the
+_default_ values the server uses. [Any argument](#command-line-configuration) used when starting the server will prevail over the
 environment variables.
 
 #### `ENVOY_RLS_HOST`
@@ -346,7 +383,7 @@ require Redis.
 
 - Enables rate limit response headers. Only supported by the RLS server.
 - Optional. Defaults to `"NONE"`.
-- Must be one of: 
-  - `"NONE"` - Does not add any additional headers to the http response. 
+- Must be one of:
+  - `"NONE"` - Does not add any additional headers to the http response.
   - `"DRAFT_VERSION_03"`.  Adds response headers per https://datatracker.ietf.org/doc/id/draft-polli-ratelimit-headers-03.html
-    
+

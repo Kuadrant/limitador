@@ -35,6 +35,9 @@ deploy-redis: clean ## Uses Redis to store counters
 deploy-redis-cached: clean ## Uses Redis to store counters, with an in-memory cache
 	$(DOCKER_COMPOSE) -f docker-compose-envoy.yaml -f docker-compose-limitador-redis-cached.yaml up
 
+deploy-disk: clean ## Uses disk to store counters
+	$(DOCKER_COMPOSE) -f docker-compose-envoy.yaml -f docker-compose-limitador-disk.yaml up
+
 deploy-infinispan: clean ## Uses Infinispan to store counters
 	$(DOCKER_COMPOSE) -f docker-compose-envoy.yaml -f docker-compose-limitador-infinispan.yaml up
 
