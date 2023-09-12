@@ -21,9 +21,9 @@ infinispan = [ "limitador/infinispan_storage" ]
 limitador = { path = "../limitador", features = ['lenient_conditions'] }
 tokio = { version = "1", features = ["full"] }
 thiserror = "1"
-tonic = "0.9.2"
-prost = "0.11"
-prost-types = "0.11"
+tonic = "0.10"
+prost = "0.12"
+prost-types = "0.12"
 serde_yaml = "0.9"
 log = "0.4"
 env_logger = "0.10.0"
@@ -39,4 +39,4 @@ clap = "4.3"
 sysinfo = "0.29.7"
 
 [build-dependencies]
-tonic-build = "0.9.2"
+tonic-build = "0.10"
