@@ -5,7 +5,7 @@
 FROM registry.access.redhat.com/ubi8/ubi:8.7 as limitador-build
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
-ARG RUSTC_VERSION=1.69.0
+ARG RUSTC_VERSION=1.72.0
 
 # the powertools repo is required for protobuf-c and protobuf-devel
 RUN dnf -y --setopt=install_weak_deps=False --setopt=tsflags=nodocs install \
