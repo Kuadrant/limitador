@@ -17,7 +17,7 @@ edition = "2021"
 default = ["disk_storage", "redis_storage"]
 disk_storage = ["rocksdb"]
 redis_storage = ["redis", "r2d2", "tokio"]
-infinispan_storage = ["infinispan", "reqwest", "base64"]
+infinispan_storage = ["infinispan", "reqwest", "base64", "tokio"]
 lenient_conditions = []
 
 [dependencies]

@@ -18,7 +18,11 @@ pub mod redis;
 pub mod infinispan;
 
 mod atomic_expiring_value;
-mod expiring_value;
+#[cfg(any(
+    feature = "disk_storage",
+    feature = "infinispan_storage",
+    feature = "redis_storage"
+))]
 mod keys;
 
 pub enum Authorization {
