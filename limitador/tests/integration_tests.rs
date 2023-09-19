@@ -9,7 +9,7 @@ macro_rules! test_with_all_storage_impls {
             #[tokio::test]
             async fn [<$function _in_memory_storage>]() {
                 let rate_limiter =
-                    RateLimiter::new_with_storage(Box::new(InMemoryStorage::default()));
+                    RateLimiter::new_with_storage(Box::<InMemoryStorage>::default());
                 $function(&mut TestsLimiter::new_from_blocking_impl(rate_limiter)).await;
             }
 
@@ -205,7 +205,7 @@ mod test {
             vec!["app_id"],
         );
 
-        for limit in vec![&lim1, &lim2].iter() {
+        for limit in [&lim1, &lim2] {
             rate_limiter.add_limit(limit).await;
         }
         rate_limiter.delete_limit(&lim2).await.unwrap();
