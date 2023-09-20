@@ -50,23 +50,15 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: stable
           override: true
       - uses: abelfodil/protoc-action@v1
         with:
           protoc-version: '3.19.4'
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-      - name: Test and Generate code coverage
-        run: cargo +nightly llvm-cov --all-features --workspace --lcov --doctests --output-path lcov.info
-      - name: Codecov
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        if: env.CODECOV_TOKEN != null
-        uses: codecov/codecov-action@v3
+      - uses: actions-rs/cargo@v1
         with:
-          verbose: true
-          fail_ci_if_error: false
+          command: test
+          args: --all-features -vv
 
   fmt:
     name: Rustfmt
