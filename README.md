@@ -17,6 +17,7 @@ port, that implements the Envoy Rate Limit protocol (v3).
 - [**Development**](#development)
 - [**Testing Environment**](limitador-server/docs/sandbox.md)
 - [**Kubernetes**](limitador-server/kubernetes/)
+- [**Contributing**](#contributing)
 - [**License**](#license)
 
 Limitador is under active development, and its API has not been stabilized yet.
@@ -81,6 +82,11 @@ or you can run tests disabling the "redis storage" feature:
 ```bash
 cd limitador; cargo test --no-default-features
 ```
+
+## Contributing
+
+Join us on the [#kuadrant](https://kubernetes.slack.com/archives/C05J0D0V525) channel in the Kubernetes Slack workspace,
+for live discussions about the roadmap and more.
 
 ## License
 
