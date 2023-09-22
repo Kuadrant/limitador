@@ -28,32 +28,25 @@ jobs:
         if: ${{ github.ref_name != env.MAIN_BRANCH_NAME }}
         run: |
           echo "IMG_TAGS=${{ env.IMG_TAGS }} ${{ github.ref_name }}" >> $GITHUB_ENV
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
-      - name: Build Image
-        id: build-image
-        uses: redhat-actions/buildah-build@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build Docker image on amd64
+        uses: docker/build-push-action@v5
         with:
-          image: limitador
-          tags: ${{ env.IMG_TAGS }}
-          platforms: linux/amd64,linux/arm64
-          dockerfiles: |
-            ./Dockerfile
+          context: .
+          push: false
+          load: true
           build-args: |
             GITHUB_SHA=${{ github.sha }}
-      - name: Smoke Test
-        run: |
-          podman run --rm -t ${{ steps.build-image.outputs.image }}:${{ github.sha }} limitador-server --help
-      - name: Push Image
-        if: ${{ !env.ACT }}
-        id: push-to-quay
-        uses: redhat-actions/push-to-registry@v2
+          tags: ${{ env.IMG_TAGS }}
+          file : ./Dockerfile
+      - name: Build Docker image on arm64
+        uses: docker/build-push-action@v5
         with:
-          image: ${{ steps.build-image.outputs.image }}
-          tags: ${{ steps.build-image.outputs.tags }}
-          registry: ${{ env.IMG_REGISTRY_HOST }}/${{ env.IMG_REGISTRY_ORG }}
-          username: ${{ secrets.IMG_REGISTRY_USERNAME }}
-          password: ${{ secrets.IMG_REGISTRY_TOKEN }}
-      - name: Print Image URL
-        run: |
-          echo "Image pushed to ${{ steps.push-to-quay.outputs.registry-paths }}"
+          context: .
+          push: false
+          load: true
+          build-args: |
+            GITHUB_SHA=${{ github.sha }}
+          tags: ${{ env.IMG_TAGS }}
+          file : ./Dockerfile.aarch64

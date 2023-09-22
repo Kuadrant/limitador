@@ -1,0 +1,52 @@
+# ------------------------------------------------------------------------------
+# Build Stage cross compiling
+# ------------------------------------------------------------------------------
+
+FROM rust:1.72 as limitador-build
+
+RUN apt update && apt upgrade -y
+RUN apt install -y protobuf-compiler clang
+RUN apt install -y g++-aarch64-linux-gnu libc6-dev-arm64-cross
+
+RUN rustup target add aarch64-unknown-linux-gnu
+RUN rustup toolchain install stable-aarch64-unknown-linux-gnu
+
+WORKDIR /usr/src/limitador
+
+ARG GITHUB_SHA
+ENV GITHUB_SHA=${GITHUB_SHA:-unknown}
+ENV RUSTFLAGS="-C target-feature=-crt-static"
+
+COPY . .
+
+ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+    CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc \
+    CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
+
+RUN cargo build --release --target aarch64-unknown-linux-gnu
+
+# ------------------------------------------------------------------------------
+# Run Stage
+# ------------------------------------------------------------------------------
+
+FROM registry.access.redhat.com/ubi8/ubi-minimal:8.7
+
+# shadow-utils is required for `useradd`
+RUN PKGS="libgcc libstdc++ shadow-utils" \
+    && microdnf --assumeyes install --nodocs $PKGS \
+    && rpm --verify --nogroup --nouser $PKGS \
+    && microdnf -y clean all
+RUN useradd -u 1000 -s /bin/sh -m -d /home/limitador limitador
+
+WORKDIR /home/limitador/bin/
+ENV PATH="/home/limitador/bin:${PATH}"
+
+COPY --from=limitador-build /usr/src/limitador/limitador-server/examples/limits.yaml ../
+COPY --from=limitador-build /usr/src/limitador/target/aarch64-unknown-linux-gnu/release/limitador-server ./limitador-server
+
+RUN chown -R limitador:root /home/limitador \
+    && chmod -R 750 /home/limitador
+
+USER limitador
+
+CMD ["limitador-server"]
