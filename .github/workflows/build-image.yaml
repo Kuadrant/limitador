@@ -27,7 +27,7 @@ jobs:
       - name: Add branch name tag
         if: ${{ github.ref_name != env.MAIN_BRANCH_NAME }}
         run: |
-          echo "IMG_TAGS=${{ env.IMG_TAGS }} ${{ github.ref_name }}" >> $GITHUB_ENV
+          echo "IMG_TAGS=${{ github.ref_name }}" >> $GITHUB_ENV
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Build Docker image on amd64
