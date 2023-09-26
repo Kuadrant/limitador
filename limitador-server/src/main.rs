@@ -591,7 +591,7 @@ fn create_config() -> (Configuration, &'static str) {
                             config::env::REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS.unwrap_or("1000"),
                         )
                         .display_order(4)
-                        .help("Flushing period for counters in milliseconds"),
+                        .help("Flushing period for counters in milliseconds change"),
                 )
                 .arg(
                     Arg::new("max")
