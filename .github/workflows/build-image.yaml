@@ -36,6 +36,7 @@ jobs:
         with:
           image: limitador
           tags: ${{ env.IMG_TAGS }}
+          layers: true
           platforms: linux/amd64,linux/arm64
           dockerfiles: |
             ./Dockerfile

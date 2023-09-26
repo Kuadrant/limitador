@@ -22,10 +22,30 @@ RUN PKGS="gcc-c++ gcc-toolset-12-binutils-gold openssl-devel protobuf-c protobuf
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --no-modify-path --profile minimal --default-toolchain ${RUSTC_VERSION} -c rustfmt -y
 
 WORKDIR /usr/src/limitador
-
 ARG GITHUB_SHA
 ENV GITHUB_SHA=${GITHUB_SHA:-unknown}
 ENV RUSTFLAGS="-C target-feature=-crt-static"
+
+COPY ./Cargo.lock ./Cargo.lock
+COPY ./Cargo.toml ./Cargo.toml
+
+COPY limitador/Cargo.toml ./limitador/Cargo.toml
+COPY limitador-server/Cargo.toml ./limitador-server/Cargo.toml
+
+RUN mkdir -p limitador/src limitador-server/src
+
+RUN echo "fn main() {println!(\"if you see this, the build broke\")}" > limitador/src/main.rs \
+ && echo "fn main() {println!(\"if you see this, the build broke\")}" > limitador-server/src/main.rs
+
+RUN source $HOME/.cargo/env \
+    && cargo build --release
+
+# avoid downloading and compiling all the dependencies when there's a change in
+# our code.
+RUN ls target
+RUN ls target/release
+RUN ls target/release/deps
+RUN rm -f target/release/limitador*
 
 COPY . .
 
