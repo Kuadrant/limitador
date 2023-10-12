@@ -40,9 +40,9 @@ impl CounterStorage for InMemoryStorage {
             let mut limits_by_namespace = self.limits_for_namespace.write().unwrap();
             limits_by_namespace
                 .entry(limit.namespace().clone())
-                .or_insert_with(HashMap::new)
+                .or_default()
                 .entry(limit.clone())
-                .or_insert_with(AtomicExpiringValue::default);
+                .or_default();
         }
         Ok(())
     }
