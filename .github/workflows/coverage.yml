@@ -11,12 +11,8 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: abelfodil/protoc-action@v1
         with:
           protoc-version: '3.19.4'
@@ -36,17 +32,15 @@ jobs:
           USER: username
           PASS: password
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: supercharge/redis-github-action@1.1.0
         with:
           redis-version: 5
       # Nightly is required for code coverage with doctests
       # https://github.com/taiki-e/cargo-llvm-cov/issues/2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: nightly
-          override: true
       - uses: abelfodil/protoc-action@v1
         with:
           protoc-version: '3.19.4'
