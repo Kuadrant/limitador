@@ -51,7 +51,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - run: rustup component add rustfmt
+        with:
+          components: rustfmt
       - run: cargo fmt --all -- --check
 
   clippy:
@@ -61,7 +62,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - run: rustup component add clippy
+        with:
+          components: clippy
       - uses: abelfodil/protoc-action@v1
         with:
           protoc-version: '3.19.4'
