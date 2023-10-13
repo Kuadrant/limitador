@@ -20,7 +20,7 @@ jobs:
       - uses: supercharge/redis-github-action@1.1.0
         with:
           redis-version: 5
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: crate-v${{ github.event.inputs.version }}
       - name: Build
