@@ -2,12 +2,19 @@
 Dockerfile
 *.swp
 .dockerignore
+.gitignore
 .git
-*.yaml
-*.md
-*.json
-*.sh
-*.png
-*.svg
+.github
+doc
+.idea
+**/*.yaml
+**/*.md
+**/*.json
+**/*.sh
+**/*.png
+**/*.svg
 # OSX files
 .DS_Store
+
+# Exception - Used in docker build
+!limitador-server/examples/limits.yaml
