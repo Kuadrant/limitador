@@ -8,7 +8,6 @@ on:
     tags: ['*']
 
 env:
-  IMG_TAGS: ${{ github.sha }}
   IMG_REGISTRY_HOST: quay.io
   IMG_REGISTRY_ORG: kuadrant
   MAIN_BRANCH_NAME: main
@@ -26,14 +25,6 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-#      - name: Add latest tag
-#        if: ${{ github.ref_name == env.MAIN_BRANCH_NAME }}
-#        run: |
-#          echo "IMG_TAGS=${{ env.IMG_TAGS }} latest" >> $GITHUB_ENV
-#      - name: Add branch name tag
-#        if: ${{ github.ref_name != env.MAIN_BRANCH_NAME }}
-#        run: |
-#          echo "IMG_TAGS=${{ env.IMG_TAGS }} ${{ github.ref_name }}" >> $GITHUB_ENV
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
@@ -46,7 +37,9 @@ jobs:
             ${{ env.IMG_REGISTRY_HOST}}/${{ env.IMG_REGISTRY_ORG }}/limitador
           tags: |
             # set latest tag for main branch
-            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+            type=raw,value=latest,enable=${{ github.ref_name == env.MAIN_BRANCH_NAME }}
+            # set branch name tag for non-main branches
+            type=raw,value=${{ github.ref_name }},enable=${{ github.ref_name != env.MAIN_BRANCH_NAME }}
             type=sha
       - name: Login to container registry
         uses: docker/login-action@v2
