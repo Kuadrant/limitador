@@ -30,8 +30,8 @@ jobs:
         with:
           context: .
           tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha,scope=e2e
-          cache-to: type=gha,mode=max,scope=e2e
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           load: true
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@v1.8.0
