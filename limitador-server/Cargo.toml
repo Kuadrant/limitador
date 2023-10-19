@@ -37,6 +37,8 @@ const_format = "0.2.31"
 lazy_static = "1.4.0"
 clap = "4.3"
 sysinfo = "0.29.7"
+openssl = { version = "0.10.57", features = ["vendored"] }
+
 
 [build-dependencies]
 tonic-build = "0.10"

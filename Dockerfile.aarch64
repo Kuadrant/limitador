@@ -1,0 +1,38 @@
+# ------------------------------------------------------------------------------
+# Build Stage cross compiling
+# ------------------------------------------------------------------------------
+
+FROM --platform=${BUILDPLATFORM} rust:1.72 as limitador-build
+
+RUN apt update && apt upgrade -y \
+    && apt install -y protobuf-compiler clang g++-aarch64-linux-gnu libc6-dev-arm64-cross
+
+RUN rustup target add aarch64-unknown-linux-gnu \
+    && rustup toolchain install stable-aarch64-unknown-linux-gnu
+
+WORKDIR /usr/src/limitador
+
+ARG GITHUB_SHA
+ENV GITHUB_SHA=${GITHUB_SHA:-unknown}
+ENV RUSTFLAGS="-C target-feature=-crt-static" \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+    CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc \
+    CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
+
+COPY . .
+
+RUN cargo build --release --target aarch64-unknown-linux-gnu
+
+# ------------------------------------------------------------------------------
+# Run Stage
+# ------------------------------------------------------------------------------
+
+FROM --platform=$TARGETPLATFORM gcr.io/distroless/cc-debian12
+
+WORKDIR /home/limitador/bin/
+ENV PATH="/home/limitador/bin:${PATH}"
+
+COPY --from=limitador-build /usr/src/limitador/limitador-server/examples/limits.yaml ../
+COPY --from=limitador-build /usr/src/limitador/target/aarch64-unknown-linux-gnu/release/limitador-server ./limitador-server
+
+CMD ["limitador-server"]

@@ -14,7 +14,7 @@ RUN dnf -y --setopt=install_weak_deps=False --setopt=tsflags=nodocs install \
  && dnf -y --setopt=install_weak_deps=False --setopt=tsflags=nodocs install epel-release \
  && dnf config-manager --set-enabled powertools
 
-RUN PKGS="gcc-c++ gcc-toolset-12-binutils-gold openssl-devel protobuf-c protobuf-devel git clang kernel-headers" \
+RUN PKGS="gcc-c++ gcc-toolset-12-binutils-gold openssl-devel protobuf-c protobuf-devel git clang kernel-headers perl-IPC-Cmd" \
     && dnf install --nodocs --assumeyes $PKGS \
     && rpm --verify --nogroup --nouser $PKGS \
     && yum -y clean all
