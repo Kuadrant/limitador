@@ -2,19 +2,19 @@
 # Build Stage
 # ------------------------------------------------------------------------------
 
-FROM registry.access.redhat.com/ubi8/ubi:8.7 as limitador-build
+FROM registry.access.redhat.com/ubi9/ubi:9.2 as limitador-build
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
 ARG RUSTC_VERSION=1.72.0
 
 # the powertools repo is required for protobuf-c and protobuf-devel
 RUN dnf -y --setopt=install_weak_deps=False --setopt=tsflags=nodocs install \
-      http://mirror.centos.org/centos/8-stream/BaseOS/`arch`/os/Packages/centos-gpg-keys-8-6.el8.noarch.rpm \
-      http://mirror.centos.org/centos/8-stream/BaseOS/`arch`/os/Packages/centos-stream-repos-8-6.el8.noarch.rpm \
+      https://mirror.stream.centos.org/9-stream/BaseOS/`arch`/os/Packages/centos-gpg-keys-9.0-23.el9.noarch.rpm \
+      https://mirror.stream.centos.org/9-stream/BaseOS/`arch`/os/Packages/centos-stream-repos-9.0-23.el9.noarch.rpm \
  && dnf -y --setopt=install_weak_deps=False --setopt=tsflags=nodocs install epel-release \
- && dnf config-manager --set-enabled powertools
+ && dnf config-manager --set-enabled crb
 
-RUN PKGS="gcc-c++ gcc-toolset-12-binutils-gold openssl-devel protobuf-c protobuf-devel git clang kernel-headers perl-IPC-Cmd" \
+RUN PKGS="protobuf-devel git clang perl" \
     && dnf install --nodocs --assumeyes $PKGS \
     && rpm --verify --nogroup --nouser $PKGS \
     && yum -y clean all
@@ -36,7 +36,7 @@ RUN source $HOME/.cargo/env \
 # Run Stage
 # ------------------------------------------------------------------------------
 
-FROM registry.access.redhat.com/ubi8/ubi-minimal:8.7
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.2
 
 # shadow-utils is required for `useradd`
 RUN PKGS="libgcc libstdc++ shadow-utils" \
