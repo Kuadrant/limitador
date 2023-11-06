@@ -16,18 +16,12 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: abelfodil/protoc-action@v1
         with:
           protoc-version: '3.19.4'
-      - uses: actions-rs/cargo@v1
-        with:
-          command: check
+      - run: cargo check
 
   test:
     name: Test Suite
@@ -41,100 +35,68 @@ jobs:
           USER: username
           PASS: password
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: supercharge/redis-github-action@1.1.0
         with:
           redis-version: 5
-      # Nightly is required for code coverage with doctests
-      # https://github.com/taiki-e/cargo-llvm-cov/issues/2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: abelfodil/protoc-action@v1
         with:
           protoc-version: '3.19.4'
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all-features -vv
+      - run: cargo test --all-features -vv
 
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - run: rustup component add rustfmt
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+          components: rustfmt
+      - run: cargo fmt --all -- --check
 
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - run: rustup component add clippy
+          components: clippy
       - uses: abelfodil/protoc-action@v1
         with:
           protoc-version: '3.19.4'
-      - uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --all-features --all-targets -- -D warnings
+      - run: cargo clippy --all-features --all-targets -- -D warnings
 
   bench:
     name: Bench
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: supercharge/redis-github-action@1.1.0
         with:
           redis-version: 5
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: abelfodil/protoc-action@v1
         with:
           protoc-version: '3.19.4'
-      - uses: actions-rs/cargo@v1
-        with:
-          command: bench
+      - run: cargo bench
 
   wasm-build:
     name: Build for WASM
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
           target: wasm32-unknown-unknown
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --target=wasm32-unknown-unknown --no-default-features --lib --manifest-path ./limitador/Cargo.toml
+      - run: cargo build --target=wasm32-unknown-unknown --no-default-features --lib --manifest-path ./limitador/Cargo.toml
 
   kind:
     name: Try in kind (Kubernetes in Docker)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@master
+      - uses: actions/checkout@v4
       - uses: engineerd/setup-kind@v0.5.0
         with:
           version: v0.11.1

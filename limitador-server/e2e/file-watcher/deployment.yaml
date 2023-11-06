@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: limitador
-          image: localhost/limitador-testing:latest
+          image: limitador-testing:latest
           imagePullPolicy: IfNotPresent
           env:
             - name: RUST_LOG
