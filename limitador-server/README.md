@@ -3,7 +3,7 @@
 [![Docker Repository on Quay](https://quay.io/repository/kuadrant/limitador/status
 "Docker Repository on Quay")](https://quay.io/repository/kuadrant/limitador)
 
-By default, Limitador starts the HTTP server in `localhost:8080` and the grpc
+By default, Limitador starts the HTTP server in `localhost:8080`, and the grpc
 service that implements the Envoy Rate Limit protocol in `localhost:8081`. That
 can be configured with these ENVs: `ENVOY_RLS_HOST`, `ENVOY_RLS_PORT`,
 `HTTP_API_HOST`, and `HTTP_API_PORT`.
@@ -54,10 +54,9 @@ each of the storages.
 The OpenAPI spec of the HTTP service is
 [here](docs/http_server_spec.json).
 
-Limitador has to be started with a YAML file that has some limits defined. There's an [example
-file](examples/limits.yaml) that allows 10 requests per minute
-and per `user_id` when the HTTP method is `"GET"` and 5 when it is a `"POST"`. You can
-run it with Docker (replace `latest` with the version you want):
+Limitador has to be started with a YAML file that has some limits defined.
+There's an [example file](https://github.com/Kuadrant/limitador/blob/main/limitador-server/examples/limits.yaml) that allows 10 requests per minute and per `user_id` when the HTTP method is `"GET"` and 5 when it is a `"POST"`.
+You can run it with Docker (replace `latest` with the version you want):
 ```bash
 docker run --rm --net=host -it -v $(pwd)/examples/limits.yaml:/home/limitador/my_limits.yaml:ro quay.io/kuadrant/limitador:latest limitador-server /home/limitador/my_limits.yaml
 ```
@@ -68,7 +67,7 @@ cargo run --release --bin limitador-server ./examples/limits.yaml
 ```
 
 If you want to use Limitador with Envoy, there's a minimal Envoy config for
-testing purposes [here](examples/envoy.yaml). The config
+testing purposes [here](https://github.com/Kuadrant/limitador/blob/main/limitador-server/examples/envoy.yaml). The config
 forwards the "userid" header and the request method to Limitador. It assumes
 that there's an upstream API deployed on port 1323. You can use
 [echo](https://github.com/labstack/echo), for example.
