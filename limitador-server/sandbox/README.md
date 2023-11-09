@@ -27,8 +27,81 @@ Check out `make help` for all the targets.
 
 ### Limitador's admin HTTP endpoint
 
+Limits
+
 ```bash
 curl -i http://127.0.0.1:18080/limits/test_namespace
+```
+
+Counters
+
+```bash
+curl -i http://127.0.0.1:18080/counters/test_namespace
+```
+
+Metrics
+
+```bash
+curl -i http://127.0.0.1:18080/metrics
+```
+
+### Limitador's GRPC RateLimitService endpoint
+
+Get `grpcurl`. You need [Go SDK](https://golang.org/doc/install) installed.
+
+Golang version >= 1.18 (from [fullstorydev/grpcurl](https://github.com/fullstorydev/grpcurl/blob/v1.8.9/go.mod#L3))
+
+```bash
+make grpcurl
+```
+
+Inspect `RateLimitService` GRPC service
+
+```bash
+bin/grpcurl -plaintext 127.0.0.1:18081 describe envoy.service.ratelimit.v3.RateLimitService
+```
+
+Make a custom request
+
+```bash
+bin/grpcurl -plaintext -d @ 127.0.0.1:18081 envoy.service.ratelimit.v3.RateLimitService.ShouldRateLimit <<EOM
+{
+    "domain": "test_namespace",
+    "hits_addend": 1,
+    "descriptors": [
+        {
+            "entries": [
+                {
+                    "key": "req.method",
+                    "value": "POST"
+                }
+            ]
+        }
+    ]
+}
+EOM
+```
+
+Do repeated requests. As the limit is set to max 5 request for 60 seconds,
+you should see `OVER_LIMIT` response after 5 requests.
+
+```bash
+while :; do bin/grpcurl -plaintext -d @ 127.0.0.1:18081 envoy.service.ratelimit.v3.RateLimitService.ShouldRateLimit <<EOM; sleep 1; done
+{
+    "domain": "test_namespace",
+    "hits_addend": 1,
+    "descriptors": [
+        {
+            "entries": [
+                {
+                    "key": "req.method",
+                    "value": "POST"
+                }
+            ]
+        }
+    ]
+}
+EOM
 ```
 
 ### Downstream traffic

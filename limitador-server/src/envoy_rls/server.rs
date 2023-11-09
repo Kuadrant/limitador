@@ -194,6 +194,10 @@ pub fn to_response_header(
     headers
 }
 
+mod rls_proto {
+    pub(crate) const RLS_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("rls");
+}
+
 pub async fn run_envoy_rls_server(
     address: String,
     limiter: Arc<Limiter>,
@@ -202,8 +206,14 @@ pub async fn run_envoy_rls_server(
     let rate_limiter = MyRateLimiter::new(limiter, rate_limit_headers);
     let svc = RateLimitServiceServer::new(rate_limiter);
 
+    let reflection_service = tonic_reflection::server::Builder::configure()
+        .register_encoded_file_descriptor_set(rls_proto::RLS_DESCRIPTOR_SET)
+        .build()
+        .unwrap();
+
     Server::builder()
         .add_service(svc)
+        .add_service(reflection_service)
         .serve(address.parse().unwrap())
         .await
 }

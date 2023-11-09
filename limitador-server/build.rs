@@ -1,4 +1,6 @@
+use std::env;
 use std::error::Error;
+use std::path::PathBuf;
 use std::process::Command;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -9,14 +11,18 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn generate_protobuf() -> Result<(), Box<dyn Error>> {
-    tonic_build::configure().build_server(true).compile(
-        &["envoy/service/ratelimit/v3/rls.proto"],
-        &[
-            "vendor/protobufs/data-plane-api",
-            "vendor/protobufs/protoc-gen-validate",
-            "vendor/protobufs/xds",
-        ],
-    )?;
+    let original_out_dir = PathBuf::from(env::var("OUT_DIR")?);
+    tonic_build::configure()
+        .build_server(true)
+        .file_descriptor_set_path(original_out_dir.join("rls.bin"))
+        .compile(
+            &["envoy/service/ratelimit/v3/rls.proto"],
+            &[
+                "vendor/protobufs/data-plane-api",
+                "vendor/protobufs/protoc-gen-validate",
+                "vendor/protobufs/xds",
+            ],
+        )?;
     Ok(())
 }
 

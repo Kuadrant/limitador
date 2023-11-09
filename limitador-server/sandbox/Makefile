@@ -74,8 +74,29 @@ clean-containers: ## clean containers
 	- $(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-redis.yaml down --volumes --remove-orphans
 	- $(DOCKER)_compose -f docker-compose-envoy.yaml -f docker-compose-limitador-redis-cached.yaml down --volumes --remove-orphans
 	- $(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-infinispan.yaml down --volumes --remove-orphans
+	- $(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-disk.yaml down --volumes --remove-orphans
 	- $(MAKE) cleancerts
 
 clean: ## clean all
 	- $(MAKE) clean-containers
 	- $(MAKE) redis-clean-certs
+
+GRPCURL=$(PROJECT_PATH)/bin/grpcurl
+$(GRPCURL):
+	$(call go-install-tool,$(GRPCURL),github.com/fullstorydev/grpcurl/cmd/grpcurl@v1.8.9)
+
+.PHONY: grpcurl
+grpcurl: $(GRPCURL) ## Download grpcurl locally if necessary.
+
+# go-install-tool will 'go install' any package $2 and install it to $1.
+define go-install-tool
+@[ -f $(1) ] || { \
+set -e ;\
+TMP_DIR=$$(mktemp -d) ;\
+cd $$TMP_DIR ;\
+go mod init tmp ;\
+echo "Downloading $(2)" ;\
+GOBIN=$(PROJECT_PATH)/bin go install $(2) ;\
+rm -rf $$TMP_DIR ;\
+}
+endef
