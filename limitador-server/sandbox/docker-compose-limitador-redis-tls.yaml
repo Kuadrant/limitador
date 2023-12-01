@@ -18,16 +18,8 @@ services:
       - "8080"
       - -vvv
       - /opt/kuadrant/limits/limits.yaml
-      - redis_cached
-      - --ttl
-      - "3"
-      - --ratio
-      - "11"
-      - --flush-period
-      - "2"
-      - --max-cached
-      - "5000"
-      - redis://redis:6379
+      - redis
+      - rediss://:foobared@redis:6379/#insecure
     expose:
       - "8080"
       - "8081"
@@ -36,4 +28,15 @@ services:
     volumes:
       - ./limits.yaml:/opt/kuadrant/limits/limits.yaml
   redis:
-    image: redis:5
+    image: redis:6.2
+    restart: always
+    ports:
+      - '6379:6379'
+    command:
+      - redis-server
+      - /usr/local/etc/redis/redis.conf
+    volumes:
+      - ./redis-tls/redis-config.conf:/usr/local/etc/redis/redis.conf
+      - ./redis.crt:/usr/local/etc/redis/certs/redis.crt
+      - ./redis.key:/usr/local/etc/redis/certs/redis.key
+      - ./ca.crt:/usr/local/etc/redis/certs/ca.crt
