@@ -30,7 +30,7 @@ the accuracy loss is going to be negligible.
 #### Set up
 
 In order to try active-active replication, you can follow this [tutorial from
-RedisLabs](https://docs.redislabs.com/latest/rs/getting-started/getting-started-active-active/).
+RedisLabs](https://docs.redislabs.com/latest/rs/databases/active-active/get-started/).
 
 ## Disk
 
