@@ -1,9 +1,9 @@
-<!-- omit in toc -->
 # Kubernetes
 
 The purpose of this documentation is to deploy a sample application published via AWS ELB, that will be ratelimited at infrastructure level, thanks to the use the envoyproxy sidecar container, that will be in charge of contacting to a  ratelimit service (limitador), that will allow the request (or not) if it is within the permitted  limits.
 
 There are mainly two recommended way of using limitador in kubernetes:
+
 1. There is an ingress based on envoyproxy that contacts with limitador ratelimit service before forwarding (or not) the request to the application
 1. There is an envoyproxy sidecar container living in the application pod that contacts with limitador ratelimit service before forwarding (or not) the request to the main application container in the same pod
 
@@ -15,17 +15,6 @@ In this example it will be described the second scenario (where there is an appl
 This is the network diagram of the deployed example:
 
 ![Ratelimit](ratelimit.svg)
-
-<!-- omit in toc -->
-# Table of Contents
-- [Components](#components)
-  - [Mandatory](#mandatory)
-  - [Optional](#optional)
-- [K8s deployment](#k8s-deployment)
-- [Monitoring](#monitoring)
-  - [Prometheus](#prometheus)
-  - [Grafana dashboard](#grafana-dashboard)
-- [Benchmarking](#benchmarking)
 
 ## Components
 
@@ -203,18 +192,19 @@ Status code distribution:
   [200]	60046 responses
   [429]	11932 responses
 ```
-* We can see that:
-  - Client could send 1192.2171rps (about 1200rps)
-  - 60046 requests (about 60000) were OK (HTTP 200)
-  - 11932 requests (about 12000) were limited (HTTP 429)
-  - Average latency (since the request goes out from the client to AWS ELB, k8s node, envoyproxy container, limitador+redis, kuar app container) is 10ms
 
-* In addition, if we do a longer test with 5 minutes traffic for example, you can check with the grafana dashboard how these requests are processed by envoyproxy sidecar container of kuard pods and limitador pods:
-  - **Kuard Envoyproxy Sidecar Metrics**:
-     - Globally it handles around 1200rps: it permits around 1krps and limits around 200rps  
-     - Each envoyproxy sidecar of each kuard pod handles around half of the traffic: it permits around 500rps and limits around 100rps. The balance between pods is not 100% perfect, caused by random iptables forwarding when using a k8s service
+- We can see that:
+    - Client could send 1192.2171rps (about 1200rps)
+    - 60046 requests (about 60000) were OK (HTTP 200)
+    - 11932 requests (about 12000) were limited (HTTP 429)
+    - Average latency (since the request goes out from the client to AWS ELB, k8s node, envoyproxy container, limitador+redis, kuar app container) is 10ms
+
+- In addition, if we do a longer test with 5 minutes traffic for example, you can check with the grafana dashboard how these requests are processed by envoyproxy sidecar container of kuard pods and limitador pods:
+    - **Kuard Envoyproxy Sidecar Metrics**:
+        - Globally it handles around 1200rps: it permits around 1krps and limits around 200rps  
+        - Each envoyproxy sidecar of each kuard pod handles around half of the traffic: it permits around 500rps and limits around 100rps. The balance between pods is not 100% perfect, caused by random iptables forwarding when using a k8s service
      ![Kuard Envoyproxy Sidecar Metrics](kuard-envoyproxy-sidecar-metrics-dashboard-screenshot.png)
-  - **Limitador Metrics**:
-     - Globally it handles around 1200rps: it permits around 1krps and limits around 200rps  
-     - Each limitador pod handles around half of the traffic: it permits around 500rps and limits around 100rps. The balance between pods is perfect thanks to using a headless service with GRPC connections
+    - **Limitador Metrics**:
+        - Globally it handles around 1200rps: it permits around 1krps and limits around 200rps  
+        - Each limitador pod handles around half of the traffic: it permits around 500rps and limits around 100rps. The balance between pods is perfect thanks to using a headless service with GRPC connections
      ![Limitador Metrics](limitador-metrics-dashboard-screenshot.png)
