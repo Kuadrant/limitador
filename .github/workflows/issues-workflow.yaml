@@ -8,12 +8,30 @@ on:
     types:
       - opened
 
+permissions:
+  repository-projects: read
+
 jobs:
   add-to-project:
     name: Add issue to project
     runs-on: ubuntu-latest
+    env:
+      BOARD_NAME: "Kuadrant"
+      OWNER: ${{ github.repository_owner }}
+      REPO: ${{ github.event.repository.name }}
+      NUMBER: ${{ github.event.number }}
     steps:
+      - name: Check if issue is already in Project Kuadrant
+        run: |
+          if curl -i -H 'Content-Type: application/json' -H "Authorization: bearer ${{ secrets.GITHUB_TOKEN }}" -X POST -d '{"query": "query ($pr: Int!, $owner: String!, $repo: String!) { repository(owner: $owner, name: $repo) { pullRequest(number: $pr) { projectItems(first: 20) { nodes { project { title } } } } } }", "variables" : "{ \"pr\": '${NUMBER}', \"owner\": \"'${OWNER}'\", \"repo\": \"'${REPO}'\" }" }' https://api.github.com/graphql | grep ""; then
+            echo "Issue is already in Project '$BOARD_NAME', cancelling this workflow";
+            echo "ALREADY_IN_BOARD=true" >> $GITHUB_ENV
+          else
+            echo "Issue is not in project '$BOARD_NAME', adding it to $BOARD_NAME, if this step fails please have it added by someone from the Kuadrant org and rerun - ignore this failure until then."
+            echo "ALREADY_IN_BOARD=false" >> $GITHUB_ENV
+          fi
       - uses: actions/add-to-project@v0.5.0
+        if: ${{ env.ALREADY_IN_BOARD == 'false' }}
         with:
           project-url: https://github.com/orgs/Kuadrant/projects/18
           github-token: ${{ secrets.ADD_ISSUES_TOKEN }}
