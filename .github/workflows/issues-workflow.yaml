@@ -20,7 +20,7 @@ jobs:
     steps:
       - name: Check if issue is already in Project Kuadrant
         run: |
-          if curl -i -H 'Content-Type: application/json' -H "Authorization: bearer ${{ secrets.GITHUB_TOKEN }}" -X POST -d '{"query": "query ($pr: Int!, $owner: String!, $repo: String!) { repository(owner: $owner, name: $repo) { pullRequest(number: $pr) { projectItems(first: 20) { nodes { project { title } } } } } }", "variables" : "{ \"pr\": '${PR}', \"owner\": \"'${OWNER}'\", \"repo\": \"'${REPO}'\" }" }' https://api.github.com/graphql; then
+          if curl -i -H 'Content-Type: application/json' -H "Authorization: bearer ${{ secrets.GITHUB_TOKEN }}" -X POST -d '{"query": "query ($pr: Int!, $owner: String!, $repo: String!) { repository(owner: $owner, name: $repo) { pullRequest(number: $pr) { projectItems(first: 20) { nodes { project { title } } } } } }", "variables" : "{ \"pr\": '${PR}', \"owner\": \"'${OWNER}'\", \"repo\": \"'${REPO}'\" }" }' https://api.github.com/graphql | grep ""; then
             echo "Issue is already in Project '$BOARD_NAME', cancelling this workflow";
             echo "ALREADY_IN_BOARD=true" >> $GITHUB_ENV
           else
