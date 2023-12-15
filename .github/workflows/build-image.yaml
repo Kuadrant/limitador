@@ -6,6 +6,9 @@ on:
   push:
     branches: ['*']
     tags: ['*']
+  pull_request:
+    branches: ['*']
+    tags: ['*']
 
 env:
   IMG_TAGS: ${{ github.sha }}
@@ -36,7 +39,7 @@ jobs:
         with:
           image: limitador
           tags: ${{ env.IMG_TAGS }}
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           dockerfiles: |
             ./Dockerfile
           build-args: |
