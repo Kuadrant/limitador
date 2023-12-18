@@ -3,8 +3,7 @@ SHELL := /bin/bash
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 PROJECT_PATH := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 
-DOCKER_COMPOSE ?= $(shell which docker-compose 2>/dev/null)
-DOCKER ?= $(shell which docker 2>/dev/null || echo "docker")
+DOCKER ?= $(shell which docker 2> /dev/null || echo "docker")
 
 all: help
 
@@ -27,27 +26,56 @@ help: ## Display this help.
 ##@ Deployment Options
 
 deploy-in-memory: clean ## Counters are held in Limitador (ephemeral)
-	$(DOCKER_COMPOSE) -f docker-compose-envoy.yaml -f docker-compose-limitador-memory.yaml up
+	$(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-memory.yaml up
 
 deploy-redis: clean ## Uses Redis to store counters
-	$(DOCKER_COMPOSE) -f docker-compose-envoy.yaml -f docker-compose-limitador-redis.yaml up
+	$(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-redis.yaml up
+
+deploy-redis-tls: clean ## Uses Redis with TLS and password protected to store counters
+	$(MAKE) ca
+	$(MAKE) redis-client-certs
+	$(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-redis-tls.yaml up
 
 deploy-redis-cached: clean ## Uses Redis to store counters, with an in-memory cache
-	$(DOCKER_COMPOSE) -f docker-compose-envoy.yaml -f docker-compose-limitador-redis-cached.yaml up
+	$(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-redis-cached.yaml up
 
 deploy-disk: clean ## Uses disk to store counters
-	$(DOCKER_COMPOSE) -f docker-compose-envoy.yaml -f docker-compose-limitador-disk.yaml up
+	$(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-disk.yaml up
 
 deploy-infinispan: clean ## Uses Infinispan to store counters
-	$(DOCKER_COMPOSE) -f docker-compose-envoy.yaml -f docker-compose-limitador-infinispan.yaml up
+	$(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-infinispan.yaml up
 
 ##@ Helper targets
 
 build: ## Build "limitador-testing" image
 	$(DOCKER) build -t limitador-testing -f ../../Dockerfile ../../
 
-clean: ## clean all containers
-	- $(DOCKER_COMPOSE) -f docker-compose-envoy.yaml -f docker-compose-limitador-memory.yaml down --volumes --remove-orphans
-	- $(DOCKER_COMPOSE) -f docker-compose-envoy.yaml -f docker-compose-limitador-redis.yaml down --volumes --remove-orphans
-	- $(DOCKER_COMPOSE) -f docker-compose-envoy.yaml -f docker-compose-limitador-redis-cached.yaml down --volumes --remove-orphans
-	- $(DOCKER_COMPOSE) -f docker-compose-envoy.yaml -f docker-compose-limitador-infinispan.yaml down --volumes --remove-orphans
+ca: ## Create CA cert
+	openssl genrsa -out ca.key 2048
+	openssl req -batch -new -x509 -nodes -key ca.key -sha256 -days 1024 -out ca.crt
+
+redis-client-certs: ## Create CSR, then sign it with CA cert
+	openssl req -subj '/CN=redis'  -newkey rsa:4096 -nodes \
+			-sha256 \
+			-days 3650 \
+			-keyout redis.key \
+			-out redis.csr
+	chmod +r redis.key
+	openssl x509 -req -in redis.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out redis.crt -days 500 -sha256
+
+##@ Cleanning targets
+
+redis-clean-certs: ## Clean certs
+	- rm *.crt *.key *.pem *.csr
+
+clean-containers: ## clean containers
+	- $(DOCKER) compose down --volumes --remove-orphans
+	- $(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-memory.yaml down --volumes --remove-orphans
+	- $(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-redis.yaml down --volumes --remove-orphans
+	- $(DOCKER)_compose -f docker-compose-envoy.yaml -f docker-compose-limitador-redis-cached.yaml down --volumes --remove-orphans
+	- $(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-infinispan.yaml down --volumes --remove-orphans
+	- $(MAKE) cleancerts
+
+clean: ## clean all
+	- $(MAKE) clean-containers
+	- $(MAKE) redis-clean-certs

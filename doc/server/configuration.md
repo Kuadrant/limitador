@@ -140,6 +140,32 @@ itself, providing accuracy over these, races tho can occur when multiple Limitad
 redis and using "stacked" limits (i.e. over different periods). Latency is also impacted, as it results in one
 additional hop to talk to redis and maintain the counters.
 
+**TLS Support**
+
+Connect to a redis instance using the `rediss://` URL scheme.
+
+To enable insecure mode, append `#insecure` at the end of the URL. For example:
+
+```
+limitador-server <LIMITS_FILE> redis rediss://127.0.0.1/#insecure"
+```
+
+**Authentication**
+
+To enable authentication, use the username and password properties of the URL scheme. For example:
+
+```
+limitador-server <LIMITS_FILE> redis redis://my-username:my-password@127.0.0.1"
+```
+
+when the username is omitted, redis assumes `default` user. For example:
+
+```
+limitador-server <LIMITS_FILE> redis redis://:my-password@127.0.0.1"
+```
+
+**Usage**
+
 ```
 Uses Redis to store counters
 
@@ -158,6 +184,32 @@ In order to avoid some communication overhead to redis, `redis_cached` adds an i
 Limitador servers. This lowers the latency, but sacrifices some accuracy as it will not only cache counters, but also
 coalesce counters updates to redis over time. See [this configuration](#redis_local_cache_enabled) option for more
 information.
+
+**TLS Support**
+
+Connect to a redis instance using the `rediss://` URL scheme.
+
+To enable insecure mode, append `#insecure` at the end of the URL. For example:
+
+```
+limitador-server <LIMITS_FILE> redis rediss://127.0.0.1/#insecure"
+```
+
+**Authentication**
+
+To enable authentication, use the username and password properties of the URL scheme. For example:
+
+```
+limitador-server <LIMITS_FILE> redis redis://my-username:my-password@127.0.0.1"
+```
+
+when the username is omitted, redis assumes `default` user. For example:
+
+```
+limitador-server <LIMITS_FILE> redis redis://:my-password@127.0.0.1"
+```
+
+**Usage**
 
 ```
 Uses Redis to store counters, with an in-memory cache

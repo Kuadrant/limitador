@@ -2,8 +2,7 @@
 
 ### Requirements
 
-* *docker*
-* *docker-compose*
+* *docker* v24+
 
 ### Setup
 
@@ -22,6 +21,7 @@ Check out `make help` for all the targets.
 | ------------- | ----- | ----- |
 | In-memory configuration | `make deploy-in-memory` | Counters are held in Limitador (ephemeral) |
 | Redis | `make deploy-redis` | Uses Redis to store counters |
+| Redis Secured | `make deploy-redis-tls` | Uses Redis with TLS and password protected to store counters |
 | Redis Cached | `make deploy-redis-cached` | Uses Redis to store counters, with an in-memory cache |
 | Infinispan | `make deploy-infinispan` | Uses Infinispan to store counters |
 
@@ -61,8 +61,8 @@ The `LIMITADOR_IMAGE` environment variable overrides the default image. For exam
 make deploy-in-memory LIMITADOR_IMAGE=quay.io/kuadrant/limitador:latest
 ```
 
-### Tear Down
+### Clean env
 
 ```bash
-make tear-down
+make clean
 ```
