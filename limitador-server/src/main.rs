@@ -522,7 +522,7 @@ fn create_config() -> (Configuration, &'static str) {
                 .long("grpc-reflection-service")
                 .action(ArgAction::SetTrue)
                 .display_order(9)
-                .help("enable gRPC server reflection service"),
+                .help("Enables gRPC server reflection service"),
         )
         .subcommand(
             Command::new("memory")
