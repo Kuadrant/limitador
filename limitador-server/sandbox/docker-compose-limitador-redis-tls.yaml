@@ -17,6 +17,7 @@ services:
       - --http-port
       - "8080"
       - -vvv
+      - --grpc-reflection-service
       - /opt/kuadrant/limits/limits.yaml
       - redis
       - rediss://:foobared@redis:6379/#insecure

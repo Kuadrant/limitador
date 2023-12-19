@@ -17,6 +17,7 @@ services:
       - --http-port
       - "8080"
       - -vvvv
+      - --grpc-reflection-service
       - /opt/kuadrant/limits/limits.yaml
       - infinispan
       - --cache-name

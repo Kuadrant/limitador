@@ -302,6 +302,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let envoy_rls_address = config.rlp_address();
     let http_api_address = config.http_address();
     let rate_limit_headers = config.rate_limit_headers.clone();
+    let grpc_reflection_service = config.grpc_reflection_service;
 
     let rate_limiter: Arc<Limiter> = match Limiter::new(config).await {
         Ok(limiter) => Arc::new(limiter),
@@ -390,6 +391,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         envoy_rls_address.to_string(),
         rate_limiter.clone(),
         rate_limit_headers,
+        grpc_reflection_service,
     ));
 
     info!("HTTP server starting on {}", http_api_address);
@@ -514,6 +516,13 @@ fn create_config() -> (Configuration, &'static str) {
                     "DRAFT_VERSION_03",
                 ]))
                 .help("Enables rate limit response headers"),
+        )
+        .arg(
+            Arg::new("grpc_reflection_service")
+                .long("grpc-reflection-service")
+                .action(ArgAction::SetTrue)
+                .display_order(9)
+                .help("enable gRPC server reflection service"),
         )
         .subcommand(
             Command::new("memory")
@@ -745,6 +754,7 @@ fn create_config() -> (Configuration, &'static str) {
         matches.get_flag("limit_name_in_labels")
             || env_option_is_enabled("LIMIT_NAME_IN_PROMETHEUS_LABELS"),
         rate_limit_headers,
+        matches.get_flag("grpc_reflection_service"),
     );
 
     config.log_level = match matches.get_count("v") {
