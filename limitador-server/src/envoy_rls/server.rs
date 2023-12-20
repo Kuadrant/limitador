@@ -40,6 +40,7 @@ impl MyRateLimiter {
 
 #[tonic::async_trait]
 impl RateLimitService for MyRateLimiter {
+    #[tracing::instrument(skip_all)]
     async fn should_rate_limit(
         &self,
         request: Request<RateLimitRequest>,

@@ -30,6 +30,7 @@ pub struct InfinispanStorageBuilder {
 
 #[async_trait]
 impl AsyncCounterStorage for InfinispanStorage {
+    #[tracing::instrument(skip_all)]
     async fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
         let counter_key = key_for_counter(counter);
         let counter_val =
@@ -41,6 +42,7 @@ impl AsyncCounterStorage for InfinispanStorage {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     async fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
         let counter_key = key_for_counter(counter);
 
@@ -65,6 +67,7 @@ impl AsyncCounterStorage for InfinispanStorage {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
@@ -130,6 +133,7 @@ impl AsyncCounterStorage for InfinispanStorage {
         Ok(Authorization::Ok)
     }
 
+    #[tracing::instrument(skip_all)]
     async fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
 
@@ -158,6 +162,7 @@ impl AsyncCounterStorage for InfinispanStorage {
         Ok(res)
     }
 
+    #[tracing::instrument(skip_all)]
     async fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr> {
         for limit in limits {
             self.delete_counters_associated_with_limit(&limit).await?;
@@ -165,6 +170,7 @@ impl AsyncCounterStorage for InfinispanStorage {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn clear(&self) -> Result<(), StorageErr> {
         let _ = self
             .infinispan

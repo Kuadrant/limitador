@@ -1530,6 +1530,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tracing",
  "ttl_cache",
 ]
 

@@ -47,12 +47,14 @@ pub struct CachedRedisStorage {
 
 #[async_trait]
 impl AsyncCounterStorage for CachedRedisStorage {
+    #[tracing::instrument(skip_all)]
     async fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
         self.async_redis_storage
             .is_within_limits(counter, delta)
             .await
     }
 
+    #[tracing::instrument(skip_all)]
     async fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
         self.async_redis_storage
             .update_counter(counter, delta)
@@ -63,6 +65,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
     // limits. In order to do so, we'd need to run this whole function
     // atomically, but that'd be too slow.
     // This function trades accuracy for speed.
+    #[tracing::instrument(skip_all)]
     async fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
@@ -166,14 +169,17 @@ impl AsyncCounterStorage for CachedRedisStorage {
         Ok(Authorization::Ok)
     }
 
+    #[tracing::instrument(skip_all)]
     async fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
         self.async_redis_storage.get_counters(limits).await
     }
 
+    #[tracing::instrument(skip_all)]
     async fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr> {
         self.async_redis_storage.delete_counters(limits).await
     }
 
+    #[tracing::instrument(skip_all)]
     async fn clear(&self) -> Result<(), StorageErr> {
         self.async_redis_storage.clear().await
     }

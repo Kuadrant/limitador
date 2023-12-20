@@ -18,22 +18,26 @@ pub struct RocksDbStorage {
 }
 
 impl CounterStorage for RocksDbStorage {
+    #[tracing::instrument(skip_all)]
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
         let key = key_for_counter(counter);
         let value = self.insert_or_update(&key, counter, 0)?;
         Ok(counter.max_value() >= value.value() + delta)
     }
 
+    #[tracing::instrument(skip_all)]
     fn add_counter(&self, _limit: &Limit) -> Result<(), StorageErr> {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
         let key = key_for_counter(counter);
         self.insert_or_update(&key, counter, delta)?;
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
@@ -75,6 +79,7 @@ impl CounterStorage for RocksDbStorage {
         Ok(Authorization::Ok)
     }
 
+    #[tracing::instrument(skip_all)]
     fn get_counters(&self, limits: &HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
         let mut counters = HashSet::default();
         let namepaces: BTreeSet<&str> = limits.iter().map(|l| l.namespace().as_ref()).collect();
@@ -103,6 +108,7 @@ impl CounterStorage for RocksDbStorage {
         Ok(counters)
     }
 
+    #[tracing::instrument(skip_all)]
     fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr> {
         let counters = self.get_counters(&limits)?;
         for counter in &counters {
@@ -111,6 +117,7 @@ impl CounterStorage for RocksDbStorage {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     fn clear(&self) -> Result<(), StorageErr> {
         for entry in self.db.iterator(IteratorMode::Start) {
             self.db.delete(entry?.0)?

@@ -41,6 +41,7 @@ use sysinfo::{RefreshKind, System, SystemExt};
 use thiserror::Error;
 use tokio::runtime::Handle;
 use tracing::level_filters::LevelFilter;
+use tracing_subscriber::fmt::format::FmtSpan;
 
 mod envoy_rls;
 mod http_api;
@@ -284,16 +285,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = {
         let (config, version) = create_config();
         println!("{LIMITADOR_HEADER} {version}");
-        let builder = if let Some(level) = config.log_level {
-            tracing_subscriber::fmt().with_max_level(level)
+        let level = config.log_level.unwrap_or_else(|| {
+            tracing_subscriber::filter::EnvFilter::from_default_env()
+                .max_level_hint()
+                .unwrap_or(LevelFilter::ERROR)
+        });
+        let builder = if level >= LevelFilter::DEBUG {
+            tracing_subscriber::fmt().with_span_events(FmtSpan::CLOSE)
         } else {
-            tracing_subscriber::fmt().with_max_level(
-                tracing_subscriber::filter::EnvFilter::from_default_env()
-                    .max_level_hint()
-                    .unwrap_or(LevelFilter::ERROR),
-            )
+            tracing_subscriber::fmt()
         };
-        builder.init();
+        builder.with_max_level(level).init();
 
         info!("Version: {}", version);
         info!("Using config: {:?}", config);

@@ -23,6 +23,7 @@ pub struct RedisStorage {
 }
 
 impl CounterStorage for RedisStorage {
+    #[tracing::instrument(skip_all)]
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
         let mut con = self.conn_pool.get()?;
 
@@ -32,10 +33,12 @@ impl CounterStorage for RedisStorage {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     fn add_counter(&self, _limit: &Limit) -> Result<(), StorageErr> {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
         let mut con = self.conn_pool.get()?;
 
@@ -50,6 +53,7 @@ impl CounterStorage for RedisStorage {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
@@ -100,6 +104,7 @@ impl CounterStorage for RedisStorage {
         Ok(Authorization::Ok)
     }
 
+    #[tracing::instrument(skip_all)]
     fn get_counters(&self, limits: &HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
 
@@ -132,6 +137,7 @@ impl CounterStorage for RedisStorage {
         Ok(res)
     }
 
+    #[tracing::instrument(skip_all)]
     fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr> {
         let mut con = self.conn_pool.get()?;
 
@@ -147,6 +153,7 @@ impl CounterStorage for RedisStorage {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     fn clear(&self) -> Result<(), StorageErr> {
         let mut con = self.conn_pool.get()?;
         redis::cmd("FLUSHDB").execute(&mut *con);
