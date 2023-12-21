@@ -1,5 +1,6 @@
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
+use crate::prometheus_metrics::CounterAccess;
 use crate::InMemoryStorage;
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
@@ -237,14 +238,15 @@ impl AsyncStorage {
         self.counters.update_counter(counter, delta).await
     }
 
-    pub async fn check_and_update(
+    pub async fn check_and_update<'a>(
         &self,
         counters: &mut Vec<Counter>,
         delta: i64,
         load_counters: bool,
+        counter_access: CounterAccess<'a>,
     ) -> Result<Authorization, StorageErr> {
         self.counters
-            .check_and_update(counters, delta, load_counters)
+            .check_and_update(counters, delta, load_counters, counter_access)
             .await
     }
 
@@ -281,11 +283,12 @@ pub trait CounterStorage: Sync + Send {
 pub trait AsyncCounterStorage: Sync + Send {
     async fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr>;
     async fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
-    async fn check_and_update(
+    async fn check_and_update<'a>(
         &self,
         counters: &mut Vec<Counter>,
         delta: i64,
         load_counters: bool,
+        counter_access: CounterAccess<'a>,
     ) -> Result<Authorization, StorageErr>;
     async fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr>;
     async fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr>;

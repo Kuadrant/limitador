@@ -4,6 +4,7 @@ use self::redis::aio::ConnectionManager;
 use self::redis::ConnectionInfo;
 use crate::counter::Counter;
 use crate::limit::Limit;
+use crate::prometheus_metrics::CounterAccess;
 use crate::storage::keys::*;
 use crate::storage::redis::is_limited;
 use crate::storage::redis::scripts::{SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS};
@@ -12,7 +13,7 @@ use async_trait::async_trait;
 use redis::{AsyncCommands, RedisError};
 use std::collections::HashSet;
 use std::str::FromStr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tracing::{trace_span, Instrument};
 
 // Note: this implementation does not guarantee exact limits. Ensuring that we
@@ -70,11 +71,12 @@ impl AsyncCounterStorage for AsyncRedisStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn check_and_update(
+    async fn check_and_update<'a>(
         &self,
         counters: &mut Vec<Counter>,
         delta: i64,
         load_counters: bool,
+        mut counter_access: CounterAccess<'a>,
     ) -> Result<Authorization, StorageErr> {
         let mut con = self.conn_manager.clone();
         let counter_keys: Vec<String> = counters.iter().map(key_for_counter).collect();
@@ -89,9 +91,14 @@ impl AsyncCounterStorage for AsyncRedisStorage {
 
             let script_res: Vec<Option<i64>> = {
                 let span = trace_span!("datastore");
-                async { script_invocation.invoke_async(&mut con).await }
-                    .instrument(span)
-                    .await?
+                async {
+                    let start = Instant::now();
+                    let result = script_invocation.invoke_async(&mut con).await;
+                    counter_access.observe(start.elapsed());
+                    result
+                }
+                .instrument(span)
+                .await?
             };
             if let Some(res) = is_limited(counters, delta, script_res) {
                 return Ok(res);
@@ -100,10 +107,13 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             let counter_vals: Vec<Option<i64>> = {
                 let span = trace_span!("datastore");
                 async {
-                    redis::cmd("MGET")
+                    let start = Instant::now();
+                    let result = redis::cmd("MGET")
                         .arg(counter_keys.clone())
                         .query_async(&mut con)
-                        .await
+                        .await;
+                    counter_access.observe(start.elapsed());
+                    result
                 }
                 .instrument(span)
                 .await?
@@ -124,14 +134,17 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             let counter = &counters[counter_idx];
             let span = trace_span!("datastore");
             async {
-                redis::Script::new(SCRIPT_UPDATE_COUNTER)
+                let start = Instant::now();
+                let result = redis::Script::new(SCRIPT_UPDATE_COUNTER)
                     .key(key)
                     .key(key_for_counters_of_limit(counter.limit()))
                     .arg(counter.max_value())
                     .arg(counter.seconds())
                     .arg(delta)
                     .invoke_async::<_, _>(&mut con)
-                    .await
+                    .await;
+                counter_access.observe(start.elapsed());
+                result
             }
             .instrument(span)
             .await?
