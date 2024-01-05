@@ -22,8 +22,10 @@ jobs:
         include:
           - dockerfile: Dockerfile
             platform: linux/amd64
+            scope: build-amd
           - dockerfile: Dockerfile.aarch64
             platform: linux/arm64
+            scope: build-arm
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -49,8 +51,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             GITHUB_SHA=${{ github.sha }}
-          cache-from: type=gha,scope=${{ matrix.platform == 'linux/amd64' && 'build-amd' || 'build-arm'}}
-          cache-to: type=gha,mode=max,scope=${{ matrix.platform == 'linux/amd64' && 'build-amd' || 'build-arm'}}
+          cache-from: type=gha,scope=${{ matrix.scope }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.scope}}
           outputs: type=image,name=${{ env.IMG_REGISTRY_HOST }}/${{ env.IMG_REGISTRY_ORG }}/limitador,push-by-digest=true,name-canonical=true,push=true
           file: ${{ matrix.dockerfile }}
           platforms: |
