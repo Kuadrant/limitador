@@ -266,7 +266,7 @@ mod tests {
             .to_request();
         let resp_limits: Vec<Limit> = test::call_and_read_body_json(&app, req).await;
         assert_eq!(resp_limits.len(), 1);
-        assert_eq!(*resp_limits.get(0).unwrap(), Limit::from(&limit));
+        assert_eq!(*resp_limits.first().unwrap(), Limit::from(&limit));
     }
 
     #[actix_rt::test]
