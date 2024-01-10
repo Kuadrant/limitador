@@ -89,7 +89,8 @@ jobs:
           images: |
             ${{ env.IMG_REGISTRY_HOST }}/${{ env.IMG_REGISTRY_ORG }}/limitador
           tags: |
-            # type=raw,value=${{ github.sha }}
+            # SHA tag for main branch
+            type=raw,value=${{ github.sha }},enable=${{ github.ref_name == env.MAIN_BRANCH_NAME }}
             # set latest tag for main branch
             type=raw,value=latest,enable=${{ github.ref_name == env.MAIN_BRANCH_NAME }}
             # set ref name tag for non-main branches
