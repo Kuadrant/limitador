@@ -1,6 +1,5 @@
-use crate::limit::conditions::{ErrorType, SyntaxError, Token};
 use cel_interpreter::{Context, Expression, Value};
-use cel_parser::{parse, ParseError};
+use cel_parser::parse;
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::error::Error;
@@ -19,10 +18,6 @@ mod deprecated {
             Ok(previous) => previous,
             Err(previous) => previous,
         }
-    }
-
-    pub fn deprecated_syntax_used() {
-        DEPRECATED_SYNTAX.fetch_or(true, Ordering::SeqCst);
     }
 }
 
@@ -90,22 +85,16 @@ impl Hash for Condition {
 
 #[derive(Debug)]
 pub struct ConditionParsingError {
-    error: SyntaxError,
-    pub tokens: Vec<Token>,
-    condition: String,
+    msg: String,
 }
 
 impl Display for ConditionParsingError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} of condition \"{}\"", self.error, self.condition)
+        write!(f, "{}", self.msg)
     }
 }
 
-impl Error for ConditionParsingError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        Some(&self.error)
-    }
-}
+impl Error for ConditionParsingError {}
 
 impl TryFrom<&str> for Condition {
     type Error = ConditionParsingError;
@@ -122,12 +111,7 @@ impl TryFrom<String> for Condition {
         match parse(&source) {
             Ok(expression) => Ok(Condition { source, expression }),
             Err(err) => Err(ConditionParsingError {
-                error: SyntaxError {
-                    pos: 0,
-                    error: ErrorType::MissingToken,
-                },
-                tokens: vec![],
-                condition: source,
+                msg: err.to_string(),
             }),
         }
     }
@@ -136,30 +120,6 @@ impl TryFrom<String> for Condition {
 impl From<Condition> for String {
     fn from(condition: Condition) -> Self {
         condition.source.clone()
-    }
-}
-
-#[derive(PartialEq, Eq, Debug, Clone, Hash)]
-pub enum Predicate {
-    Equal,
-    NotEqual,
-}
-
-impl Predicate {
-    fn test(&self, lhs: &str, rhs: &str) -> bool {
-        match self {
-            Predicate::Equal => lhs == rhs,
-            Predicate::NotEqual => lhs != rhs,
-        }
-    }
-}
-
-impl From<Predicate> for String {
-    fn from(op: Predicate) -> Self {
-        match op {
-            Predicate::Equal => "==".to_string(),
-            Predicate::NotEqual => "!=".to_string(),
-        }
     }
 }
 
@@ -293,401 +253,6 @@ impl PartialEq for Limit {
             && self.seconds == other.seconds
             && self.conditions == other.conditions
             && self.variables == other.variables
-    }
-}
-
-mod conditions {
-    use std::error::Error;
-    use std::fmt::{Debug, Display, Formatter};
-    use std::num::IntErrorKind;
-
-    #[derive(Debug)]
-    pub struct SyntaxError {
-        pub pos: usize,
-        pub error: ErrorType,
-    }
-
-    #[derive(Debug, Eq, PartialEq)]
-    pub enum ErrorType {
-        UnexpectedToken(Token),
-        MissingToken,
-        InvalidCharacter(char),
-        InvalidNumber,
-        UnclosedStringLiteral(char),
-    }
-
-    impl Display for SyntaxError {
-        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-            match &self.error {
-                ErrorType::UnexpectedToken(token) => write!(
-                    f,
-                    "SyntaxError: Unexpected token `{}` at offset {}",
-                    token, self.pos
-                ),
-                ErrorType::InvalidCharacter(char) => write!(
-                    f,
-                    "SyntaxError: Invalid character `{}` at offset {}",
-                    char, self.pos
-                ),
-                ErrorType::InvalidNumber => {
-                    write!(f, "SyntaxError: Invalid number at offset {}", self.pos)
-                }
-                ErrorType::MissingToken => {
-                    write!(f, "SyntaxError: Expected token at offset {}", self.pos)
-                }
-                ErrorType::UnclosedStringLiteral(char) => {
-                    write!(f, "SyntaxError: Missing closing `{}` for string literal starting at offset {}", char, self.pos)
-                }
-            }
-        }
-    }
-
-    impl Error for SyntaxError {}
-
-    #[derive(Clone, Eq, PartialEq, Debug)]
-    pub enum TokenType {
-        // Predicates
-        EqualEqual,
-        NotEqual,
-
-        //Literals
-        Identifier,
-        String,
-        Number,
-    }
-
-    #[derive(Clone, Eq, PartialEq, Debug)]
-    pub enum Literal {
-        Identifier(String),
-        String(String),
-        Number(i64),
-    }
-
-    impl Display for Literal {
-        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-            match self {
-                Literal::Identifier(id) => write!(f, "{id}"),
-                Literal::String(string) => write!(f, "'{string}'"),
-                Literal::Number(number) => write!(f, "{number}"),
-            }
-        }
-    }
-
-    #[derive(Clone, Eq, PartialEq, Debug)]
-    pub struct Token {
-        pub token_type: TokenType,
-        pub literal: Option<Literal>,
-        pub pos: usize,
-    }
-
-    impl Display for Token {
-        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-            match self.token_type {
-                TokenType::EqualEqual => write!(f, "Equality (==)"),
-                TokenType::NotEqual => write!(f, "Unequal (!=)"),
-                TokenType::Identifier => {
-                    write!(f, "Identifier: {}", self.literal.as_ref().unwrap())
-                }
-                TokenType::String => {
-                    write!(f, "String literal: {}", self.literal.as_ref().unwrap())
-                }
-                TokenType::Number => {
-                    write!(f, "Number literal: {}", self.literal.as_ref().unwrap())
-                }
-            }
-        }
-    }
-
-    pub struct Scanner {
-        input: Vec<char>,
-        pos: usize,
-    }
-
-    impl Scanner {
-        pub fn scan(condition: String) -> Result<Vec<Token>, SyntaxError> {
-            let mut tokens: Vec<Token> = Vec::with_capacity(3);
-            let mut scanner = Scanner {
-                input: condition.chars().collect(),
-                pos: 0,
-            };
-            while !scanner.done() {
-                match scanner.next_token() {
-                    Ok(token) => {
-                        if let Some(token) = token {
-                            tokens.push(token)
-                        }
-                    }
-                    Err(err) => {
-                        return Err(err);
-                    }
-                }
-            }
-            Ok(tokens)
-        }
-
-        fn next_token(&mut self) -> Result<Option<Token>, SyntaxError> {
-            let character = self.advance();
-            match character {
-                '=' => {
-                    if self.next_matches('=') {
-                        Ok(Some(Token {
-                            token_type: TokenType::EqualEqual,
-                            literal: None,
-                            pos: self.pos - 1,
-                        }))
-                    } else {
-                        Err(SyntaxError {
-                            pos: self.pos,
-                            error: ErrorType::InvalidCharacter(self.input[self.pos - 1]),
-                        })
-                    }
-                }
-                '!' => {
-                    if self.next_matches('=') {
-                        Ok(Some(Token {
-                            token_type: TokenType::NotEqual,
-                            literal: None,
-                            pos: self.pos - 1,
-                        }))
-                    } else {
-                        Err(SyntaxError {
-                            pos: self.pos,
-                            error: ErrorType::InvalidCharacter(self.input[self.pos - 1]),
-                        })
-                    }
-                }
-                '"' | '\'' => self.scan_string(character).map(Some),
-                ' ' | '\n' | '\r' | '\t' => Ok(None),
-                _ => {
-                    if character.is_alphabetic() {
-                        self.scan_identifier().map(Some)
-                    } else if character.is_numeric() {
-                        self.scan_number().map(Some)
-                    } else {
-                        Err(SyntaxError {
-                            pos: self.pos,
-                            error: ErrorType::InvalidCharacter(character),
-                        })
-                    }
-                }
-            }
-        }
-
-        fn scan_identifier(&mut self) -> Result<Token, SyntaxError> {
-            let start = self.pos;
-            while !self.done() && self.valid_id_char() {
-                self.advance();
-            }
-            Ok(Token {
-                token_type: TokenType::Identifier,
-                literal: Some(Literal::Identifier(
-                    self.input[start - 1..self.pos].iter().collect(),
-                )),
-                pos: start,
-            })
-        }
-
-        fn valid_id_char(&mut self) -> bool {
-            let char = self.input[self.pos];
-            char.is_alphanumeric() || char == '.' || char == '_'
-        }
-
-        fn scan_string(&mut self, until: char) -> Result<Token, SyntaxError> {
-            let start = self.pos;
-            loop {
-                if self.done() {
-                    return Err(SyntaxError {
-                        pos: start,
-                        error: ErrorType::UnclosedStringLiteral(until),
-                    });
-                }
-                if self.advance() == until {
-                    return Ok(Token {
-                        token_type: TokenType::String,
-                        literal: Some(Literal::String(
-                            self.input[start..self.pos - 1].iter().collect(),
-                        )),
-                        pos: start,
-                    });
-                }
-            }
-        }
-
-        fn scan_number(&mut self) -> Result<Token, SyntaxError> {
-            let start = self.pos;
-            while !self.done() && self.input[self.pos].is_numeric() {
-                self.advance();
-            }
-            let number_str = self.input[start - 1..self.pos].iter().collect::<String>();
-            match number_str.parse::<i64>() {
-                Ok(number) => Ok(Token {
-                    token_type: TokenType::Number,
-                    literal: Some(Literal::Number(number)),
-                    pos: start,
-                }),
-                Err(err) => {
-                    let syntax_error = match err.kind() {
-                        IntErrorKind::Empty => {
-                            unreachable!("This means a bug in the scanner!")
-                        }
-                        IntErrorKind::Zero => {
-                            unreachable!("We're parsing Numbers as i64, so 0 should always work!")
-                        }
-                        _ => SyntaxError {
-                            pos: start,
-                            error: ErrorType::InvalidNumber,
-                        },
-                    };
-                    Err(syntax_error)
-                }
-            }
-        }
-
-        fn advance(&mut self) -> char {
-            let char = self.input[self.pos];
-            self.pos += 1;
-            char
-        }
-
-        fn next_matches(&mut self, c: char) -> bool {
-            if self.done() || self.input[self.pos] != c {
-                return false;
-            }
-
-            self.pos += 1;
-            true
-        }
-
-        fn done(&self) -> bool {
-            self.pos >= self.input.len()
-        }
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use crate::limit::conditions::Literal::Identifier;
-        use crate::limit::conditions::{ErrorType, Literal, Scanner, Token, TokenType};
-
-        #[test]
-        fn test_scanner() {
-            let mut tokens =
-                Scanner::scan("foo=='bar '".to_owned()).expect("Should parse alright!");
-            assert_eq!(tokens.len(), 3);
-            assert_eq!(
-                tokens[0],
-                Token {
-                    token_type: TokenType::Identifier,
-                    literal: Some(Identifier("foo".to_owned())),
-                    pos: 1,
-                }
-            );
-            assert_eq!(
-                tokens[1],
-                Token {
-                    token_type: TokenType::EqualEqual,
-                    literal: None,
-                    pos: 4,
-                }
-            );
-            assert_eq!(
-                tokens[2],
-                Token {
-                    token_type: TokenType::String,
-                    literal: Some(Literal::String("bar ".to_owned())),
-                    pos: 6,
-                }
-            );
-
-            tokens[1].pos += 1;
-            tokens[2].pos += 2;
-            assert_eq!(
-                tokens,
-                Scanner::scan("foo == 'bar '".to_owned()).expect("Should parse alright!")
-            );
-
-            tokens[0].pos += 2;
-            tokens[1].pos += 2;
-            tokens[2].pos += 2;
-            assert_eq!(
-                tokens,
-                Scanner::scan("  foo == 'bar ' ".to_owned()).expect("Should parse alright!")
-            );
-
-            tokens[1].pos += 2;
-            tokens[2].pos += 4;
-            assert_eq!(
-                tokens,
-                Scanner::scan("  foo   ==   'bar ' ".to_owned()).expect("Should parse alright!")
-            );
-        }
-
-        #[test]
-        fn test_number_literal() {
-            let tokens = Scanner::scan("var == 42".to_owned()).expect("Should parse alright!");
-            assert_eq!(tokens.len(), 3);
-            assert_eq!(
-                tokens[0],
-                Token {
-                    token_type: TokenType::Identifier,
-                    literal: Some(Identifier("var".to_owned())),
-                    pos: 1,
-                }
-            );
-            assert_eq!(
-                tokens[1],
-                Token {
-                    token_type: TokenType::EqualEqual,
-                    literal: None,
-                    pos: 5,
-                }
-            );
-            assert_eq!(
-                tokens[2],
-                Token {
-                    token_type: TokenType::Number,
-                    literal: Some(Literal::Number(42)),
-                    pos: 8,
-                }
-            );
-        }
-
-        #[test]
-        fn test_charset() {
-            let tokens =
-                Scanner::scan(" 変数 == '  💖 '".to_owned()).expect("Should parse alright!");
-            assert_eq!(tokens.len(), 3);
-            assert_eq!(
-                tokens[0],
-                Token {
-                    token_type: TokenType::Identifier,
-                    literal: Some(Identifier("変数".to_owned())),
-                    pos: 2,
-                }
-            );
-            assert_eq!(
-                tokens[1],
-                Token {
-                    token_type: TokenType::EqualEqual,
-                    literal: None,
-                    pos: 5,
-                }
-            );
-            assert_eq!(
-                tokens[2],
-                Token {
-                    token_type: TokenType::String,
-                    literal: Some(Literal::String("  💖 ".to_owned())),
-                    pos: 8,
-                }
-            );
-        }
-
-        #[test]
-        fn unclosed_string_literal() {
-            let error = Scanner::scan("foo == 'ba".to_owned()).expect_err("Should fail!");
-            assert_eq!(error.pos, 8);
-            assert_eq!(error.error, ErrorType::UnclosedStringLiteral('\''));
-        }
     }
 }
 
