@@ -22,6 +22,7 @@ limitador = { path = "../limitador", features = ['lenient_conditions'] }
 tokio = { version = "1", features = ["full"] }
 thiserror = "1"
 tonic = "0.10"
+tonic-reflection = "0.10.2"
 prost = "0.12"
 prost-types = "0.12"
 serde_yaml = "0.9"

@@ -33,6 +33,7 @@ pub struct Configuration {
     pub limit_name_in_labels: bool,
     pub log_level: Option<LevelFilter>,
     pub rate_limit_headers: RateLimitHeaders,
+    pub grpc_reflection_service: bool,
 }
 
 pub mod env {
@@ -83,6 +84,7 @@ impl Configuration {
         http_port: u16,
         limit_name_in_labels: bool,
         rate_limit_headers: RateLimitHeaders,
+        grpc_reflection_service: bool,
     ) -> Self {
         Self {
             limits_file,
@@ -94,6 +96,7 @@ impl Configuration {
             limit_name_in_labels,
             log_level: None,
             rate_limit_headers,
+            grpc_reflection_service,
         }
     }
 
@@ -121,6 +124,7 @@ impl Default for Configuration {
             limit_name_in_labels: false,
             log_level: None,
             rate_limit_headers: RateLimitHeaders::None,
+            grpc_reflection_service: false,
         }
     }
 }

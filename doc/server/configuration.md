@@ -35,6 +35,8 @@ Options:
           Validates the LIMITS_FILE and exits
   -H, --rate-limit-headers <rate_limit_headers>
           Enables rate limit response headers [default: NONE] [possible values: NONE, DRAFT_VERSION_03]
+      --grpc-reflection-service
+          Enables gRPC server reflection service
   -h, --help
           Print help
   -V, --version
