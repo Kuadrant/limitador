@@ -1,5 +1,5 @@
 # ------------------------------------------------------------------------------
-# Build Stage
+# Build Stage cross compiling
 # ------------------------------------------------------------------------------
 
 # Use bullseye as build image instead of Bookworm as ubi9 does not not have GLIBCXX_3.4.30
@@ -7,17 +7,25 @@
 FROM --platform=${BUILDPLATFORM} rust:1.72-bullseye as limitador-build
 
 RUN apt update && apt upgrade -y \
-    && apt install -y protobuf-compiler clang
+    && apt install -y protobuf-compiler clang g++-aarch64-linux-gnu libc6-dev-arm64-cross
+
+RUN rustup target add aarch64-unknown-linux-gnu \
+    && rustup toolchain install stable-aarch64-unknown-linux-gnu
 
 WORKDIR /usr/src/limitador
 
 ARG GITHUB_SHA
 ENV GITHUB_SHA=${GITHUB_SHA:-unknown}
-ENV RUSTFLAGS="-C target-feature=-crt-static"
+ENV RUSTFLAGS="-C target-feature=-crt-static" \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+    CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc \
+    CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++ \
+    # https://github.com/rust-lang/rust-bindgen/issues/1229
+    BINDGEN_EXTRA_CLANG_ARGS="--sysroot=/usr/aarch64-linux-gnu"
 
 COPY . .
 
-RUN cargo build --release
+RUN cargo build --release --target aarch64-unknown-linux-gnu
 
 # ------------------------------------------------------------------------------
 # Run Stage
@@ -36,7 +44,7 @@ WORKDIR /home/limitador/bin/
 ENV PATH="/home/limitador/bin:${PATH}"
 
 COPY --from=limitador-build /usr/src/limitador/limitador-server/examples/limits.yaml ../
-COPY --from=limitador-build /usr/src/limitador/target/release/limitador-server ./limitador-server
+COPY --from=limitador-build /usr/src/limitador/target/aarch64-unknown-linux-gnu/release/limitador-server ./limitador-server
 
 RUN chown -R limitador:root /home/limitador \
     && chmod -R 750 /home/limitador
