@@ -13,11 +13,11 @@ limits. Limitador can be used with Envoy because it also exposes a grpc service,
 port, that implements the Envoy Rate Limit protocol (v3).
 
 - [**Getting started**](#getting-started)
-- [**How it works**](/doc/how-it-works.md)
-- [**Configuration**](/doc/server/configuration.md)
+- [**How it works**](doc/how-it-works.md)
+- [**Configuration**](doc/server/configuration.md)
 - [**Development**](#development)
 - [**Testing Environment**](limitador-server/sandbox/README.md)
-- [**Kubernetes**](limitador-server/kubernetes/)
+- [**Kubernetes**](limitador-server/kubernetes/README.md)
 - [**Contributing**](#contributing)
 - [**License**](#license)
 
