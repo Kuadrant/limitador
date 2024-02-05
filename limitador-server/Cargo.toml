@@ -30,6 +30,11 @@ log = "0.4"
 tracing = "0.1.40"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing-opentelemetry = "0.22"
+opentelemetry = "0.21"
+opentelemetry_sdk = { version = "0.21", features = ["rt-tokio"] }
+opentelemetry-stdout = { version = "0.2.0", features = ["trace"] }
+opentelemetry-otlp = "0.14.0"
 url = "2"
 actix-web = "4.1"
 actix-rt = "2"
