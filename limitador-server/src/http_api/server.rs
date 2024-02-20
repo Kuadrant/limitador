@@ -44,6 +44,7 @@ async fn status() -> web::Json<()> {
     Json(())
 }
 
+#[tracing::instrument(skip(data))]
 #[api_v2_operation]
 async fn metrics(data: web::Data<Arc<Limiter>>) -> String {
     match data.get_ref().as_ref() {
@@ -53,6 +54,7 @@ async fn metrics(data: web::Data<Arc<Limiter>>) -> String {
 }
 
 #[api_v2_operation]
+#[tracing::instrument(skip(data))]
 async fn get_limits(
     data: web::Data<Arc<Limiter>>,
     namespace: web::Path<String>,
@@ -66,6 +68,7 @@ async fn get_limits(
     Ok(Json(resp_limits))
 }
 
+#[tracing::instrument(skip(data))]
 #[api_v2_operation]
 async fn get_counters(
     data: web::Data<Arc<Limiter>>,
@@ -89,6 +92,7 @@ async fn get_counters(
     }
 }
 
+#[tracing::instrument(skip(state))]
 #[api_v2_operation]
 async fn check(
     state: web::Data<Arc<Limiter>>,
@@ -117,6 +121,7 @@ async fn check(
     }
 }
 
+#[tracing::instrument(skip(data))]
 #[api_v2_operation]
 async fn report(
     data: web::Data<Arc<Limiter>>,
@@ -139,6 +144,7 @@ async fn report(
     }
 }
 
+#[tracing::instrument(skip(data))]
 #[api_v2_operation]
 async fn check_and_report(
     data: web::Data<Arc<Limiter>>,

@@ -588,9 +588,10 @@ impl AsyncRateLimiter {
             });
         }
 
+        let access = self.prometheus_metrics.counter_accesses();
         let check_result = self
             .storage
-            .check_and_update(&mut counters, delta, load_counters)
+            .check_and_update(&mut counters, delta, load_counters, access)
             .await?;
 
         let counters = if load_counters {

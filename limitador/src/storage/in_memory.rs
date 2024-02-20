@@ -17,6 +17,7 @@ pub struct InMemoryStorage {
 }
 
 impl CounterStorage for InMemoryStorage {
+    #[tracing::instrument(skip_all)]
     fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
         let limits_by_namespace = self.limits_for_namespace.read().unwrap();
 
@@ -35,6 +36,7 @@ impl CounterStorage for InMemoryStorage {
         Ok(counter.max_value() >= value + delta)
     }
 
+    #[tracing::instrument(skip_all)]
     fn add_counter(&self, limit: &Limit) -> Result<(), StorageErr> {
         if limit.variables().is_empty() {
             let mut limits_by_namespace = self.limits_for_namespace.write().unwrap();
@@ -47,6 +49,7 @@ impl CounterStorage for InMemoryStorage {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
         let mut limits_by_namespace = self.limits_for_namespace.write().unwrap();
         let now = SystemTime::now();
@@ -90,6 +93,7 @@ impl CounterStorage for InMemoryStorage {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
@@ -175,6 +179,7 @@ impl CounterStorage for InMemoryStorage {
         Ok(Authorization::Ok)
     }
 
+    #[tracing::instrument(skip_all)]
     fn get_counters(&self, limits: &HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
 
@@ -215,6 +220,7 @@ impl CounterStorage for InMemoryStorage {
         Ok(res)
     }
 
+    #[tracing::instrument(skip_all)]
     fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr> {
         for limit in limits {
             self.delete_counters_of_limit(&limit);
@@ -222,6 +228,7 @@ impl CounterStorage for InMemoryStorage {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     fn clear(&self) -> Result<(), StorageErr> {
         self.limits_for_namespace.write().unwrap().clear();
         Ok(())

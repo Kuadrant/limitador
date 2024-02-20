@@ -1,5 +1,8 @@
 use crate::limit::Namespace;
-use prometheus::{Encoder, IntCounterVec, IntGauge, Opts, Registry, TextEncoder};
+use prometheus::{
+    Encoder, Histogram, HistogramOpts, IntCounterVec, IntGauge, Opts, Registry, TextEncoder,
+};
+use std::time::Duration;
 
 const NAMESPACE_LABEL: &str = "limitador_namespace";
 const LIMIT_NAME_LABEL: &str = "limit_name";
@@ -22,13 +25,24 @@ lazy_static! {
         name: "limitador_up".into(),
         description: "Limitador is running".into(),
     };
+    static ref DATASTORE_LATENCY: Metric = Metric {
+        name: "counter_latency".into(),
+        description: "Latency to the underlying counter datastore".into(),
+    };
 }
 
 pub struct PrometheusMetrics {
     registry: Registry,
     authorized_calls: IntCounterVec,
     limited_calls: IntCounterVec,
+    counter_latency: Histogram,
     use_limit_name_label: bool,
+}
+
+impl Default for PrometheusMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PrometheusMetrics {
@@ -65,6 +79,18 @@ impl PrometheusMetrics {
         self.limited_calls.with_label_values(&labels).inc();
     }
 
+    pub fn counter_access(&self, duration: Duration) {
+        self.counter_latency.observe(duration.as_secs_f64());
+    }
+
+    #[must_use]
+    pub fn counter_accesses(&self) -> CounterAccess {
+        CounterAccess {
+            metrics: self,
+            duration: Duration::ZERO,
+        }
+    }
+
     pub fn gather_metrics(&self) -> String {
         let mut buffer = Vec::new();
 
@@ -79,6 +105,7 @@ impl PrometheusMetrics {
         let authorized_calls_counter = Self::authorized_calls_counter();
         let limited_calls_counter = Self::limited_calls_counter(use_limit_name_label);
         let limitador_up_gauge = Self::limitador_up_gauge();
+        let counter_latency = Self::counter_latency();
 
         let registry = Registry::new();
 
@@ -94,12 +121,17 @@ impl PrometheusMetrics {
             .register(Box::new(limitador_up_gauge.clone()))
             .unwrap();
 
+        registry
+            .register(Box::new(counter_latency.clone()))
+            .unwrap();
+
         limitador_up_gauge.set(1);
 
         Self {
             registry,
             authorized_calls: authorized_calls_counter,
             limited_calls: limited_calls_counter,
+            counter_latency,
             use_limit_name_label,
         }
     }
@@ -128,6 +160,33 @@ impl PrometheusMetrics {
 
     fn limitador_up_gauge() -> IntGauge {
         IntGauge::new(&LIMITADOR_UP.name, &LIMITADOR_UP.description).unwrap()
+    }
+
+    fn counter_latency() -> Histogram {
+        Histogram::with_opts(HistogramOpts::new(
+            &DATASTORE_LATENCY.name,
+            &DATASTORE_LATENCY.description,
+        ))
+        .unwrap()
+    }
+}
+
+pub struct CounterAccess<'a> {
+    metrics: &'a PrometheusMetrics,
+    duration: Duration,
+}
+
+impl CounterAccess<'_> {
+    pub fn observe(&mut self, duration: Duration) {
+        self.duration += duration;
+    }
+}
+
+impl<'a> Drop for CounterAccess<'a> {
+    fn drop(&mut self) {
+        if self.duration > Duration::ZERO {
+            self.metrics.counter_access(self.duration);
+        }
     }
 }
 
@@ -263,6 +322,39 @@ mod tests {
             namespace.as_ref(),
             count,
         )
+    }
+
+    #[test]
+    fn collects_latencies() {
+        let metrics = PrometheusMetrics::new();
+        assert_eq!(metrics.counter_latency.get_sample_count(), 0);
+        {
+            let _access = metrics.counter_accesses();
+        }
+        assert_eq!(metrics.counter_latency.get_sample_count(), 0);
+        {
+            let mut access = metrics.counter_accesses();
+            access.observe(Duration::from_millis(12));
+        }
+        assert_eq!(metrics.counter_latency.get_sample_count(), 1);
+        assert_eq!(
+            metrics.counter_latency.get_sample_sum(),
+            Duration::from_millis(12).as_secs_f64()
+        );
+        {
+            let mut access = metrics.counter_accesses();
+            access.observe(Duration::from_millis(5));
+            assert_eq!(metrics.counter_latency.get_sample_count(), 1);
+            assert_eq!(
+                metrics.counter_latency.get_sample_sum(),
+                Duration::from_millis(12).as_secs_f64()
+            );
+        }
+        assert_eq!(metrics.counter_latency.get_sample_count(), 2);
+        assert_eq!(
+            metrics.counter_latency.get_sample_sum(),
+            Duration::from_millis(17).as_secs_f64()
+        );
     }
 
     fn formatted_counter_with_namespace_and_limit(

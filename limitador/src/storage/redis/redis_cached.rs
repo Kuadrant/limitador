@@ -1,5 +1,6 @@
 use crate::counter::Counter;
 use crate::limit::Limit;
+use crate::prometheus_metrics::CounterAccess;
 use crate::storage::keys::*;
 use crate::storage::redis::batcher::Batcher;
 use crate::storage::redis::counters_cache::{CountersCache, CountersCacheBuilder};
@@ -47,12 +48,14 @@ pub struct CachedRedisStorage {
 
 #[async_trait]
 impl AsyncCounterStorage for CachedRedisStorage {
+    #[tracing::instrument(skip_all)]
     async fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
         self.async_redis_storage
             .is_within_limits(counter, delta)
             .await
     }
 
+    #[tracing::instrument(skip_all)]
     async fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
         self.async_redis_storage
             .update_counter(counter, delta)
@@ -63,11 +66,13 @@ impl AsyncCounterStorage for CachedRedisStorage {
     // limits. In order to do so, we'd need to run this whole function
     // atomically, but that'd be too slow.
     // This function trades accuracy for speed.
-    async fn check_and_update(
+    #[tracing::instrument(skip_all)]
+    async fn check_and_update<'a>(
         &self,
         counters: &mut Vec<Counter>,
         delta: i64,
         load_counters: bool,
+        _counter_access: CounterAccess<'a>,
     ) -> Result<Authorization, StorageErr> {
         let mut con = self.redis_conn_manager.clone();
 
@@ -166,14 +171,17 @@ impl AsyncCounterStorage for CachedRedisStorage {
         Ok(Authorization::Ok)
     }
 
+    #[tracing::instrument(skip_all)]
     async fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
         self.async_redis_storage.get_counters(limits).await
     }
 
+    #[tracing::instrument(skip_all)]
     async fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr> {
         self.async_redis_storage.delete_counters(limits).await
     }
 
+    #[tracing::instrument(skip_all)]
     async fn clear(&self) -> Result<(), StorageErr> {
         self.async_redis_storage.clear().await
     }

@@ -20,7 +20,7 @@
 
 use crate::envoy_rls::server::RateLimitHeaders;
 use limitador::storage;
-use log::LevelFilter;
+use tracing::level_filters::LevelFilter;
 
 #[derive(Debug)]
 pub struct Configuration {

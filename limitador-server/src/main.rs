@@ -14,7 +14,6 @@ use crate::envoy_rls::server::{run_envoy_rls_server, RateLimitHeaders};
 use crate::http_api::server::run_http_server;
 use clap::{value_parser, Arg, ArgAction, Command};
 use const_format::formatcp;
-use env_logger::Builder;
 use limitador::counter::Counter;
 use limitador::errors::LimitadorError;
 use limitador::limit::Limit;
@@ -30,7 +29,6 @@ use limitador::storage::{AsyncCounterStorage, AsyncStorage, Storage};
 use limitador::{
     storage, AsyncRateLimiter, AsyncRateLimiterBuilder, RateLimiter, RateLimiterBuilder,
 };
-use log::LevelFilter;
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::env::VarError;
@@ -42,6 +40,8 @@ use std::{env, process};
 use sysinfo::{RefreshKind, System, SystemExt};
 use thiserror::Error;
 use tokio::runtime::Handle;
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::fmt::format::FmtSpan;
 
 mod envoy_rls;
 mod http_api;
@@ -285,13 +285,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = {
         let (config, version) = create_config();
         println!("{LIMITADOR_HEADER} {version}");
-        let mut builder = Builder::new();
-        if let Some(level) = config.log_level {
-            builder.filter(None, level);
+        let level = config.log_level.unwrap_or_else(|| {
+            tracing_subscriber::filter::EnvFilter::from_default_env()
+                .max_level_hint()
+                .unwrap_or(LevelFilter::ERROR)
+        });
+        let builder = if level >= LevelFilter::DEBUG {
+            tracing_subscriber::fmt().with_span_events(FmtSpan::CLOSE)
         } else {
-            builder.parse_default_env();
-        }
-        builder.init();
+            tracing_subscriber::fmt()
+        };
+        builder.with_max_level(level).init();
 
         info!("Version: {}", version);
         info!("Using config: {:?}", config);
@@ -759,10 +763,10 @@ fn create_config() -> (Configuration, &'static str) {
 
     config.log_level = match matches.get_count("v") {
         0 => None,
-        1 => Some(LevelFilter::Warn),
-        2 => Some(LevelFilter::Info),
-        3 => Some(LevelFilter::Debug),
-        4 => Some(LevelFilter::Trace),
+        1 => Some(LevelFilter::WARN),
+        2 => Some(LevelFilter::INFO),
+        3 => Some(LevelFilter::DEBUG),
+        4 => Some(LevelFilter::TRACE),
         _ => unreachable!("Verbosity should at most be 4!"),
     };
 
