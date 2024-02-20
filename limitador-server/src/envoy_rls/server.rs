@@ -138,7 +138,7 @@ impl RateLimitService for MyRateLimiter {
 
 pub fn to_response_header(
     rate_limit_headers: &RateLimitHeaders,
-    counters: &mut Vec<Counter>,
+    counters: &mut [Counter],
 ) -> Vec<HeaderValue> {
     let mut headers = Vec::new();
     match rate_limit_headers {
