@@ -31,6 +31,10 @@ Options:
           Include the Limit Name in prometheus label
   -v...
           Sets the level of verbosity
+      --tracing-host <tracing_host>
+          The host for the tracing service
+      --tracing-port <tracing_port>
+          The port for the tracing service [default: 4317]
       --validate
           Validates the LIMITS_FILE and exits
   -H, --rate-limit-headers <rate_limit_headers>
@@ -325,6 +329,18 @@ problem when defining lots of limits. See the caution note in the [Prometheus
 docs](https://prometheus.io/docs/practices/naming/#labels)
 - Optional. Disabled by default.
 - Format: `bool`, set to `"1"` to enable.
+
+#### `TRACING_HOST`
+
+- Host of the OTLP tracing collector.
+- Optional. Default to `""` (tracing disabled)
+- Format: `string`
+
+#### `TRACING_PORT`
+
+- Port of the OTLP tracing collector.
+- Optional. Defaults to `4317`.
+- Format: `integer`.
 
 #### `REDIS_LOCAL_CACHE_ENABLED`
 
