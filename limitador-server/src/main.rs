@@ -13,6 +13,7 @@ use crate::config::{
 };
 use crate::envoy_rls::server::{run_envoy_rls_server, RateLimitHeaders};
 use crate::http_api::server::run_http_server;
+use crate::metrics::MetricsLayer;
 use clap::{value_parser, Arg, ArgAction, Command};
 use const_format::formatcp;
 use limitador::counter::Counter;
@@ -55,6 +56,7 @@ mod envoy_rls;
 mod http_api;
 
 mod config;
+mod metrics;
 
 const LIMITADOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 const LIMITADOR_PROFILE: &str = env!("LIMITADOR_PROFILE");
@@ -290,6 +292,7 @@ fn find_first_negative_limit(limits: &[Limit]) -> Option<usize> {
 
 #[actix_rt::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // let metrics_layer = MetricsLayer::new();
     let config = {
         let (config, version) = create_config();
         println!("{LIMITADOR_HEADER} {version}");
@@ -303,6 +306,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             tracing_subscriber::fmt::layer()
         };
+
+        let metrics_layer = MetricsLayer::new().gather(
+            "should_rate_limit",
+            |timings| println!("should_rate_limit/datastore timings: {:?}", timings),
+            vec!["datastore"],
+        );
 
         if !config.tracing_endpoint.is_empty() {
             global::set_text_map_propagator(TraceContextPropagator::new());
@@ -320,12 +329,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
             tracing_subscriber::registry()
                 .with(level)
+                .with(metrics_layer)
                 .with(fmt_layer)
                 .with(telemetry_layer)
                 .init();
         } else {
             tracing_subscriber::registry()
                 .with(level)
+                .with(metrics_layer)
                 .with(fmt_layer)
                 .init();
         };
@@ -348,6 +359,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             process::exit(1)
         }
     };
+
+    // let metrics_layer = MetricsLayer::new().gather(
+    //     "should_rate_limit",
+    //     |timings| println!("should_rate_limit/datastore timings: {:?}", timings),
+    //     vec!["datastore"],
+    // );
+    // match rate_limiter {
+    //     Limiter::Blocking(limiter) => {
+    //         metrics_layer.gather();
+    //     }
+    //     Limiter::Async(limiter) => {}
+    // };
 
     info!("limits file path: {}", limit_file);
     if let Err(e) = rate_limiter.load_limits_from_file(&limit_file).await {
