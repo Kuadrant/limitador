@@ -193,6 +193,7 @@
 #![allow(clippy::multiple_crate_versions)]
 
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 use crate::counter::Counter;
 use crate::errors::LimitadorError;
@@ -478,6 +479,10 @@ impl RateLimiter {
         self.prometheus_metrics.gather_metrics()
     }
 
+    pub fn prometheus_counter_access(&self, duration: Duration) {
+        self.prometheus_metrics.counter_access(duration)
+    }
+
     fn counters_that_apply(
         &self,
         namespace: &Namespace,
@@ -670,6 +675,10 @@ impl AsyncRateLimiter {
 
     pub fn gather_prometheus_metrics(&self) -> String {
         self.prometheus_metrics.gather_metrics()
+    }
+
+    pub fn prometheus_counter_access(&self, duration: Duration) {
+        self.prometheus_metrics.counter_access(duration)
     }
 
     async fn counters_that_apply(
