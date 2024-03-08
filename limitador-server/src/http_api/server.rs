@@ -1,5 +1,5 @@
 use crate::http_api::request_types::{CheckAndReportInfo, Counter, Limit};
-use crate::Limiter;
+use crate::{Limiter, PROMETHEUS_METRICS};
 use actix_web::{http::StatusCode, ResponseError};
 use actix_web::{App, HttpServer};
 use paperclip::actix::{
@@ -44,13 +44,10 @@ async fn status() -> web::Json<()> {
     Json(())
 }
 
-#[tracing::instrument(skip(data))]
+#[tracing::instrument(skip(_data))]
 #[api_v2_operation]
-async fn metrics(data: web::Data<Arc<Limiter>>) -> String {
-    match data.get_ref().as_ref() {
-        Limiter::Blocking(limiter) => limiter.gather_prometheus_metrics(),
-        Limiter::Async(limiter) => limiter.gather_prometheus_metrics(),
-    }
+async fn metrics(_data: web::Data<Arc<Limiter>>) -> String {
+    PROMETHEUS_METRICS.gather_metrics()
 }
 
 #[api_v2_operation]
@@ -170,8 +167,11 @@ async fn check_and_report(
     match rate_limited_and_update_result {
         Ok(is_rate_limited) => {
             if is_rate_limited.limited {
+                PROMETHEUS_METRICS
+                    .incr_limited_calls(&namespace, is_rate_limited.limit_name.as_deref());
                 Err(ErrorResponse::TooManyRequests)
             } else {
+                PROMETHEUS_METRICS.incr_authorized_calls(&namespace);
                 Ok(Json(()))
             }
         }

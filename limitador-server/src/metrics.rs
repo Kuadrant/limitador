@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::ops;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tracing::span::{Attributes, Id};
 use tracing::Subscriber;
 use tracing_subscriber::layer::{Context, Layer};
@@ -42,6 +42,12 @@ impl ops::Add for Timings {
 impl ops::AddAssign for Timings {
     fn add_assign(&mut self, _rhs: Self) {
         *self = *self + _rhs
+    }
+}
+
+impl From<Timings> for Duration {
+    fn from(timings: Timings) -> Self {
+        Duration::from_nanos(timings.idle + timings.busy)
     }
 }
 
@@ -293,10 +299,8 @@ mod tests {
     }
 }
 
-// mylayer.gather("aggregate_on", timings| pr.vomit(timings), ["datastore"])
-
-// mylayer.gather("aggregate_on", ["datastore"]).consumer("aggregate_on", |timings| pr.vomit(timings))
-
-// write a consumer function, takes a function that does something with the timings
-
-// fn consumer(timings: Timings) -> () {}
+// [X] 1. Use prometheus metrics in main
+// [X] 2. Try to use consume method from the prometheus metrics in main
+// [X] 3. Invoke the server using the PrometheusMetrics defined in main not the limiter
+// [ ] 4. Record the authorized/limited calls
+// [ ] 5. Burn the old prometheus instance and move inside the server + old timing stuff

@@ -83,14 +83,6 @@ impl PrometheusMetrics {
         self.counter_latency.observe(duration.as_secs_f64());
     }
 
-    #[must_use]
-    pub fn counter_accesses(&self) -> CounterAccess {
-        CounterAccess {
-            metrics: self,
-            duration: Duration::ZERO,
-        }
-    }
-
     pub fn gather_metrics(&self) -> String {
         let mut buffer = Vec::new();
 
@@ -168,25 +160,6 @@ impl PrometheusMetrics {
             &DATASTORE_LATENCY.description,
         ))
         .unwrap()
-    }
-}
-
-pub struct CounterAccess<'a> {
-    metrics: &'a PrometheusMetrics,
-    duration: Duration,
-}
-
-impl CounterAccess<'_> {
-    pub fn observe(&mut self, duration: Duration) {
-        self.duration += duration;
-    }
-}
-
-impl<'a> Drop for CounterAccess<'a> {
-    fn drop(&mut self) {
-        if self.duration > Duration::ZERO {
-            self.metrics.counter_access(self.duration);
-        }
     }
 }
 
@@ -324,38 +297,38 @@ mod tests {
         )
     }
 
-    #[test]
-    fn collects_latencies() {
-        let metrics = PrometheusMetrics::new();
-        assert_eq!(metrics.counter_latency.get_sample_count(), 0);
-        {
-            let _access = metrics.counter_accesses();
-        }
-        assert_eq!(metrics.counter_latency.get_sample_count(), 0);
-        {
-            let mut access = metrics.counter_accesses();
-            access.observe(Duration::from_millis(12));
-        }
-        assert_eq!(metrics.counter_latency.get_sample_count(), 1);
-        assert_eq!(
-            metrics.counter_latency.get_sample_sum(),
-            Duration::from_millis(12).as_secs_f64()
-        );
-        {
-            let mut access = metrics.counter_accesses();
-            access.observe(Duration::from_millis(5));
-            assert_eq!(metrics.counter_latency.get_sample_count(), 1);
-            assert_eq!(
-                metrics.counter_latency.get_sample_sum(),
-                Duration::from_millis(12).as_secs_f64()
-            );
-        }
-        assert_eq!(metrics.counter_latency.get_sample_count(), 2);
-        assert_eq!(
-            metrics.counter_latency.get_sample_sum(),
-            Duration::from_millis(17).as_secs_f64()
-        );
-    }
+    // #[test]
+    // fn collects_latencies() {
+    //     let metrics = PrometheusMetrics::new();
+    //     assert_eq!(metrics.counter_latency.get_sample_count(), 0);
+    //     {
+    //         let _access = metrics.counter_accesses();
+    //     }
+    //     assert_eq!(metrics.counter_latency.get_sample_count(), 0);
+    //     {
+    //         let mut access = metrics.counter_accesses();
+    //         access.observe(Duration::from_millis(12));
+    //     }
+    //     assert_eq!(metrics.counter_latency.get_sample_count(), 1);
+    //     assert_eq!(
+    //         metrics.counter_latency.get_sample_sum(),
+    //         Duration::from_millis(12).as_secs_f64()
+    //     );
+    //     {
+    //         let mut access = metrics.counter_accesses();
+    //         access.observe(Duration::from_millis(5));
+    //         assert_eq!(metrics.counter_latency.get_sample_count(), 1);
+    //         assert_eq!(
+    //             metrics.counter_latency.get_sample_sum(),
+    //             Duration::from_millis(12).as_secs_f64()
+    //         );
+    //     }
+    //     assert_eq!(metrics.counter_latency.get_sample_count(), 2);
+    //     assert_eq!(
+    //         metrics.counter_latency.get_sample_sum(),
+    //         Duration::from_millis(17).as_secs_f64()
+    //     );
+    // }
 
     fn formatted_counter_with_namespace_and_limit(
         metric_name: &str,
