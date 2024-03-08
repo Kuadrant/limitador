@@ -1,6 +1,5 @@
 use crate::counter::Counter;
 use crate::limit::Limit;
-use crate::prometheus_metrics::CounterAccess;
 use crate::storage::keys::*;
 use crate::storage::redis::counters_cache::{CountersCache, CountersCacheBuilder};
 use crate::storage::redis::redis_async::AsyncRedisStorage;
@@ -70,7 +69,6 @@ impl AsyncCounterStorage for CachedRedisStorage {
         counters: &mut Vec<Counter>,
         delta: i64,
         load_counters: bool,
-        _counter_access: CounterAccess<'a>,
     ) -> Result<Authorization, StorageErr> {
         let mut con = self.redis_conn_manager.clone();
 

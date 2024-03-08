@@ -1,6 +1,5 @@
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
-use crate::prometheus_metrics::CounterAccess;
 use crate::InMemoryStorage;
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
@@ -243,10 +242,9 @@ impl AsyncStorage {
         counters: &mut Vec<Counter>,
         delta: i64,
         load_counters: bool,
-        counter_access: CounterAccess<'a>,
     ) -> Result<Authorization, StorageErr> {
         self.counters
-            .check_and_update(counters, delta, load_counters, counter_access)
+            .check_and_update(counters, delta, load_counters)
             .await
     }
 
@@ -288,7 +286,6 @@ pub trait AsyncCounterStorage: Sync + Send {
         counters: &mut Vec<Counter>,
         delta: i64,
         load_counters: bool,
-        counter_access: CounterAccess<'a>,
     ) -> Result<Authorization, StorageErr>;
     async fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr>;
     async fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr>;

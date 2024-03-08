@@ -16,9 +16,11 @@ use crate::http_api::server::run_http_server;
 use crate::metrics::MetricsLayer;
 use clap::{value_parser, Arg, ArgAction, Command};
 use const_format::formatcp;
+use lazy_static::lazy_static;
 use limitador::counter::Counter;
 use limitador::errors::LimitadorError;
 use limitador::limit::Limit;
+use limitador::prometheus_metrics::PrometheusMetrics;
 use limitador::storage::disk::DiskStorage;
 #[cfg(feature = "infinispan")]
 use limitador::storage::infinispan::{Consistency, InfinispanStorageBuilder};
@@ -71,6 +73,11 @@ pub enum LimitadorServerError {
     ConfigFile(String),
     #[error("Internal error: {0}")]
     Internal(LimitadorError),
+}
+
+lazy_static! {
+    // TODO: this should be using config.limit_name_in_labels to initialize
+    pub static ref PROMETHEUS_METRICS: PrometheusMetrics = PrometheusMetrics::default();
 }
 
 pub enum Limiter {
@@ -292,7 +299,6 @@ fn find_first_negative_limit(limits: &[Limit]) -> Option<usize> {
 
 #[actix_rt::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // let metrics_layer = MetricsLayer::new();
     let config = {
         let (config, version) = create_config();
         println!("{LIMITADOR_HEADER} {version}");
@@ -309,7 +315,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let metrics_layer = MetricsLayer::new().gather(
             "should_rate_limit",
-            |timings| println!("should_rate_limit/datastore timings: {:?}", timings),
+            |timings| PROMETHEUS_METRICS.counter_access(Duration::from(timings)),
             vec!["datastore"],
         );
 
@@ -359,18 +365,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             process::exit(1)
         }
     };
-
-    // let metrics_layer = MetricsLayer::new().gather(
-    //     "should_rate_limit",
-    //     |timings| println!("should_rate_limit/datastore timings: {:?}", timings),
-    //     vec!["datastore"],
-    // );
-    // match rate_limiter {
-    //     Limiter::Blocking(limiter) => {
-    //         metrics_layer.gather();
-    //     }
-    //     Limiter::Async(limiter) => {}
-    // };
 
     info!("limits file path: {}", limit_file);
     if let Err(e) = rate_limiter.load_limits_from_file(&limit_file).await {
