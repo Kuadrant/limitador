@@ -95,7 +95,7 @@ impl<F: Fn(Timings)> MetricsLayer<F> {
     }
 
     pub fn gather(mut self, aggregate: &str, consumer: F, records: Vec<&str>) -> Self {
-        // TODO: does not handle case where aggregate already exists
+        // TODO(adam-cattermole): does not handle case where aggregate already exists
         let rec = records.iter().map(|r| r.to_string()).collect();
         self.groups
             .entry(aggregate.to_string())
@@ -136,12 +136,6 @@ where
                 extensions.insert(SpanState::new(name.to_string()))
             }
         }
-
-        // if timing is already set (which it shouldn't be)
-        // don't create it again
-        // if !extensions.get_mut::<Timings>().is_none() {
-        //     return;
-        // }
 
         if let Some(span_state) = extensions.get_mut::<SpanState>() {
             // either we are an aggregator or nested within one
@@ -214,11 +208,8 @@ where
                 parent.extensions_mut().replace(span_state.clone());
             }
             // IF we are aggregator call consume function
-            match self.groups.get(name) {
-                Some(metrics_group) => {
-                    (metrics_group.consumer)(*span_state.group_times.get(name).unwrap())
-                }
-                _ => (),
+            if let Some(metrics_group) = self.groups.get(name) {
+                (metrics_group.consumer)(*span_state.group_times.get(name).unwrap())
             }
         }
     }
@@ -298,9 +289,3 @@ mod tests {
         assert_eq!(ml.groups.get("group").unwrap().records, vec!["record"]);
     }
 }
-
-// [X] 1. Use prometheus metrics in main
-// [X] 2. Try to use consume method from the prometheus metrics in main
-// [X] 3. Invoke the server using the PrometheusMetrics defined in main not the limiter
-// [ ] 4. Record the authorized/limited calls
-// [ ] 5. Burn the old prometheus instance and move inside the server + old timing stuff
