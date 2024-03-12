@@ -197,33 +197,27 @@ use std::collections::{HashMap, HashSet};
 use crate::counter::Counter;
 use crate::errors::LimitadorError;
 use crate::limit::{Limit, Namespace};
-use crate::prometheus_metrics::PrometheusMetrics;
 use crate::storage::in_memory::InMemoryStorage;
 use crate::storage::{AsyncCounterStorage, AsyncStorage, Authorization, CounterStorage, Storage};
 
 #[macro_use]
-extern crate lazy_static;
 extern crate core;
 
 pub mod counter;
 pub mod errors;
 pub mod limit;
-pub mod prometheus_metrics;
 pub mod storage;
 
 pub struct RateLimiter {
     storage: Storage,
-    prometheus_metrics: PrometheusMetrics,
 }
 
 pub struct AsyncRateLimiter {
     storage: AsyncStorage,
-    prometheus_metrics: PrometheusMetrics,
 }
 
 pub struct RateLimiterBuilder {
     storage: Storage,
-    prometheus_limit_name_labels_enabled: bool,
 }
 
 pub struct CheckResult {
@@ -240,16 +234,12 @@ impl From<CheckResult> for bool {
 
 impl RateLimiterBuilder {
     pub fn with_storage(storage: Storage) -> Self {
-        Self {
-            storage,
-            prometheus_limit_name_labels_enabled: false,
-        }
+        Self { storage }
     }
 
     pub fn new(cache_size: u64) -> Self {
         Self {
             storage: Storage::new(cache_size),
-            prometheus_limit_name_labels_enabled: false,
         }
     }
 
@@ -258,53 +248,25 @@ impl RateLimiterBuilder {
         self
     }
 
-    pub fn with_prometheus_limit_name_labels(mut self) -> Self {
-        self.prometheus_limit_name_labels_enabled = true;
-        self
-    }
-
     pub fn build(self) -> RateLimiter {
-        let prometheus_metrics = if self.prometheus_limit_name_labels_enabled {
-            PrometheusMetrics::new_with_counters_by_limit_name()
-        } else {
-            PrometheusMetrics::new()
-        };
-
         RateLimiter {
             storage: self.storage,
-            prometheus_metrics,
         }
     }
 }
 
 pub struct AsyncRateLimiterBuilder {
     storage: AsyncStorage,
-    prometheus_limit_name_labels_enabled: bool,
 }
 
 impl AsyncRateLimiterBuilder {
     pub fn new(storage: AsyncStorage) -> Self {
-        Self {
-            storage,
-            prometheus_limit_name_labels_enabled: false,
-        }
-    }
-
-    pub fn with_prometheus_limit_name_labels(mut self) -> Self {
-        self.prometheus_limit_name_labels_enabled = true;
-        self
+        Self { storage }
     }
 
     pub fn build(self) -> AsyncRateLimiter {
-        let prometheus_metrics = if self.prometheus_limit_name_labels_enabled {
-            PrometheusMetrics::new_with_counters_by_limit_name()
-        } else {
-            PrometheusMetrics::new()
-        };
-
         AsyncRateLimiter {
             storage: self.storage,
-            prometheus_metrics,
         }
     }
 }
@@ -313,14 +275,12 @@ impl RateLimiter {
     pub fn new(cache_size: u64) -> Self {
         Self {
             storage: Storage::new(cache_size),
-            prometheus_metrics: PrometheusMetrics::new(),
         }
     }
 
     pub fn new_with_storage(counters: Box<dyn CounterStorage>) -> Self {
         Self {
             storage: Storage::with_counter_storage(counters),
-            prometheus_metrics: PrometheusMetrics::new(),
         }
     }
 
@@ -467,10 +427,6 @@ impl RateLimiter {
         Ok(())
     }
 
-    pub fn gather_prometheus_metrics(&self) -> String {
-        self.prometheus_metrics.gather_metrics()
-    }
-
     fn counters_that_apply(
         &self,
         namespace: &Namespace,
@@ -497,7 +453,6 @@ impl AsyncRateLimiter {
     pub fn new_with_storage(storage: Box<dyn AsyncCounterStorage>) -> Self {
         Self {
             storage: AsyncStorage::with_counter_storage(storage),
-            prometheus_metrics: PrometheusMetrics::new(),
         }
     }
 
@@ -648,10 +603,6 @@ impl AsyncRateLimiter {
         }
 
         Ok(())
-    }
-
-    pub fn gather_prometheus_metrics(&self) -> String {
-        self.prometheus_metrics.gather_metrics()
     }
 
     async fn counters_that_apply(
