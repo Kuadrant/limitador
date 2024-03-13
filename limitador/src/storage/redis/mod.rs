@@ -25,12 +25,6 @@ impl From<RedisError> for StorageErr {
     }
 }
 
-impl From<::r2d2::Error> for StorageErr {
-    fn from(e: ::r2d2::Error) -> Self {
-        Self { msg: e.to_string() }
-    }
-}
-
 pub fn is_limited(
     counters: &mut [Counter],
     delta: i64,
