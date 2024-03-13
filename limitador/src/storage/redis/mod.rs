@@ -22,7 +22,10 @@ pub use redis_sync::RedisStorage;
 
 impl From<RedisError> for StorageErr {
     fn from(e: RedisError) -> Self {
-        Self { msg: e.to_string() }
+        Self {
+            msg: e.to_string(),
+            transient: e.is_timeout() || e.is_connection_dropped() || e.is_cluster_error(),
+        }
     }
 }
 
