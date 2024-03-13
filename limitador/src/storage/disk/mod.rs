@@ -1,4 +1,5 @@
 use crate::storage::StorageErr;
+use rocksdb::ErrorKind;
 
 mod expiring_value;
 mod rocksdb_storage;
@@ -9,6 +10,7 @@ impl From<rocksdb::Error> for StorageErr {
     fn from(error: rocksdb::Error) -> Self {
         Self {
             msg: format!("Underlying storage error: {error}"),
+            transient: error.kind() == ErrorKind::TimedOut || error.kind() == ErrorKind::TryAgain,
         }
     }
 }
