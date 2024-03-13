@@ -6,6 +6,7 @@ mod counters_cache;
 mod redis_async;
 mod redis_cached;
 mod redis_sync;
+mod redis_lenient;
 mod scripts;
 
 pub const DEFAULT_FLUSHING_PERIOD_SEC: u64 = 1;
