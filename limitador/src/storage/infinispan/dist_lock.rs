@@ -49,6 +49,7 @@ pub async fn lock(
             if retries >= RETRIES {
                 return Err(StorageErr {
                     msg: "can't acquire lock".into(),
+                    transient: false,
                 });
             }
 
