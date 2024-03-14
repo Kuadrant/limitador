@@ -243,7 +243,11 @@ impl AsyncRedisStorage {
     }
 
     pub async fn is_alive(&self) -> bool {
-        self.conn_manager.clone().incr::<&str, i32, u64>("LIMITADOR_LIVE_CHECK", 1).await.is_ok()
+        self.conn_manager
+            .clone()
+            .incr::<&str, i32, u64>("LIMITADOR_LIVE_CHECK", 1)
+            .await
+            .is_ok()
     }
 
     async fn delete_counters_associated_with_limit(&self, limit: &Limit) -> Result<(), StorageErr> {

@@ -21,8 +21,8 @@ use limitador::storage::disk::DiskStorage;
 #[cfg(feature = "infinispan")]
 use limitador::storage::infinispan::{Consistency, InfinispanStorageBuilder};
 use limitador::storage::redis::{
-    AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder, DEFAULT_FLUSHING_PERIOD_SEC,
-    DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC,
+    AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder, RedisLenient,
+    DEFAULT_FLUSHING_PERIOD_SEC, DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC,
     DEFAULT_TTL_RATIO_CACHED_COUNTERS,
 };
 use limitador::storage::{AsyncCounterStorage, AsyncStorage, Storage};
@@ -109,7 +109,12 @@ impl Limiter {
             Arc::new(Self::storage_using_redis_and_local_cache(&cfg.url, cache).await)
         } else {
             // Let's use the async impl. This could be configurable if needed.
-            Arc::new(Self::storage_using_async_redis(&cfg.url).await)
+            let storage = Self::storage_using_async_redis(&cfg.url).await;
+            let storage = RedisLenient::new(storage);
+            let arc = Arc::new(storage);
+            let copy = arc.clone();
+            tokio::spawn(async move { copy.sanity_check(Duration::from_secs(5)).await });
+            arc
         };
         AsyncStorage::with_counter_storage(counters)
     }
