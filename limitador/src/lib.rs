@@ -193,6 +193,7 @@
 #![allow(clippy::multiple_crate_versions)]
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::counter::Counter;
 use crate::errors::LimitadorError;
@@ -501,7 +502,7 @@ impl RateLimiter {
 // to remove this duplication.
 
 impl AsyncRateLimiter {
-    pub fn new_with_storage(storage: Box<dyn AsyncCounterStorage>) -> Self {
+    pub fn new_with_storage(storage: Arc<dyn AsyncCounterStorage>) -> Self {
         Self {
             storage: AsyncStorage::with_counter_storage(storage),
             prometheus_metrics: PrometheusMetrics::new(),

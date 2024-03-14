@@ -105,11 +105,11 @@ impl Limiter {
     }
 
     async fn storage_using_redis(cfg: RedisStorageConfiguration) -> AsyncStorage {
-        let counters: Box<dyn AsyncCounterStorage> = if let Some(cache) = &cfg.cache {
-            Box::new(Self::storage_using_redis_and_local_cache(&cfg.url, cache).await)
+        let counters: Arc<dyn AsyncCounterStorage> = if let Some(cache) = &cfg.cache {
+            Arc::new(Self::storage_using_redis_and_local_cache(&cfg.url, cache).await)
         } else {
             // Let's use the async impl. This could be configurable if needed.
-            Box::new(Self::storage_using_async_redis(&cfg.url).await)
+            Arc::new(Self::storage_using_async_redis(&cfg.url).await)
         };
         AsyncStorage::with_counter_storage(counters)
     }

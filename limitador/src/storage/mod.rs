@@ -4,7 +4,7 @@ use crate::prometheus_metrics::CounterAccess;
 use crate::InMemoryStorage;
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use thiserror::Error;
 
 #[cfg(feature = "disk_storage")]
@@ -38,7 +38,7 @@ pub struct Storage {
 
 pub struct AsyncStorage {
     limits: RwLock<HashMap<Namespace, HashSet<Limit>>>,
-    counters: Box<dyn AsyncCounterStorage>,
+    counters: Arc<dyn AsyncCounterStorage>,
 }
 
 impl Storage {
@@ -148,7 +148,7 @@ impl Storage {
 }
 
 impl AsyncStorage {
-    pub fn with_counter_storage(counters: Box<dyn AsyncCounterStorage>) -> Self {
+    pub fn with_counter_storage(counters: Arc<dyn AsyncCounterStorage>) -> Self {
         Self {
             limits: RwLock::new(HashMap::new()),
             counters,
