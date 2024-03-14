@@ -148,7 +148,7 @@
 //!
 //! async {
 //!     let rate_limiter = AsyncRateLimiter::new_with_storage(
-//!         Box::new(AsyncRedisStorage::new("redis://127.0.0.1:7777").await.unwrap())
+//!         std::sync::Arc::new(AsyncRedisStorage::new("redis://127.0.0.1:7777").await.unwrap())
 //!     );
 //! };
 //! # }
@@ -173,7 +173,7 @@
 //!
 //! async {
 //!     let rate_limiter = AsyncRateLimiter::new_with_storage(
-//!         Box::new(AsyncRedisStorage::new("redis://127.0.0.1:7777").await.unwrap())
+//!         std::sync::Arc::new(AsyncRedisStorage::new("redis://127.0.0.1:7777").await.unwrap())
 //!     );
 //!     rate_limiter.add_limit(limit);
 //! };

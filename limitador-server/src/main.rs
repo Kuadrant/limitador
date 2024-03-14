@@ -201,7 +201,7 @@ impl Limiter {
         };
 
         let mut rate_limiter_builder =
-            AsyncRateLimiterBuilder::new(AsyncStorage::with_counter_storage(Box::new(storage)));
+            AsyncRateLimiterBuilder::new(AsyncStorage::with_counter_storage(Arc::new(storage)));
 
         if limit_name_labels {
             rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()

@@ -49,7 +49,7 @@ macro_rules! test_with_all_storage_impls {
                 let storage = AsyncRedisStorage::new("redis://127.0.0.1:6379").await.expect("We need a Redis running locally");
                 storage.clear().await.unwrap();
                 let rate_limiter = AsyncRateLimiter::new_with_storage(
-                    Box::new(storage)
+                    Arc::new(storage)
                 );
                 AsyncRedisStorage::new("redis://127.0.0.1:6379").await.expect("We need a Redis running locally").clear().await.unwrap();
                 $function(&mut TestsLimiter::new_from_async_impl(rate_limiter)).await;
@@ -64,7 +64,7 @@ macro_rules! test_with_all_storage_impls {
                 ).build().await;
                 storage.clear().await.unwrap();
                 let rate_limiter = AsyncRateLimiter::new_with_storage(
-                    Box::new(storage)
+                    Arc::new(storage)
                 );
                 $function(&mut TestsLimiter::new_from_async_impl(rate_limiter)).await;
             }
@@ -81,6 +81,7 @@ mod test {
     // To be able to pass the tests without Redis
     cfg_if::cfg_if! {
         if #[cfg(feature = "redis_storage")] {
+            use std::sync::Arc;
             use limitador::storage::redis::AsyncRedisStorage;
             use limitador::storage::redis::RedisStorage;
 
