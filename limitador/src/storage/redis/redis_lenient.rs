@@ -62,6 +62,7 @@ impl AsyncCounterStorage for RedisLenient {
         counter_access: CounterAccess<'a>,
     ) -> Result<Authorization, StorageErr> {
         if self.is_partitioned() {
+            let _ = self.fallback.add_counter(counters[0].limit()).unwrap();
             self.fallback
                 .check_and_update(counters, delta, load_counters)
         } else {
@@ -71,6 +72,7 @@ impl AsyncCounterStorage for RedisLenient {
                 .or_else(|err| {
                     if err.is_transient() {
                         self.partitioned(true);
+                        let _ = self.fallback.add_counter(counters[0].limit()).unwrap();
                         self.fallback
                             .check_and_update(counters, delta, load_counters)
                     } else {
