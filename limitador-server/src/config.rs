@@ -31,8 +31,7 @@ pub struct Configuration {
     http_host: String,
     http_port: u16,
     pub limit_name_in_labels: bool,
-    pub tracing_host: String,
-    tracing_port: u16,
+    pub tracing_endpoint: String,
     pub log_level: Option<LevelFilter>,
     pub rate_limit_headers: RateLimitHeaders,
     pub grpc_reflection_service: bool,
@@ -47,8 +46,7 @@ pub mod env {
         pub static ref ENVOY_RLS_PORT: Option<&'static str> = value_for("ENVOY_RLS_PORT");
         pub static ref HTTP_API_HOST: Option<&'static str> = value_for("HTTP_API_HOST");
         pub static ref HTTP_API_PORT: Option<&'static str> = value_for("HTTP_API_PORT");
-        pub static ref TRACING_HOST: Option<&'static str> = value_for("TRACING_HOST");
-        pub static ref TRACING_PORT: Option<&'static str> = value_for("TRACING_PORT");
+        pub static ref TRACING_ENDPOINT: Option<&'static str> = value_for("TRACING_ENDPOINT");
         pub static ref DISK_PATH: Option<&'static str> = value_for("DISK_PATH");
         pub static ref DISK_OPTIMIZE: Option<&'static str> = value_for("DISK_OPTIMIZE");
         pub static ref REDIS_URL: Option<&'static str> = value_for("REDIS_URL");
@@ -76,7 +74,6 @@ pub mod env {
 impl Configuration {
     pub const DEFAULT_RLS_PORT: &'static str = "8081";
     pub const DEFAULT_HTTP_PORT: &'static str = "8080";
-    pub const DEFAULT_TRACING_PORT: &'static str = "4317";
     pub const DEFAULT_IP_BIND: &'static str = "0.0.0.0";
 
     #[allow(clippy::too_many_arguments)]
@@ -88,8 +85,7 @@ impl Configuration {
         http_host: String,
         http_port: u16,
         limit_name_in_labels: bool,
-        tracing_host: String,
-        tracing_port: u16,
+        tracing_endpoint: String,
         rate_limit_headers: RateLimitHeaders,
         grpc_reflection_service: bool,
     ) -> Self {
@@ -101,8 +97,7 @@ impl Configuration {
             http_host,
             http_port,
             limit_name_in_labels,
-            tracing_host,
-            tracing_port,
+            tracing_endpoint,
             log_level: None,
             rate_limit_headers,
             grpc_reflection_service,
@@ -115,10 +110,6 @@ impl Configuration {
 
     pub fn http_address(&self) -> String {
         format!("{}:{}", self.http_host, self.http_port)
-    }
-
-    pub fn tracing_address(&self) -> String {
-        format!("{}:{}", self.tracing_host, self.tracing_port)
     }
 }
 
@@ -135,8 +126,7 @@ impl Default for Configuration {
             http_host: "".to_string(),
             http_port: 0,
             limit_name_in_labels: false,
-            tracing_host: "".to_string(),
-            tracing_port: 0,
+            tracing_endpoint: "".to_string(),
             log_level: None,
             rate_limit_headers: RateLimitHeaders::None,
             grpc_reflection_service: false,

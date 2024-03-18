@@ -32,7 +32,7 @@ use limitador::{
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use opentelemetry::KeyValue;
-use opentelemetry_otlp::{Protocol, WithExportConfig};
+use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{trace, Resource};
 use std::env::VarError;
 use std::fs;
@@ -301,14 +301,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tracing_subscriber::fmt::layer()
         };
 
-        if !config.tracing_host.is_empty() {
+        if !config.tracing_endpoint.is_empty() {
             let tracer = opentelemetry_otlp::new_pipeline()
                 .tracing()
                 .with_exporter(
                     opentelemetry_otlp::new_exporter()
                         .tonic()
-                        .with_endpoint(format!("rpc://{}", config.tracing_address()))
-                        .with_protocol(Protocol::Grpc),
+                        .with_endpoint(config.tracing_endpoint.clone()),
                 )
                 .with_trace_config(trace::config().with_resource(Resource::new(vec![
                     KeyValue::new("service.name", "limitador-server"),
@@ -525,42 +524,32 @@ fn create_config() -> (Configuration, &'static str) {
                 .help("Include the Limit Name in prometheus label"),
         )
         .arg(
-            Arg::new("tracing_host")
-                .long("tracing-host")
-                .default_value(config::env::TRACING_HOST.unwrap_or(""))
+            Arg::new("tracing_endpoint")
+                .long("tracing-endpoint")
+                .default_value(config::env::TRACING_ENDPOINT.unwrap_or(""))
                 .display_order(6)
                 .help("The host for the tracing service"),
-        )
-        .arg(
-            Arg::new("tracing_port")
-                .long("tracing-port")
-                .default_value(
-                    config::env::TRACING_PORT.unwrap_or(Configuration::DEFAULT_TRACING_PORT),
-                )
-                .value_parser(value_parser!(u16))
-                .display_order(7)
-                .help("The port for the tracing service"),
         )
         .arg(
             Arg::new("v")
                 .short('v')
                 .action(ArgAction::Count)
                 .value_parser(value_parser!(u8).range(..5))
-                .display_order(8)
+                .display_order(7)
                 .help("Sets the level of verbosity"),
         )
         .arg(
             Arg::new("validate")
                 .long("validate")
                 .action(ArgAction::SetTrue)
-                .display_order(9)
+                .display_order(8)
                 .help("Validates the LIMITS_FILE and exits"),
         )
         .arg(
             Arg::new("rate_limit_headers")
                 .long("rate-limit-headers")
                 .short('H')
-                .display_order(10)
+                .display_order(9)
                 .default_value(config::env::RATE_LIMIT_HEADERS.unwrap_or("NONE"))
                 .value_parser(clap::builder::PossibleValuesParser::new([
                     "NONE",
@@ -572,7 +561,7 @@ fn create_config() -> (Configuration, &'static str) {
             Arg::new("grpc_reflection_service")
                 .long("grpc-reflection-service")
                 .action(ArgAction::SetTrue)
-                .display_order(11)
+                .display_order(10)
                 .help("Enables gRPC server reflection service"),
         )
         .subcommand(
@@ -804,8 +793,10 @@ fn create_config() -> (Configuration, &'static str) {
         *matches.get_one::<u16>("http_port").unwrap(),
         matches.get_flag("limit_name_in_labels")
             || env_option_is_enabled("LIMIT_NAME_IN_PROMETHEUS_LABELS"),
-        matches.get_one::<String>("tracing_host").unwrap().into(),
-        *matches.get_one::<u16>("tracing_port").unwrap(),
+        matches
+            .get_one::<String>("tracing_endpoint")
+            .unwrap()
+            .into(),
         rate_limit_headers,
         matches.get_flag("grpc_reflection_service"),
     );
