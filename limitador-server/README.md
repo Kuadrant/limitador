@@ -37,10 +37,8 @@ Options:
           Include the Limit Name in prometheus label
   -v...
           Sets the level of verbosity
-      --tracing-host <tracing_host>
-          The host for the tracing service
-      --tracing-port <tracing_port>
-          The port for the tracing service [default: 4317]
+      --tracing-endpoint <tracing_endpoint>
+          The endpoint for the tracing service
       --validate
           Validates the LIMITS_FILE and exits
   -H, --rate-limit-headers <rate_limit_headers>
