@@ -31,6 +31,8 @@ Options:
           Include the Limit Name in prometheus label
   -v...
           Sets the level of verbosity
+      --tracing-endpoint <tracing_endpoint>
+          The endpoint for the tracing service
       --validate
           Validates the LIMITS_FILE and exits
   -H, --rate-limit-headers <rate_limit_headers>
@@ -325,6 +327,14 @@ problem when defining lots of limits. See the caution note in the [Prometheus
 docs](https://prometheus.io/docs/practices/naming/#labels)
 - Optional. Disabled by default.
 - Format: `bool`, set to `"1"` to enable.
+
+
+#### `TRACING_ENDPOINT`
+
+- The endpoint of the OTLP tracing collector (scheme://host:port).
+- Optional. Default to `""` (tracing disabled)
+- Format: `string`
+
 
 #### `REDIS_LOCAL_CACHE_ENABLED`
 

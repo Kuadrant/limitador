@@ -31,6 +31,7 @@ pub struct Configuration {
     http_host: String,
     http_port: u16,
     pub limit_name_in_labels: bool,
+    pub tracing_endpoint: String,
     pub log_level: Option<LevelFilter>,
     pub rate_limit_headers: RateLimitHeaders,
     pub grpc_reflection_service: bool,
@@ -45,6 +46,7 @@ pub mod env {
         pub static ref ENVOY_RLS_PORT: Option<&'static str> = value_for("ENVOY_RLS_PORT");
         pub static ref HTTP_API_HOST: Option<&'static str> = value_for("HTTP_API_HOST");
         pub static ref HTTP_API_PORT: Option<&'static str> = value_for("HTTP_API_PORT");
+        pub static ref TRACING_ENDPOINT: Option<&'static str> = value_for("TRACING_ENDPOINT");
         pub static ref DISK_PATH: Option<&'static str> = value_for("DISK_PATH");
         pub static ref DISK_OPTIMIZE: Option<&'static str> = value_for("DISK_OPTIMIZE");
         pub static ref REDIS_URL: Option<&'static str> = value_for("REDIS_URL");
@@ -83,6 +85,7 @@ impl Configuration {
         http_host: String,
         http_port: u16,
         limit_name_in_labels: bool,
+        tracing_endpoint: String,
         rate_limit_headers: RateLimitHeaders,
         grpc_reflection_service: bool,
     ) -> Self {
@@ -94,6 +97,7 @@ impl Configuration {
             http_host,
             http_port,
             limit_name_in_labels,
+            tracing_endpoint,
             log_level: None,
             rate_limit_headers,
             grpc_reflection_service,
@@ -122,6 +126,7 @@ impl Default for Configuration {
             http_host: "".to_string(),
             http_port: 0,
             limit_name_in_labels: false,
+            tracing_endpoint: "".to_string(),
             log_level: None,
             rate_limit_headers: RateLimitHeaders::None,
             grpc_reflection_service: false,

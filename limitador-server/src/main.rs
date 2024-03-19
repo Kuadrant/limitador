@@ -31,6 +31,9 @@ use limitador::{
 };
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use opentelemetry::KeyValue;
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::{trace, Resource};
 use std::env::VarError;
 use std::fs;
 use std::path::Path;
@@ -42,6 +45,8 @@ use thiserror::Error;
 use tokio::runtime::Handle;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 mod envoy_rls;
 mod http_api;
@@ -290,12 +295,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .max_level_hint()
                 .unwrap_or(LevelFilter::ERROR)
         });
-        let builder = if level >= LevelFilter::DEBUG {
-            tracing_subscriber::fmt().with_span_events(FmtSpan::CLOSE)
+        let fmt_layer = if level >= LevelFilter::DEBUG {
+            tracing_subscriber::fmt::layer().with_span_events(FmtSpan::CLOSE)
         } else {
-            tracing_subscriber::fmt()
+            tracing_subscriber::fmt::layer()
         };
-        builder.with_max_level(level).init();
+
+        if !config.tracing_endpoint.is_empty() {
+            let tracer = opentelemetry_otlp::new_pipeline()
+                .tracing()
+                .with_exporter(
+                    opentelemetry_otlp::new_exporter()
+                        .tonic()
+                        .with_endpoint(config.tracing_endpoint.clone()),
+                )
+                .with_trace_config(trace::config().with_resource(Resource::new(vec![
+                    KeyValue::new("service.name", "limitador-server"),
+                ])))
+                .install_batch(opentelemetry_sdk::runtime::Tokio)?;
+            let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+            tracing_subscriber::registry()
+                .with(level)
+                .with(fmt_layer)
+                .with(telemetry_layer)
+                .init();
+        } else {
+            tracing_subscriber::registry()
+                .with(level)
+                .with(fmt_layer)
+                .init();
+        };
 
         info!("Version: {}", version);
         info!("Using config: {:?}", config);
@@ -344,7 +373,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         // Sometimes this event happens in k8s envs when
                         // content source is a configmap and it is replaced
-                        // As the move event always occurrs,
+                        // As the move event always occurs,
                         // skip reloading limit file in this event.
 
                         // the parent dir is being watched
@@ -495,25 +524,32 @@ fn create_config() -> (Configuration, &'static str) {
                 .help("Include the Limit Name in prometheus label"),
         )
         .arg(
+            Arg::new("tracing_endpoint")
+                .long("tracing-endpoint")
+                .default_value(config::env::TRACING_ENDPOINT.unwrap_or(""))
+                .display_order(6)
+                .help("The host for the tracing service"),
+        )
+        .arg(
             Arg::new("v")
                 .short('v')
                 .action(ArgAction::Count)
                 .value_parser(value_parser!(u8).range(..5))
-                .display_order(6)
+                .display_order(7)
                 .help("Sets the level of verbosity"),
         )
         .arg(
             Arg::new("validate")
                 .long("validate")
                 .action(ArgAction::SetTrue)
-                .display_order(7)
+                .display_order(8)
                 .help("Validates the LIMITS_FILE and exits"),
         )
         .arg(
             Arg::new("rate_limit_headers")
                 .long("rate-limit-headers")
                 .short('H')
-                .display_order(8)
+                .display_order(9)
                 .default_value(config::env::RATE_LIMIT_HEADERS.unwrap_or("NONE"))
                 .value_parser(clap::builder::PossibleValuesParser::new([
                     "NONE",
@@ -525,7 +561,7 @@ fn create_config() -> (Configuration, &'static str) {
             Arg::new("grpc_reflection_service")
                 .long("grpc-reflection-service")
                 .action(ArgAction::SetTrue)
-                .display_order(9)
+                .display_order(10)
                 .help("Enables gRPC server reflection service"),
         )
         .subcommand(
@@ -757,6 +793,10 @@ fn create_config() -> (Configuration, &'static str) {
         *matches.get_one::<u16>("http_port").unwrap(),
         matches.get_flag("limit_name_in_labels")
             || env_option_is_enabled("LIMIT_NAME_IN_PROMETHEUS_LABELS"),
+        matches
+            .get_one::<String>("tracing_endpoint")
+            .unwrap()
+            .into(),
         rate_limit_headers,
         matches.get_flag("grpc_reflection_service"),
     );

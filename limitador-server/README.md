@@ -37,6 +37,8 @@ Options:
           Include the Limit Name in prometheus label
   -v...
           Sets the level of verbosity
+      --tracing-endpoint <tracing_endpoint>
+          The endpoint for the tracing service
       --validate
           Validates the LIMITS_FILE and exits
   -H, --rate-limit-headers <rate_limit_headers>
