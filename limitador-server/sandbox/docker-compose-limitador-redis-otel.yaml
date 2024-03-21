@@ -1,0 +1,45 @@
+---
+version: '3.8'
+services:
+  limitador:
+    image: ${LIMITADOR_IMAGE:-limitador-testing}
+    depends_on:
+      - jaeger
+      - envoy
+      - redis
+    command:
+      - limitador-server
+      - --tracing-endpoint
+      - "rpc://jaeger:4317"
+      - --rls-ip
+      - 0.0.0.0
+      - --rls-port
+      - "8081"
+      - --http-ip
+      - 0.0.0.0
+      - --http-port
+      - "8080"
+      - -vvvv
+      - --grpc-reflection-service
+      - /opt/kuadrant/limits/limits.yaml
+      - redis
+      - redis://redis:6379
+    expose:
+      - "8080"
+      - "8081"
+    ports:
+      - "18080:8080"
+      - "18081:8081"
+    volumes:
+      - ./limits.yaml:/opt/kuadrant/limits/limits.yaml
+  redis:
+    image: redis:7
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    environment:
+      JAEGER_DISABLED: "false"
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - 16686:16686
+    expose:
+      - "4317"
