@@ -16,9 +16,8 @@ use redis::aio::ConnectionManager;
 use redis::{ConnectionInfo, RedisError};
 use std::collections::HashSet;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
 
 // This is just a first version.
 //
@@ -81,7 +80,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
 
         // Check cached counters
         {
-            let cached_counters = self.cached_counters.lock().await;
+            let cached_counters = self.cached_counters.lock().unwrap();
             for counter in counters.iter_mut() {
                 match cached_counters.get(counter) {
                     Some(val) => {
@@ -122,7 +121,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
                 Duration::from_millis((Instant::now() - time_start_get_ttl).as_millis() as u64);
 
             {
-                let mut cached_counters = self.cached_counters.lock().await;
+                let mut cached_counters = self.cached_counters.lock().unwrap();
                 for (i, counter) in not_cached.iter_mut().enumerate() {
                     cached_counters.insert(
                         counter.clone(),
@@ -150,7 +149,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
 
         // Update cached values
         {
-            let mut cached_counters = self.cached_counters.lock().await;
+            let mut cached_counters = self.cached_counters.lock().unwrap();
             for counter in counters.iter() {
                 cached_counters.decrease_by(counter, delta);
             }
@@ -158,9 +157,9 @@ impl AsyncCounterStorage for CachedRedisStorage {
 
         // Batch or update depending on configuration
         if self.batching_is_enabled {
-            let mut batcher = self.batcher_counter_updates.lock().await;
+            let mut batcher = self.batcher_counter_updates.lock().unwrap();
             for counter in counters.iter() {
-                batcher.add_counter(counter, delta).await
+                batcher.add_counter(counter, delta)
             }
         } else {
             for counter in counters.iter() {
@@ -216,13 +215,20 @@ impl CachedRedisStorage {
         let async_redis_storage =
             AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone());
 
-        let batcher = Arc::new(Mutex::new(Batcher::new(async_redis_storage.clone())));
+        let storage = async_redis_storage.clone();
+        let batcher = Arc::new(Mutex::new(Batcher::new()));
         if let Some(flushing_period) = flushing_period {
             let batcher_flusher = batcher.clone();
             tokio::spawn(async move {
                 loop {
                     let time_start = Instant::now();
-                    batcher_flusher.lock().await.flush().await;
+                    let counters = {
+                        let mut batch = batcher_flusher.lock().unwrap();
+                        batch.flush()
+                    };
+                    for (counter, delta) in counters {
+                        storage.update_counter(&counter, delta).await.unwrap();
+                    }
                     let sleep_time = flushing_period
                         .checked_sub(time_start.elapsed())
                         .unwrap_or_else(|| Duration::from_secs(0));
