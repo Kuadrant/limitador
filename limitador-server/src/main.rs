@@ -32,8 +32,9 @@ use limitador::{
 };
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use opentelemetry::KeyValue;
+use opentelemetry::{global, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::{trace, Resource};
 use std::env::VarError;
 use std::fmt::Display;
@@ -304,6 +305,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         if !config.tracing_endpoint.is_empty() {
+            global::set_text_map_propagator(TraceContextPropagator::new());
             let tracer = opentelemetry_otlp::new_pipeline()
                 .tracing()
                 .with_exporter(
@@ -312,7 +314,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .with_endpoint(config.tracing_endpoint.clone()),
                 )
                 .with_trace_config(trace::config().with_resource(Resource::new(vec![
-                    KeyValue::new("service.name", "limitador-server"),
+                    KeyValue::new("service.name", "limitador"),
                 ])))
                 .install_batch(opentelemetry_sdk::runtime::Tokio)?;
             let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
