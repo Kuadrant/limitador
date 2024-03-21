@@ -1,7 +1,6 @@
 use ::redis::RedisError;
 use std::time::Duration;
 
-mod batcher;
 mod counters_cache;
 mod redis_async;
 mod redis_cached;
