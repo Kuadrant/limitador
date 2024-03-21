@@ -225,9 +225,9 @@ impl CachedRedisStorage {
         let batcher = Arc::new(Mutex::new(Default::default()));
         if let Some(flushing_period) = flushing_period {
             let batcher_flusher = batcher.clone();
+            let mut interval = tokio::time::interval(flushing_period);
             tokio::spawn(async move {
                 loop {
-                    let time_start = Instant::now();
                     let counters = {
                         let mut batch = batcher_flusher.lock().unwrap();
                         std::mem::take(&mut *batch)
@@ -235,10 +235,7 @@ impl CachedRedisStorage {
                     for (counter, delta) in counters {
                         storage.update_counter(&counter, delta).await.unwrap();
                     }
-                    let sleep_time = flushing_period
-                        .checked_sub(time_start.elapsed())
-                        .unwrap_or_else(|| Duration::from_secs(0));
-                    tokio::time::sleep(sleep_time).await;
+                    interval.tick().await;
                 }
             });
         }
