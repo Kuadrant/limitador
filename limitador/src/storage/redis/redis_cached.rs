@@ -158,7 +158,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
 
         // Batch or update depending on configuration
         if self.batching_is_enabled {
-            let batcher = self.batcher_counter_updates.lock().await;
+            let mut batcher = self.batcher_counter_updates.lock().await;
             for counter in counters.iter() {
                 batcher.add_counter(counter, delta).await
             }
