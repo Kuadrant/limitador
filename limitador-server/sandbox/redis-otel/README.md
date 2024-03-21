@@ -40,6 +40,8 @@ EOM
 firefox -private-window "localhost:16686"
 ```
 
+![Screenshot 2024-03-21 at 17-08-35 Jaeger UI](https://github.com/Kuadrant/limitador/assets/881529/585bb3bf-15e2-49ee-9ed8-423d33fe4df6)
+
 > Recommended to start looking at `check_and_update` operation.
 
 ### Tear down sandbox
