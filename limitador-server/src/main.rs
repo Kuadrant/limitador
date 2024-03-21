@@ -35,6 +35,7 @@ use opentelemetry::KeyValue;
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{trace, Resource};
 use std::env::VarError;
+use std::fmt::Display;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -614,7 +615,7 @@ fn create_config() -> (Configuration, &'static str) {
                         .value_parser(clap::value_parser!(u64))
                         .default_value(
                             config::env::REDIS_LOCAL_CACHE_MAX_TTL_CACHED_COUNTERS_MS
-                                .unwrap_or("5000"),
+                                .unwrap_or(leak(DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC * 1000)),
                         )
                         .display_order(2)
                         .help("TTL for cached counters in milliseconds"),
@@ -626,7 +627,7 @@ fn create_config() -> (Configuration, &'static str) {
                         .value_parser(clap::value_parser!(u64))
                         .default_value(
                             config::env::REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS
-                                .unwrap_or("10000"),
+                                .unwrap_or(leak(DEFAULT_TTL_RATIO_CACHED_COUNTERS)),
                         )
                         .display_order(3)
                         .help("Ratio to apply to the TTL from Redis on cached counters"),
@@ -637,7 +638,8 @@ fn create_config() -> (Configuration, &'static str) {
                         .action(ArgAction::Set)
                         .value_parser(clap::value_parser!(i64))
                         .default_value(
-                            config::env::REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS.unwrap_or("1000"),
+                            config::env::REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS
+                                .unwrap_or(leak(DEFAULT_FLUSHING_PERIOD_SEC * 1000)),
                         )
                         .display_order(4)
                         .help("Flushing period for counters in milliseconds"),
@@ -647,7 +649,7 @@ fn create_config() -> (Configuration, &'static str) {
                         .long("max-cached")
                         .action(ArgAction::Set)
                         .value_parser(clap::value_parser!(usize))
-                        .default_value("10000")
+                        .default_value(leak(DEFAULT_MAX_CACHED_COUNTERS))
                         .display_order(5)
                         .help("Maximum amount of counters cached"),
                 ),
@@ -670,7 +672,10 @@ fn create_config() -> (Configuration, &'static str) {
                     .short('n')
                     .long("cache-name")
                     .action(ArgAction::Set)
-                    .default_value(config::env::INFINISPAN_CACHE_NAME.unwrap_or("infinispan"))
+                    .default_value(
+                        config::env::INFINISPAN_CACHE_NAME
+                            .unwrap_or(storage::infinispan::DEFAULT_INFINISPAN_LIMITS_CACHE_NAME),
+                    )
                     .display_order(2)
                     .help("Name of the cache to store counters in"),
             )
@@ -679,7 +684,10 @@ fn create_config() -> (Configuration, &'static str) {
                     .short('c')
                     .long("consistency")
                     .action(ArgAction::Set)
-                    .default_value(config::env::INFINISPAN_COUNTERS_CONSISTENCY.unwrap_or("Strong"))
+                    .default_value(
+                        config::env::INFINISPAN_COUNTERS_CONSISTENCY
+                            .unwrap_or(leak(storage::infinispan::DEFAULT_INFINISPAN_CONSISTENCY)),
+                    )
                     .value_parser(clap::builder::PossibleValuesParser::new(["Strong", "Weak"]))
                     .display_order(3)
                     .help("The consistency to use to read from the cache"),
@@ -880,6 +888,10 @@ fn env_option_is_enabled(env_name: &str) -> bool {
         Ok(value) => value == "1",
         Err(_) => false,
     }
+}
+
+fn leak<D: Display>(s: D) -> &'static str {
+    return Box::leak(format!("{}", s).into_boxed_str());
 }
 
 #[cfg(test)]
