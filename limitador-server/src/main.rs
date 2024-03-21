@@ -1,4 +1,5 @@
 #![deny(clippy::all, clippy::cargo)]
+#![allow(clippy::multiple_crate_versions)]
 
 #[macro_use]
 extern crate log;
