@@ -8,7 +8,7 @@ use ttl_cache::TtlCache;
 
 pub struct CountersCache {
     max_ttl_cached_counters: Duration,
-    ttl_ratio_cached_counters: u64,
+    pub ttl_ratio_cached_counters: u64,
     cache: TtlCache<Counter, i64>,
 }
 
