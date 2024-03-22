@@ -72,8 +72,6 @@ impl AsyncCounterStorage for CachedRedisStorage {
         load_counters: bool,
         _counter_access: CounterAccess<'a>,
     ) -> Result<Authorization, StorageErr> {
-        let mut con = self.redis_conn_manager.clone();
-
         let mut not_cached: Vec<&mut Counter> = vec![];
         let mut first_limited = None;
 
@@ -109,8 +107,8 @@ impl AsyncCounterStorage for CachedRedisStorage {
         if !not_cached.is_empty() {
             let time_start_get_ttl = Instant::now();
 
-            let (counter_vals, counter_ttls_msecs) =
-                Self::values_with_ttls(&not_cached, &mut con).await?;
+            // todo needs to be resilient
+            let (counter_vals, counter_ttls_msecs) = self.values_with_ttls(&not_cached).await?;
 
             // Some time could have passed from the moment we got the TTL from Redis.
             // This margin is not exact, because we don't know exactly the
@@ -169,6 +167,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
             }
         } else {
             for counter in counters.iter() {
+                // todo needs to be resilient
                 self.update_counter(counter, delta).await?
             }
         }
@@ -256,9 +255,11 @@ impl CachedRedisStorage {
     }
 
     async fn values_with_ttls(
+        &self,
         counters: &[&mut Counter],
-        redis_con: &mut ConnectionManager,
     ) -> Result<(Vec<Option<i64>>, Vec<i64>), StorageErr> {
+        let mut redis_con = self.redis_conn_manager.clone();
+
         let counter_keys: Vec<String> = counters
             .iter()
             .map(|counter| key_for_counter(counter))
@@ -272,7 +273,7 @@ impl CachedRedisStorage {
         }
 
         let script_res: Vec<Option<i64>> = script_invocation
-            .invoke_async::<_, _>(&mut redis_con.clone())
+            .invoke_async::<_, _>(&mut redis_con)
             .await?;
 
         let mut counter_vals: Vec<Option<i64>> = vec![];
