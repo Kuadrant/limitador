@@ -28,7 +28,7 @@ impl CounterStorage for RedisStorage {
         let mut con = self.conn_pool.get()?;
 
         match con.get::<String, Option<i64>>(key_for_counter(counter))? {
-            Some(val) => Ok(val - delta >= 0),
+            Some(val) => Ok(val + delta <= counter.max_value()),
             None => Ok(counter.max_value() - delta >= 0),
         }
     }
@@ -45,7 +45,6 @@ impl CounterStorage for RedisStorage {
         redis::Script::new(SCRIPT_UPDATE_COUNTER)
             .key(key_for_counter(counter))
             .key(key_for_counters_of_limit(counter.limit()))
-            .arg(counter.max_value())
             .arg(counter.seconds())
             .arg(delta)
             .invoke(&mut *con)?;
@@ -80,7 +79,8 @@ impl CounterStorage for RedisStorage {
                 .query(&mut *con)?;
 
             for (i, counter) in counters.iter().enumerate() {
-                let remaining = counter_vals[i].unwrap_or(counter.max_value()) - delta;
+                // remaining  = max - (curr_val + delta)
+                let remaining = counter.max_value() - (counter_vals[i].unwrap_or(0) + delta);
                 if remaining < 0 {
                     return Ok(Authorization::Limited(
                         counter.limit().name().map(|n| n.to_owned()),
@@ -95,7 +95,6 @@ impl CounterStorage for RedisStorage {
             redis::Script::new(SCRIPT_UPDATE_COUNTER)
                 .key(key)
                 .key(key_for_counters_of_limit(counter.limit()))
-                .arg(counter.max_value())
                 .arg(counter.seconds())
                 .arg(delta)
                 .invoke(&mut *con)?;
@@ -125,7 +124,7 @@ impl CounterStorage for RedisStorage {
                 // This does not cause any bugs, but consumes memory
                 // unnecessarily.
                 if let Some(val) = con.get::<String, Option<i64>>(counter_key.clone())? {
-                    counter.set_remaining(val);
+                    counter.set_remaining(limit.max_value() - val);
                     let ttl = con.ttl(&counter_key)?;
                     counter.set_expires_in(Duration::from_secs(ttl));
 

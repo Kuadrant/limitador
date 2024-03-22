@@ -9,15 +9,15 @@
 
 // KEYS[1]: counter key
 // KEYS[2]: key that contains the counters that belong to the limit
-// ARGV[1]: counter max val
-// ARGV[2]: counter TTL
-// ARGV[3]: delta
+// ARGV[1]: counter TTL
+// ARGV[2]: delta
 pub const SCRIPT_UPDATE_COUNTER: &str = "
-    local set_res = redis.call('set', KEYS[1], ARGV[1], 'EX', ARGV[2], 'NX')
-    redis.call('incrby', KEYS[1], - ARGV[3])
-    if set_res then
-        redis.call('sadd', KEYS[2], KEYS[1])
-    end";
+    local c = redis.call('incrby', KEYS[1], ARGV[2])
+    if c == tonumber(ARGV[2]) then
+      redis.call('expire', KEYS[1], ARGV[1], 'NX')
+      redis.call('sadd', KEYS[2], KEYS[1])
+    end
+    return c";
 
 // KEYS: the function returns the value and TTL (in ms) for these keys
 // The first position of the list returned contains the value of KEYS[1], the

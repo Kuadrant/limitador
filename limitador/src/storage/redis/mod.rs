@@ -47,7 +47,8 @@ pub fn is_limited(
 
     let mut first_limited = None;
     for (i, counter) in counters.iter_mut().enumerate() {
-        let remaining = counter_vals[i].unwrap_or(counter.max_value()) - delta;
+        // remaining  = max - (curr_val + delta)
+        let remaining = counter.max_value() - (counter_vals[i].unwrap_or(0) + delta);
         counter.set_remaining(remaining);
         let expires_in = counter_ttls_msecs[i]
             .map(|x| {
