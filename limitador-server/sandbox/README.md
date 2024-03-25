@@ -23,6 +23,7 @@ Check out `make help` for all the targets.
 | Redis | `make deploy-redis` | Uses Redis to store counters |
 | Redis Secured | `make deploy-redis-tls` | Uses Redis with TLS and password protected to store counters |
 | Redis Cached | `make deploy-redis-cached` | Uses Redis to store counters, with an in-memory cache |
+| Redis Otel Instrumented | `make deploy-redis-otel` | Uses redis to store counters, [instrumented with opentelemetry](redis-otel/README.md) |
 | Infinispan | `make deploy-infinispan` | Uses Infinispan to store counters |
 | Disk | `make deploy-disk` | Uses disk to store counters |
 

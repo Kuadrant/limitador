@@ -39,6 +39,9 @@ deploy-redis-tls: clean ## Uses Redis with TLS and password protected to store c
 deploy-redis-cached: clean ## Uses Redis to store counters, with an in-memory cache
 	$(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-redis-cached.yaml up
 
+deploy-redis-otel: clean ## Uses Redis to store counters, instrumented with opentelemetry
+	$(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-redis-otel.yaml up
+
 deploy-disk: clean ## Uses disk to store counters
 	$(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-disk.yaml up
 
@@ -75,6 +78,7 @@ clean-containers: ## clean containers
 	- $(DOCKER)_compose -f docker-compose-envoy.yaml -f docker-compose-limitador-redis-cached.yaml down --volumes --remove-orphans
 	- $(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-infinispan.yaml down --volumes --remove-orphans
 	- $(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-disk.yaml down --volumes --remove-orphans
+	- $(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-redis-otel.yaml down --volumes --remove-orphans
 	- $(MAKE) cleancerts
 
 clean: ## clean all
