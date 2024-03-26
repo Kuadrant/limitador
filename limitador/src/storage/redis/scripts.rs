@@ -14,7 +14,7 @@
 pub const SCRIPT_UPDATE_COUNTER: &str = "
     local c = redis.call('incrby', KEYS[1], ARGV[2])
     if c == tonumber(ARGV[2]) then
-      redis.call('expire', KEYS[1], ARGV[1], 'NX')
+      redis.call('expire', KEYS[1], ARGV[1])
       redis.call('sadd', KEYS[2], KEYS[1])
     end
     return c";
