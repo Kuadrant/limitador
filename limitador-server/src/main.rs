@@ -23,7 +23,7 @@ use limitador::storage::disk::DiskStorage;
 use limitador::storage::infinispan::{Consistency, InfinispanStorageBuilder};
 use limitador::storage::redis::{
     AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder, DEFAULT_FLUSHING_PERIOD_SEC,
-    DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC,
+    DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC, DEFAULT_RESPONSE_TIMEOUT_MS,
     DEFAULT_TTL_RATIO_CACHED_COUNTERS,
 };
 use limitador::storage::{AsyncCounterStorage, AsyncStorage, Storage};
@@ -147,19 +147,16 @@ impl Limiter {
             ))
         }
 
-        cached_redis_storage =
-            cached_redis_storage.max_ttl_cached_counters(Duration::from_millis(cache_cfg.max_ttl));
+        cached_redis_storage = cached_redis_storage
+            .max_ttl_cached_counters(Duration::from_millis(cache_cfg.max_ttl))
+            .ttl_ratio_cached_counters(cache_cfg.ttl_ratio)
+            .max_cached_counters(cache_cfg.max_counters)
+            .response_timeout(Duration::from_millis(cache_cfg.response_timeout));
 
-        cached_redis_storage = cached_redis_storage.ttl_ratio_cached_counters(cache_cfg.ttl_ratio);
-        cached_redis_storage = cached_redis_storage.max_cached_counters(cache_cfg.max_counters);
-
-        match cached_redis_storage.build().await {
-            Ok(storage) => storage,
-            Err(err) => {
-                eprintln!("Failed to connect to Redis at {redis_url}: {err}");
-                process::exit(1)
-            }
-        }
+        cached_redis_storage.build().await.unwrap_or_else(|err| {
+            eprintln!("Failed to connect to Redis at {redis_url}: {err}");
+            process::exit(1)
+        })
     }
 
     #[cfg(feature = "infinispan")]
@@ -653,6 +650,15 @@ fn create_config() -> (Configuration, &'static str) {
                         .default_value(leak(DEFAULT_MAX_CACHED_COUNTERS))
                         .display_order(5)
                         .help("Maximum amount of counters cached"),
+                )
+                .arg(
+                    Arg::new("timeout")
+                        .long("response-timeout")
+                        .action(ArgAction::Set)
+                        .value_parser(clap::value_parser!(u64))
+                        .default_value(leak(DEFAULT_RESPONSE_TIMEOUT_MS))
+                        .display_order(6)
+                        .help("Timeout for Redis commands in milliseconds"),
                 ),
         );
 
@@ -760,6 +766,7 @@ fn create_config() -> (Configuration, &'static str) {
                 max_ttl: *sub.get_one("TTL").unwrap(),
                 ttl_ratio: *sub.get_one("ratio").unwrap(),
                 max_counters: *sub.get_one("max").unwrap(),
+                response_timeout: *sub.get_one("timeout").unwrap(),
             }),
         }),
         #[cfg(feature = "infinispan")]
@@ -851,6 +858,7 @@ fn storage_config_from_env() -> Result<StorageConfiguration, ()> {
                         .parse()
                         .expect("Expected an u64"),
                     max_counters: DEFAULT_MAX_CACHED_COUNTERS,
+                    response_timeout: DEFAULT_RESPONSE_TIMEOUT_MS,
                 })
             } else {
                 None
