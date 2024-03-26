@@ -7,7 +7,7 @@ use crate::storage::redis::redis_async::AsyncRedisStorage;
 use crate::storage::redis::scripts::VALUES_AND_TTLS;
 use crate::storage::redis::{
     DEFAULT_FLUSHING_PERIOD_SEC, DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC,
-    DEFAULT_TTL_RATIO_CACHED_COUNTERS,
+    DEFAULT_RESPONSE_TIMEOUT_MS, DEFAULT_TTL_RATIO_CACHED_COUNTERS,
 };
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
@@ -218,6 +218,7 @@ impl CachedRedisStorage {
             DEFAULT_MAX_CACHED_COUNTERS,
             Duration::from_secs(DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC),
             DEFAULT_TTL_RATIO_CACHED_COUNTERS,
+            Duration::from_millis(DEFAULT_RESPONSE_TIMEOUT_MS),
         )
         .await
     }
@@ -228,11 +229,17 @@ impl CachedRedisStorage {
         max_cached_counters: usize,
         ttl_cached_counters: Duration,
         ttl_ratio_cached_counters: u64,
+        response_timeout: Duration,
     ) -> Result<Self, RedisError> {
         let info = ConnectionInfo::from_str(redis_url)?;
-        let redis_conn_manager = ConnectionManager::new(
+        let redis_conn_manager = ConnectionManager::new_with_backoff_and_timeouts(
             redis::Client::open(info)
                 .expect("This couldn't fail in the past, yet now it did somehow!"),
+            2,
+            100,
+            6,
+            response_timeout,
+            Duration::from_secs(5),
         )
         .await?;
 
@@ -298,9 +305,6 @@ impl CachedRedisStorage {
     }
 
     fn partitioned(&self, partition: bool) -> bool {
-        if partition {
-            println!("We are partitioned!");
-        }
         self.partitioned
             .compare_exchange(!partition, partition, Ordering::Release, Ordering::Acquire)
             .is_ok()
@@ -378,6 +382,7 @@ pub struct CachedRedisStorageBuilder {
     max_cached_counters: usize,
     max_ttl_cached_counters: Duration,
     ttl_ratio_cached_counters: u64,
+    response_timeout: Duration,
 }
 
 impl CachedRedisStorageBuilder {
@@ -388,6 +393,7 @@ impl CachedRedisStorageBuilder {
             max_cached_counters: DEFAULT_MAX_CACHED_COUNTERS,
             max_ttl_cached_counters: Duration::from_secs(DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC),
             ttl_ratio_cached_counters: DEFAULT_TTL_RATIO_CACHED_COUNTERS,
+            response_timeout: Duration::from_millis(DEFAULT_RESPONSE_TIMEOUT_MS),
         }
     }
 
@@ -411,6 +417,11 @@ impl CachedRedisStorageBuilder {
         self
     }
 
+    pub fn response_timeout(mut self, response_timeout: Duration) -> Self {
+        self.response_timeout = response_timeout;
+        self
+    }
+
     pub async fn build(self) -> Result<CachedRedisStorage, RedisError> {
         CachedRedisStorage::new_with_options(
             &self.redis_url,
@@ -418,6 +429,7 @@ impl CachedRedisStorageBuilder {
             self.max_cached_counters,
             self.max_ttl_cached_counters,
             self.ttl_ratio_cached_counters,
+            self.response_timeout,
         )
         .await
     }
