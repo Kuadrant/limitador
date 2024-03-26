@@ -44,7 +44,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
         .instrument(span)
         .await?
         {
-            Some(val) => Ok(val - delta >= 0),
+            Some(val) => Ok(val + delta <= counter.max_value()),
             None => Ok(counter.max_value() - delta >= 0),
         }
     }
@@ -58,7 +58,6 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             redis::Script::new(SCRIPT_UPDATE_COUNTER)
                 .key(key_for_counter(counter))
                 .key(key_for_counters_of_limit(counter.limit()))
-                .arg(counter.max_value())
                 .arg(counter.seconds())
                 .arg(delta)
                 .invoke_async::<_, _>(&mut con)
@@ -120,7 +119,8 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             };
 
             for (i, counter) in counters.iter().enumerate() {
-                let remaining = counter_vals[i].unwrap_or(counter.max_value()) - delta;
+                // remaining  = max - (curr_val + delta)
+                let remaining = counter.max_value() - (counter_vals[i].unwrap_or(0) + delta);
                 if remaining < 0 {
                     return Ok(Authorization::Limited(
                         counter.limit().name().map(|n| n.to_owned()),
@@ -138,7 +138,6 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                 let result = redis::Script::new(SCRIPT_UPDATE_COUNTER)
                     .key(key)
                     .key(key_for_counters_of_limit(counter.limit()))
-                    .arg(counter.max_value())
                     .arg(counter.seconds())
                     .arg(delta)
                     .invoke_async::<_, _>(&mut con)
@@ -187,7 +186,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                         .await?
                 };
                 if let Some(val) = option {
-                    counter.set_remaining(val);
+                    counter.set_remaining(limit.max_value() - val);
                     let ttl = {
                         let span = trace_span!("datastore");
                         async { con.ttl(&counter_key).await }
