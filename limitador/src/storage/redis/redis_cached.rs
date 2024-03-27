@@ -83,7 +83,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
             for counter in counters.iter_mut() {
                 match cached_counters.get(counter) {
                     Some(val) => {
-                        if first_limited.is_none() && val - delta < 0 {
+                        if first_limited.is_none() && val + delta >= counter.max_value() {
                             let a = Authorization::Limited(
                                 counter.limit().name().map(|n| n.to_owned()),
                             );
@@ -93,7 +93,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
                             first_limited = Some(a);
                         }
                         if load_counters {
-                            counter.set_remaining(val);
+                            counter.set_remaining(counter.max_value() - val);
                             // todo: how do we get the ttl for this entry?
                             // counter.set_expires_in(Duration::from_secs(counter.seconds()));
                         }
@@ -138,7 +138,9 @@ impl AsyncCounterStorage for CachedRedisStorage {
                         counter_ttls_msecs[i],
                         ttl_margin,
                     );
-                    let remaining = counter_vals[i].unwrap_or(counter.max_value()) - delta;
+                    let remaining = counter.max_value()
+                        - counter_vals[i].unwrap_or(counter.max_value())
+                        - delta;
                     if first_limited.is_none() && remaining < 0 {
                         first_limited = Some(Authorization::Limited(
                             counter.limit().name().map(|n| n.to_owned()),
