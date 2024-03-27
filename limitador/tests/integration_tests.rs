@@ -24,7 +24,7 @@ macro_rules! test_with_all_storage_impls {
             #[cfg(feature = "redis_storage")]
             #[tokio::test]
             #[serial]
-            async fn [<$function _with_redis>]() {
+            async fn [<$function _with_sync_redis>]() {
                 let storage = RedisStorage::default();
                 storage.clear().unwrap();
                 let rate_limiter = RateLimiter::new_with_storage(
@@ -51,7 +51,23 @@ macro_rules! test_with_all_storage_impls {
                 let rate_limiter = AsyncRateLimiter::new_with_storage(
                     Box::new(storage)
                 );
-                AsyncRedisStorage::new("redis://127.0.0.1:6379").await.expect("We need a Redis running locally").clear().await.unwrap();
+                $function(&mut TestsLimiter::new_from_async_impl(rate_limiter)).await;
+            }
+
+            #[cfg(feature = "redis_storage")]
+            #[tokio::test]
+            #[serial]
+            async fn [<$function _with_async_redis_and_local_cache>]() {
+                let storage_builder = CachedRedisStorageBuilder::new("redis://127.0.0.1:6379").
+                    flushing_period(None).
+                    max_ttl_cached_counters(Duration::from_secs(3600)).
+                    ttl_ratio_cached_counters(1).
+                    max_cached_counters(10000);
+                let storage = storage_builder.build().await.expect("We need a Redis running locally");
+                storage.clear().await.unwrap();
+                let rate_limiter = AsyncRateLimiter::new_with_storage(
+                    Box::new(storage)
+                );
                 $function(&mut TestsLimiter::new_from_async_impl(rate_limiter)).await;
             }
 
@@ -82,6 +98,7 @@ mod test {
     cfg_if::cfg_if! {
         if #[cfg(feature = "redis_storage")] {
             use limitador::storage::redis::AsyncRedisStorage;
+            use limitador::storage::redis::CachedRedisStorageBuilder;
             use limitador::storage::redis::RedisStorage;
 
             use limitador::AsyncRateLimiter;
