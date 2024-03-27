@@ -138,7 +138,9 @@ impl AsyncCounterStorage for CachedRedisStorage {
                         counter_ttls_msecs[i],
                         ttl_margin,
                     );
-                    let remaining = counter.max_value() - counter_vals[i].unwrap_or(0) - delta;
+                    let remaining = counter.max_value()
+                        - counter_vals[i].unwrap_or(0)
+                        - delta;
                     if first_limited.is_none() && remaining < 0 {
                         first_limited = Some(Authorization::Limited(
                             counter.limit().name().map(|n| n.to_owned()),
