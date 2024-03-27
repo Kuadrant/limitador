@@ -18,6 +18,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
+use tracing::{error, warn};
 
 // This is just a first version.
 //
@@ -253,6 +254,7 @@ impl CachedRedisStorage {
                 loop {
                     if p.load(Ordering::Acquire) {
                         if storage.is_alive().await {
+                            warn!("Partition to Redis resolved!");
                             p.store(false, Ordering::Release);
                         }
                     } else {
@@ -301,6 +303,9 @@ impl CachedRedisStorage {
     }
 
     fn partitioned(&self, partition: bool) -> bool {
+        if partition {
+            error!("Partition to Redis detected!")
+        }
         self.partitioned
             .compare_exchange(!partition, partition, Ordering::Release, Ordering::Acquire)
             .is_ok()
