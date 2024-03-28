@@ -7,11 +7,11 @@ use crate::limit::Limit;
 use crate::prometheus_metrics::CounterAccess;
 use crate::storage::keys::*;
 use crate::storage::redis::is_limited;
-use crate::storage::redis::scripts::{SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS};
+use crate::storage::redis::scripts::{SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS, BATCH_UPDATE_COUNTERS};
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
 use redis::{AsyncCommands, RedisError};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 use tracing::{trace_span, Instrument};
@@ -268,6 +268,40 @@ impl AsyncRedisStorage {
                 .instrument(span)
                 .await?;
         }
+
+        Ok(())
+    }
+
+    async fn update_counters(&self, counters_and_deltas: HashMap<Counter, i64>) -> Result<(), StorageErr> {
+        let mut con = self.conn_manager.clone();
+        let span = trace_span!("datastore");
+
+        // TODO (didierofrivia): Fix this so we don't iterate twice
+        let (counters, limits): (
+            Vec<&Counter>,
+            Vec<&Limit>,
+        ) = counters_and_deltas.keys()
+            .map(|k| (k, k.limit()))
+            .unzip();
+        let (ttls, deltas): (
+            Vec<u64>,
+            Vec<i64>
+        ) = counters_and_deltas.iter()
+            .map(|k,v| (k.seconds(), v))
+            .unzip();
+
+        async {
+            redis::Script::new(BATCH_UPDATE_COUNTERS)
+                .key_count(counters.len())
+                .arg(keys_for_counters(counters))
+                .arg(keys_for_counters_of_limits(limits))
+                .arg(ttls)
+                .arg(deltas)
+                .invoke_async::<_, _>(&mut con)
+                .await
+        }
+            .instrument(span)
+            .await?;
 
         Ok(())
     }

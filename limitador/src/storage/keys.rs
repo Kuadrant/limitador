@@ -23,6 +23,23 @@ pub fn key_for_counter(counter: &Counter) -> String {
     )
 }
 
+pub fn keys_for_counters(counters: Vec<&Counter>) -> String {
+    counters
+        .iter()
+        .map(|counter| key_for_counter(counter))
+        .collect::<Vec<String>>()
+        .join(";")
+}
+
+//TODO (didierofrivia): DRY it up (?)
+pub fn keys_for_counters_of_limits(limits: Vec<&Limit>) -> String {
+    limits
+        .iter()
+        .map(|limit| key_for_counters_of_limit(limit))
+        .collect::<Vec<String>>()
+        .join(";")
+}
+
 pub fn key_for_counters_of_limit(limit: &Limit) -> String {
     format!(
         "namespace:{{{}}},counters_of_limit:{}",

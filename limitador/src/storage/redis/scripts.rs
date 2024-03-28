@@ -31,3 +31,15 @@ pub const VALUES_AND_TTLS: &str = "
     end
     return res
 ";
+
+
+//TODO (didierofrivia): WIP, Finish this!
+pub const BATCH_UPDATE_COUNTERS: &str = "
+    for i, key in ipairs(KEYS) do
+        local c = redis.call('incrby', key, ARGV[3][i])
+        if c == tonumber(ARGV[3][i]) then
+            redis.call('expire', key, ARGV[1][i])
+            redis.call('sadd', KEYS[2], KEYS[1])
+        end
+    end
+";
