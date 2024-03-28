@@ -59,7 +59,7 @@ macro_rules! test_with_all_storage_impls {
             #[serial]
             async fn [<$function _with_async_redis_and_local_cache>]() {
                 let storage_builder = CachedRedisStorageBuilder::new("redis://127.0.0.1:6379").
-                    flushing_period(None).
+                    flushing_period(Some(Duration::from_millis(200))).
                     max_ttl_cached_counters(Duration::from_secs(3600)).
                     ttl_ratio_cached_counters(1).
                     max_cached_counters(10000);
