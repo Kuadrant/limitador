@@ -137,17 +137,8 @@ impl Limiter {
     ) -> CachedRedisStorage {
         // TODO: Not all the options are configurable via ENV. Add them as needed.
 
-        let mut cached_redis_storage = CachedRedisStorageBuilder::new(redis_url);
-
-        if cache_cfg.flushing_period < 0 {
-            cached_redis_storage = cached_redis_storage.flushing_period(None)
-        } else {
-            cached_redis_storage = cached_redis_storage.flushing_period(Some(
-                Duration::from_millis(cache_cfg.flushing_period as u64),
-            ))
-        }
-
-        cached_redis_storage = cached_redis_storage
+        let cached_redis_storage = CachedRedisStorageBuilder::new(redis_url)
+            .flushing_period(Duration::from_millis(cache_cfg.flushing_period as u64))
             .max_ttl_cached_counters(Duration::from_millis(cache_cfg.max_ttl))
             .ttl_ratio_cached_counters(cache_cfg.ttl_ratio)
             .max_cached_counters(cache_cfg.max_counters)
