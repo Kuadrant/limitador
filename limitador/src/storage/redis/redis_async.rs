@@ -6,14 +6,17 @@ use crate::counter::Counter;
 use crate::limit::Limit;
 use crate::storage::keys::*;
 use crate::storage::redis::is_limited;
-use crate::storage::redis::scripts::{SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS};
+use crate::storage::redis::scripts::{
+    BATCH_UPDATE_COUNTERS, SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS,
+};
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
 use redis::{AsyncCommands, RedisError};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::time::Duration;
 use tracing::{debug_span, Instrument};
+use crate::storage::atomic_expiring_value::AtomicExpiringValue;
 
 // Note: this implementation does not guarantee exact limits. Ensuring that we
 // never go over the limits would hurt performance. This implementation
@@ -228,6 +231,43 @@ impl AsyncRedisStorage {
                 .instrument(debug_span!("datastore"))
                 .await?;
         }
+
+        Ok(())
+    }
+
+    pub async fn update_counters(
+        &self,
+        counters_and_deltas: HashMap<Counter, AtomicExpiringValue>,
+    ) -> Result<(), StorageErr> {
+        let mut con = self.conn_manager.clone();
+        let span = trace_span!("datastore");
+
+        // TODO (didierofrivia): Fix this so we don't iterate twice
+        let (counters, limits): (Vec<&Counter>, Vec<&Limit>) =
+            counters_and_deltas.keys().map(|k| (k, k.limit())).unzip();
+        let (ttls, deltas): (Vec<u64>, Vec<i64>) = counters_and_deltas
+            .iter()
+            .map(|(k, v)| (k.seconds(), v))
+            .unzip();
+
+        let redis_script = redis::Script::new(BATCH_UPDATE_COUNTERS);
+        let mut script_invocation = redis_script.prepare_invoke();
+
+        // populate the counter keys in the redis script
+        for counter_key in counters {
+            script_invocation.key(key_for_counter(counter_key));
+        }
+
+        async {
+            script_invocation
+                .arg(keys_for_counters_of_limits(limits))
+                .arg(ttls)
+                .arg(deltas)
+                .invoke_async::<_, _>(&mut con)
+                .await
+        }
+        .instrument(span)
+        .await?;
 
         Ok(())
     }

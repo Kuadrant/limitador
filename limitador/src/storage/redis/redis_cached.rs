@@ -248,17 +248,20 @@ impl CachedRedisStorage {
                         let mut batch = batcher_flusher.lock().unwrap();
                         std::mem::take(&mut *batch)
                     };
-                    let now = SystemTime::now();
-                    for (counter, delta) in counters {
-                        let delta = delta.value_at(now);
-                        if delta > 0 {
-                            storage
-                                .update_counter(&counter, delta)
-                                .await
-                                .or_else(|err| if err.is_transient() { Ok(()) } else { Err(err) })
-                                .expect("Unrecoverable Redis error!");
-                        }
-                    }
+
+                    // TODO: After rebase, the code needs to be refactored to use delta.value_at(SystemTime::now()) and compare delta is greater than 0 after adding the key to update in update_counters
+                    storage
+                        .update_counters(counters)
+                        .await
+                        .or_else(|err| {
+                            if err.is_transient() {
+                                p.store(true, Ordering::Release);
+                                Ok(())
+                            } else {
+                                Err(err)
+                            }
+                        })
+                        .expect("Unrecoverable Redis error!");
                 }
                 interval.tick().await;
             }
