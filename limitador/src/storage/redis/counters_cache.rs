@@ -63,8 +63,13 @@ impl CountersCache {
         redis_ttl_ms: i64,
         ttl_margin: Duration,
     ) {
-        let counter_val = Self::value_from_redis_val(redis_val, counter.max_value());
-        let counter_ttl = self.ttl_from_redis_ttl(redis_ttl_ms, counter.seconds(), counter_val);
+        let counter_val = redis_val.unwrap_or(0);
+        let counter_ttl = self.ttl_from_redis_ttl(
+            redis_ttl_ms,
+            counter.seconds(),
+            counter_val,
+            counter.max_value(),
+        );
         if let Some(ttl) = counter_ttl.checked_sub(ttl_margin) {
             if ttl > Duration::from_secs(0) {
                 self.cache.insert(counter, counter_val, ttl);
@@ -72,17 +77,10 @@ impl CountersCache {
         }
     }
 
-    pub fn decrease_by(&mut self, counter: &Counter, delta: i64) {
+    pub fn increase_by(&mut self, counter: &Counter, delta: i64) {
         if let Some(val) = self.cache.get_mut(counter) {
-            *val -= delta
+            *val += delta
         };
-    }
-
-    fn value_from_redis_val(redis_val: Option<i64>, counter_max: i64) -> i64 {
-        match redis_val {
-            Some(val) => val,
-            None => counter_max,
-        }
     }
 
     fn ttl_from_redis_ttl(
@@ -90,6 +88,7 @@ impl CountersCache {
         redis_ttl_ms: i64,
         counter_seconds: u64,
         counter_val: i64,
+        counter_max: i64,
     ) -> Duration {
         // Redis returns -2 when the key does not exist. Ref:
         // https://redis.io/commands/ttl
@@ -102,11 +101,11 @@ impl CountersCache {
             Duration::from_secs(counter_seconds)
         };
 
-        // If a counter is already at 0, we can cache it for as long as its TTL
+        // If a counter is already at counter_max, we can cache it for as long as its TTL
         // is in Redis. This does not depend on the requests received by other
         // instances of Limitador. No matter what they do, we know that the
         // counter is not going to recover its quota until it expires in Redis.
-        if counter_val <= 0 {
+        if counter_val >= counter_max {
             return counter_ttl;
         }
 
@@ -205,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn insert_saves_max_value_when_redis_val_is_none() {
+    fn insert_saves_0_when_redis_val_is_none() {
         let max_val = 10;
         let mut values = HashMap::new();
         values.insert("app_id".to_string(), "1".to_string());
@@ -223,13 +222,13 @@ mod tests {
         let mut cache = CountersCacheBuilder::new().build();
         cache.insert(counter.clone(), None, 10, Duration::from_secs(0));
 
-        assert_eq!(cache.get(&counter).unwrap(), max_val);
+        assert_eq!(cache.get(&counter).unwrap(), 0);
     }
 
     #[test]
-    fn decrease_by() {
+    fn increase_by() {
         let current_val = 10;
-        let decrease_by = 8;
+        let increase_by = 8;
         let mut values = HashMap::new();
         values.insert("app_id".to_string(), "1".to_string());
         let counter = Counter::new(
@@ -250,8 +249,8 @@ mod tests {
             10,
             Duration::from_secs(0),
         );
-        cache.decrease_by(&counter, decrease_by);
+        cache.increase_by(&counter, increase_by);
 
-        assert_eq!(cache.get(&counter).unwrap(), current_val - decrease_by);
+        assert_eq!(cache.get(&counter).unwrap(), current_val + increase_by);
     }
 }
