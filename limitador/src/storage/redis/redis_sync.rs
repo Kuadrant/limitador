@@ -222,6 +222,15 @@ impl Default for RedisStorage {
     }
 }
 
+impl From<::r2d2::Error> for StorageErr {
+    fn from(e: ::r2d2::Error) -> Self {
+        Self {
+            msg: e.to_string(),
+            transient: false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::storage::redis::RedisStorage;

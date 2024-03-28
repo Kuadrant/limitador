@@ -166,6 +166,7 @@ pub struct RedisStorageCacheConfiguration {
     pub max_ttl: u64,
     pub ttl_ratio: u64,
     pub max_counters: usize,
+    pub response_timeout: u64,
 }
 
 #[derive(PartialEq, Eq, Debug)]

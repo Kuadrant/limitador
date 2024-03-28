@@ -98,6 +98,7 @@ impl From<TryFromSliceError> for StorageErr {
     fn from(_: TryFromSliceError) -> Self {
         Self {
             msg: "Corrupted byte sequence while reading 8 bytes for 64-bit integer".to_owned(),
+            transient: false,
         }
     }
 }

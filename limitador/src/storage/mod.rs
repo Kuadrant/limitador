@@ -299,10 +299,15 @@ pub trait AsyncCounterStorage: Sync + Send {
 #[error("error while accessing the limits storage: {msg}")]
 pub struct StorageErr {
     msg: String,
+    transient: bool,
 }
 
 impl StorageErr {
     pub fn msg(&self) -> &str {
         &self.msg
+    }
+
+    pub fn is_transient(&self) -> bool {
+        self.transient
     }
 }
