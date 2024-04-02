@@ -301,14 +301,7 @@ impl CachedRedisStorage {
         let mut ttls = Vec::with_capacity(counters.len());
         for counter in counters {
             vals.push(Some(0i64));
-            ttls.push(
-                (counter.limit().seconds() * 1000
-                    / self
-                        .cached_counters
-                        .lock()
-                        .unwrap()
-                        .ttl_ratio_cached_counters) as i64,
-            );
+            ttls.push(counter.limit().seconds() as i64 * 1000);
         }
         (vals, ttls)
     }
