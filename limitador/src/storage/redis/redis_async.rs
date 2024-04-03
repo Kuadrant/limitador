@@ -15,7 +15,7 @@ use redis::{AsyncCommands, RedisError};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::time::Duration;
-use tracing::{debug_span, Instrument};
+use tracing::{debug_span, trace_span, Instrument};
 use crate::storage::atomic_expiring_value::AtomicExpiringValue;
 
 // Note: this implementation does not guarantee exact limits. Ensuring that we
@@ -247,18 +247,14 @@ impl AsyncRedisStorage {
 
         for (counter, delta) in counters_and_deltas {
             script_invocation.key(key_for_counter(&counter));
-            script_invocation.arg(key_for_counters_of_limit(&counter.limit()));
-            script_invocation.arg(&counter.seconds());
+            script_invocation.key(key_for_counters_of_limit(counter.limit()));
+            script_invocation.arg(counter.seconds());
             script_invocation.arg(delta);
         }
 
-        async {
-            script_invocation
-                .invoke_async::<_, _>(&mut con)
-                .await
-        }
-        .instrument(span)
-        .await?;
+        async { script_invocation.invoke_async::<_, _>(&mut con).await }
+            .instrument(span)
+            .await?;
 
         Ok(())
     }

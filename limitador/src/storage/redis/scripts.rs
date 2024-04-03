@@ -19,23 +19,22 @@ pub const SCRIPT_UPDATE_COUNTER: &str = "
     end
     return c";
 
-// KEYS: List of counter keys
-// ARGV[j]: Limit keys
-// ARGV[j+1]: TTLs
-// ARGV[j+2]: Deltas
+// KEY[i]: Counter key
+// KEY[i+1]: Limit key
+// ARGV[i]: TTLs
+// ARGV[i+1]: Deltas
 pub const BATCH_UPDATE_COUNTERS: &str = "
-    local j = 1
-    for i, counter_key in ipairs(KEYS) do
-        local limit_key = ARGV[j]
-        local ttl = tonumber(ARGV[j+1])
-        local delta = tonumber(ARGV[j+2])
+    for i = 1, #KEYS, 2 do
+        local counter_key = KEYS[i]
+        local limit_key = KEYS[i+1]
+        local ttl = ARGV[i]
+        local delta = ARGV[i+1]
 
         local c = redis.call('incrby', counter_key, delta)
-        if c == delta then
+        if c == tonumber(delta) then
             redis.call('expire', counter_key, ttl)
             redis.call('sadd', limit_key, counter_key)
         end
-        j = j + 3
     end
 ";
 
