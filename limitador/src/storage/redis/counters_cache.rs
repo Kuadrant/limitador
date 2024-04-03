@@ -8,7 +8,7 @@ use ttl_cache::TtlCache;
 
 pub struct CountersCache {
     max_ttl_cached_counters: Duration,
-    ttl_ratio_cached_counters: u64,
+    pub ttl_ratio_cached_counters: u64,
     cache: TtlCache<Counter, i64>,
 }
 
@@ -204,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn insert_saves_0_when_redis_val_is_none() {
+    fn insert_saves_zero_when_redis_val_is_none() {
         let max_val = 10;
         let mut values = HashMap::new();
         values.insert("app_id".to_string(), "1".to_string());

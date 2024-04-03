@@ -7,7 +7,7 @@ use crate::storage::redis::redis_async::AsyncRedisStorage;
 use crate::storage::redis::scripts::VALUES_AND_TTLS;
 use crate::storage::redis::{
     DEFAULT_FLUSHING_PERIOD_SEC, DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC,
-    DEFAULT_TTL_RATIO_CACHED_COUNTERS,
+    DEFAULT_RESPONSE_TIMEOUT_MS, DEFAULT_TTL_RATIO_CACHED_COUNTERS,
 };
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
@@ -15,8 +15,10 @@ use redis::aio::ConnectionManager;
 use redis::{ConnectionInfo, RedisError};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
+use tracing::{error, warn};
 
 // This is just a first version.
 //
@@ -41,7 +43,7 @@ pub struct CachedRedisStorage {
     batcher_counter_updates: Arc<Mutex<HashMap<Counter, i64>>>,
     async_redis_storage: AsyncRedisStorage,
     redis_conn_manager: ConnectionManager,
-    batching_is_enabled: bool,
+    partitioned: Arc<AtomicBool>,
 }
 
 #[async_trait]
@@ -72,8 +74,6 @@ impl AsyncCounterStorage for CachedRedisStorage {
         load_counters: bool,
         _counter_access: CounterAccess<'a>,
     ) -> Result<Authorization, StorageErr> {
-        let mut con = self.redis_conn_manager.clone();
-
         let mut not_cached: Vec<&mut Counter> = vec![];
         let mut first_limited = None;
 
@@ -109,8 +109,18 @@ impl AsyncCounterStorage for CachedRedisStorage {
         if !not_cached.is_empty() {
             let time_start_get_ttl = Instant::now();
 
-            let (counter_vals, counter_ttls_msecs) =
-                Self::values_with_ttls(&not_cached, &mut con).await?;
+            let (counter_vals, counter_ttls_msecs) = if self.is_partitioned() {
+                self.fallback_vals_ttls(&not_cached)
+            } else {
+                self.values_with_ttls(&not_cached).await.or_else(|err| {
+                    if err.is_transient() {
+                        self.partitioned(true);
+                        Ok(self.fallback_vals_ttls(&not_cached))
+                    } else {
+                        Err(err)
+                    }
+                })?
+            };
 
             // Some time could have passed from the moment we got the TTL from Redis.
             // This margin is not exact, because we don't know exactly the
@@ -161,22 +171,9 @@ impl AsyncCounterStorage for CachedRedisStorage {
         }
 
         // Batch or update depending on configuration
-        if self.batching_is_enabled {
-            let mut batcher = self.batcher_counter_updates.lock().unwrap();
-            for counter in counters.iter() {
-                match batcher.get_mut(counter) {
-                    Some(val) => {
-                        *val += delta;
-                    }
-                    None => {
-                        batcher.insert(counter.clone(), delta);
-                    }
-                }
-            }
-        } else {
-            for counter in counters.iter() {
-                self.update_counter(counter, delta).await?
-            }
+        let mut batcher = self.batcher_counter_updates.lock().unwrap();
+        for counter in counters.iter() {
+            Self::batch_counter(delta, &mut batcher, counter);
         }
 
         Ok(Authorization::Ok)
@@ -202,49 +199,74 @@ impl CachedRedisStorage {
     pub async fn new(redis_url: &str) -> Result<Self, RedisError> {
         Self::new_with_options(
             redis_url,
-            Some(Duration::from_secs(DEFAULT_FLUSHING_PERIOD_SEC)),
+            Duration::from_secs(DEFAULT_FLUSHING_PERIOD_SEC),
             DEFAULT_MAX_CACHED_COUNTERS,
             Duration::from_secs(DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC),
             DEFAULT_TTL_RATIO_CACHED_COUNTERS,
+            Duration::from_millis(DEFAULT_RESPONSE_TIMEOUT_MS),
         )
         .await
     }
 
     async fn new_with_options(
         redis_url: &str,
-        flushing_period: Option<Duration>,
+        flushing_period: Duration,
         max_cached_counters: usize,
         ttl_cached_counters: Duration,
         ttl_ratio_cached_counters: u64,
+        response_timeout: Duration,
     ) -> Result<Self, RedisError> {
         let info = ConnectionInfo::from_str(redis_url)?;
-        let redis_conn_manager = ConnectionManager::new(
+        let redis_conn_manager = ConnectionManager::new_with_backoff_and_timeouts(
             redis::Client::open(info)
                 .expect("This couldn't fail in the past, yet now it did somehow!"),
+            2,
+            100,
+            6,
+            response_timeout,
+            Duration::from_secs(5),
         )
         .await?;
 
+        let partitioned = Arc::new(AtomicBool::new(false));
         let async_redis_storage =
             AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone());
 
         let storage = async_redis_storage.clone();
-        let batcher = Arc::new(Mutex::new(Default::default()));
-        if let Some(flushing_period) = flushing_period {
-            let batcher_flusher = batcher.clone();
-            let mut interval = tokio::time::interval(flushing_period);
-            tokio::spawn(async move {
-                loop {
+        let batcher: Arc<Mutex<HashMap<Counter, i64>>> = Arc::new(Mutex::new(Default::default()));
+        let p = Arc::clone(&partitioned);
+        let batcher_flusher = batcher.clone();
+        let mut interval = tokio::time::interval(flushing_period);
+        tokio::spawn(async move {
+            loop {
+                if p.load(Ordering::Acquire) {
+                    if storage.is_alive().await {
+                        warn!("Partition to Redis resolved!");
+                        p.store(false, Ordering::Release);
+                    }
+                } else {
                     let counters = {
                         let mut batch = batcher_flusher.lock().unwrap();
                         std::mem::take(&mut *batch)
                     };
                     for (counter, delta) in counters {
-                        storage.update_counter(&counter, delta).await.unwrap();
+                        storage
+                            .update_counter(&counter, delta)
+                            .await
+                            .or_else(|err| {
+                                if err.is_transient() {
+                                    p.store(true, Ordering::Release);
+                                    Ok(())
+                                } else {
+                                    Err(err)
+                                }
+                            })
+                            .expect("Unrecoverable Redis error!");
                     }
-                    interval.tick().await;
                 }
-            });
-        }
+                interval.tick().await;
+            }
+        });
 
         let cached_counters = CountersCacheBuilder::new()
             .max_cached_counters(max_cached_counters)
@@ -257,14 +279,39 @@ impl CachedRedisStorage {
             batcher_counter_updates: batcher,
             redis_conn_manager,
             async_redis_storage,
-            batching_is_enabled: flushing_period.is_some(),
+            partitioned,
         })
     }
 
+    fn is_partitioned(&self) -> bool {
+        self.partitioned.load(Ordering::Acquire)
+    }
+
+    fn partitioned(&self, partition: bool) -> bool {
+        if partition {
+            error!("Partition to Redis detected!")
+        }
+        self.partitioned
+            .compare_exchange(!partition, partition, Ordering::Release, Ordering::Acquire)
+            .is_ok()
+    }
+
+    fn fallback_vals_ttls(&self, counters: &Vec<&mut Counter>) -> (Vec<Option<i64>>, Vec<i64>) {
+        let mut vals = Vec::with_capacity(counters.len());
+        let mut ttls = Vec::with_capacity(counters.len());
+        for counter in counters {
+            vals.push(Some(0i64));
+            ttls.push(counter.limit().seconds() as i64 * 1000);
+        }
+        (vals, ttls)
+    }
+
     async fn values_with_ttls(
+        &self,
         counters: &[&mut Counter],
-        redis_con: &mut ConnectionManager,
     ) -> Result<(Vec<Option<i64>>, Vec<i64>), StorageErr> {
+        let mut redis_con = self.redis_conn_manager.clone();
+
         let counter_keys: Vec<String> = counters
             .iter()
             .map(|counter| key_for_counter(counter))
@@ -278,7 +325,7 @@ impl CachedRedisStorage {
         }
 
         let script_res: Vec<Option<i64>> = script_invocation
-            .invoke_async::<_, _>(&mut redis_con.clone())
+            .invoke_async::<_, _>(&mut redis_con)
             .await?;
 
         let mut counter_vals: Vec<Option<i64>> = vec![];
@@ -291,28 +338,45 @@ impl CachedRedisStorage {
 
         Ok((counter_vals, counter_ttls_msecs))
     }
+
+    fn batch_counter(
+        delta: i64,
+        batcher: &mut MutexGuard<HashMap<Counter, i64>>,
+        counter: &Counter,
+    ) {
+        match batcher.get_mut(counter) {
+            Some(val) => {
+                *val += delta;
+            }
+            None => {
+                batcher.insert(counter.clone(), delta);
+            }
+        }
+    }
 }
 
 pub struct CachedRedisStorageBuilder {
     redis_url: String,
-    flushing_period: Option<Duration>,
+    flushing_period: Duration,
     max_cached_counters: usize,
     max_ttl_cached_counters: Duration,
     ttl_ratio_cached_counters: u64,
+    response_timeout: Duration,
 }
 
 impl CachedRedisStorageBuilder {
     pub fn new(redis_url: &str) -> Self {
         Self {
             redis_url: redis_url.to_string(),
-            flushing_period: Some(Duration::from_secs(DEFAULT_FLUSHING_PERIOD_SEC)),
+            flushing_period: Duration::from_secs(DEFAULT_FLUSHING_PERIOD_SEC),
             max_cached_counters: DEFAULT_MAX_CACHED_COUNTERS,
             max_ttl_cached_counters: Duration::from_secs(DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC),
             ttl_ratio_cached_counters: DEFAULT_TTL_RATIO_CACHED_COUNTERS,
+            response_timeout: Duration::from_millis(DEFAULT_RESPONSE_TIMEOUT_MS),
         }
     }
 
-    pub fn flushing_period(mut self, flushing_period: Option<Duration>) -> Self {
+    pub fn flushing_period(mut self, flushing_period: Duration) -> Self {
         self.flushing_period = flushing_period;
         self
     }
@@ -332,6 +396,11 @@ impl CachedRedisStorageBuilder {
         self
     }
 
+    pub fn response_timeout(mut self, response_timeout: Duration) -> Self {
+        self.response_timeout = response_timeout;
+        self
+    }
+
     pub async fn build(self) -> Result<CachedRedisStorage, RedisError> {
         CachedRedisStorage::new_with_options(
             &self.redis_url,
@@ -339,6 +408,7 @@ impl CachedRedisStorageBuilder {
             self.max_cached_counters,
             self.max_ttl_cached_counters,
             self.ttl_ratio_cached_counters,
+            self.response_timeout,
         )
         .await
     }
