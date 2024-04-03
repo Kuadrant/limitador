@@ -207,7 +207,7 @@ impl InfinispanStorage {
                 let _ = infinispan
                     .run(&request::caches::create_local(cache_name))
                     .await
-                    .unwrap();
+                    .expect("Unexpected error creating local infinispan cache");
 
                 Self {
                     infinispan,
@@ -229,8 +229,8 @@ impl InfinispanStorage {
     async fn delete_all_counters(&self) -> Result<(), StorageErr> {
         let resp = self.infinispan.run(&request::counters::list()).await?;
 
-        let counter_names: HashSet<String> =
-            serde_json::from_str(&response_to_string(resp).await).unwrap();
+        let counter_names: HashSet<String> = serde_json::from_str(&response_to_string(resp).await)
+            .expect("Error deserializing json response");
 
         for counter_name in counter_names {
             let _ = self

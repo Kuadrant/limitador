@@ -188,7 +188,7 @@
 //! more performant.
 //!
 
-#![deny(clippy::all, clippy::cargo)]
+#![deny(clippy::all, clippy::cargo, clippy::unwrap_used)]
 // TODO this needs review to reduce the bloat pulled in by dependencies
 #![allow(clippy::multiple_crate_versions)]
 

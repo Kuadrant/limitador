@@ -149,12 +149,20 @@ mod tests {
         let now = SystemTime::now();
         let val = ExpiringValue::new(42, now);
         let raw: Vec<u8> = val.into();
-        let back: ExpiringValue = raw.as_slice().try_into().unwrap();
+        let back: ExpiringValue = raw
+            .as_slice()
+            .try_into()
+            .expect("Failed to convert from slice back to ExpiringValue");
 
         assert_eq!(back.value, 42);
         assert_eq!(
-            back.expiry.duration_since(UNIX_EPOCH).unwrap().as_secs(),
-            now.duration_since(UNIX_EPOCH).unwrap().as_secs()
+            back.expiry
+                .duration_since(UNIX_EPOCH)
+                .expect("Expiry is less than UNIX_EPOCH")
+                .as_secs(),
+            now.duration_since(UNIX_EPOCH)
+                .expect("Expiry is less than UNIX_EPOCH")
+                .as_secs()
         );
     }
 }

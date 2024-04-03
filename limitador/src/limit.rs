@@ -510,13 +510,31 @@ mod conditions {
                 TokenType::EqualEqual => write!(f, "Equality (==)"),
                 TokenType::NotEqual => write!(f, "Unequal (!=)"),
                 TokenType::Identifier => {
-                    write!(f, "Identifier: {}", self.literal.as_ref().unwrap())
+                    write!(
+                        f,
+                        "Identifier: {}",
+                        self.literal
+                            .as_ref()
+                            .expect("TokenType::Identifier missing a literal value")
+                    )
                 }
                 TokenType::String => {
-                    write!(f, "String literal: {}", self.literal.as_ref().unwrap())
+                    write!(
+                        f,
+                        "String literal: {}",
+                        self.literal
+                            .as_ref()
+                            .expect("TokenType::String missing a literal value")
+                    )
                 }
                 TokenType::Number => {
-                    write!(f, "Number literal: {}", self.literal.as_ref().unwrap())
+                    write!(
+                        f,
+                        "Number literal: {}",
+                        self.literal
+                            .as_ref()
+                            .expect("TokenType::Number missing a literal value")
+                    )
                 }
             }
         }
@@ -826,7 +844,7 @@ mod tests {
 
         let name = "Test Limit";
         limit.set_name(name.to_string());
-        assert_eq!(name, limit.name.unwrap())
+        assert_eq!(name, limit.name.expect("Name to be set"))
     }
 
     #[test]

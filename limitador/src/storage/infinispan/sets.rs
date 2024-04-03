@@ -23,7 +23,8 @@ pub async fn get(
         HashSet::new()
     } else {
         // TODO: handle other errors
-        serde_json::from_str(&response_to_string(get_entry_response).await).unwrap()
+        serde_json::from_str(&response_to_string(get_entry_response).await)
+            .expect("Error deserializing json response")
     };
 
     Ok(set)
@@ -71,7 +72,8 @@ async fn add_set(
     } else {
         // TODO: handle other errors
         let mut limits_set: HashSet<String> =
-            serde_json::from_str(&response_to_string(get_entry_response).await).unwrap();
+            serde_json::from_str(&response_to_string(get_entry_response).await)
+                .expect("Error deserializing json response");
         limits_set.insert(element);
 
         let _ = infinispan

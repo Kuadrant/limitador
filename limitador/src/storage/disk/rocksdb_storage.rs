@@ -184,7 +184,7 @@ impl RocksDbStorage {
             Some(Vec::from(value))
         });
         opts.create_if_missing(true);
-        let db = DB::open(&opts, path).unwrap();
+        let db = DB::open(&opts, path)?;
         Ok(Self { db })
     }
 
@@ -246,11 +246,15 @@ mod tests {
             assert!(files.next().is_some());
 
             assert!(
-                storage.is_within_limits(&counter, 1).unwrap(),
+                storage
+                    .is_within_limits(&counter, 1)
+                    .expect("Error checking is_within_limits"),
                 "Should be a fresh value"
             );
             assert!(
-                storage.is_within_limits(&counter, 1).unwrap(),
+                storage
+                    .is_within_limits(&counter, 1)
+                    .expect("Error checking is_within_limits"),
                 "Should be from the store, yet still below threshold"
             );
             std::thread::sleep(Duration::from_secs(2));
@@ -259,7 +263,9 @@ mod tests {
                 "Should have written the counter to disk"
             );
             assert!(
-                !storage.is_within_limits(&counter, 1).unwrap(),
+                !storage
+                    .is_within_limits(&counter, 1)
+                    .expect("Error checking is_within_limits"),
                 "Should now be above threshold!"
             );
         }
@@ -268,7 +274,9 @@ mod tests {
             let storage = RocksDbStorage::open(tmp.path(), OptimizeFor::Space)
                 .expect("We should still have a storage");
             assert!(
-                !storage.is_within_limits(&counter, 1).unwrap(),
+                !storage
+                    .is_within_limits(&counter, 1)
+                    .expect("Error checking is_within_limits"),
                 "Should be above threshold still!"
             );
         }
