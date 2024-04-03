@@ -26,22 +26,18 @@ impl Timings {
 impl ops::Add for Timings {
     type Output = Self;
 
-    fn add(self, _rhs: Self) -> Self {
+    fn add(self, rhs: Self) -> Self {
         Self {
-            busy: self.busy + _rhs.busy,
-            idle: self.idle + _rhs.idle,
-            last: if self.last < _rhs.last {
-                _rhs.last
-            } else {
-                self.last
-            },
+            busy: self.busy + rhs.busy,
+            idle: self.idle + rhs.idle,
+            last: self.last.max(rhs.last),
         }
     }
 }
 
 impl ops::AddAssign for Timings {
-    fn add_assign(&mut self, _rhs: Self) {
-        *self = *self + _rhs
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs
     }
 }
 
@@ -140,7 +136,12 @@ where
         if let Some(span_state) = extensions.get_mut::<SpanState>() {
             // either we are an aggregator or nested within one
             for group in span_state.group_times.keys() {
-                for record in &self.groups.get(group).unwrap().records {
+                for record in &self
+                    .groups
+                    .get(group)
+                    .expect("Span state contains group times for an unconfigured group")
+                    .records
+                {
                     if name == record {
                         extensions.insert(Timings::new());
                         return;
