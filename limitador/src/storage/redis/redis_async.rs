@@ -242,27 +242,18 @@ impl AsyncRedisStorage {
         let mut con = self.conn_manager.clone();
         let span = trace_span!("datastore");
 
-        // TODO (didierofrivia): Fix this so we don't iterate twice
-        let (counters, limits): (Vec<&Counter>, Vec<&Limit>) =
-            counters_and_deltas.keys().map(|k| (k, k.limit())).unzip();
-        let (ttls, deltas): (Vec<u64>, Vec<i64>) = counters_and_deltas
-            .iter()
-            .map(|(k, v)| (k.seconds(), v))
-            .unzip();
-
         let redis_script = redis::Script::new(BATCH_UPDATE_COUNTERS);
         let mut script_invocation = redis_script.prepare_invoke();
 
-        // populate the counter keys in the redis script
-        for counter_key in counters {
-            script_invocation.key(key_for_counter(counter_key));
+        for (counter, delta) in counters_and_deltas {
+            script_invocation.key(key_for_counter(&counter));
+            script_invocation.arg(key_for_counters_of_limit(&counter.limit()));
+            script_invocation.arg(&counter.seconds());
+            script_invocation.arg(delta);
         }
 
         async {
             script_invocation
-                .arg(keys_for_counters_of_limits(limits))
-                .arg(ttls)
-                .arg(deltas)
                 .invoke_async::<_, _>(&mut con)
                 .await
         }
