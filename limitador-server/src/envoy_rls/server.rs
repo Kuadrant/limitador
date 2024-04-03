@@ -1,8 +1,13 @@
+use opentelemetry::global;
+use opentelemetry::propagation::Extractor;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use tonic::codegen::http::HeaderMap;
 use tonic::{transport, transport::Server, Request, Response, Status};
+use tracing::Span;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use limitador::counter::Counter;
 
@@ -48,8 +53,13 @@ impl RateLimitService for MyRateLimiter {
         debug!("Request received: {:?}", request);
 
         let mut values: HashMap<String, String> = HashMap::new();
-        let req = request.into_inner();
+        let (metadata, _ext, req) = request.into_parts();
         let namespace = req.domain;
+        let rl_headers = RateLimitRequestHeaders::new(metadata.into_headers());
+        let parent_context =
+            global::get_text_map_propagator(|propagator| propagator.extract(&rl_headers));
+        let span = Span::current();
+        span.set_parent(parent_context);
 
         if namespace.is_empty() {
             return Ok(Response::new(RateLimitResponse {
@@ -193,6 +203,27 @@ pub fn to_response_header(
         }
     };
     headers
+}
+
+struct RateLimitRequestHeaders {
+    inner: HeaderMap,
+}
+impl RateLimitRequestHeaders {
+    pub fn new(inner: HeaderMap) -> Self {
+        Self { inner }
+    }
+}
+impl Extractor for RateLimitRequestHeaders {
+    fn get(&self, key: &str) -> Option<&str> {
+        match self.inner.get(key) {
+            Some(v) => v.to_str().ok(),
+            None => None,
+        }
+    }
+
+    fn keys(&self) -> Vec<&str> {
+        self.inner.keys().map(|k| k.as_str()).collect()
+    }
 }
 
 mod rls_proto {
