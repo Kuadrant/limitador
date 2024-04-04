@@ -1,7 +1,9 @@
-use crate::limit::Namespace;
+use lazy_static::lazy_static;
+use limitador::limit::Namespace;
 use prometheus::{
     Encoder, Histogram, HistogramOpts, IntCounterVec, IntGauge, Opts, Registry, TextEncoder,
 };
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 const NAMESPACE_LABEL: &str = "limitador_namespace";
@@ -36,7 +38,7 @@ pub struct PrometheusMetrics {
     authorized_calls: IntCounterVec,
     limited_calls: IntCounterVec,
     counter_latency: Histogram,
-    use_limit_name_label: bool,
+    use_limit_name_label: AtomicBool,
 }
 
 impl Default for PrometheusMetrics {
@@ -58,6 +60,11 @@ impl PrometheusMetrics {
         Self::new_with_options(true)
     }
 
+    pub fn set_use_limit_name_in_label(&self, use_limit_name_in_label: bool) {
+        self.use_limit_name_label
+            .store(use_limit_name_in_label, Ordering::SeqCst)
+    }
+
     pub fn incr_authorized_calls(&self, namespace: &Namespace) {
         self.authorized_calls
             .with_label_values(&[namespace.as_ref()])
@@ -70,7 +77,7 @@ impl PrometheusMetrics {
     {
         let mut labels = vec![namespace.as_ref()];
 
-        if self.use_limit_name_label {
+        if self.use_limit_name_label.load(Ordering::Relaxed) {
             // If we have configured the metric to accept 2 labels we need to
             // set values for them.
             labels.push(limit_name.into().unwrap_or(""));
@@ -81,14 +88,6 @@ impl PrometheusMetrics {
 
     pub fn counter_access(&self, duration: Duration) {
         self.counter_latency.observe(duration.as_secs_f64());
-    }
-
-    #[must_use]
-    pub fn counter_accesses(&self) -> CounterAccess {
-        CounterAccess {
-            metrics: self,
-            duration: Duration::ZERO,
-        }
     }
 
     pub fn gather_metrics(&self) -> String {
@@ -132,7 +131,7 @@ impl PrometheusMetrics {
             authorized_calls: authorized_calls_counter,
             limited_calls: limited_calls_counter,
             counter_latency,
-            use_limit_name_label,
+            use_limit_name_label: AtomicBool::new(use_limit_name_label),
         }
     }
 
@@ -168,25 +167,6 @@ impl PrometheusMetrics {
             &DATASTORE_LATENCY.description,
         ))
         .unwrap()
-    }
-}
-
-pub struct CounterAccess<'a> {
-    metrics: &'a PrometheusMetrics,
-    duration: Duration,
-}
-
-impl CounterAccess<'_> {
-    pub fn observe(&mut self, duration: Duration) {
-        self.duration += duration;
-    }
-}
-
-impl<'a> Drop for CounterAccess<'a> {
-    fn drop(&mut self) {
-        if self.duration > Duration::ZERO {
-            self.metrics.counter_access(self.duration);
-        }
     }
 }
 
@@ -322,39 +302,6 @@ mod tests {
             namespace.as_ref(),
             count,
         )
-    }
-
-    #[test]
-    fn collects_latencies() {
-        let metrics = PrometheusMetrics::new();
-        assert_eq!(metrics.counter_latency.get_sample_count(), 0);
-        {
-            let _access = metrics.counter_accesses();
-        }
-        assert_eq!(metrics.counter_latency.get_sample_count(), 0);
-        {
-            let mut access = metrics.counter_accesses();
-            access.observe(Duration::from_millis(12));
-        }
-        assert_eq!(metrics.counter_latency.get_sample_count(), 1);
-        assert_eq!(
-            metrics.counter_latency.get_sample_sum(),
-            Duration::from_millis(12).as_secs_f64()
-        );
-        {
-            let mut access = metrics.counter_accesses();
-            access.observe(Duration::from_millis(5));
-            assert_eq!(metrics.counter_latency.get_sample_count(), 1);
-            assert_eq!(
-                metrics.counter_latency.get_sample_sum(),
-                Duration::from_millis(12).as_secs_f64()
-            );
-        }
-        assert_eq!(metrics.counter_latency.get_sample_count(), 2);
-        assert_eq!(
-            metrics.counter_latency.get_sample_sum(),
-            Duration::from_millis(17).as_secs_f64()
-        );
     }
 
     fn formatted_counter_with_namespace_and_limit(

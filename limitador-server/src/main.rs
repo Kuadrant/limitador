@@ -13,8 +13,10 @@ use crate::config::{
 };
 use crate::envoy_rls::server::{run_envoy_rls_server, RateLimitHeaders};
 use crate::http_api::server::run_http_server;
+use crate::metrics::MetricsLayer;
 use clap::{value_parser, Arg, ArgAction, Command};
 use const_format::formatcp;
+use lazy_static::lazy_static;
 use limitador::counter::Counter;
 use limitador::errors::LimitadorError;
 use limitador::limit::Limit;
@@ -36,6 +38,7 @@ use opentelemetry::{global, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::{trace, Resource};
+use prometheus_metrics::PrometheusMetrics;
 use std::env::VarError;
 use std::fmt::Display;
 use std::fs;
@@ -55,6 +58,8 @@ mod envoy_rls;
 mod http_api;
 
 mod config;
+mod metrics;
+pub mod prometheus_metrics;
 
 const LIMITADOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 const LIMITADOR_PROFILE: &str = env!("LIMITADOR_PROFILE");
@@ -71,6 +76,10 @@ pub enum LimitadorServerError {
     Internal(LimitadorError),
 }
 
+lazy_static! {
+    pub static ref PROMETHEUS_METRICS: PrometheusMetrics = PrometheusMetrics::default();
+}
+
 pub enum Limiter {
     Blocking(RateLimiter),
     Async(AsyncRateLimiter),
@@ -85,29 +94,19 @@ impl From<LimitadorError> for LimitadorServerError {
 impl Limiter {
     pub async fn new(config: Configuration) -> Result<Self, LimitadorServerError> {
         let rate_limiter = match config.storage {
-            StorageConfiguration::Redis(cfg) => {
-                Self::redis_limiter(cfg, config.limit_name_in_labels).await
-            }
+            StorageConfiguration::Redis(cfg) => Self::redis_limiter(cfg).await,
             #[cfg(feature = "infinispan")]
-            StorageConfiguration::Infinispan(cfg) => {
-                Self::infinispan_limiter(cfg, config.limit_name_in_labels).await
-            }
-            StorageConfiguration::InMemory(cfg) => {
-                Self::in_memory_limiter(cfg, config.limit_name_in_labels)
-            }
-            StorageConfiguration::Disk(cfg) => Self::disk_limiter(cfg, config.limit_name_in_labels),
+            StorageConfiguration::Infinispan(cfg) => Self::infinispan_limiter(cfg).await,
+            StorageConfiguration::InMemory(cfg) => Self::in_memory_limiter(cfg),
+            StorageConfiguration::Disk(cfg) => Self::disk_limiter(cfg),
         };
 
         Ok(rate_limiter)
     }
 
-    async fn redis_limiter(cfg: RedisStorageConfiguration, limit_name_labels: bool) -> Self {
+    async fn redis_limiter(cfg: RedisStorageConfiguration) -> Self {
         let storage = Self::storage_using_redis(cfg).await;
-        let mut rate_limiter_builder = AsyncRateLimiterBuilder::new(storage);
-
-        if limit_name_labels {
-            rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
-        }
+        let rate_limiter_builder = AsyncRateLimiterBuilder::new(storage);
 
         Self::Async(rate_limiter_builder.build())
     }
@@ -152,10 +151,7 @@ impl Limiter {
     }
 
     #[cfg(feature = "infinispan")]
-    async fn infinispan_limiter(
-        cfg: InfinispanStorageConfiguration,
-        limit_name_labels: bool,
-    ) -> Self {
+    async fn infinispan_limiter(cfg: InfinispanStorageConfiguration) -> Self {
         use url::Url;
 
         let parsed_url = Url::parse(&cfg.url).unwrap();
@@ -191,17 +187,13 @@ impl Limiter {
             None => builder.build().await,
         };
 
-        let mut rate_limiter_builder =
+        let rate_limiter_builder =
             AsyncRateLimiterBuilder::new(AsyncStorage::with_counter_storage(Box::new(storage)));
-
-        if limit_name_labels {
-            rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
-        }
 
         Self::Async(rate_limiter_builder.build())
     }
 
-    fn disk_limiter(cfg: DiskStorageConfiguration, limit_name_in_labels: bool) -> Self {
+    fn disk_limiter(cfg: DiskStorageConfiguration) -> Self {
         let storage = match DiskStorage::open(cfg.path.as_str(), cfg.optimization) {
             Ok(storage) => storage,
             Err(err) => {
@@ -209,23 +201,15 @@ impl Limiter {
                 process::exit(1)
             }
         };
-        let mut rate_limiter_builder =
+        let rate_limiter_builder =
             RateLimiterBuilder::with_storage(Storage::with_counter_storage(Box::new(storage)));
-
-        if limit_name_in_labels {
-            rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
-        }
 
         Self::Blocking(rate_limiter_builder.build())
     }
 
-    fn in_memory_limiter(cfg: InMemoryStorageConfiguration, limit_name_in_labels: bool) -> Self {
-        let mut rate_limiter_builder =
+    fn in_memory_limiter(cfg: InMemoryStorageConfiguration) -> Self {
+        let rate_limiter_builder =
             RateLimiterBuilder::new(cfg.cache_size.or_else(guess_cache_size).unwrap());
-
-        if limit_name_in_labels {
-            rate_limiter_builder = rate_limiter_builder.with_prometheus_limit_name_labels()
-        }
 
         Self::Blocking(rate_limiter_builder.build())
     }
@@ -292,6 +276,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tracing_subscriber::fmt::layer()
         };
 
+        let metrics_layer = MetricsLayer::new().gather(
+            "should_rate_limit",
+            |timings| PROMETHEUS_METRICS.counter_access(Duration::from(timings)),
+            vec!["datastore"],
+        );
+
         if !config.tracing_endpoint.is_empty() {
             global::set_text_map_propagator(TraceContextPropagator::new());
             let tracer = opentelemetry_otlp::new_pipeline()
@@ -308,15 +298,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
             tracing_subscriber::registry()
                 .with(level)
+                .with(metrics_layer)
                 .with(fmt_layer)
                 .with(telemetry_layer)
                 .init();
         } else {
             tracing_subscriber::registry()
                 .with(level)
+                .with(metrics_layer)
                 .with(fmt_layer)
                 .init();
         };
+
+        PROMETHEUS_METRICS.set_use_limit_name_in_label(config.limit_name_in_labels);
 
         info!("Version: {}", version);
         info!("Using config: {:?}", config);

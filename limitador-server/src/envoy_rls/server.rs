@@ -19,7 +19,7 @@ use crate::envoy_rls::server::envoy::service::ratelimit::v3::rate_limit_service_
 use crate::envoy_rls::server::envoy::service::ratelimit::v3::{
     RateLimitRequest, RateLimitResponse,
 };
-use crate::Limiter;
+use crate::{Limiter, PROMETHEUS_METRICS};
 
 include!("envoy_types.rs");
 
@@ -124,8 +124,11 @@ impl RateLimitService for MyRateLimiter {
 
         let mut rate_limited_resp = rate_limited_resp.unwrap();
         let resp_code = if rate_limited_resp.limited {
+            PROMETHEUS_METRICS
+                .incr_limited_calls(&namespace, rate_limited_resp.limit_name.as_deref());
             Code::OverLimit
         } else {
+            PROMETHEUS_METRICS.incr_authorized_calls(&namespace);
             Code::Ok
         };
 

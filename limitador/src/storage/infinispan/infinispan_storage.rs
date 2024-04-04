@@ -1,6 +1,5 @@
 use crate::counter::Counter;
 use crate::limit::Limit;
-use crate::prometheus_metrics::CounterAccess;
 use crate::storage::infinispan::counters::{Consistency, CounterOpts};
 use crate::storage::infinispan::response::response_to_string;
 use crate::storage::infinispan::{
@@ -74,7 +73,6 @@ impl AsyncCounterStorage for InfinispanStorage {
         counters: &mut Vec<Counter>,
         delta: i64,
         load_counters: bool,
-        _counter_access: CounterAccess<'a>,
     ) -> Result<Authorization, StorageErr> {
         let mut counter_keys = Vec::with_capacity(counters.len());
 
