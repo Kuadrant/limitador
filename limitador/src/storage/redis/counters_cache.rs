@@ -105,7 +105,7 @@ impl CountersCache {
         if let Some(ttl) = counter_ttl.checked_sub(ttl_margin) {
             if ttl > Duration::from_secs(0) {
                 let value = CachedCounterValue::from(&counter, counter_val);
-                self.cache.insert(counter, Arc::new(value));
+                self.cache.get_with(counter.clone(), || Arc::new(value));
             }
         }
     }
