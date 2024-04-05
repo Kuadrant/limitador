@@ -310,8 +310,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .init();
         };
 
-        prometheus_metrics.set_use_limit_name_in_label(limit_name_in_metrics);
-
         info!("Version: {}", version);
         info!("Using config: {:?}", config);
         (config, prometheus_metrics)

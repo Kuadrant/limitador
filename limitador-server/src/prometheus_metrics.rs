@@ -2,7 +2,6 @@ use limitador::limit::Namespace;
 use prometheus::{
     Encoder, Histogram, HistogramOpts, IntCounterVec, IntGauge, Opts, Registry, TextEncoder,
 };
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 const NAMESPACE_LABEL: &str = "limitador_namespace";
@@ -13,7 +12,7 @@ pub struct PrometheusMetrics {
     authorized_calls: IntCounterVec,
     limited_calls: IntCounterVec,
     counter_latency: Histogram,
-    use_limit_name_label: AtomicBool,
+    use_limit_name_label: bool,
 }
 
 impl Default for PrometheusMetrics {
@@ -35,11 +34,6 @@ impl PrometheusMetrics {
         Self::new_with_options(true)
     }
 
-    pub fn set_use_limit_name_in_label(&self, use_limit_name_in_label: bool) {
-        self.use_limit_name_label
-            .store(use_limit_name_in_label, Ordering::SeqCst)
-    }
-
     pub fn incr_authorized_calls(&self, namespace: &Namespace) {
         self.authorized_calls
             .with_label_values(&[namespace.as_ref()])
@@ -52,7 +46,7 @@ impl PrometheusMetrics {
     {
         let mut labels = vec![namespace.as_ref()];
 
-        if self.use_limit_name_label.load(Ordering::Relaxed) {
+        if self.use_limit_name_label {
             // If we have configured the metric to accept 2 labels we need to
             // set values for them.
             labels.push(limit_name.into().unwrap_or(""));
@@ -106,7 +100,7 @@ impl PrometheusMetrics {
             authorized_calls: authorized_calls_counter,
             limited_calls: limited_calls_counter,
             counter_latency,
-            use_limit_name_label: AtomicBool::new(use_limit_name_label),
+            use_limit_name_label,
         }
     }
 
