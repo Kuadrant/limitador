@@ -203,7 +203,7 @@ impl CachedRedisStorage {
             DEFAULT_TTL_RATIO_CACHED_COUNTERS,
             Duration::from_millis(DEFAULT_RESPONSE_TIMEOUT_MS),
         )
-        .await
+            .await
     }
 
     async fn new_with_options(
@@ -224,7 +224,7 @@ impl CachedRedisStorage {
             response_timeout,
             Duration::from_secs(5),
         )
-        .await?;
+            .await?;
 
         let partitioned = Arc::new(AtomicBool::new(false));
         let async_redis_storage =
@@ -250,11 +250,14 @@ impl CachedRedisStorage {
                     };
                     let now = SystemTime::now();
                     for (counter, delta) in counters {
-                        storage
-                            .update_counter(&counter, delta.value_at(now))
-                            .await
-                            .or_else(|err| if err.is_transient() { Ok(()) } else { Err(err) })
-                            .expect("Unrecoverable Redis error!");
+                        let delta = delta.value_at(now);
+                        if delta > 0 {
+                            storage
+                                .update_counter(&counter, delta)
+                                .await
+                                .or_else(|err| if err.is_transient() { Ok(()) } else { Err(err) })
+                                .expect("Unrecoverable Redis error!");
+                        }
                     }
                 }
                 interval.tick().await;
@@ -388,7 +391,7 @@ impl CachedRedisStorageBuilder {
             self.ttl_ratio_cached_counters,
             self.response_timeout,
         )
-        .await
+            .await
     }
 }
 
