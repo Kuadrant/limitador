@@ -1,5 +1,5 @@
 use crate::counter::Counter;
-use crate::storage::atomic_expiring_value::AtomicExpiringValue;
+use crate::storage::atomic_expiring_value::{AtomicExpiringValue, AtomicExpiryTime};
 use crate::storage::redis::{
     DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC,
     DEFAULT_TTL_RATIO_CACHED_COUNTERS,
@@ -10,6 +10,7 @@ use std::time::{Duration, SystemTime};
 
 pub struct CachedCounterValue {
     value: AtomicExpiringValue,
+    expiry: AtomicExpiryTime,
 }
 
 pub struct CountersCache {
@@ -19,11 +20,22 @@ pub struct CountersCache {
 }
 
 impl CachedCounterValue {
-    pub fn from(counter: &Counter, value: i64) -> Self {
+    pub fn from(counter: &Counter, value: i64, ttl: Duration) -> Self {
         let now = SystemTime::now();
         Self {
             value: AtomicExpiringValue::new(value, now + Duration::from_secs(counter.seconds())),
+            expiry: AtomicExpiryTime::from_now(ttl),
         }
+    }
+
+    pub fn expired_at(&self, now: SystemTime) -> bool {
+        self.expiry.expired_at(now)
+    }
+
+    pub fn set_from_authority(&self, counter: &Counter, value: i64, expiry: Duration) {
+        let time_window = Duration::from_secs(counter.seconds());
+        self.value.set(value, time_window);
+        self.expiry.update(expiry);
     }
 
     pub fn delta(&self, counter: &Counter, delta: i64) -> i64 {
@@ -41,6 +53,10 @@ impl CachedCounterValue {
 
     pub fn is_limited(&self, counter: &Counter, delta: i64) -> bool {
         self.hits(counter) as i128 + delta as i128 > counter.max_value() as i128
+    }
+
+    pub fn to_next_window(&self) -> Duration {
+        self.value.ttl()
     }
 }
 
@@ -94,20 +110,30 @@ impl CountersCache {
         redis_val: Option<i64>,
         redis_ttl_ms: i64,
         ttl_margin: Duration,
-    ) {
+        now: SystemTime,
+    ) -> Arc<CachedCounterValue> {
         let counter_val = redis_val.unwrap_or(0);
-        let counter_ttl = self.ttl_from_redis_ttl(
+        let cache_ttl = self.ttl_from_redis_ttl(
             redis_ttl_ms,
             counter.seconds(),
             counter_val,
             counter.max_value(),
         );
-        if let Some(ttl) = counter_ttl.checked_sub(ttl_margin) {
-            if ttl > Duration::from_secs(0) {
-                let value = CachedCounterValue::from(&counter, counter_val);
-                self.cache.get_with(counter.clone(), || Arc::new(value));
+        if let Some(ttl) = cache_ttl.checked_sub(ttl_margin) {
+            if ttl > Duration::ZERO {
+                let value = CachedCounterValue::from(&counter, counter_val, cache_ttl);
+                let previous = self.cache.get_with(counter.clone(), || Arc::new(value));
+                if previous.expired_at(now) {
+                    previous.set_from_authority(&counter, counter_val, cache_ttl);
+                }
+                return previous;
             }
         }
+        Arc::new(CachedCounterValue::from(
+            &counter,
+            counter_val,
+            Duration::ZERO,
+        ))
     }
 
     pub fn increase_by(&self, counter: &Counter, delta: i64) {
@@ -183,7 +209,13 @@ mod tests {
         );
 
         let cache = CountersCacheBuilder::new().build();
-        cache.insert(counter.clone(), Some(10), 10, Duration::from_secs(0));
+        cache.insert(
+            counter.clone(),
+            Some(10),
+            10,
+            Duration::from_secs(0),
+            SystemTime::now(),
+        );
 
         assert!(cache.get(&counter).is_some());
     }
@@ -231,6 +263,7 @@ mod tests {
             Some(current_value),
             10,
             Duration::from_secs(0),
+            SystemTime::now(),
         );
 
         assert_eq!(
@@ -256,7 +289,13 @@ mod tests {
         );
 
         let cache = CountersCacheBuilder::new().build();
-        cache.insert(counter.clone(), None, 10, Duration::from_secs(0));
+        cache.insert(
+            counter.clone(),
+            None,
+            10,
+            Duration::from_secs(0),
+            SystemTime::now(),
+        );
 
         assert_eq!(cache.get(&counter).map(|e| e.hits(&counter)).unwrap(), 0);
     }
@@ -278,12 +317,13 @@ mod tests {
             values,
         );
 
-        let mut cache = CountersCacheBuilder::new().build();
+        let cache = CountersCacheBuilder::new().build();
         cache.insert(
             counter.clone(),
             Some(current_val),
             10,
             Duration::from_secs(0),
+            SystemTime::now(),
         );
         cache.increase_by(&counter, increase_by);
 
