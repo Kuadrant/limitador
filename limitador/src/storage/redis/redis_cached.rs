@@ -253,14 +253,7 @@ impl CachedRedisStorage {
                         storage
                             .update_counter(&counter, delta.value_at(now))
                             .await
-                            .or_else(|err| {
-                                if err.is_transient() {
-                                    p.store(true, Ordering::Release);
-                                    Ok(())
-                                } else {
-                                    Err(err)
-                                }
-                            })
+                            .or_else(|err| if err.is_transient() { Ok(()) } else { Err(err) })
                             .expect("Unrecoverable Redis error!");
                     }
                 }
