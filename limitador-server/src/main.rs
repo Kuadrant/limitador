@@ -16,7 +16,6 @@ use crate::http_api::server::run_http_server;
 use crate::metrics::MetricsLayer;
 use clap::{value_parser, Arg, ArgAction, Command};
 use const_format::formatcp;
-use lazy_static::lazy_static;
 use limitador::counter::Counter;
 use limitador::errors::LimitadorError;
 use limitador::limit::Limit;
@@ -74,10 +73,6 @@ pub enum LimitadorServerError {
     ConfigFile(String),
     #[error("Internal error: {0}")]
     Internal(LimitadorError),
-}
-
-lazy_static! {
-    pub static ref PROMETHEUS_METRICS: PrometheusMetrics = PrometheusMetrics::default();
 }
 
 pub enum Limiter {
@@ -262,7 +257,7 @@ fn find_first_negative_limit(limits: &[Limit]) -> Option<usize> {
 
 #[actix_rt::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = {
+    let (config, prometheus_metrics) = {
         let (config, version) = create_config();
         println!("{LIMITADOR_HEADER} {version}");
         let level = config.log_level.unwrap_or_else(|| {
@@ -276,9 +271,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tracing_subscriber::fmt::layer()
         };
 
+        let limit_name_in_metrics = config.limit_name_in_labels;
+        let prometheus_metrics =
+            Arc::new(PrometheusMetrics::new_with_options(limit_name_in_metrics));
+        let metrics = prometheus_metrics.clone();
+
         let metrics_layer = MetricsLayer::new().gather(
             "should_rate_limit",
-            |timings| PROMETHEUS_METRICS.counter_access(Duration::from(timings)),
+            move |timings| metrics.counter_access(Duration::from(timings)),
             vec!["datastore"],
         );
 
@@ -310,11 +310,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .init();
         };
 
-        PROMETHEUS_METRICS.set_use_limit_name_in_label(config.limit_name_in_labels);
+        prometheus_metrics.set_use_limit_name_in_label(limit_name_in_metrics);
 
         info!("Version: {}", version);
         info!("Using config: {:?}", config);
-        config
+        (config, prometheus_metrics)
     };
 
     let limit_file = config.limits_file.clone();
@@ -410,11 +410,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         envoy_rls_address.to_string(),
         rate_limiter.clone(),
         rate_limit_headers,
+        prometheus_metrics.clone(),
         grpc_reflection_service,
     ));
 
     info!("HTTP server starting on {}", http_api_address);
-    run_http_server(&http_api_address, rate_limiter.clone()).await?;
+    run_http_server(&http_api_address, rate_limiter.clone(), prometheus_metrics).await?;
 
     Ok(())
 }

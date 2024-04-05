@@ -1,5 +1,6 @@
 use crate::http_api::request_types::{CheckAndReportInfo, Counter, Limit};
-use crate::{Limiter, PROMETHEUS_METRICS};
+use crate::prometheus_metrics::PrometheusMetrics;
+use crate::Limiter;
 use actix_web::{http::StatusCode, ResponseError};
 use actix_web::{App, HttpServer};
 use paperclip::actix::{
@@ -44,20 +45,22 @@ async fn status() -> web::Json<()> {
     Json(())
 }
 
-#[tracing::instrument(skip(_data))]
+#[tracing::instrument(skip(data))]
 #[api_v2_operation]
-async fn metrics(_data: web::Data<Arc<Limiter>>) -> String {
-    PROMETHEUS_METRICS.gather_metrics()
+async fn metrics(data: web::Data<(Arc<Limiter>, Arc<PrometheusMetrics>)>) -> String {
+    let (_, metrics) = data.get_ref();
+    metrics.gather_metrics()
 }
 
 #[api_v2_operation]
 #[tracing::instrument(skip(data))]
 async fn get_limits(
-    data: web::Data<Arc<Limiter>>,
+    data: web::Data<(Arc<Limiter>, Arc<PrometheusMetrics>)>,
     namespace: web::Path<String>,
 ) -> Result<web::Json<Vec<Limit>>, ErrorResponse> {
     let namespace = &namespace.into_inner().into();
-    let limits = match data.get_ref().as_ref() {
+    let (limiter, _) = data.get_ref();
+    let limits = match limiter.as_ref() {
         Limiter::Blocking(limiter) => limiter.get_limits(namespace),
         Limiter::Async(limiter) => limiter.get_limits(namespace),
     };
@@ -68,11 +71,12 @@ async fn get_limits(
 #[tracing::instrument(skip(data))]
 #[api_v2_operation]
 async fn get_counters(
-    data: web::Data<Arc<Limiter>>,
+    data: web::Data<(Arc<Limiter>, Arc<PrometheusMetrics>)>,
     namespace: web::Path<String>,
 ) -> Result<web::Json<Vec<Counter>>, ErrorResponse> {
     let namespace = namespace.into_inner().into();
-    let get_counters_result = match data.get_ref().as_ref() {
+    let (limiter, _) = data.get_ref();
+    let get_counters_result = match limiter.as_ref() {
         Limiter::Blocking(limiter) => limiter.get_counters(&namespace),
         Limiter::Async(limiter) => limiter.get_counters(&namespace).await,
     };
@@ -92,7 +96,7 @@ async fn get_counters(
 #[tracing::instrument(skip(state))]
 #[api_v2_operation]
 async fn check(
-    state: web::Data<Arc<Limiter>>,
+    state: web::Data<(Arc<Limiter>, Arc<PrometheusMetrics>)>,
     request: web::Json<CheckAndReportInfo>,
 ) -> Result<web::Json<()>, ErrorResponse> {
     let CheckAndReportInfo {
@@ -101,7 +105,8 @@ async fn check(
         delta,
     } = request.into_inner();
     let namespace = namespace.into();
-    let is_rate_limited_result = match state.get_ref().as_ref() {
+    let (limiter, _) = state.get_ref();
+    let is_rate_limited_result = match limiter.as_ref() {
         Limiter::Blocking(limiter) => limiter.is_rate_limited(&namespace, &values, delta),
         Limiter::Async(limiter) => limiter.is_rate_limited(&namespace, &values, delta).await,
     };
@@ -121,7 +126,7 @@ async fn check(
 #[tracing::instrument(skip(data))]
 #[api_v2_operation]
 async fn report(
-    data: web::Data<Arc<Limiter>>,
+    data: web::Data<(Arc<Limiter>, Arc<PrometheusMetrics>)>,
     request: web::Json<CheckAndReportInfo>,
 ) -> Result<web::Json<()>, ErrorResponse> {
     let CheckAndReportInfo {
@@ -130,7 +135,8 @@ async fn report(
         delta,
     } = request.into_inner();
     let namespace = namespace.into();
-    let update_counters_result = match data.get_ref().as_ref() {
+    let (limiter, _) = data.get_ref();
+    let update_counters_result = match limiter.as_ref() {
         Limiter::Blocking(limiter) => limiter.update_counters(&namespace, &values, delta),
         Limiter::Async(limiter) => limiter.update_counters(&namespace, &values, delta).await,
     };
@@ -144,7 +150,7 @@ async fn report(
 #[tracing::instrument(skip(data))]
 #[api_v2_operation]
 async fn check_and_report(
-    data: web::Data<Arc<Limiter>>,
+    data: web::Data<(Arc<Limiter>, Arc<PrometheusMetrics>)>,
     request: web::Json<CheckAndReportInfo>,
 ) -> Result<web::Json<()>, ErrorResponse> {
     let CheckAndReportInfo {
@@ -153,7 +159,8 @@ async fn check_and_report(
         delta,
     } = request.into_inner();
     let namespace = namespace.into();
-    let rate_limited_and_update_result = match data.get_ref().as_ref() {
+    let (limiter, metrics) = data.get_ref();
+    let rate_limited_and_update_result = match limiter.as_ref() {
         Limiter::Blocking(limiter) => {
             limiter.check_rate_limited_and_update(&namespace, &values, delta, false)
         }
@@ -167,11 +174,10 @@ async fn check_and_report(
     match rate_limited_and_update_result {
         Ok(is_rate_limited) => {
             if is_rate_limited.limited {
-                PROMETHEUS_METRICS
-                    .incr_limited_calls(&namespace, is_rate_limited.limit_name.as_deref());
+                metrics.incr_limited_calls(&namespace, is_rate_limited.limit_name.as_deref());
                 Err(ErrorResponse::TooManyRequests)
             } else {
-                PROMETHEUS_METRICS.incr_authorized_calls(&namespace);
+                metrics.incr_authorized_calls(&namespace);
                 Ok(Json(()))
             }
         }
@@ -179,8 +185,12 @@ async fn check_and_report(
     }
 }
 
-pub async fn run_http_server(address: &str, rate_limiter: Arc<Limiter>) -> std::io::Result<()> {
-    let data = web::Data::new(rate_limiter);
+pub async fn run_http_server(
+    address: &str,
+    rate_limiter: Arc<Limiter>,
+    prometheus_metrics: Arc<PrometheusMetrics>,
+) -> std::io::Result<()> {
+    let data = web::Data::new((rate_limiter, prometheus_metrics));
 
     // This uses the paperclip crate to generate an OpenAPI spec.
     // Ref: https://paperclip.waffles.space/actix-plugin.html
