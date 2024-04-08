@@ -149,6 +149,7 @@ mod test {
     test_with_all_storage_impls!(delete_limits_of_a_namespace_also_deletes_counters);
     test_with_all_storage_impls!(delete_limits_of_an_empty_namespace_does_nothing);
     test_with_all_storage_impls!(rate_limited);
+    test_with_all_storage_impls!(multiple_limits_rate_limited);
     test_with_all_storage_impls!(rate_limited_with_delta_higher_than_one);
     test_with_all_storage_impls!(rate_limited_with_delta_higher_than_max);
     test_with_all_storage_impls!(takes_into_account_only_vars_of_the_limits);
@@ -474,6 +475,76 @@ mod test {
         }
         assert!(rate_limiter
             .is_rate_limited(namespace, &values, 1)
+            .await
+            .unwrap());
+    }
+
+    async fn multiple_limits_rate_limited(rate_limiter: &mut TestsLimiter) {
+        let namespace = "test_namespace";
+        let max_hits = 3;
+        let limits = vec![
+            Limit::new(
+                namespace,
+                max_hits,
+                60,
+                vec!["req.method == 'GET'"],
+                vec!["app_id"],
+            ),
+            Limit::new(
+                namespace,
+                max_hits + 1,
+                60,
+                vec!["req.method == 'POST'"],
+                vec!["app_id"],
+            ),
+        ];
+
+        for limit in limits {
+            rate_limiter.add_limit(&limit).await;
+        }
+
+        let mut get_values: HashMap<String, String> = HashMap::new();
+        get_values.insert("req.method".to_string(), "GET".to_string());
+        get_values.insert("app_id".to_string(), "test_app_id".to_string());
+
+        let mut post_values: HashMap<String, String> = HashMap::new();
+        post_values.insert("req.method".to_string(), "POST".to_string());
+        post_values.insert("app_id".to_string(), "test_app_id".to_string());
+
+        for i in 0..max_hits {
+            assert!(
+                !rate_limiter
+                    .is_rate_limited(namespace, &get_values, 1)
+                    .await
+                    .unwrap(),
+                "Must not be limited after {i}"
+            );
+            assert!(
+                !rate_limiter
+                    .is_rate_limited(namespace, &post_values, 1)
+                    .await
+                    .unwrap(),
+                "Must not be limited after {i}"
+            );
+            rate_limiter
+                .check_rate_limited_and_update(namespace, &get_values, 1, false)
+                .await
+                .unwrap();
+            rate_limiter
+                .check_rate_limited_and_update(namespace, &post_values, 1, false)
+                .await
+                .unwrap();
+        }
+
+        // We wait for the flushing period to pass so the counters are flushed in the cached storage
+        tokio::time::sleep(Duration::from_millis(3)).await;
+
+        assert!(rate_limiter
+            .is_rate_limited(namespace, &get_values, 1)
+            .await
+            .unwrap());
+        assert!(!rate_limiter
+            .is_rate_limited(namespace, &post_values, 1)
             .await
             .unwrap());
     }
