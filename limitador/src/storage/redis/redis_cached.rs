@@ -250,13 +250,13 @@ impl CachedRedisStorage {
                     };
 
                     // TODO: After rebase, the code needs to be refactored to use delta.value_at(SystemTime::now()) and compare delta is greater than 0 after adding the key to update in update_counters
-                    storage
+                    let _updated_counters = storage
                         .update_counters(counters)
                         .await
                         .or_else(|err| {
                             if err.is_transient() {
                                 p.store(true, Ordering::Release);
-                                Ok(())
+                                Ok(HashMap::default())
                             } else {
                                 Err(err)
                             }

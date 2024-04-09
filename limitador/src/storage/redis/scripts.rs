@@ -24,6 +24,7 @@ pub const SCRIPT_UPDATE_COUNTER: &str = "
 // ARGV[i]: TTLs
 // ARGV[i+1]: Deltas
 pub const BATCH_UPDATE_COUNTERS: &str = "
+    local res = {}
     for i = 1, #KEYS, 2 do
         local counter_key = KEYS[i]
         local limit_key = KEYS[i+1]
@@ -35,7 +36,9 @@ pub const BATCH_UPDATE_COUNTERS: &str = "
             redis.call('expire', counter_key, ttl)
             redis.call('sadd', limit_key, counter_key)
         end
+        table.insert(res, { counter_key, c })
     end
+    return res
 ";
 
 // KEYS: the function returns the value and TTL (in ms) for these keys

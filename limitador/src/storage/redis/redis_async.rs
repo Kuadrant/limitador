@@ -238,13 +238,14 @@ impl AsyncRedisStorage {
     pub async fn update_counters(
         &self,
         counters_and_deltas: HashMap<Counter, AtomicExpiringValue>,
-    ) -> Result<(), StorageErr> {
+    ) -> Result<HashMap<Counter, i64>, StorageErr> {
         let mut con = self.conn_manager.clone();
         let span = trace_span!("datastore");
 
         let redis_script = redis::Script::new(BATCH_UPDATE_COUNTERS);
         let mut script_invocation = redis_script.prepare_invoke();
 
+        // TODO: Fix calculating delta value greater than zero at _now_ and return the right AtomicExpiringValue
         for (counter, delta) in counters_and_deltas {
             script_invocation.key(key_for_counter(&counter));
             script_invocation.key(key_for_counters_of_limit(counter.limit()));
@@ -252,11 +253,23 @@ impl AsyncRedisStorage {
             script_invocation.arg(delta);
         }
 
-        async { script_invocation.invoke_async::<_, _>(&mut con).await }
+        let script_res: Vec<Option<(String, i64)>> = script_invocation
+            .invoke_async::<_, _>(&mut con)
             .instrument(span)
             .await?;
 
-        Ok(())
+        let counter_value_map: HashMap<Counter, i64> = script_res
+            .iter()
+            .filter_map(|counter_value| match counter_value {
+                Some((raw_counter_key, val)) => {
+                    let counter = partial_counter_from_counter_key(raw_counter_key);
+                    Some((counter, *val))
+                }
+                None => None,
+            })
+            .collect();
+
+        Ok(counter_value_map)
     }
 }
 
