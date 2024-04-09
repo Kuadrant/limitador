@@ -36,7 +36,7 @@ pub fn prefix_for_namespace(namespace: &str) -> String {
 }
 
 pub fn counter_from_counter_key(key: &str, limit: &Limit) -> Counter {
-    let mut counter = partial_counter_from_counter_key(key, limit.namespace().as_ref());
+    let mut counter = partial_counter_from_counter_key(key);
     if !counter.update_to_limit(limit) {
         // this means some kind of data corruption _or_ most probably
         // an out of sync `impl PartialEq for Limit` vs `pub fn key_for_counter(counter: &Counter) -> String`
@@ -49,11 +49,24 @@ pub fn counter_from_counter_key(key: &str, limit: &Limit) -> Counter {
     counter
 }
 
-pub fn partial_counter_from_counter_key(key: &str, namespace: &str) -> Counter {
-    let offset = ",counter:".len();
-    let start_pos_counter = prefix_for_namespace(namespace).len() + offset;
+pub fn partial_counter_from_counter_key(key: &str) -> Counter {
+    let namespace_prefix = "namespace:";
+    let counter_prefix = ",counter:";
 
-    let counter: Counter = serde_json::from_str(&key[start_pos_counter..]).unwrap();
+    // Find the start position of the counter portion
+    let start_pos_namespace = key
+        .find(namespace_prefix)
+        .expect("Namespace not found in the key");
+    let start_pos_counter = key[start_pos_namespace..]
+        .find(counter_prefix)
+        .expect("Counter not found in the key")
+        + start_pos_namespace
+        + counter_prefix.len();
+
+    // Extract counter JSON substring and deserialize it
+    let counter_str = &key[start_pos_counter..];
+    let counter: Counter =
+        serde_json::from_str(counter_str).expect("Failed to deserialize counter JSON");
     counter
 }
 
@@ -87,7 +100,7 @@ mod tests {
         let limit = Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"]);
         let counter = Counter::new(limit.clone(), HashMap::default());
         let raw = key_for_counter(&counter);
-        assert_eq!(counter, partial_counter_from_counter_key(&raw, namespace));
+        assert_eq!(counter, partial_counter_from_counter_key(&raw));
         let prefix = prefix_for_namespace(namespace);
         assert_eq!(&raw[0..prefix.len()], &prefix);
     }
