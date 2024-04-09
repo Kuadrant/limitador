@@ -1,44 +1,18 @@
-use lazy_static::lazy_static;
 use limitador::limit::Namespace;
 use prometheus::{
     Encoder, Histogram, HistogramOpts, IntCounterVec, IntGauge, Opts, Registry, TextEncoder,
 };
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 const NAMESPACE_LABEL: &str = "limitador_namespace";
 const LIMIT_NAME_LABEL: &str = "limit_name";
-
-struct Metric {
-    name: String,
-    description: String,
-}
-
-lazy_static! {
-    static ref AUTHORIZED_CALLS: Metric = Metric {
-        name: "authorized_calls".into(),
-        description: "Authorized calls".into(),
-    };
-    static ref LIMITED_CALLS: Metric = Metric {
-        name: "limited_calls".into(),
-        description: "Limited calls".into(),
-    };
-    static ref LIMITADOR_UP: Metric = Metric { // Can be used as a simple health check
-        name: "limitador_up".into(),
-        description: "Limitador is running".into(),
-    };
-    static ref DATASTORE_LATENCY: Metric = Metric {
-        name: "counter_latency".into(),
-        description: "Latency to the underlying counter datastore".into(),
-    };
-}
 
 pub struct PrometheusMetrics {
     registry: Registry,
     authorized_calls: IntCounterVec,
     limited_calls: IntCounterVec,
     counter_latency: Histogram,
-    use_limit_name_label: AtomicBool,
+    use_limit_name_label: bool,
 }
 
 impl Default for PrometheusMetrics {
@@ -60,11 +34,6 @@ impl PrometheusMetrics {
         Self::new_with_options(true)
     }
 
-    pub fn set_use_limit_name_in_label(&self, use_limit_name_in_label: bool) {
-        self.use_limit_name_label
-            .store(use_limit_name_in_label, Ordering::SeqCst)
-    }
-
     pub fn incr_authorized_calls(&self, namespace: &Namespace) {
         self.authorized_calls
             .with_label_values(&[namespace.as_ref()])
@@ -77,7 +46,7 @@ impl PrometheusMetrics {
     {
         let mut labels = vec![namespace.as_ref()];
 
-        if self.use_limit_name_label.load(Ordering::Relaxed) {
+        if self.use_limit_name_label {
             // If we have configured the metric to accept 2 labels we need to
             // set values for them.
             labels.push(limit_name.into().unwrap_or(""));
@@ -100,7 +69,7 @@ impl PrometheusMetrics {
         String::from_utf8(buffer).unwrap()
     }
 
-    fn new_with_options(use_limit_name_label: bool) -> Self {
+    pub fn new_with_options(use_limit_name_label: bool) -> Self {
         let authorized_calls_counter = Self::authorized_calls_counter();
         let limited_calls_counter = Self::limited_calls_counter(use_limit_name_label);
         let limitador_up_gauge = Self::limitador_up_gauge();
@@ -131,13 +100,13 @@ impl PrometheusMetrics {
             authorized_calls: authorized_calls_counter,
             limited_calls: limited_calls_counter,
             counter_latency,
-            use_limit_name_label: AtomicBool::new(use_limit_name_label),
+            use_limit_name_label,
         }
     }
 
     fn authorized_calls_counter() -> IntCounterVec {
         IntCounterVec::new(
-            Opts::new(&AUTHORIZED_CALLS.name, &AUTHORIZED_CALLS.description),
+            Opts::new("authorized_calls", "Authorized calls"),
             &[NAMESPACE_LABEL],
         )
         .unwrap()
@@ -150,21 +119,17 @@ impl PrometheusMetrics {
             labels.push(LIMIT_NAME_LABEL);
         }
 
-        IntCounterVec::new(
-            Opts::new(&LIMITED_CALLS.name, &LIMITED_CALLS.description),
-            &labels,
-        )
-        .unwrap()
+        IntCounterVec::new(Opts::new("limited_calls", "Limited calls"), &labels).unwrap()
     }
 
     fn limitador_up_gauge() -> IntGauge {
-        IntGauge::new(&LIMITADOR_UP.name, &LIMITADOR_UP.description).unwrap()
+        IntGauge::new("limitador_up", "Limitador is running").unwrap()
     }
 
     fn counter_latency() -> Histogram {
         Histogram::with_opts(HistogramOpts::new(
-            &DATASTORE_LATENCY.name,
-            &DATASTORE_LATENCY.description,
+            "counter_latency",
+            "Latency to the underlying counter datastore",
         ))
         .unwrap()
     }
@@ -197,7 +162,7 @@ mod tests {
             .iter()
             .for_each(|(namespace, auth_count)| {
                 assert!(metrics_output.contains(&formatted_counter_with_namespace(
-                    &AUTHORIZED_CALLS.name,
+                    "authorized_calls",
                     *auth_count,
                     namespace
                 )));
@@ -227,7 +192,7 @@ mod tests {
             .iter()
             .for_each(|(namespace, limited_count)| {
                 assert!(metrics_output.contains(&formatted_counter_with_namespace(
-                    &LIMITED_CALLS.name,
+                    "limited_calls",
                     *limited_count,
                     namespace
                 )));
@@ -258,7 +223,7 @@ mod tests {
             .for_each(|(namespace, limit_name, limited_count)| {
                 assert!(
                     metrics_output.contains(&formatted_counter_with_namespace_and_limit(
-                        &LIMITED_CALLS.name,
+                        "limited_calls",
                         *limited_count,
                         namespace,
                         limit_name,
@@ -277,7 +242,7 @@ mod tests {
 
         assert!(
             metrics_output.contains(&formatted_counter_with_namespace_and_limit(
-                &LIMITED_CALLS.name,
+                "limited_calls",
                 1,
                 &namespace,
                 "",

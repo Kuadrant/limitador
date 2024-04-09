@@ -1554,7 +1554,6 @@ dependencies = [
  "futures",
  "getrandom",
  "infinispan",
- "lazy_static",
  "moka",
  "paste",
  "postcard",

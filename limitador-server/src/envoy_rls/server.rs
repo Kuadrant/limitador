@@ -19,7 +19,8 @@ use crate::envoy_rls::server::envoy::service::ratelimit::v3::rate_limit_service_
 use crate::envoy_rls::server::envoy::service::ratelimit::v3::{
     RateLimitRequest, RateLimitResponse,
 };
-use crate::{Limiter, PROMETHEUS_METRICS};
+use crate::prometheus_metrics::PrometheusMetrics;
+use crate::Limiter;
 
 include!("envoy_types.rs");
 
@@ -32,13 +33,19 @@ pub enum RateLimitHeaders {
 pub struct MyRateLimiter {
     limiter: Arc<Limiter>,
     rate_limit_headers: RateLimitHeaders,
+    metrics: Arc<PrometheusMetrics>,
 }
 
 impl MyRateLimiter {
-    pub fn new(limiter: Arc<Limiter>, rate_limit_headers: RateLimitHeaders) -> Self {
+    pub fn new(
+        limiter: Arc<Limiter>,
+        rate_limit_headers: RateLimitHeaders,
+        metrics: Arc<PrometheusMetrics>,
+    ) -> Self {
         Self {
             limiter,
             rate_limit_headers,
+            metrics,
         }
     }
 }
@@ -124,11 +131,11 @@ impl RateLimitService for MyRateLimiter {
 
         let mut rate_limited_resp = rate_limited_resp.unwrap();
         let resp_code = if rate_limited_resp.limited {
-            PROMETHEUS_METRICS
+            self.metrics
                 .incr_limited_calls(&namespace, rate_limited_resp.limit_name.as_deref());
             Code::OverLimit
         } else {
-            PROMETHEUS_METRICS.incr_authorized_calls(&namespace);
+            self.metrics.incr_authorized_calls(&namespace);
             Code::Ok
         };
 
@@ -237,9 +244,10 @@ pub async fn run_envoy_rls_server(
     address: String,
     limiter: Arc<Limiter>,
     rate_limit_headers: RateLimitHeaders,
+    metrics: Arc<PrometheusMetrics>,
     grpc_reflection_service: bool,
 ) -> Result<(), transport::Error> {
-    let rate_limiter = MyRateLimiter::new(limiter, rate_limit_headers);
+    let rate_limiter = MyRateLimiter::new(limiter, rate_limit_headers, metrics);
     let svc = RateLimitServiceServer::new(rate_limiter);
 
     let reflection_service = match grpc_reflection_service {
@@ -303,6 +311,7 @@ mod tests {
         let rate_limiter = MyRateLimiter::new(
             Arc::new(Limiter::Blocking(limiter)),
             RateLimitHeaders::DraftVersion03,
+            Arc::new(PrometheusMetrics::default()),
         );
 
         let req = RateLimitRequest {
@@ -361,6 +370,7 @@ mod tests {
         let rate_limiter = MyRateLimiter::new(
             Arc::new(Limiter::new(Configuration::default()).await.unwrap()),
             RateLimitHeaders::DraftVersion03,
+            Arc::new(PrometheusMetrics::default()),
         );
 
         let req = RateLimitRequest {
@@ -391,6 +401,7 @@ mod tests {
         let rate_limiter = MyRateLimiter::new(
             Arc::new(Limiter::new(Configuration::default()).await.unwrap()),
             RateLimitHeaders::DraftVersion03,
+            Arc::new(PrometheusMetrics::default()),
         );
 
         let req = RateLimitRequest {
@@ -433,6 +444,7 @@ mod tests {
         let rate_limiter = MyRateLimiter::new(
             Arc::new(Limiter::Blocking(limiter)),
             RateLimitHeaders::DraftVersion03,
+            Arc::new(PrometheusMetrics::default()),
         );
 
         let req = RateLimitRequest {
@@ -491,6 +503,7 @@ mod tests {
         let rate_limiter = MyRateLimiter::new(
             Arc::new(Limiter::Blocking(limiter)),
             RateLimitHeaders::DraftVersion03,
+            Arc::new(PrometheusMetrics::default()),
         );
 
         let req = RateLimitRequest {
@@ -556,6 +569,7 @@ mod tests {
         let rate_limiter = MyRateLimiter::new(
             Arc::new(Limiter::Blocking(limiter)),
             RateLimitHeaders::DraftVersion03,
+            Arc::new(PrometheusMetrics::default()),
         );
 
         let req = RateLimitRequest {
