@@ -1,5 +1,6 @@
 use crate::counter::Counter;
 use crate::limit::Limit;
+use crate::storage::atomic_expiring_value::AtomicExpiringValue;
 use crate::storage::keys::*;
 use crate::storage::redis::counters_cache::{CountersCache, CountersCacheBuilder};
 use crate::storage::redis::redis_async::AsyncRedisStorage;
@@ -15,8 +16,8 @@ use redis::{ConnectionInfo, RedisError};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime};
 use tracing::{error, warn};
 
 // This is just a first version.
@@ -38,8 +39,8 @@ use tracing::{error, warn};
 // multiple times when it is not cached.
 
 pub struct CachedRedisStorage {
-    cached_counters: Mutex<CountersCache>,
-    batcher_counter_updates: Arc<Mutex<HashMap<Counter, i64>>>,
+    cached_counters: CountersCache,
+    batcher_counter_updates: Arc<Mutex<HashMap<Counter, AtomicExpiringValue>>>,
     async_redis_storage: AsyncRedisStorage,
     redis_conn_manager: ConnectionManager,
     partitioned: Arc<AtomicBool>,
@@ -75,30 +76,26 @@ impl AsyncCounterStorage for CachedRedisStorage {
         let mut not_cached: Vec<&mut Counter> = vec![];
         let mut first_limited = None;
 
+        let now = SystemTime::now();
         // Check cached counters
-        {
-            let cached_counters = self.cached_counters.lock().unwrap();
-            for counter in counters.iter_mut() {
-                match cached_counters.get(counter) {
-                    Some(val) => {
-                        if first_limited.is_none() && val + delta > counter.max_value() {
-                            let a = Authorization::Limited(
-                                counter.limit().name().map(|n| n.to_owned()),
-                            );
-                            if !load_counters {
-                                return Ok(a);
-                            }
-                            first_limited = Some(a);
+        for counter in counters.iter_mut() {
+            match self.cached_counters.get(counter) {
+                Some(val) if !val.expired_at(now) => {
+                    if first_limited.is_none() && val.is_limited(counter, delta) {
+                        let a =
+                            Authorization::Limited(counter.limit().name().map(|n| n.to_owned()));
+                        if !load_counters {
+                            return Ok(a);
                         }
-                        if load_counters {
-                            counter.set_remaining(counter.max_value() - val - delta);
-                            // todo: how do we get the ttl for this entry?
-                            // counter.set_expires_in(Duration::from_secs(counter.seconds()));
-                        }
+                        first_limited = Some(a);
                     }
-                    None => {
-                        not_cached.push(counter);
+                    if load_counters {
+                        counter.set_remaining(val.remaining(counter) - delta);
+                        counter.set_expires_in(val.to_next_window());
                     }
+                }
+                _ => {
+                    not_cached.push(counter);
                 }
             }
         }
@@ -127,31 +124,23 @@ impl AsyncCounterStorage for CachedRedisStorage {
             let ttl_margin =
                 Duration::from_millis((Instant::now() - time_start_get_ttl).as_millis() as u64);
 
-            {
-                let mut cached_counters = self.cached_counters.lock().unwrap();
-                for (i, counter) in not_cached.iter_mut().enumerate() {
-                    cached_counters.insert(
-                        counter.clone(),
-                        counter_vals[i],
-                        counter_ttls_msecs[i],
-                        ttl_margin,
-                    );
-                    let remaining = counter.max_value() - counter_vals[i].unwrap_or(0) - delta;
-                    if first_limited.is_none() && remaining < 0 {
-                        first_limited = Some(Authorization::Limited(
-                            counter.limit().name().map(|n| n.to_owned()),
-                        ));
-                    }
-                    if load_counters {
-                        counter.set_remaining(remaining);
-                        let counter_ttl = if counter_ttls_msecs[i] >= 0 {
-                            Duration::from_millis(counter_ttls_msecs[i] as u64)
-                        } else {
-                            Duration::from_secs(counter.max_value() as u64)
-                        };
-
-                        counter.set_expires_in(counter_ttl);
-                    }
+            for (i, counter) in not_cached.iter_mut().enumerate() {
+                let cached_value = self.cached_counters.insert(
+                    counter.clone(),
+                    counter_vals[i],
+                    counter_ttls_msecs[i],
+                    ttl_margin,
+                    now,
+                );
+                let remaining = cached_value.remaining(counter);
+                if first_limited.is_none() && remaining <= 0 {
+                    first_limited = Some(Authorization::Limited(
+                        counter.limit().name().map(|n| n.to_owned()),
+                    ));
+                }
+                if load_counters {
+                    counter.set_remaining(remaining - delta);
+                    counter.set_expires_in(cached_value.to_next_window());
                 }
             }
         }
@@ -161,17 +150,28 @@ impl AsyncCounterStorage for CachedRedisStorage {
         }
 
         // Update cached values
-        {
-            let mut cached_counters = self.cached_counters.lock().unwrap();
-            for counter in counters.iter() {
-                cached_counters.increase_by(counter, delta);
-            }
+        for counter in counters.iter() {
+            self.cached_counters.increase_by(counter, delta);
         }
 
         // Batch or update depending on configuration
         let mut batcher = self.batcher_counter_updates.lock().unwrap();
+        let now = SystemTime::now();
         for counter in counters.iter() {
-            Self::batch_counter(delta, &mut batcher, counter);
+            match batcher.get_mut(counter) {
+                Some(val) => {
+                    val.update(delta, counter.seconds(), now);
+                }
+                None => {
+                    batcher.insert(
+                        counter.clone(),
+                        AtomicExpiringValue::new(
+                            delta,
+                            now + Duration::from_secs(counter.seconds()),
+                        ),
+                    );
+                }
+            }
         }
 
         Ok(Authorization::Ok)
@@ -231,7 +231,8 @@ impl CachedRedisStorage {
             AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone());
 
         let storage = async_redis_storage.clone();
-        let batcher: Arc<Mutex<HashMap<Counter, i64>>> = Arc::new(Mutex::new(Default::default()));
+        let batcher: Arc<Mutex<HashMap<Counter, AtomicExpiringValue>>> =
+            Arc::new(Mutex::new(Default::default()));
         let p = Arc::clone(&partitioned);
         let batcher_flusher = batcher.clone();
         let mut interval = tokio::time::interval(flushing_period);
@@ -247,19 +248,16 @@ impl CachedRedisStorage {
                         let mut batch = batcher_flusher.lock().unwrap();
                         std::mem::take(&mut *batch)
                     };
+                    let now = SystemTime::now();
                     for (counter, delta) in counters {
-                        storage
-                            .update_counter(&counter, delta)
-                            .await
-                            .or_else(|err| {
-                                if err.is_transient() {
-                                    p.store(true, Ordering::Release);
-                                    Ok(())
-                                } else {
-                                    Err(err)
-                                }
-                            })
-                            .expect("Unrecoverable Redis error!");
+                        let delta = delta.value_at(now);
+                        if delta > 0 {
+                            storage
+                                .update_counter(&counter, delta)
+                                .await
+                                .or_else(|err| if err.is_transient() { Ok(()) } else { Err(err) })
+                                .expect("Unrecoverable Redis error!");
+                        }
                     }
                 }
                 interval.tick().await;
@@ -273,7 +271,7 @@ impl CachedRedisStorage {
             .build();
 
         Ok(Self {
-            cached_counters: Mutex::new(cached_counters),
+            cached_counters,
             batcher_counter_updates: batcher,
             redis_conn_manager,
             async_redis_storage,
@@ -335,21 +333,6 @@ impl CachedRedisStorage {
         }
 
         Ok((counter_vals, counter_ttls_msecs))
-    }
-
-    fn batch_counter(
-        delta: i64,
-        batcher: &mut MutexGuard<HashMap<Counter, i64>>,
-        counter: &Counter,
-    ) {
-        match batcher.get_mut(counter) {
-            Some(val) => {
-                *val += delta;
-            }
-            None => {
-                batcher.insert(counter.clone(), delta);
-            }
-        }
     }
 }
 
