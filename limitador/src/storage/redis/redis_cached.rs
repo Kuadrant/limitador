@@ -249,7 +249,6 @@ impl CachedRedisStorage {
                         std::mem::take(&mut *batch)
                     };
 
-                    // TODO: After rebase, the code needs to be refactored to use delta.value_at(SystemTime::now()) and compare delta is greater than 0 after adding the key to update in update_counters
                     let _updated_counters = storage
                         .update_counters(counters)
                         .await
