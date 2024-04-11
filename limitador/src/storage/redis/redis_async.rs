@@ -238,7 +238,7 @@ impl AsyncRedisStorage {
     pub(crate) async fn update_counters(
         &self,
         counters_and_deltas: HashMap<Counter, AtomicExpiringValue>,
-    ) -> Result<HashMap<Counter, AtomicExpiringValue>, StorageErr> {
+    ) -> Result<Vec<(String, i64)>, StorageErr> {
         let mut con = self.conn_manager.clone();
         let span = trace_span!("datastore");
 
@@ -256,27 +256,12 @@ impl AsyncRedisStorage {
             }
         }
 
-        let script_res: Vec<Option<(String, i64)>> = script_invocation
+        let script_res: Vec<Vec<(String, i64)>> = script_invocation
             .invoke_async::<_, _>(&mut con)
             .instrument(span)
             .await?;
 
-        let counter_value_map: HashMap<Counter, AtomicExpiringValue> = script_res
-            .iter()
-            .filter_map(|counter_value| match counter_value {
-                Some((raw_counter_key, val)) => {
-                    let counter = partial_counter_from_counter_key(raw_counter_key);
-                    let seconds = counter.seconds();
-                    Some((
-                        counter,
-                        AtomicExpiringValue::new(*val, now + Duration::from_secs(seconds)),
-                    ))
-                }
-                None => None,
-            })
-            .collect();
-
-        Ok(counter_value_map)
+        Ok(script_res.into_iter().flatten().collect())
     }
 }
 

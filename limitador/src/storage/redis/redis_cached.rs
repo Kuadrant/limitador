@@ -39,7 +39,7 @@ use tracing::{error, warn};
 // multiple times when it is not cached.
 
 pub struct CachedRedisStorage {
-    cached_counters: CountersCache,
+    cached_counters: Arc<CountersCache>,
     batcher_counter_updates: Arc<Mutex<HashMap<Counter, AtomicExpiringValue>>>,
     async_redis_storage: AsyncRedisStorage,
     redis_conn_manager: ConnectionManager,
@@ -226,6 +226,15 @@ impl CachedRedisStorage {
         )
         .await?;
 
+        let cached_counters = CountersCacheBuilder::new()
+            .max_cached_counters(max_cached_counters)
+            .max_ttl_cached_counter(ttl_cached_counters)
+            .ttl_ratio_cached_counter(ttl_ratio_cached_counters)
+            .build();
+
+        let cacher = Arc::new(cached_counters);
+        let cacher_clone = cacher.clone();
+
         let partitioned = Arc::new(AtomicBool::new(false));
         let async_redis_storage =
             AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone());
@@ -238,42 +247,16 @@ impl CachedRedisStorage {
         let mut interval = tokio::time::interval(flushing_period);
         tokio::spawn(async move {
             loop {
-                if p.load(Ordering::Acquire) {
-                    if storage.is_alive().await {
-                        warn!("Partition to Redis resolved!");
-                        p.store(false, Ordering::Release);
+                tokio::select! {
+                    _ = interval.tick() => {
+                        flush_batcher_and_update_counters(batcher_flusher.clone(), storage.clone(), cacher_clone.clone(), p.clone()).await;
                     }
-                } else {
-                    let counters = {
-                        let mut batch = batcher_flusher.lock().unwrap();
-                        std::mem::take(&mut *batch)
-                    };
-
-                    let _updated_counters = storage
-                        .update_counters(counters)
-                        .await
-                        .or_else(|err| {
-                            if err.is_transient() {
-                                p.store(true, Ordering::Release);
-                                Ok(HashMap::default())
-                            } else {
-                                Err(err)
-                            }
-                        })
-                        .expect("Unrecoverable Redis error!");
                 }
-                interval.tick().await;
             }
         });
 
-        let cached_counters = CountersCacheBuilder::new()
-            .max_cached_counters(max_cached_counters)
-            .max_ttl_cached_counter(ttl_cached_counters)
-            .ttl_ratio_cached_counter(ttl_ratio_cached_counters)
-            .build();
-
         Ok(Self {
-            cached_counters,
+            cached_counters: cacher,
             batcher_counter_updates: batcher,
             redis_conn_manager,
             async_redis_storage,
@@ -394,6 +377,43 @@ impl CachedRedisStorageBuilder {
             self.response_timeout,
         )
         .await
+    }
+}
+
+async fn flush_batcher_and_update_counters(
+    batcher: Arc<Mutex<HashMap<Counter, AtomicExpiringValue>>>,
+    storage: AsyncRedisStorage,
+    cached_counters: Arc<CountersCache>,
+    partitioned: Arc<AtomicBool>,
+) {
+    if partitioned.load(Ordering::Acquire) {
+        if storage.is_alive().await {
+            warn!("Partition to Redis resolved!");
+            partitioned.store(false, Ordering::Release);
+        }
+    } else {
+        let counters = {
+            let mut batch = batcher.lock().unwrap();
+            std::mem::take(&mut *batch)
+        };
+
+        let updated_counters = storage
+            .update_counters(counters)
+            .await
+            .or_else(|err| {
+                if err.is_transient() {
+                    partitioned.store(true, Ordering::Release);
+                    Ok(Vec::new())
+                } else {
+                    Err(err)
+                }
+            })
+            .expect("Unrecoverable Redis error!");
+
+        for (counter_key, value) in updated_counters {
+            let counter = partial_counter_from_counter_key(&counter_key);
+            cached_counters.increase_by(&counter, value);
+        }
     }
 }
 
