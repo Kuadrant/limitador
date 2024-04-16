@@ -1486,6 +1486,7 @@ dependencies = [
  "r2d2",
  "rand",
  "redis",
+ "redis-test",
  "reqwest",
  "rmp-serde",
  "rocksdb",
@@ -2386,6 +2387,16 @@ dependencies = [
  "tokio-retry",
  "tokio-util",
  "url",
+]
+
+[[package]]
+name = "redis-test"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a948b3cec9e4b1fedbb0f0788e79029fb1f641b6cfefb7a15d044f803854427"
+dependencies = [
+ "futures",
+ "redis",
 ]
 
 [[package]]

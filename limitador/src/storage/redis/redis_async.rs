@@ -12,6 +12,7 @@ use crate::storage::redis::scripts::{
 };
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
+use redis::aio::ConnectionLike;
 use redis::{AsyncCommands, RedisError};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
@@ -29,7 +30,7 @@ use tracing::{debug_span, trace_span, Instrument};
 
 #[derive(Clone)]
 pub struct AsyncRedisStorage {
-    conn_manager: ConnectionManager,
+    pub(crate) conn_manager: ConnectionManager,
 }
 
 #[async_trait]
@@ -235,11 +236,10 @@ impl AsyncRedisStorage {
         Ok(())
     }
 
-    pub(crate) async fn update_counters(
-        &self,
+    pub(crate) async fn update_counters<C: ConnectionLike>(
+        redis_conn: &mut C,
         counters_and_deltas: HashMap<Counter, AtomicExpiringValue>,
     ) -> Result<Vec<(String, i64)>, StorageErr> {
-        let mut con = self.conn_manager.clone();
         let span = trace_span!("datastore");
 
         let redis_script = redis::Script::new(BATCH_UPDATE_COUNTERS);
@@ -257,7 +257,7 @@ impl AsyncRedisStorage {
         }
 
         let script_res: Vec<Vec<(String, i64)>> = script_invocation
-            .invoke_async::<_, _>(&mut con)
+            .invoke_async::<_, _>(redis_conn)
             .instrument(span)
             .await?;
 
@@ -269,6 +269,8 @@ impl AsyncRedisStorage {
 mod tests {
     use crate::storage::redis::AsyncRedisStorage;
     use redis::ErrorKind;
+    use redis_test::{MockCmd, MockRedisConnection, IntoRedisValue};
+    use crate::storage::keys::{key_for_counter, key_for_counters_of_limit};
 
     #[tokio::test]
     async fn errs_on_bad_url() {
@@ -284,5 +286,77 @@ mod tests {
         let error = result.err().unwrap();
         assert_eq!(error.kind(), ErrorKind::IoError);
         assert!(error.is_connection_refusal())
+    }
+
+    #[tokio::test]
+    async fn batch_update_counters() {
+
+        let mut counters_and_deltas = std::collections::HashMap::new();
+        let counter = crate::counter::Counter::new(
+            crate::limit::Limit::new(
+                "test_namespace",
+                10,
+                60,
+                vec!["req.method == 'GET'"],
+                vec!["app_id"],
+            ),
+            std::collections::HashMap::new(),
+        );
+
+        let expiring_value = crate::storage::atomic_expiring_value::AtomicExpiringValue::new(
+            1,
+            std::time::SystemTime::now() + std::time::Duration::from_secs(60),
+        );
+
+        let counter_key = key_for_counter(&counter);
+        let key_for_counters_of_limit = key_for_counters_of_limit(counter.limit());
+
+        counters_and_deltas.insert(counter, expiring_value);
+
+        let mock_response = format!(
+            "{{{{ {},1}}}}",
+            counter_key.clone(),
+        );
+
+        let mut mock_client = MockRedisConnection::new(
+            vec![
+                MockCmd::new(
+                    redis::cmd("EVALSHA")
+                        .arg("13e042bb900a9a1104370208a300432bcdd45383")
+                        .arg("2")
+                        .arg(counter_key.clone())
+                        .arg(key_for_counters_of_limit.clone())
+                        .arg(60)
+                        .arg(1),
+                    Ok(IntoRedisValue::into_redis_value(mock_response)),
+                ),
+                MockCmd::new(
+                    redis::cmd("incrby")
+                        .arg(counter_key.clone())
+                        .arg(1),
+                    Ok("1"),
+                ),
+                MockCmd::new(
+                    redis::cmd("EXPIRE")
+                        .arg(counter_key.clone())
+                        .arg(60),
+                    Ok("1"),
+                ),
+                MockCmd::new(
+                    redis::cmd("SADD")
+                        .arg(key_for_counters_of_limit)
+                        .arg(counter_key.clone()),
+                    Ok("1"),
+                ),
+            ],
+        );
+
+        let result =
+            AsyncRedisStorage::update_counters(&mut mock_client, counters_and_deltas).await;
+
+
+
+        assert!(result.is_ok());
+        //assert!(result.unwrap(), "{}", vec![("test_namespace:app_id:GET:1", 1)]);
     }
 }

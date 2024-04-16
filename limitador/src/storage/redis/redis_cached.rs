@@ -397,8 +397,9 @@ async fn flush_batcher_and_update_counters(
             std::mem::take(&mut *batch)
         };
 
-        let updated_counters = storage
-            .update_counters(counters)
+        let mut conn = storage.conn_manager.clone();
+
+        let updated_counters = AsyncRedisStorage::update_counters(&mut conn, counters)
             .await
             .or_else(|err| {
                 if err.is_transient() {
