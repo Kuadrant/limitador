@@ -4,7 +4,7 @@
 
 # Use bullseye as build image instead of Bookworm as ubi9 does not not have GLIBCXX_3.4.30
 # https://access.redhat.com/solutions/6969351
-FROM --platform=${BUILDPLATFORM} rust:1.72-bullseye as limitador-build
+FROM --platform=${BUILDPLATFORM} rust:1.77.2-bullseye as limitador-build
 
 RUN apt update && apt upgrade -y \
     && apt install -y protobuf-compiler clang
