@@ -21,7 +21,7 @@ infinispan_storage = ["infinispan", "reqwest", "base64", "tokio"]
 lenient_conditions = []
 
 [dependencies]
-moka = "0.11.2"
+moka = { version = "0.12", features = ["sync"] }
 getrandom = { version = "0.2", features = ["js"] }
 serde = { version = "1", features = ["derive"] }
 postcard = { version = "1.0.4", features = ["use-std"] }
@@ -34,8 +34,8 @@ cfg-if = "1"
 tracing = "0.1.40"
 
 # Optional dependencies
-rocksdb = { version = "0.21.0", optional = true, features = ["multi-threaded-cf"] }
-redis = { version = "0.25.1", optional = true, features = [
+rocksdb = { version = "0.22", optional = true, features = ["multi-threaded-cf"] }
+redis = { version = "0.25", optional = true, features = [
     "connection-manager",
     "tokio-comp",
     "tls-native-tls",
@@ -49,10 +49,10 @@ tokio = { version = "1", optional = true, features = [
 ] }
 infinispan = { version = "0.3", optional = true }
 reqwest = { version = "0.11", optional = true }
-base64 = { version = "0.21.0", optional = true }
+base64 = { version = "0.22", optional = true }
 
 [dev-dependencies]
-serial_test = "2.0.0"
+serial_test = "3.0"
 criterion = { version = "0.5.1", features = ["html_reports"] }
 paste = "1"
 rand = "0.8"

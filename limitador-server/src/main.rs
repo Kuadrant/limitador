@@ -45,7 +45,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{env, process};
-use sysinfo::{RefreshKind, System, SystemExt};
+use sysinfo::{MemoryRefreshKind, RefreshKind, System};
 use thiserror::Error;
 use tokio::runtime::Handle;
 use tracing::level_filters::LevelFilter;
@@ -117,13 +117,12 @@ impl Limiter {
     }
 
     async fn storage_using_async_redis(redis_url: &str) -> AsyncRedisStorage {
-        match AsyncRedisStorage::new(redis_url).await {
-            Ok(storage) => storage,
-            Err(err) => {
+        AsyncRedisStorage::new(redis_url)
+            .await
+            .unwrap_or_else(|err| {
                 eprintln!("Failed to connect to Redis at {redis_url}: {err}");
                 process::exit(1)
-            }
-        }
+            })
     }
 
     async fn storage_using_redis_and_local_cache(
@@ -865,7 +864,9 @@ fn storage_config_from_env() -> Result<StorageConfiguration, ()> {
 }
 
 fn guess_cache_size() -> Option<u64> {
-    let sys = System::new_with_specifics(RefreshKind::new().with_memory());
+    let sys = System::new_with_specifics(
+        RefreshKind::new().with_memory(MemoryRefreshKind::everything().without_swap()),
+    );
     let free_mem = sys.available_memory();
     let memory = free_mem as f64 * 0.7;
     let size = (memory
