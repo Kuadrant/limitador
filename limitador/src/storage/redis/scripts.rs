@@ -36,7 +36,8 @@ pub const BATCH_UPDATE_COUNTERS: &str = "
             redis.call('expire', counter_key, ttl)
             redis.call('sadd', limit_key, counter_key)
         end
-        table.insert(res, { counter_key, c })
+
+        table.insert(res, c)
     end
     return res
 ";

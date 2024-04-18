@@ -411,9 +411,15 @@ async fn flush_batcher_and_update_counters(
             })
             .expect("Unrecoverable Redis error!");
 
-        for (counter_key, value) in updated_counters {
-            let counter = partial_counter_from_counter_key(&counter_key);
-            cached_counters.increase_by(&counter, value);
+        for (counter, value) in updated_counters {
+            //TODO: Populate the right ttls
+            cached_counters.insert(
+                counter,
+                Option::from(value),
+                0,
+                Duration::from_secs(0),
+                SystemTime::now(),
+            );
         }
     }
 }
