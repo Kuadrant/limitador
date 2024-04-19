@@ -41,7 +41,6 @@ redis = { version = "0.25", optional = true, features = [
     "tls-native-tls",
     "tokio-native-tls-comp",
 ] }
-redis-test = { version = "0.4.0", features = ["aio"] }
 r2d2 = { version = "0.8", optional = true }
 tokio = { version = "1", optional = true, features = [
     "rt-multi-thread",
@@ -55,6 +54,7 @@ base64 = { version = "0.22", optional = true }
 [dev-dependencies]
 serial_test = "3.0"
 criterion = { version = "0.5.1", features = ["html_reports"] }
+redis-test = { version = "0.4.0", features = ["aio"] }
 paste = "1"
 rand = "0.8"
 tempfile = "3.5.0"
