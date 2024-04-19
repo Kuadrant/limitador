@@ -238,22 +238,29 @@ impl CachedRedisStorage {
         let partitioned = Arc::new(AtomicBool::new(false));
         let async_redis_storage =
             AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone());
-
-        let storage = async_redis_storage.clone();
         let batcher: Arc<Mutex<HashMap<Counter, AtomicExpiringValue>>> =
             Arc::new(Mutex::new(Default::default()));
-        let p = Arc::clone(&partitioned);
-        let batcher_flusher = batcher.clone();
-        let mut interval = tokio::time::interval(flushing_period);
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = interval.tick() => {
-                        flush_batcher_and_update_counters(batcher_flusher.clone(), storage.clone(), cacher_clone.clone(), p.clone()).await;
-                    }
+
+        {
+            let storage = async_redis_storage.clone();
+            let conn = redis_conn_manager.clone();
+            let p = Arc::clone(&partitioned);
+            let batcher_flusher = batcher.clone();
+            let mut interval = tokio::time::interval(flushing_period);
+            tokio::spawn(async move {
+                loop {
+                    flush_batcher_and_update_counters(
+                        conn.clone(),
+                        batcher_flusher.clone(),
+                        storage.clone(),
+                        cacher_clone.clone(),
+                        p.clone(),
+                    )
+                    .await;
+                    interval.tick().await;
                 }
-            }
-        });
+            });
+        }
 
         Ok(Self {
             cached_counters: cacher,
