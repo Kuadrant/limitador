@@ -23,6 +23,8 @@ pub const SCRIPT_UPDATE_COUNTER: &str = "
 // KEY[i+1]: Limit key
 // ARGV[i]: TTLs
 // ARGV[i+1]: Deltas
+// This function returns a list with the values and TTLs for the updated counter_keys,
+// the first position the counter value and the second the TTL
 pub const BATCH_UPDATE_COUNTERS: &str = "
     local res = {}
     for i = 1, #KEYS, 2 do
@@ -38,6 +40,7 @@ pub const BATCH_UPDATE_COUNTERS: &str = "
         end
 
         table.insert(res, c)
+        table.insert(res, redis.call('pttl', counter_key))
     end
     return res
 ";

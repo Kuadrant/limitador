@@ -399,6 +399,8 @@ async fn flush_batcher_and_update_counters(
 
         let mut conn = storage.conn_manager.clone();
 
+        let time_start_update_counters = Instant::now();
+
         let updated_counters = AsyncRedisStorage::update_counters(&mut conn, counters)
             .await
             .or_else(|err| {
@@ -411,13 +413,14 @@ async fn flush_batcher_and_update_counters(
             })
             .expect("Unrecoverable Redis error!");
 
-        for (counter, value) in updated_counters {
-            //TODO: Populate the right ttls
+        for (counter, value, ttl) in updated_counters {
             cached_counters.insert(
                 counter,
                 Option::from(value),
-                0,
-                Duration::from_secs(0),
+                ttl,
+                Duration::from_millis(
+                    (Instant::now() - time_start_update_counters).as_millis() as u64
+                ),
                 SystemTime::now(),
             );
         }
