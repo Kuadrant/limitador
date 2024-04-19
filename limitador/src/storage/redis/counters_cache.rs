@@ -121,9 +121,10 @@ impl CountersCache {
         );
         if let Some(ttl) = cache_ttl.checked_sub(ttl_margin) {
             if ttl > Duration::ZERO {
-                let value = CachedCounterValue::from(&counter, counter_val, cache_ttl);
-                let previous = self.cache.get_with(counter.clone(), || Arc::new(value));
-                if previous.expired_at(now) {
+                let previous = self.cache.get_with(counter.clone(), || {
+                    Arc::new(CachedCounterValue::from(&counter, counter_val, cache_ttl))
+                });
+                if previous.expired_at(now) || previous.value.value() < counter_val {
                     previous.set_from_authority(&counter, counter_val, cache_ttl);
                 }
                 return previous;
