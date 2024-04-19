@@ -34,13 +34,14 @@ pub const BATCH_UPDATE_COUNTERS: &str = "
         local delta = ARGV[i+1]
 
         local c = redis.call('incrby', counter_key, delta)
+        table.insert(res, c)
         if c == tonumber(delta) then
             redis.call('expire', counter_key, ttl)
             redis.call('sadd', limit_key, counter_key)
+            table.insert(res, ttl*1000)
+        else
+            table.insert(res, redis.call('pttl', counter_key))
         end
-
-        table.insert(res, c)
-        table.insert(res, redis.call('pttl', counter_key))
     end
     return res
 ";
