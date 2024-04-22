@@ -14,7 +14,6 @@ use async_trait::async_trait;
 use redis::aio::{ConnectionLike, ConnectionManager};
 use redis::{ConnectionInfo, RedisError};
 use std::collections::{HashMap, HashSet};
-use std::future::Future;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -252,7 +251,7 @@ impl CachedRedisStorage {
                     flush_batcher_and_update_counters(
                         conn.clone(),
                         batcher_flusher.clone(),
-                        storage.is_alive(),
+                        storage.is_alive().await,
                         counters_cache_clone.clone(),
                         p.clone(),
                     )
@@ -276,12 +275,7 @@ impl CachedRedisStorage {
     }
 
     fn partitioned(&self, partition: bool) -> bool {
-        if partition {
-            error!("Partition to Redis detected!")
-        }
-        self.partitioned
-            .compare_exchange(!partition, partition, Ordering::Release, Ordering::Acquire)
-            .is_ok()
+        flip_partitioned(&self.partitioned, partition)
     }
 
     fn fallback_vals_ttls(&self, counters: &Vec<&mut Counter>) -> (Vec<Option<i64>>, Vec<i64>) {
@@ -326,6 +320,20 @@ impl CachedRedisStorage {
 
         Ok((counter_vals, counter_ttls_msecs))
     }
+}
+
+fn flip_partitioned(storage: &AtomicBool, partition: bool) -> bool {
+    let we_flipped = storage
+        .compare_exchange(!partition, partition, Ordering::Release, Ordering::Acquire)
+        .is_ok();
+    if we_flipped {
+        if partition {
+            error!("Partition to Redis detected!")
+        } else {
+            warn!("Partition to Redis resolved!");
+        }
+    }
+    we_flipped
 }
 
 pub struct CachedRedisStorageBuilder {
@@ -431,14 +439,14 @@ async fn update_counters<C: ConnectionLike>(
 async fn flush_batcher_and_update_counters<C: ConnectionLike>(
     mut redis_conn: C,
     batcher: Arc<Mutex<HashMap<Counter, AtomicExpiringValue>>>,
-    storage_is_alive: impl Future<Output = bool>,
+    storage_is_alive: bool,
     cached_counters: Arc<CountersCache>,
     partitioned: Arc<AtomicBool>,
 ) {
-    if partitioned.load(Ordering::Acquire) {
-        if storage_is_alive.await {
-            warn!("Partition to Redis resolved!");
-            partitioned.store(false, Ordering::Release);
+    if partitioned.load(Ordering::Acquire) || !storage_is_alive {
+        let batch = batcher.lock().unwrap();
+        if !batch.is_empty() {
+            flip_partitioned(&partitioned, false);
         }
     } else {
         let counters = {
@@ -452,7 +460,7 @@ async fn flush_batcher_and_update_counters<C: ConnectionLike>(
             .await
             .or_else(|err| {
                 if err.is_transient() {
-                    partitioned.store(true, Ordering::Release);
+                    flip_partitioned(&partitioned, true);
                     Ok(Vec::new())
                 } else {
                     Err(err)
@@ -596,10 +604,6 @@ mod tests {
         let cached_counters: Arc<CountersCache> = Arc::new(cache);
         let partitioned = Arc::new(AtomicBool::new(false));
 
-        async fn future_true() -> bool {
-            true
-        }
-
         if let Some(c) = cached_counters.get(&counter) {
             assert_eq!(c.hits(&counter), 1);
         }
@@ -607,7 +611,7 @@ mod tests {
         flush_batcher_and_update_counters(
             mock_client,
             batcher,
-            future_true(),
+            true,
             cached_counters.clone(),
             partitioned,
         )
