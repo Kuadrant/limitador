@@ -19,7 +19,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
-use tracing::{error, trace_span, warn, Instrument};
+use tracing::{debug_span, error, warn, Instrument};
 
 // This is just a first version.
 //
@@ -233,9 +233,7 @@ impl CachedRedisStorage {
             .ttl_ratio_cached_counter(ttl_ratio_cached_counters)
             .build();
 
-        let cacher = Arc::new(cached_counters);
-        let cacher_clone = cacher.clone();
-
+        let counters_cache = Arc::new(cached_counters);
         let partitioned = Arc::new(AtomicBool::new(false));
         let async_redis_storage =
             AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone());
@@ -244,6 +242,7 @@ impl CachedRedisStorage {
 
         {
             let storage = async_redis_storage.clone();
+            let counters_cache_clone = counters_cache.clone();
             let conn = redis_conn_manager.clone();
             let p = Arc::clone(&partitioned);
             let batcher_flusher = batcher.clone();
@@ -254,7 +253,7 @@ impl CachedRedisStorage {
                         conn.clone(),
                         batcher_flusher.clone(),
                         storage.is_alive(),
-                        cacher_clone.clone(),
+                        counters_cache_clone.clone(),
                         p.clone(),
                     )
                     .await;
@@ -264,7 +263,7 @@ impl CachedRedisStorage {
         }
 
         Ok(Self {
-            cached_counters: cacher,
+            cached_counters: counters_cache,
             batcher_counter_updates: batcher,
             redis_conn_manager,
             async_redis_storage,
@@ -409,7 +408,7 @@ async fn update_counters<C: ConnectionLike>(
         }
     }
 
-    let span = trace_span!("datastore");
+    let span = debug_span!("datastore");
     // The redis crate is not working with tables, thus the response will be a Vec of counter values
     let script_res: Vec<i64> = script_invocation
         .invoke_async(redis_conn)
