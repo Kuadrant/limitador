@@ -220,9 +220,10 @@ impl CachedRedisStorage {
                 .expect("This couldn't fail in the past, yet now it did somehow!"),
             2,
             100,
-            6,
+            1,
             response_timeout,
-            Duration::from_secs(5),
+            // TLS handshake might result in an additional 2 RTTs to Redis, adding some headroom as well
+            (response_timeout * 3) + Duration::from_millis(50),
         )
         .await?;
 
