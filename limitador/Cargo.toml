@@ -54,6 +54,7 @@ base64 = { version = "0.22", optional = true }
 [dev-dependencies]
 serial_test = "3.0"
 criterion = { version = "0.5.1", features = ["html_reports"] }
+redis-test = { version = "0.4.0", features = ["aio"] }
 paste = "1"
 rand = "0.8"
 tempfile = "3.5.0"

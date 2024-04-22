@@ -19,6 +19,33 @@ pub const SCRIPT_UPDATE_COUNTER: &str = "
     end
     return c";
 
+// KEY[i]: Counter key
+// KEY[i+1]: Limit key
+// ARGV[i]: TTLs
+// ARGV[i+1]: Deltas
+// This function returns a list with the values and TTLs for the updated counter_keys,
+// the first position the counter value and the second the TTL
+pub const BATCH_UPDATE_COUNTERS: &str = "
+    local res = {}
+    for i = 1, #KEYS, 2 do
+        local counter_key = KEYS[i]
+        local limit_key = KEYS[i+1]
+        local ttl = ARGV[i]
+        local delta = ARGV[i+1]
+
+        local c = redis.call('incrby', counter_key, delta)
+        table.insert(res, c)
+        if c == tonumber(delta) then
+            redis.call('expire', counter_key, ttl)
+            redis.call('sadd', limit_key, counter_key)
+            table.insert(res, ttl*1000)
+        else
+            table.insert(res, redis.call('pttl', counter_key))
+        end
+    end
+    return res
+";
+
 // KEYS: the function returns the value and TTL (in ms) for these keys
 // The first position of the list returned contains the value of KEYS[1], the
 // second position contains its TTL. The third position contains the value of
