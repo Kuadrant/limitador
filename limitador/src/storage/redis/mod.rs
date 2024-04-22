@@ -24,7 +24,10 @@ impl From<RedisError> for StorageErr {
     fn from(e: RedisError) -> Self {
         Self {
             msg: e.to_string(),
-            transient: e.is_timeout() || e.is_connection_dropped() || e.is_cluster_error(),
+            transient: e.is_timeout()
+                || e.is_connection_dropped()
+                || e.is_cluster_error()
+                || e.is_connection_refusal(),
         }
     }
 }
