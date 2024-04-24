@@ -44,6 +44,7 @@ pub struct CachedRedisStorage {
     async_redis_storage: AsyncRedisStorage,
     redis_conn_manager: ConnectionManager,
     partitioned: Arc<AtomicBool>,
+    flush_tx: tokio::sync::watch::Sender<()>,
 }
 
 #[async_trait]
@@ -154,10 +155,10 @@ impl AsyncCounterStorage for CachedRedisStorage {
             self.cached_counters.increase_by(counter, delta);
         }
 
-        // Batch or update depending on configuration
         let mut batcher = self.batcher_counter_updates.lock().unwrap();
         let now = SystemTime::now();
         for counter in counters.iter() {
+            // Update an existing batch entry or add a new batch entry
             match batcher.get_mut(counter) {
                 Some(val) => {
                     val.update(delta, counter.seconds(), now);
@@ -173,6 +174,9 @@ impl AsyncCounterStorage for CachedRedisStorage {
                 }
             }
         }
+
+        // ask the flusher to flush the batch
+        self.flush_tx.send(()).unwrap();
 
         Ok(Authorization::Ok)
     }
@@ -240,15 +244,30 @@ impl CachedRedisStorage {
         let batcher: Arc<Mutex<HashMap<Counter, AtomicExpiringValue>>> =
             Arc::new(Mutex::new(Default::default()));
 
+        let (flush_tx, mut flush_rx) = tokio::sync::watch::channel(());
+
         {
             let storage = async_redis_storage.clone();
             let counters_cache_clone = counters_cache.clone();
             let conn = redis_conn_manager.clone();
             let p = Arc::clone(&partitioned);
             let batcher_flusher = batcher.clone();
-            let mut interval = tokio::time::interval(flushing_period);
+
             tokio::spawn(async move {
                 loop {
+                    // Wait for a new flush request,
+                    flush_rx.changed().await.unwrap();
+
+                    if flushing_period != Duration::ZERO {
+                        // Set the flushing_period to reduce the load on Redis the downside to
+                        // setting it the cached counters will not be as accurate as when it's zero.
+                        tokio::time::sleep(flushing_period).await
+                    }
+
+                    // even if flushing_period is zero, the next batch/ will be growing while
+                    // current batch is being executed against Redis.  When under load, the flush
+                    // frequency will proportional to batch execution latency.
+
                     flush_batcher_and_update_counters(
                         conn.clone(),
                         batcher_flusher.clone(),
@@ -257,7 +276,6 @@ impl CachedRedisStorage {
                         p.clone(),
                     )
                     .await;
-                    interval.tick().await;
                 }
             });
         }
@@ -268,6 +286,7 @@ impl CachedRedisStorage {
             redis_conn_manager,
             async_redis_storage,
             partitioned,
+            flush_tx,
         })
     }
 
