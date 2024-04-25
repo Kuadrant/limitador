@@ -1,8 +1,9 @@
 use crate::counter::Counter;
 use crate::limit::Limit;
-use crate::storage::atomic_expiring_value::AtomicExpiringValue;
 use crate::storage::keys::*;
-use crate::storage::redis::counters_cache::{CountersCache, CountersCacheBuilder};
+use crate::storage::redis::counters_cache::{
+    CachedCounterValue, CountersCache, CountersCacheBuilder,
+};
 use crate::storage::redis::redis_async::AsyncRedisStorage;
 use crate::storage::redis::scripts::{BATCH_UPDATE_COUNTERS, VALUES_AND_TTLS};
 use crate::storage::redis::{
@@ -40,7 +41,7 @@ use tracing::{debug_span, error, warn, Instrument};
 
 pub struct CachedRedisStorage {
     cached_counters: Arc<CountersCache>,
-    batcher_counter_updates: Arc<Mutex<HashMap<Counter, AtomicExpiringValue>>>,
+    batcher_counter_updates: Arc<Mutex<HashMap<Counter, Arc<CachedCounterValue>>>>,
     async_redis_storage: AsyncRedisStorage,
     redis_conn_manager: ConnectionManager,
     partitioned: Arc<AtomicBool>,
@@ -150,28 +151,10 @@ impl AsyncCounterStorage for CachedRedisStorage {
         }
 
         // Update cached values
-        for counter in counters.iter() {
-            self.cached_counters.increase_by(counter, delta);
-        }
-
-        // Batch or update depending on configuration
         let mut batcher = self.batcher_counter_updates.lock().unwrap();
-        let now = SystemTime::now();
         for counter in counters.iter() {
-            match batcher.get_mut(counter) {
-                Some(val) => {
-                    val.update(delta, counter.seconds(), now);
-                }
-                None => {
-                    batcher.insert(
-                        counter.clone(),
-                        AtomicExpiringValue::new(
-                            delta,
-                            now + Duration::from_secs(counter.seconds()),
-                        ),
-                    );
-                }
-            }
+            self.cached_counters
+                .increase_by(counter, delta, Some(&mut batcher));
         }
 
         Ok(Authorization::Ok)
@@ -237,7 +220,7 @@ impl CachedRedisStorage {
         let partitioned = Arc::new(AtomicBool::new(false));
         let async_redis_storage =
             AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone());
-        let batcher: Arc<Mutex<HashMap<Counter, AtomicExpiringValue>>> =
+        let batcher: Arc<Mutex<HashMap<Counter, Arc<CachedCounterValue>>>> =
             Arc::new(Mutex::new(Default::default()));
 
         {
@@ -398,15 +381,14 @@ impl CachedRedisStorageBuilder {
 
 async fn update_counters<C: ConnectionLike>(
     redis_conn: &mut C,
-    counters_and_deltas: HashMap<Counter, AtomicExpiringValue>,
+    counters_and_deltas: HashMap<Counter, Arc<CachedCounterValue>>,
 ) -> Result<Vec<(Counter, i64, i64)>, StorageErr> {
     let redis_script = redis::Script::new(BATCH_UPDATE_COUNTERS);
     let mut script_invocation = redis_script.prepare_invoke();
 
     let mut res: Vec<(Counter, i64, i64)> = Vec::new();
-    let now = SystemTime::now();
     for (counter, delta) in counters_and_deltas {
-        let delta = delta.value_at(now);
+        let delta = delta.pending_writes().expect("State machine is wrong!");
         if delta > 0 {
             script_invocation.key(key_for_counter(&counter));
             script_invocation.key(key_for_counters_of_limit(counter.limit()));
@@ -439,7 +421,7 @@ async fn update_counters<C: ConnectionLike>(
 
 async fn flush_batcher_and_update_counters<C: ConnectionLike>(
     mut redis_conn: C,
-    batcher: Arc<Mutex<HashMap<Counter, AtomicExpiringValue>>>,
+    batcher: Arc<Mutex<HashMap<Counter, Arc<CachedCounterValue>>>>,
     storage_is_alive: bool,
     cached_counters: Arc<CountersCache>,
     partitioned: Arc<AtomicBool>,
@@ -487,9 +469,10 @@ async fn flush_batcher_and_update_counters<C: ConnectionLike>(
 mod tests {
     use crate::counter::Counter;
     use crate::limit::Limit;
-    use crate::storage::atomic_expiring_value::AtomicExpiringValue;
     use crate::storage::keys::{key_for_counter, key_for_counters_of_limit};
-    use crate::storage::redis::counters_cache::{CountersCache, CountersCacheBuilder};
+    use crate::storage::redis::counters_cache::{
+        CachedCounterValue, CountersCache, CountersCacheBuilder,
+    };
     use crate::storage::redis::redis_cached::{flush_batcher_and_update_counters, update_counters};
     use crate::storage::redis::CachedRedisStorage;
     use redis::{ErrorKind, Value};
@@ -529,10 +512,14 @@ mod tests {
             Default::default(),
         );
 
-        let expiring_value =
-            AtomicExpiringValue::new(1, SystemTime::now() + Duration::from_secs(60));
-
-        counters_and_deltas.insert(counter.clone(), expiring_value);
+        counters_and_deltas.insert(
+            counter.clone(),
+            Arc::new(CachedCounterValue::from(
+                &counter,
+                1,
+                Duration::from_secs(60),
+            )),
+        );
 
         let mock_response = Value::Bulk(vec![Value::Int(10), Value::Int(60)]);
 
@@ -589,10 +576,14 @@ mod tests {
         let mut batched_counters = HashMap::new();
         batched_counters.insert(
             counter.clone(),
-            AtomicExpiringValue::new(2, SystemTime::now() + Duration::from_secs(60)),
+            Arc::new(CachedCounterValue::from(
+                &counter,
+                2,
+                Duration::from_secs(60),
+            )),
         );
 
-        let batcher: Arc<Mutex<HashMap<Counter, AtomicExpiringValue>>> =
+        let batcher: Arc<Mutex<HashMap<Counter, Arc<CachedCounterValue>>>> =
             Arc::new(Mutex::new(batched_counters));
         let cache = CountersCacheBuilder::new().build();
         cache.insert(

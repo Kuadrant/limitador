@@ -5,8 +5,9 @@ use crate::storage::redis::{
     DEFAULT_TTL_RATIO_CACHED_COUNTERS,
 };
 use moka::sync::Cache;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, MutexGuard};
 use std::time::{Duration, SystemTime};
 
 pub struct CachedCounterValue {
@@ -37,6 +38,7 @@ impl CachedCounterValue {
 
     pub fn set_from_authority(&self, counter: &Counter, value: i64, expiry: Duration) {
         let time_window = Duration::from_secs(counter.seconds());
+        self.initial_value.store(value, Ordering::SeqCst);
         self.value.set(value, time_window);
         self.expiry.update(expiry);
     }
@@ -52,7 +54,6 @@ impl CachedCounterValue {
         value
     }
 
-    #[allow(dead_code)]
     pub fn pending_writes(&self) -> Result<i64, ()> {
         let start = self.initial_value.load(Ordering::SeqCst);
         let value = self.value.value_at(SystemTime::now());
@@ -178,10 +179,25 @@ impl CountersCache {
         ))
     }
 
-    pub fn increase_by(&self, counter: &Counter, delta: i64) {
-        if let Some(val) = self.cache.get(counter) {
-            val.delta(counter, delta);
-        };
+    pub fn increase_by(
+        &self,
+        counter: &Counter,
+        delta: i64,
+        batcher: Option<&mut MutexGuard<HashMap<Counter, Arc<CachedCounterValue>>>>,
+    ) {
+        let val = self.cache.get_with_by_ref(counter, || {
+            Arc::new(
+                // this TTL is wrong, it needs to be the cache's TTL, not the time window of our limit
+                // todo fix when introducing the Batcher type!
+                CachedCounterValue::from(counter, 0, Duration::from_secs(counter.seconds())),
+            )
+        });
+        val.delta(counter, delta);
+        if let Some(batcher) = batcher {
+            if batcher.get_mut(counter).is_none() {
+                batcher.insert(counter.clone(), val.clone());
+            }
+        }
     }
 
     fn ttl_from_redis_ttl(
@@ -367,7 +383,7 @@ mod tests {
             Duration::from_secs(0),
             SystemTime::now(),
         );
-        cache.increase_by(&counter, increase_by);
+        cache.increase_by(&counter, increase_by, None);
 
         assert_eq!(
             cache.get(&counter).map(|e| e.hits(&counter)).unwrap(),
