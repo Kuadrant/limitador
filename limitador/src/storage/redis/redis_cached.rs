@@ -211,7 +211,7 @@ impl CachedRedisStorage {
             .max_cached_counters(max_cached_counters)
             .max_ttl_cached_counter(ttl_cached_counters)
             .ttl_ratio_cached_counter(ttl_ratio_cached_counters)
-            .build();
+            .build(flushing_period);
 
         let counters_cache = Arc::new(cached_counters);
         let partitioned = Arc::new(AtomicBool::new(false));
@@ -422,7 +422,7 @@ async fn flush_batcher_and_update_counters<C: ConnectionLike>(
             flip_partitioned(&partitioned, false);
         }
     } else {
-        let counters = cached_counters.batcher().consume_all();
+        let counters = cached_counters.batcher().consume(1).await;
 
         let time_start_update_counters = Instant::now();
 
@@ -560,7 +560,7 @@ mod tests {
             Ok(mock_response.clone()),
         )]);
 
-        let cache = CountersCacheBuilder::new().build();
+        let cache = CountersCacheBuilder::new().build(Duration::from_millis(1));
         cache.batcher().add(
             counter.clone(),
             Arc::new(CachedCounterValue::from(
