@@ -18,6 +18,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
+use tokio::sync::Notify;
 use tracing::{debug_span, error, warn, Instrument};
 
 // This is just a first version.
@@ -44,7 +45,7 @@ pub struct CachedRedisStorage {
     async_redis_storage: AsyncRedisStorage,
     redis_conn_manager: ConnectionManager,
     partitioned: Arc<AtomicBool>,
-    flush_tx: tokio::sync::watch::Sender<()>,
+    pub flush_notify: Arc<Notify>,
 }
 
 #[async_trait]
@@ -176,7 +177,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
         }
 
         // ask the flusher to flush the batch
-        self.flush_tx.send(()).unwrap();
+        self.flush_notify.notify_one();
 
         Ok(Authorization::Ok)
     }
@@ -244,7 +245,7 @@ impl CachedRedisStorage {
         let batcher: Arc<Mutex<HashMap<Counter, AtomicExpiringValue>>> =
             Arc::new(Mutex::new(Default::default()));
 
-        let (flush_tx, mut flush_rx) = tokio::sync::watch::channel(());
+        let flush_notify = Arc::new(Notify::new());
 
         {
             let storage = async_redis_storage.clone();
@@ -252,11 +253,12 @@ impl CachedRedisStorage {
             let conn = redis_conn_manager.clone();
             let p = Arc::clone(&partitioned);
             let batcher_flusher = batcher.clone();
+            let flush_notify = flush_notify.clone();
 
             tokio::spawn(async move {
                 loop {
                     // Wait for a new flush request,
-                    flush_rx.changed().await.unwrap();
+                    flush_notify.notified().await;
 
                     if flushing_period != Duration::ZERO {
                         // Set the flushing_period to reduce the load on Redis the downside to
@@ -286,7 +288,7 @@ impl CachedRedisStorage {
             redis_conn_manager,
             async_redis_storage,
             partitioned,
-            flush_tx,
+            flush_notify,
         })
     }
 
