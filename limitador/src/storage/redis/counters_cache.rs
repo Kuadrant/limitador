@@ -7,7 +7,7 @@ use crate::storage::redis::{
 use moka::sync::Cache;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 pub struct CachedCounterValue {
@@ -16,10 +16,42 @@ pub struct CachedCounterValue {
     expiry: AtomicExpiryTime,
 }
 
+pub struct Batcher {
+    updates: Mutex<HashMap<Counter, Arc<CachedCounterValue>>>,
+}
+
+impl Batcher {
+    fn new() -> Self {
+        Self {
+            updates: Mutex::new(Default::default()),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.updates.lock().unwrap().is_empty()
+    }
+
+    pub fn consume_all(&self) -> HashMap<Counter, Arc<CachedCounterValue>> {
+        let mut batch = self.updates.lock().unwrap();
+        std::mem::take(&mut *batch)
+    }
+
+    pub fn add(&self, counter: Counter, value: Arc<CachedCounterValue>) {
+        self.updates.lock().unwrap().entry(counter).or_insert(value);
+    }
+}
+
+impl Default for Batcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct CountersCache {
     max_ttl_cached_counters: Duration,
     pub ttl_ratio_cached_counters: u64,
     cache: Cache<Counter, Arc<CachedCounterValue>>,
+    batcher: Batcher,
 }
 
 impl CachedCounterValue {
@@ -137,6 +169,7 @@ impl CountersCacheBuilder {
             max_ttl_cached_counters: self.max_ttl_cached_counters,
             ttl_ratio_cached_counters: self.ttl_ratio_cached_counters,
             cache: Cache::new(self.max_cached_counters as u64),
+            batcher: Default::default(),
         }
     }
 }
@@ -144,6 +177,10 @@ impl CountersCacheBuilder {
 impl CountersCache {
     pub fn get(&self, counter: &Counter) -> Option<Arc<CachedCounterValue>> {
         self.cache.get(counter)
+    }
+
+    pub fn batcher(&self) -> &Batcher {
+        &self.batcher
     }
 
     pub fn insert(
@@ -179,12 +216,7 @@ impl CountersCache {
         ))
     }
 
-    pub fn increase_by(
-        &self,
-        counter: &Counter,
-        delta: i64,
-        batcher: Option<&mut MutexGuard<HashMap<Counter, Arc<CachedCounterValue>>>>,
-    ) {
+    pub fn increase_by(&self, counter: &Counter, delta: i64) {
         let val = self.cache.get_with_by_ref(counter, || {
             Arc::new(
                 // this TTL is wrong, it needs to be the cache's TTL, not the time window of our limit
@@ -193,11 +225,7 @@ impl CountersCache {
             )
         });
         val.delta(counter, delta);
-        if let Some(batcher) = batcher {
-            if batcher.get_mut(counter).is_none() {
-                batcher.insert(counter.clone(), val.clone());
-            }
-        }
+        self.batcher.add(counter.clone(), val.clone());
     }
 
     fn ttl_from_redis_ttl(
@@ -383,7 +411,7 @@ mod tests {
             Duration::from_secs(0),
             SystemTime::now(),
         );
-        cache.increase_by(&counter, increase_by, None);
+        cache.increase_by(&counter, increase_by);
 
         assert_eq!(
             cache.get(&counter).map(|e| e.hits(&counter)).unwrap(),

@@ -17,7 +17,7 @@ use redis::{ConnectionInfo, RedisError};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use tracing::{debug_span, error, warn, Instrument};
 
@@ -41,7 +41,6 @@ use tracing::{debug_span, error, warn, Instrument};
 
 pub struct CachedRedisStorage {
     cached_counters: Arc<CountersCache>,
-    batcher_counter_updates: Arc<Mutex<HashMap<Counter, Arc<CachedCounterValue>>>>,
     async_redis_storage: AsyncRedisStorage,
     redis_conn_manager: ConnectionManager,
     partitioned: Arc<AtomicBool>,
@@ -151,10 +150,8 @@ impl AsyncCounterStorage for CachedRedisStorage {
         }
 
         // Update cached values
-        let mut batcher = self.batcher_counter_updates.lock().unwrap();
         for counter in counters.iter() {
-            self.cached_counters
-                .increase_by(counter, delta, Some(&mut batcher));
+            self.cached_counters.increase_by(counter, delta);
         }
 
         Ok(Authorization::Ok)
@@ -220,21 +217,17 @@ impl CachedRedisStorage {
         let partitioned = Arc::new(AtomicBool::new(false));
         let async_redis_storage =
             AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone());
-        let batcher: Arc<Mutex<HashMap<Counter, Arc<CachedCounterValue>>>> =
-            Arc::new(Mutex::new(Default::default()));
 
         {
             let storage = async_redis_storage.clone();
             let counters_cache_clone = counters_cache.clone();
             let conn = redis_conn_manager.clone();
             let p = Arc::clone(&partitioned);
-            let batcher_flusher = batcher.clone();
             let mut interval = tokio::time::interval(flushing_period);
             tokio::spawn(async move {
                 loop {
                     flush_batcher_and_update_counters(
                         conn.clone(),
-                        batcher_flusher.clone(),
                         storage.is_alive().await,
                         counters_cache_clone.clone(),
                         p.clone(),
@@ -247,7 +240,6 @@ impl CachedRedisStorage {
 
         Ok(Self {
             cached_counters: counters_cache,
-            batcher_counter_updates: batcher,
             redis_conn_manager,
             async_redis_storage,
             partitioned,
@@ -421,21 +413,16 @@ async fn update_counters<C: ConnectionLike>(
 
 async fn flush_batcher_and_update_counters<C: ConnectionLike>(
     mut redis_conn: C,
-    batcher: Arc<Mutex<HashMap<Counter, Arc<CachedCounterValue>>>>,
     storage_is_alive: bool,
     cached_counters: Arc<CountersCache>,
     partitioned: Arc<AtomicBool>,
 ) {
     if partitioned.load(Ordering::Acquire) || !storage_is_alive {
-        let batch = batcher.lock().unwrap();
-        if !batch.is_empty() {
+        if !cached_counters.batcher().is_empty() {
             flip_partitioned(&partitioned, false);
         }
     } else {
-        let counters = {
-            let mut batch = batcher.lock().unwrap();
-            std::mem::take(&mut *batch)
-        };
+        let counters = cached_counters.batcher().consume_all();
 
         let time_start_update_counters = Instant::now();
 
@@ -479,7 +466,7 @@ mod tests {
     use redis_test::{MockCmd, MockRedisConnection};
     use std::collections::HashMap;
     use std::sync::atomic::AtomicBool;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::time::{Duration, SystemTime};
 
     #[tokio::test]
@@ -573,8 +560,8 @@ mod tests {
             Ok(mock_response.clone()),
         )]);
 
-        let mut batched_counters = HashMap::new();
-        batched_counters.insert(
+        let cache = CountersCacheBuilder::new().build();
+        cache.batcher().add(
             counter.clone(),
             Arc::new(CachedCounterValue::from(
                 &counter,
@@ -582,10 +569,6 @@ mod tests {
                 Duration::from_secs(60),
             )),
         );
-
-        let batcher: Arc<Mutex<HashMap<Counter, Arc<CachedCounterValue>>>> =
-            Arc::new(Mutex::new(batched_counters));
-        let cache = CountersCacheBuilder::new().build();
         cache.insert(
             counter.clone(),
             Some(1),
@@ -600,14 +583,8 @@ mod tests {
             assert_eq!(c.hits(&counter), 1);
         }
 
-        flush_batcher_and_update_counters(
-            mock_client,
-            batcher,
-            true,
-            cached_counters.clone(),
-            partitioned,
-        )
-        .await;
+        flush_batcher_and_update_counters(mock_client, true, cached_counters.clone(), partitioned)
+            .await;
 
         if let Some(c) = cached_counters.get(&counter) {
             assert_eq!(c.hits(&counter), 8);
