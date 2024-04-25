@@ -71,11 +71,13 @@ impl AtomicExpiryTime {
     }
 
     pub fn duration(&self) -> Duration {
-        let expiry =
-            SystemTime::UNIX_EPOCH + Duration::from_micros(self.expiry.load(Ordering::SeqCst));
-        expiry
+        self.system_time()
             .duration_since(SystemTime::now())
             .unwrap_or(Duration::ZERO)
+    }
+
+    pub fn system_time(&self) -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_micros(self.expiry.load(Ordering::SeqCst))
     }
 
     pub fn expired_at(&self, when: SystemTime) -> bool {

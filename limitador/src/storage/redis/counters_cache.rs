@@ -12,13 +12,13 @@ use std::time::{Duration, SystemTime};
 pub struct CachedCounterValue {
     value: AtomicExpiringValue,
     initial_value: AtomicI64,
-    expiry: AtomicExpiryTime,
+    pub expiry: AtomicExpiryTime,
 }
 
 pub struct CountersCache {
     max_ttl_cached_counters: Duration,
     pub ttl_ratio_cached_counters: u64,
-    cache: Cache<Counter, Arc<CachedCounterValue>>,
+    pub cache: Cache<Counter, Arc<CachedCounterValue>>,
 }
 
 impl CachedCounterValue {
@@ -184,7 +184,7 @@ impl CountersCache {
         };
     }
 
-    fn ttl_from_redis_ttl(
+    pub fn ttl_from_redis_ttl(
         &self,
         redis_ttl_ms: i64,
         counter_seconds: u64,

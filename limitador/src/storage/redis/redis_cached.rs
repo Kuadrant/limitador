@@ -13,10 +13,10 @@ use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
 use redis::aio::{ConnectionLike, ConnectionManager};
 use redis::{ConnectionInfo, RedisError};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::Notify;
 use tracing::{debug_span, error, warn, Instrument};
@@ -41,7 +41,6 @@ use tracing::{debug_span, error, warn, Instrument};
 
 pub struct CachedRedisStorage {
     cached_counters: Arc<CountersCache>,
-    batcher_counter_updates: Arc<Mutex<HashMap<Counter, AtomicExpiringValue>>>,
     async_redis_storage: AsyncRedisStorage,
     redis_conn_manager: ConnectionManager,
     partitioned: Arc<AtomicBool>,
@@ -156,26 +155,6 @@ impl AsyncCounterStorage for CachedRedisStorage {
             self.cached_counters.increase_by(counter, delta);
         }
 
-        let mut batcher = self.batcher_counter_updates.lock().unwrap();
-        let now = SystemTime::now();
-        for counter in counters.iter() {
-            // Update an existing batch entry or add a new batch entry
-            match batcher.get_mut(counter) {
-                Some(val) => {
-                    val.update(delta, counter.seconds(), now);
-                }
-                None => {
-                    batcher.insert(
-                        counter.clone(),
-                        AtomicExpiringValue::new(
-                            delta,
-                            now + Duration::from_secs(counter.seconds()),
-                        ),
-                    );
-                }
-            }
-        }
-
         // ask the flusher to flush the batch
         self.flush_notify.notify_one();
 
@@ -242,8 +221,6 @@ impl CachedRedisStorage {
         let partitioned = Arc::new(AtomicBool::new(false));
         let async_redis_storage =
             AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone());
-        let batcher: Arc<Mutex<HashMap<Counter, AtomicExpiringValue>>> =
-            Arc::new(Mutex::new(Default::default()));
 
         let flush_notify = Arc::new(Notify::new());
 
@@ -252,7 +229,6 @@ impl CachedRedisStorage {
             let counters_cache_clone = counters_cache.clone();
             let conn = redis_conn_manager.clone();
             let p = Arc::clone(&partitioned);
-            let batcher_flusher = batcher.clone();
             let flush_notify = flush_notify.clone();
 
             tokio::spawn(async move {
@@ -272,7 +248,7 @@ impl CachedRedisStorage {
 
                     flush_batcher_and_update_counters(
                         conn.clone(),
-                        batcher_flusher.clone(),
+                        // counters_cache.clone(),
                         storage.is_alive().await,
                         counters_cache_clone.clone(),
                         p.clone(),
@@ -284,7 +260,6 @@ impl CachedRedisStorage {
 
         Ok(Self {
             cached_counters: counters_cache,
-            batcher_counter_updates: batcher,
             redis_conn_manager,
             async_redis_storage,
             partitioned,
@@ -419,7 +394,7 @@ impl CachedRedisStorageBuilder {
 
 async fn update_counters<C: ConnectionLike>(
     redis_conn: &mut C,
-    counters_and_deltas: HashMap<Counter, AtomicExpiringValue>,
+    counters_and_deltas: Vec<(Counter, AtomicExpiringValue)>,
 ) -> Result<Vec<(Counter, i64, i64)>, StorageErr> {
     let redis_script = redis::Script::new(BATCH_UPDATE_COUNTERS);
     let mut script_invocation = redis_script.prepare_invoke();
@@ -460,25 +435,31 @@ async fn update_counters<C: ConnectionLike>(
 
 async fn flush_batcher_and_update_counters<C: ConnectionLike>(
     mut redis_conn: C,
-    batcher: Arc<Mutex<HashMap<Counter, AtomicExpiringValue>>>,
     storage_is_alive: bool,
     cached_counters: Arc<CountersCache>,
     partitioned: Arc<AtomicBool>,
 ) {
+    // create the batch from the state in cached_counters
+    let mut batch: Vec<(Counter, AtomicExpiringValue)> = Default::default();
+    cached_counters.cache.iter().for_each(|(counter, value)| {
+        let delta = value.pending_writes().unwrap();
+        if delta > 0 {
+            batch.push((
+                counter.as_ref().clone(),
+                AtomicExpiringValue::new(delta, value.expiry.system_time()),
+            ));
+        }
+    });
+
+    // TODO: split the batch up into chunks that are not too big..
     if partitioned.load(Ordering::Acquire) || !storage_is_alive {
-        let batch = batcher.lock().unwrap();
         if !batch.is_empty() {
             flip_partitioned(&partitioned, false);
         }
     } else {
-        let counters = {
-            let mut batch = batcher.lock().unwrap();
-            std::mem::take(&mut *batch)
-        };
-
         let time_start_update_counters = Instant::now();
 
-        let updated_counters = update_counters(&mut redis_conn, counters)
+        let updated_counters = update_counters(&mut redis_conn, batch)
             .await
             .or_else(|err| {
                 if err.is_transient() {
@@ -491,15 +472,25 @@ async fn flush_batcher_and_update_counters<C: ConnectionLike>(
             .expect("Unrecoverable Redis error!");
 
         for (counter, value, ttl) in updated_counters {
-            cached_counters.insert(
-                counter,
-                Option::from(value),
-                ttl,
-                Duration::from_millis(
-                    (Instant::now() - time_start_update_counters).as_millis() as u64
-                ),
-                SystemTime::now(),
-            );
+            if let Some(c) = cached_counters.get(&counter) {
+                let cache_ttl = cached_counters.ttl_from_redis_ttl(
+                    ttl,
+                    counter.seconds(),
+                    value,
+                    counter.max_value(),
+                );
+                c.set_from_authority(&counter, value, cache_ttl)
+            } else {
+                cached_counters.insert(
+                    counter,
+                    Option::from(value),
+                    ttl,
+                    Duration::from_millis(
+                        (Instant::now() - time_start_update_counters).as_millis() as u64,
+                    ),
+                    SystemTime::now(),
+                );
+            }
         }
     }
 }
@@ -515,9 +506,8 @@ mod tests {
     use crate::storage::redis::CachedRedisStorage;
     use redis::{ErrorKind, Value};
     use redis_test::{MockCmd, MockRedisConnection};
-    use std::collections::HashMap;
     use std::sync::atomic::AtomicBool;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::time::{Duration, SystemTime};
 
     #[tokio::test]
@@ -538,7 +528,7 @@ mod tests {
 
     #[tokio::test]
     async fn batch_update_counters() {
-        let mut counters_and_deltas = HashMap::new();
+        let mut counters_and_deltas = Vec::new();
         let counter = Counter::new(
             Limit::new(
                 "test_namespace",
@@ -553,7 +543,7 @@ mod tests {
         let expiring_value =
             AtomicExpiringValue::new(1, SystemTime::now() + Duration::from_secs(60));
 
-        counters_and_deltas.insert(counter.clone(), expiring_value);
+        counters_and_deltas.push((counter.clone(), expiring_value));
 
         let mock_response = Value::Bulk(vec![Value::Int(10), Value::Int(60)]);
 
@@ -607,14 +597,6 @@ mod tests {
             Ok(mock_response.clone()),
         )]);
 
-        let mut batched_counters = HashMap::new();
-        batched_counters.insert(
-            counter.clone(),
-            AtomicExpiringValue::new(2, SystemTime::now() + Duration::from_secs(60)),
-        );
-
-        let batcher: Arc<Mutex<HashMap<Counter, AtomicExpiringValue>>> =
-            Arc::new(Mutex::new(batched_counters));
         let cache = CountersCacheBuilder::new().build();
         cache.insert(
             counter.clone(),
@@ -628,16 +610,11 @@ mod tests {
 
         if let Some(c) = cached_counters.get(&counter) {
             assert_eq!(c.hits(&counter), 1);
+            c.delta(&counter, 2);
         }
 
-        flush_batcher_and_update_counters(
-            mock_client,
-            batcher,
-            true,
-            cached_counters.clone(),
-            partitioned,
-        )
-        .await;
+        flush_batcher_and_update_counters(mock_client, true, cached_counters.clone(), partitioned)
+            .await;
 
         if let Some(c) = cached_counters.get(&counter) {
             assert_eq!(c.hits(&counter), 8);
