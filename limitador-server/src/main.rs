@@ -14,6 +14,7 @@ use crate::config::{
 use crate::envoy_rls::server::{run_envoy_rls_server, RateLimitHeaders};
 use crate::http_api::server::run_http_server;
 use crate::metrics::MetricsLayer;
+use ::metrics::histogram;
 use clap::{value_parser, Arg, ArgAction, Command};
 use const_format::formatcp;
 use limitador::counter::Counter;
@@ -256,7 +257,7 @@ fn find_first_negative_limit(limits: &[Limit]) -> Option<usize> {
 
 #[actix_rt::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (config, prometheus_metrics) = {
+    let config = {
         let (config, version) = create_config();
         println!("{LIMITADOR_HEADER} {version}");
         let level = config.log_level.unwrap_or_else(|| {
@@ -270,14 +271,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tracing_subscriber::fmt::layer()
         };
 
-        let limit_name_in_metrics = config.limit_name_in_labels;
-        let prometheus_metrics =
-            Arc::new(PrometheusMetrics::new_with_options(limit_name_in_metrics));
-        let metrics = prometheus_metrics.clone();
-
         let metrics_layer = MetricsLayer::new().gather(
             "should_rate_limit",
-            move |timings| metrics.counter_access(Duration::from(timings)),
+            |timings| histogram!("counter_latency").record(Duration::from(timings).as_secs_f64()),
             vec!["datastore"],
         );
 
@@ -311,8 +307,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         info!("Version: {}", version);
         info!("Using config: {:?}", config);
-        (config, prometheus_metrics)
+        config
     };
+
+    let prometheus_metrics = Arc::new(PrometheusMetrics::new_with_options(
+        config.limit_name_in_labels,
+    ));
 
     let limit_file = config.limits_file.clone();
     let envoy_rls_address = config.rlp_address();

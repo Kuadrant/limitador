@@ -1,17 +1,13 @@
+use metrics::{counter, describe_counter, describe_gauge, describe_histogram, gauge};
+use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+
 use limitador::limit::Namespace;
-use prometheus::{
-    Encoder, Histogram, HistogramOpts, IntCounterVec, IntGauge, Opts, Registry, TextEncoder,
-};
-use std::time::Duration;
 
 const NAMESPACE_LABEL: &str = "limitador_namespace";
 const LIMIT_NAME_LABEL: &str = "limit_name";
 
 pub struct PrometheusMetrics {
-    registry: Registry,
-    authorized_calls: IntCounterVec,
-    limited_calls: IntCounterVec,
-    counter_latency: Histogram,
+    prometheus_handle: PrometheusHandle,
     use_limit_name_label: bool,
 }
 
@@ -35,103 +31,49 @@ impl PrometheusMetrics {
     }
 
     pub fn incr_authorized_calls(&self, namespace: &Namespace) {
-        self.authorized_calls
-            .with_label_values(&[namespace.as_ref()])
-            .inc();
+        counter!("authorized_calls", NAMESPACE_LABEL => namespace.as_ref().to_string()).increment(1)
     }
 
     pub fn incr_limited_calls<'a, LN>(&self, namespace: &Namespace, limit_name: LN)
     where
         LN: Into<Option<&'a str>>,
     {
-        let mut labels = vec![namespace.as_ref()];
+        let mut labels = vec![(NAMESPACE_LABEL, namespace.as_ref().to_string())];
 
         if self.use_limit_name_label {
             // If we have configured the metric to accept 2 labels we need to
             // set values for them.
-            labels.push(limit_name.into().unwrap_or(""));
+            labels.push((
+                LIMIT_NAME_LABEL,
+                limit_name.into().unwrap_or("").to_string(),
+            ));
         }
-
-        self.limited_calls.with_label_values(&labels).inc();
-    }
-
-    pub fn counter_access(&self, duration: Duration) {
-        self.counter_latency.observe(duration.as_secs_f64());
-    }
-
-    pub fn gather_metrics(&self) -> String {
-        let mut buffer = Vec::new();
-
-        TextEncoder::new()
-            .encode(&self.registry.gather(), &mut buffer)
-            .unwrap();
-
-        String::from_utf8(buffer).unwrap()
+        counter!("limited_calls", &labels).increment(1)
     }
 
     pub fn new_with_options(use_limit_name_label: bool) -> Self {
-        let authorized_calls_counter = Self::authorized_calls_counter();
-        let limited_calls_counter = Self::limited_calls_counter(use_limit_name_label);
-        let limitador_up_gauge = Self::limitador_up_gauge();
-        let counter_latency = Self::counter_latency();
+        let prom_builder = PrometheusBuilder::new();
+        let prometheus_handle = prom_builder
+            .install_recorder()
+            .expect("failed to create prometheus metrics exporter");
 
-        let registry = Registry::new();
-
-        registry
-            .register(Box::new(authorized_calls_counter.clone()))
-            .unwrap();
-
-        registry
-            .register(Box::new(limited_calls_counter.clone()))
-            .unwrap();
-
-        registry
-            .register(Box::new(limitador_up_gauge.clone()))
-            .unwrap();
-
-        registry
-            .register(Box::new(counter_latency.clone()))
-            .unwrap();
-
-        limitador_up_gauge.set(1);
+        describe_histogram!(
+            "counter_latency",
+            "Latency to the underlying counter datastore"
+        );
+        describe_counter!("authorized_calls", "Authorized calls");
+        describe_counter!("limited_calls", "Limited calls");
+        describe_gauge!("limitador_up", "Limitador is running");
+        gauge!("limitador_up").set(1);
 
         Self {
-            registry,
-            authorized_calls: authorized_calls_counter,
-            limited_calls: limited_calls_counter,
-            counter_latency,
             use_limit_name_label,
+            prometheus_handle,
         }
     }
 
-    fn authorized_calls_counter() -> IntCounterVec {
-        IntCounterVec::new(
-            Opts::new("authorized_calls", "Authorized calls"),
-            &[NAMESPACE_LABEL],
-        )
-        .unwrap()
-    }
-
-    fn limited_calls_counter(use_limit_name_label: bool) -> IntCounterVec {
-        let mut labels = vec![NAMESPACE_LABEL];
-
-        if use_limit_name_label {
-            labels.push(LIMIT_NAME_LABEL);
-        }
-
-        IntCounterVec::new(Opts::new("limited_calls", "Limited calls"), &labels).unwrap()
-    }
-
-    fn limitador_up_gauge() -> IntGauge {
-        IntGauge::new("limitador_up", "Limitador is running").unwrap()
-    }
-
-    fn counter_latency() -> Histogram {
-        Histogram::with_opts(HistogramOpts::new(
-            "counter_latency",
-            "Latency to the underlying counter datastore",
-        ))
-        .unwrap()
+    pub fn gather_metrics(&self) -> String {
+        self.prometheus_handle.render()
     }
 }
 
