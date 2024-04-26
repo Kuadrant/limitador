@@ -5,11 +5,14 @@ use limitador::limit::Limit;
 #[cfg(feature = "disk_storage")]
 use limitador::storage::disk::{DiskStorage, OptimizeFor};
 use limitador::storage::in_memory::InMemoryStorage;
-use limitador::storage::CounterStorage;
-use limitador::RateLimiter;
+use limitador::storage::redis::CachedRedisStorageBuilder;
+use limitador::storage::{AsyncCounterStorage, CounterStorage};
+use limitador::{AsyncRateLimiter, RateLimiter};
 use rand::SeedableRng;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
+use std::future::Future;
+use std::time::Instant;
 
 const SEED: u64 = 42;
 
@@ -18,9 +21,15 @@ criterion_group!(benches, bench_in_mem);
 #[cfg(all(feature = "disk_storage", not(feature = "redis_storage")))]
 criterion_group!(benches, bench_in_mem, bench_disk);
 #[cfg(all(not(feature = "disk_storage"), feature = "redis_storage"))]
-criterion_group!(benches, bench_in_mem, bench_redis);
+criterion_group!(benches, bench_in_mem, bench_redis, bench_cached_redis);
 #[cfg(all(feature = "disk_storage", feature = "redis_storage"))]
-criterion_group!(benches, bench_in_mem, bench_disk, bench_redis);
+criterion_group!(
+    benches,
+    bench_in_mem,
+    bench_disk,
+    bench_redis,
+    bench_cached_redis
+);
 
 criterion_main!(benches);
 
@@ -139,6 +148,55 @@ fn bench_disk(c: &mut Criterion) {
 }
 
 #[cfg(feature = "redis_storage")]
+fn bench_cached_redis(c: &mut Criterion) {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    async fn create_storage() -> Box<dyn AsyncCounterStorage> {
+        let storage_builder = CachedRedisStorageBuilder::new("redis://127.0.0.1:6379");
+        let storage = storage_builder
+            .build()
+            .await
+            .expect("We need a Redis running locally");
+        storage.clear().await.unwrap();
+        Box::new(storage)
+    }
+
+    let mut group = c.benchmark_group("CachedRedis");
+    for scenario in TEST_SCENARIOS {
+        group.bench_with_input(
+            BenchmarkId::new("is_rate_limited", scenario),
+            scenario,
+            |b: &mut Bencher, test_scenario: &&TestScenario| {
+                async_bench_is_rate_limited(&runtime, b, test_scenario, create_storage);
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("update_counters", scenario),
+            scenario,
+            |b: &mut Bencher, test_scenario: &&TestScenario| {
+                async_bench_update_counters(&runtime, b, test_scenario, create_storage);
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("check_rate_limited_and_update", scenario),
+            scenario,
+            |b: &mut Bencher, test_scenario: &&TestScenario| {
+                async_bench_check_rate_limited_and_update(
+                    &runtime,
+                    b,
+                    test_scenario,
+                    create_storage,
+                );
+            },
+        );
+    }
+    group.finish();
+}
+
+#[cfg(feature = "redis_storage")]
 fn bench_redis(c: &mut Criterion) {
     let mut group = c.benchmark_group("Redis");
     for scenario in TEST_SCENARIOS {
@@ -195,6 +253,37 @@ fn bench_is_rate_limited(
     })
 }
 
+fn async_bench_is_rate_limited<F>(
+    runtime: &tokio::runtime::Runtime,
+    b: &mut Bencher,
+    test_scenario: &TestScenario,
+    storage: fn() -> F,
+) where
+    F: Future<Output = Box<dyn AsyncCounterStorage>>,
+{
+    b.to_async(runtime).iter_custom(|iters| async move {
+        let storage = storage().await;
+        let (rate_limiter, call_params) = generate_async_test_data(test_scenario, storage);
+        let rng = &mut rand::rngs::StdRng::seed_from_u64(SEED);
+
+        let start = Instant::now();
+        for _i in 0..iters {
+            black_box({
+                let params = call_params.choose(rng).unwrap();
+                rate_limiter
+                    .is_rate_limited(
+                        &params.namespace.to_owned().into(),
+                        &params.values,
+                        params.delta,
+                    )
+                    .await
+                    .unwrap()
+            });
+        }
+        start.elapsed()
+    })
+}
+
 fn bench_update_counters(
     b: &mut Bencher,
     test_scenario: &TestScenario,
@@ -214,7 +303,37 @@ fn bench_update_counters(
                 params.delta,
             )
             .unwrap();
-        black_box(())
+    })
+}
+
+fn async_bench_update_counters<F>(
+    runtime: &tokio::runtime::Runtime,
+    b: &mut Bencher,
+    test_scenario: &TestScenario,
+    storage: fn() -> F,
+) where
+    F: Future<Output = Box<dyn AsyncCounterStorage>>,
+{
+    b.to_async(runtime).iter_custom(|iters| async move {
+        let storage = storage().await;
+        let (rate_limiter, call_params) = generate_async_test_data(test_scenario, storage);
+        let rng = &mut rand::rngs::StdRng::seed_from_u64(SEED);
+
+        let start = Instant::now();
+        for _i in 0..iters {
+            black_box({
+                let params = call_params.choose(rng).unwrap();
+                rate_limiter
+                    .update_counters(
+                        &params.namespace.to_owned().into(),
+                        &params.values,
+                        params.delta,
+                    )
+                    .await
+            })
+            .unwrap();
+        }
+        start.elapsed()
     })
 }
 
@@ -243,6 +362,39 @@ fn bench_check_rate_limited_and_update(
     })
 }
 
+fn async_bench_check_rate_limited_and_update<F>(
+    runtime: &tokio::runtime::Runtime,
+    b: &mut Bencher,
+    test_scenario: &TestScenario,
+    storage: fn() -> F,
+) where
+    F: Future<Output = Box<dyn AsyncCounterStorage>>,
+{
+    b.to_async(runtime).iter_custom(|iters| async move {
+        let storage = storage().await;
+        let (rate_limiter, call_params) = generate_async_test_data(test_scenario, storage);
+        let rng = &mut rand::rngs::StdRng::seed_from_u64(SEED);
+
+        let start = Instant::now();
+        for _i in 0..iters {
+            black_box({
+                let params = call_params.choose(rng).unwrap();
+
+                rate_limiter
+                    .check_rate_limited_and_update(
+                        &params.namespace.to_owned().into(),
+                        &params.values,
+                        params.delta,
+                        false,
+                    )
+                    .await
+                    .unwrap()
+            });
+        }
+        start.elapsed()
+    })
+}
+
 // Notice that this function creates all the limits with the same conditions and
 // variables. Also, all the conditions have the same format: "cond_x == 1".
 // That's to simplify things, those are not the aspects that should have the
@@ -255,6 +407,39 @@ fn generate_test_data(
     scenario: &TestScenario,
     storage: Box<dyn CounterStorage>,
 ) -> (RateLimiter, Vec<TestCallParams>) {
+    let rate_limiter = RateLimiter::new_with_storage(storage);
+
+    let (test_limits, call_params) = generate_test_limits(scenario);
+    for limit in test_limits {
+        rate_limiter.add_limit(limit);
+    }
+
+    (rate_limiter, call_params)
+}
+
+// Notice that this function creates all the limits with the same conditions and
+// variables. Also, all the conditions have the same format: "cond_x == 1".
+// That's to simplify things, those are not the aspects that should have the
+// greatest impact on performance.
+// The limits generated are big enough to avoid being rate-limited during the
+// benchmark.
+// Note that with this test data each request only increases one counter, we can
+// that as another variable in the future.
+fn generate_async_test_data(
+    scenario: &TestScenario,
+    storage: Box<dyn AsyncCounterStorage>,
+) -> (AsyncRateLimiter, Vec<TestCallParams>) {
+    let rate_limiter = AsyncRateLimiter::new_with_storage(storage);
+
+    let (test_limits, call_params) = generate_test_limits(scenario);
+    for limit in test_limits {
+        rate_limiter.add_limit(limit);
+    }
+
+    (rate_limiter, call_params)
+}
+
+fn generate_test_limits(scenario: &TestScenario) -> (Vec<Limit>, Vec<TestCallParams>) {
     let mut test_values: HashMap<String, String> = HashMap::new();
 
     let mut conditions = vec![];
@@ -293,12 +478,5 @@ fn generate_test_data(
             delta: 1,
         });
     }
-
-    let rate_limiter = RateLimiter::new_with_storage(storage);
-
-    for limit in test_limits {
-        rate_limiter.add_limit(limit);
-    }
-
-    (rate_limiter, call_params)
+    (test_limits, call_params)
 }
