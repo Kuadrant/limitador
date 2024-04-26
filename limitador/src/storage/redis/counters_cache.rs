@@ -252,7 +252,15 @@ impl CountersCacheBuilder {
 
 impl CountersCache {
     pub fn get(&self, counter: &Counter) -> Option<Arc<CachedCounterValue>> {
-        self.cache.get(counter)
+        let option = self.cache.get(counter);
+        if option.is_none() {
+            let from_queue = self.batcher.updates.get(counter);
+            if let Some(entry) = from_queue {
+                self.cache.insert(counter.clone(), entry.value().clone());
+                return Some(entry.value().clone())
+            }
+        }
+        option
     }
 
     pub fn batcher(&self) -> &Batcher {
@@ -277,7 +285,11 @@ impl CountersCache {
         if let Some(ttl) = cache_ttl.checked_sub(ttl_margin) {
             if ttl > Duration::ZERO {
                 let previous = self.cache.get_with(counter.clone(), || {
-                    Arc::new(CachedCounterValue::from(&counter, counter_val, cache_ttl))
+                    if let Some(entry) = self.batcher.updates.get(&counter) {
+                        entry.value().clone()
+                    } else {
+                        Arc::new(CachedCounterValue::from(&counter, counter_val, cache_ttl))
+                    }
                 });
                 if previous.expired_at(now) || previous.value.value() < counter_val {
                     previous.set_from_authority(&counter, counter_val, cache_ttl);
@@ -295,12 +307,16 @@ impl CountersCache {
     pub fn increase_by(&self, counter: &Counter, delta: i64) {
         let mut priority = false;
         let val = self.cache.get_with_by_ref(counter, || {
-            priority = true;
-            Arc::new(
-                // this TTL is wrong, it needs to be the cache's TTL, not the time window of our limit
-                // todo fix when introducing the Batcher type!
-                CachedCounterValue::from(counter, 0, Duration::from_secs(counter.seconds())),
-            )
+            if let Some(entry) = self.batcher.updates.get(&counter) {
+                entry.value().clone()
+            } else {
+                priority = true;
+                Arc::new(
+                    // this TTL is wrong, it needs to be the cache's TTL, not the time window of our limit
+                    // todo fix when introducing the Batcher type!
+                    CachedCounterValue::from(counter, 0, Duration::from_secs(counter.seconds())),
+                )
+            }
         });
         val.delta(counter, delta);
         self.batcher.add(counter.clone(), val.clone(), priority);

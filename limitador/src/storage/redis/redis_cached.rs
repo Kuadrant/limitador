@@ -579,7 +579,7 @@ mod tests {
         let partitioned = Arc::new(AtomicBool::new(false));
 
         if let Some(c) = cached_counters.get(&counter) {
-            assert_eq!(c.hits(&counter), 1);
+            assert_eq!(c.hits(&counter), 2);
         }
 
         flush_batcher_and_update_counters(mock_client, true, cached_counters.clone(), partitioned)
