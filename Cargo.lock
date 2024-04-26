@@ -1477,6 +1477,7 @@ dependencies = [
  "base64 0.22.0",
  "cfg-if",
  "criterion",
+ "dashmap",
  "futures",
  "getrandom",
  "infinispan",

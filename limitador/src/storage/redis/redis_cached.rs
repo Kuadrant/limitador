@@ -422,11 +422,9 @@ async fn flush_batcher_and_update_counters<C: ConnectionLike>(
             flip_partitioned(&partitioned, false);
         }
     } else {
-        let counters = cached_counters.batcher().consume(1).await;
-
-        let time_start_update_counters = Instant::now();
-
-        let updated_counters = update_counters(&mut redis_conn, counters)
+        let updated_counters = cached_counters
+            .batcher()
+            .consume(1, |counters| update_counters(&mut redis_conn, counters))
             .await
             .or_else(|err| {
                 if err.is_transient() {
@@ -437,6 +435,8 @@ async fn flush_batcher_and_update_counters<C: ConnectionLike>(
                 }
             })
             .expect("Unrecoverable Redis error!");
+
+        let time_start_update_counters = Instant::now();
 
         for (counter, value, ttl) in updated_counters {
             cached_counters.insert(
@@ -568,6 +568,7 @@ mod tests {
                 2,
                 Duration::from_secs(60),
             )),
+            false,
         );
         cache.insert(
             counter.clone(),
