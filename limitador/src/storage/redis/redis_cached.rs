@@ -223,7 +223,6 @@ impl CachedRedisStorage {
             let counters_cache_clone = counters_cache.clone();
             let conn = redis_conn_manager.clone();
             let p = Arc::clone(&partitioned);
-            let mut interval = tokio::time::interval(flushing_period);
             tokio::spawn(async move {
                 loop {
                     flush_batcher_and_update_counters(
@@ -233,7 +232,6 @@ impl CachedRedisStorage {
                         p.clone(),
                     )
                     .await;
-                    interval.tick().await;
                 }
             });
         }
