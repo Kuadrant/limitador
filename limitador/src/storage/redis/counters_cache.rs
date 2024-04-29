@@ -4,6 +4,7 @@ use crate::storage::redis::{
     DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC,
     DEFAULT_TTL_RATIO_CACHED_COUNTERS,
 };
+use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use moka::sync::Cache;
 use std::collections::HashMap;
@@ -92,7 +93,17 @@ impl Batcher {
 
     pub fn add(&self, counter: Counter, value: Arc<CachedCounterValue>) {
         let priority = value.requires_fast_flush(&self.interval);
-        self.updates.entry(counter).or_insert(value);
+        match self.updates.entry(counter.clone()) {
+            Entry::Occupied(needs_merge) => {
+                let arc = needs_merge.get();
+                if !Arc::ptr_eq(arc, &value) {
+                    arc.delta(&counter, value.pending_writes().unwrap());
+                }
+            }
+            Entry::Vacant(miss) => {
+                miss.insert_entry(value);
+            }
+        };
         if priority {
             self.priority_flush.store(true, Ordering::Release);
         }
