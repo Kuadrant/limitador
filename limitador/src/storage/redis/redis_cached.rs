@@ -499,7 +499,7 @@ mod tests {
 
         counters_and_deltas.insert(
             counter.clone(),
-            Arc::new(CachedCounterValue::from(
+            Arc::new(CachedCounterValue::from_authority(
                 &counter,
                 1,
                 Duration::from_secs(60),
@@ -561,12 +561,11 @@ mod tests {
         let cache = CountersCacheBuilder::new().build(Duration::from_millis(1));
         cache.batcher().add(
             counter.clone(),
-            Arc::new(CachedCounterValue::from(
+            Arc::new(CachedCounterValue::from_authority(
                 &counter,
                 2,
                 Duration::from_secs(60),
             )),
-            false,
         );
         cache.insert(
             counter.clone(),

@@ -19,6 +19,7 @@ pub struct CachedCounterValue {
     value: AtomicExpiringValue,
     initial_value: AtomicI64,
     expiry: AtomicExpiryTime,
+    from_authority: AtomicBool,
 }
 
 pub struct Batcher {
@@ -52,25 +53,13 @@ impl Batcher {
         loop {
             if ready {
                 let mut batch = Vec::with_capacity(min);
-                let mut probably_fake = Vec::with_capacity(min);
                 for entry in &self.updates {
-                    if entry.value().value.ttl() < self.interval {
+                    if entry.value().requires_fast_flush(&self.interval) {
                         batch.push(entry.key().clone());
                         if batch.len() == min {
                             break;
                         }
                     }
-                    if entry.value().expiry.duration() == Duration::from_secs(entry.key().seconds())
-                    {
-                        probably_fake.push(entry.key().clone());
-                        if probably_fake.len() == min {
-                            break;
-                        }
-                    }
-                }
-                if let Some(remaining) = min.checked_sub(batch.len()) {
-                    let take = probably_fake.into_iter().take(remaining);
-                    batch.append(&mut take.collect());
                 }
                 if let Some(remaining) = min.checked_sub(batch.len()) {
                     let take = self.updates.iter().take(remaining);
@@ -101,8 +90,8 @@ impl Batcher {
         }
     }
 
-    pub fn add(&self, counter: Counter, value: Arc<CachedCounterValue>, priority: bool) {
-        let priority = priority || value.value.ttl() < self.interval;
+    pub fn add(&self, counter: Counter, value: Arc<CachedCounterValue>) {
+        let priority = value.requires_fast_flush(&self.interval);
         self.updates.entry(counter).or_insert(value);
         if priority {
             self.priority_flush.store(true, Ordering::Release);
@@ -125,12 +114,26 @@ pub struct CountersCache {
 }
 
 impl CachedCounterValue {
-    pub fn from(counter: &Counter, value: i64, ttl: Duration) -> Self {
+    pub fn from_authority(counter: &Counter, value: i64, ttl: Duration) -> Self {
         let now = SystemTime::now();
         Self {
             value: AtomicExpiringValue::new(value, now + Duration::from_secs(counter.seconds())),
             initial_value: AtomicI64::new(value),
             expiry: AtomicExpiryTime::from_now(ttl),
+            from_authority: AtomicBool::new(true),
+        }
+    }
+
+    pub fn load_from_authority_asap(counter: &Counter, temp_value: i64) -> Self {
+        let now = SystemTime::now();
+        Self {
+            value: AtomicExpiringValue::new(
+                temp_value,
+                now + Duration::from_secs(counter.seconds()),
+            ),
+            initial_value: AtomicI64::new(temp_value),
+            expiry: AtomicExpiryTime::from_now(Duration::from_secs(counter.seconds())),
+            from_authority: AtomicBool::new(false),
         }
     }
 
@@ -143,6 +146,7 @@ impl CachedCounterValue {
         self.initial_value.store(value, Ordering::SeqCst);
         self.value.set(value, time_window);
         self.expiry.update(expiry);
+        self.from_authority.store(true, Ordering::Release);
     }
 
     pub fn delta(&self, counter: &Counter, delta: i64) -> i64 {
@@ -208,6 +212,10 @@ impl CachedCounterValue {
     pub fn to_next_window(&self) -> Duration {
         self.value.ttl()
     }
+
+    pub fn requires_fast_flush(&self, within: &Duration) -> bool {
+        self.from_authority.load(Ordering::Acquire) || &self.value.ttl() <= within
+    }
 }
 
 pub struct CountersCacheBuilder {
@@ -257,7 +265,7 @@ impl CountersCache {
             let from_queue = self.batcher.updates.get(counter);
             if let Some(entry) = from_queue {
                 self.cache.insert(counter.clone(), entry.value().clone());
-                return Some(entry.value().clone())
+                return Some(entry.value().clone());
             }
         }
         option
@@ -288,38 +296,35 @@ impl CountersCache {
                     if let Some(entry) = self.batcher.updates.get(&counter) {
                         entry.value().clone()
                     } else {
-                        Arc::new(CachedCounterValue::from(&counter, counter_val, cache_ttl))
+                        Arc::new(CachedCounterValue::from_authority(
+                            &counter,
+                            counter_val,
+                            ttl,
+                        ))
                     }
                 });
                 if previous.expired_at(now) || previous.value.value() < counter_val {
-                    previous.set_from_authority(&counter, counter_val, cache_ttl);
+                    previous.set_from_authority(&counter, counter_val, ttl);
                 }
                 return previous;
             }
         }
-        Arc::new(CachedCounterValue::from(
+        Arc::new(CachedCounterValue::load_from_authority_asap(
             &counter,
             counter_val,
-            Duration::ZERO,
         ))
     }
 
     pub fn increase_by(&self, counter: &Counter, delta: i64) {
-        let mut priority = false;
         let val = self.cache.get_with_by_ref(counter, || {
-            if let Some(entry) = self.batcher.updates.get(&counter) {
+            if let Some(entry) = self.batcher.updates.get(counter) {
                 entry.value().clone()
             } else {
-                priority = true;
-                Arc::new(
-                    // this TTL is wrong, it needs to be the cache's TTL, not the time window of our limit
-                    // todo fix when introducing the Batcher type!
-                    CachedCounterValue::from(counter, 0, Duration::from_secs(counter.seconds())),
-                )
+                Arc::new(CachedCounterValue::load_from_authority_asap(counter, 0))
             }
         });
         val.delta(counter, delta);
-        self.batcher.add(counter.clone(), val.clone(), priority);
+        self.batcher.add(counter.clone(), val.clone());
     }
 
     fn ttl_from_redis_ttl(
