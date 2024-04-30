@@ -537,7 +537,7 @@ mod test {
         }
 
         // We wait for the flushing period to pass so the counters are flushed in the cached storage
-        tokio::time::sleep(Duration::from_millis(3)).await;
+        tokio::time::sleep(Duration::from_millis(4)).await;
 
         assert!(rate_limiter
             .is_rate_limited(namespace, &get_values, 1)

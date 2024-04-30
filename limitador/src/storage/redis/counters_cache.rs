@@ -14,7 +14,6 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::select;
 use tokio::sync::Notify;
-use tokio::time::interval;
 
 pub struct CachedCounterValue {
     value: AtomicExpiringValue,
@@ -169,7 +168,6 @@ impl Batcher {
         F: FnOnce(HashMap<Counter, Arc<CachedCounterValue>>) -> Fut,
         Fut: Future<Output = O>,
     {
-        let mut interval = interval(self.interval);
         let mut ready = self.batch_ready(max);
         loop {
             if ready {
@@ -198,7 +196,7 @@ impl Batcher {
             } else {
                 ready = select! {
                     _ = self.notifier.notified() => self.batch_ready(max),
-                    _ = interval.tick() => true,
+                    _ = tokio::time::sleep(self.interval) => true,
                 }
             }
         }
