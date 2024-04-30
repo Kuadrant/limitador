@@ -1,12 +1,12 @@
 ---
 name: Build Image
-
 on:
-  workflow_dispatch:
   push:
-    branches: ['*']
-    tags: ['*']
-
+    branches:
+      - 'main'
+  pull_request:
+    branches:
+      - 'main'
 env:
   IMG_REGISTRY_HOST: quay.io
   IMG_REGISTRY_ORG: kuadrant

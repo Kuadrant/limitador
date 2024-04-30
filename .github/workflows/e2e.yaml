@@ -3,10 +3,11 @@ name: e2e tests
 on:
   push:
     branches:
-      - '*'
+      - 'main'
   pull_request:
     branches:
-      - '*'
+      - 'main'
+
 jobs:
   limits_file_watcher:
     name: Limits File Watcher in k8s environment
