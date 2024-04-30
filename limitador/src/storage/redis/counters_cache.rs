@@ -23,106 +23,6 @@ pub struct CachedCounterValue {
     from_authority: AtomicBool,
 }
 
-pub struct Batcher {
-    updates: DashMap<Counter, Arc<CachedCounterValue>>,
-    notifier: Notify,
-    interval: Duration,
-    priority_flush: AtomicBool,
-}
-
-impl Batcher {
-    fn new(period: Duration) -> Self {
-        Self {
-            updates: Default::default(),
-            notifier: Default::default(),
-            interval: period,
-            priority_flush: AtomicBool::new(false),
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.updates.is_empty()
-    }
-
-    pub async fn consume<F, Fut, O>(&self, max: usize, consumer: F) -> O
-    where
-        F: FnOnce(HashMap<Counter, Arc<CachedCounterValue>>) -> Fut,
-        Fut: Future<Output = O>,
-    {
-        let mut interval = interval(self.interval);
-        let mut ready = self.batch_ready(max);
-        loop {
-            if ready {
-                let mut batch = Vec::with_capacity(max);
-                batch.extend(
-                    self.updates
-                        .iter()
-                        .filter(|entry| entry.value().requires_fast_flush(&self.interval))
-                        .take(max)
-                        .map(|e| e.key().clone()),
-                );
-                if let Some(remaining) = max.checked_sub(batch.len()) {
-                    batch.extend(self.updates.iter().take(remaining).map(|e| e.key().clone()));
-                }
-                let mut result = HashMap::new();
-                for counter in &batch {
-                    let value = self.updates.get(counter).unwrap().clone();
-                    result.insert(counter.clone(), value);
-                }
-                let result = consumer(result).await;
-                batch.iter().for_each(|counter| {
-                    self.updates.remove_if(counter, |_, v| v.no_pending_writes());
-                });
-                return result;
-            } else {
-                ready = select! {
-                    _ = self.notifier.notified() => self.batch_ready(max),
-                    _ = interval.tick() => true,
-                }
-            }
-        }
-    }
-
-    pub fn add(&self, counter: Counter, value: Arc<CachedCounterValue>) {
-        let priority = value.requires_fast_flush(&self.interval);
-        match self.updates.entry(counter.clone()) {
-            Entry::Occupied(needs_merge) => {
-                let arc = needs_merge.get();
-                if !Arc::ptr_eq(arc, &value) {
-                    arc.delta(&counter, value.pending_writes().unwrap());
-                }
-            }
-            Entry::Vacant(miss) => {
-                miss.insert_entry(value);
-            }
-        };
-        if priority {
-            self.priority_flush.store(true, Ordering::Release);
-        }
-        self.notifier.notify_one();
-    }
-
-    fn batch_ready(&self, size: usize) -> bool {
-        self.updates.len() >= size ||
-            self.priority_flush
-                .compare_exchange(true, false, Ordering::Release, Ordering::Acquire)
-                .is_ok()
-    }
-}
-
-impl Default for Batcher {
-    fn default() -> Self {
-        Self::new(Duration::from_millis(100))
-    }
-}
-
-pub struct CountersCache {
-    max_ttl_cached_counters: Duration,
-    pub ttl_ratio_cached_counters: u64,
-    cache: Cache<Counter, Arc<CachedCounterValue>>,
-    batcher: Batcher,
-}
-
 impl CachedCounterValue {
     pub fn from_authority(counter: &Counter, value: i64, ttl: Duration) -> Self {
         let now = SystemTime::now();
@@ -228,44 +128,106 @@ impl CachedCounterValue {
     }
 }
 
-pub struct CountersCacheBuilder {
-    max_cached_counters: usize,
-    max_ttl_cached_counters: Duration,
-    ttl_ratio_cached_counters: u64,
+pub struct Batcher {
+    updates: DashMap<Counter, Arc<CachedCounterValue>>,
+    notifier: Notify,
+    interval: Duration,
+    priority_flush: AtomicBool,
 }
 
-impl CountersCacheBuilder {
-    pub fn new() -> Self {
+impl Batcher {
+    fn new(period: Duration) -> Self {
         Self {
-            max_cached_counters: DEFAULT_MAX_CACHED_COUNTERS,
-            max_ttl_cached_counters: Duration::from_secs(DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC),
-            ttl_ratio_cached_counters: DEFAULT_TTL_RATIO_CACHED_COUNTERS,
+            updates: Default::default(),
+            notifier: Default::default(),
+            interval: period,
+            priority_flush: AtomicBool::new(false),
         }
     }
 
-    pub fn max_cached_counters(mut self, max_cached_counters: usize) -> Self {
-        self.max_cached_counters = max_cached_counters;
-        self
+    pub fn add(&self, counter: Counter, value: Arc<CachedCounterValue>) {
+        let priority = value.requires_fast_flush(&self.interval);
+        match self.updates.entry(counter.clone()) {
+            Entry::Occupied(needs_merge) => {
+                let arc = needs_merge.get();
+                if !Arc::ptr_eq(arc, &value) {
+                    arc.delta(&counter, value.pending_writes().unwrap());
+                }
+            }
+            Entry::Vacant(miss) => {
+                miss.insert_entry(value);
+            }
+        };
+        if priority {
+            self.priority_flush.store(true, Ordering::Release);
+        }
+        self.notifier.notify_one();
     }
 
-    pub fn max_ttl_cached_counter(mut self, max_ttl_cached_counter: Duration) -> Self {
-        self.max_ttl_cached_counters = max_ttl_cached_counter;
-        self
-    }
-
-    pub fn ttl_ratio_cached_counter(mut self, ttl_ratio_cached_counter: u64) -> Self {
-        self.ttl_ratio_cached_counters = ttl_ratio_cached_counter;
-        self
-    }
-
-    pub fn build(&self, period: Duration) -> CountersCache {
-        CountersCache {
-            max_ttl_cached_counters: self.max_ttl_cached_counters,
-            ttl_ratio_cached_counters: self.ttl_ratio_cached_counters,
-            cache: Cache::new(self.max_cached_counters as u64),
-            batcher: Batcher::new(period),
+    pub async fn consume<F, Fut, O>(&self, max: usize, consumer: F) -> O
+    where
+        F: FnOnce(HashMap<Counter, Arc<CachedCounterValue>>) -> Fut,
+        Fut: Future<Output = O>,
+    {
+        let mut interval = interval(self.interval);
+        let mut ready = self.batch_ready(max);
+        loop {
+            if ready {
+                let mut batch = Vec::with_capacity(max);
+                batch.extend(
+                    self.updates
+                        .iter()
+                        .filter(|entry| entry.value().requires_fast_flush(&self.interval))
+                        .take(max)
+                        .map(|e| e.key().clone()),
+                );
+                if let Some(remaining) = max.checked_sub(batch.len()) {
+                    batch.extend(self.updates.iter().take(remaining).map(|e| e.key().clone()));
+                }
+                let mut result = HashMap::new();
+                for counter in &batch {
+                    let value = self.updates.get(counter).unwrap().clone();
+                    result.insert(counter.clone(), value);
+                }
+                let result = consumer(result).await;
+                batch.iter().for_each(|counter| {
+                    self.updates
+                        .remove_if(counter, |_, v| v.no_pending_writes());
+                });
+                return result;
+            } else {
+                ready = select! {
+                    _ = self.notifier.notified() => self.batch_ready(max),
+                    _ = interval.tick() => true,
+                }
+            }
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.updates.is_empty()
+    }
+
+    fn batch_ready(&self, size: usize) -> bool {
+        self.updates.len() >= size
+            || self
+                .priority_flush
+                .compare_exchange(true, false, Ordering::Release, Ordering::Acquire)
+                .is_ok()
+    }
+}
+
+impl Default for Batcher {
+    fn default() -> Self {
+        Self::new(Duration::from_millis(100))
+    }
+}
+
+pub struct CountersCache {
+    max_ttl_cached_counters: Duration,
+    pub ttl_ratio_cached_counters: u64,
+    cache: Cache<Counter, Arc<CachedCounterValue>>,
+    batcher: Batcher,
 }
 
 impl CountersCache {
@@ -379,6 +341,46 @@ impl CountersCache {
         }
 
         res
+    }
+}
+
+pub struct CountersCacheBuilder {
+    max_cached_counters: usize,
+    max_ttl_cached_counters: Duration,
+    ttl_ratio_cached_counters: u64,
+}
+
+impl CountersCacheBuilder {
+    pub fn new() -> Self {
+        Self {
+            max_cached_counters: DEFAULT_MAX_CACHED_COUNTERS,
+            max_ttl_cached_counters: Duration::from_secs(DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC),
+            ttl_ratio_cached_counters: DEFAULT_TTL_RATIO_CACHED_COUNTERS,
+        }
+    }
+
+    pub fn max_cached_counters(mut self, max_cached_counters: usize) -> Self {
+        self.max_cached_counters = max_cached_counters;
+        self
+    }
+
+    pub fn max_ttl_cached_counter(mut self, max_ttl_cached_counter: Duration) -> Self {
+        self.max_ttl_cached_counters = max_ttl_cached_counter;
+        self
+    }
+
+    pub fn ttl_ratio_cached_counter(mut self, ttl_ratio_cached_counter: u64) -> Self {
+        self.ttl_ratio_cached_counters = ttl_ratio_cached_counter;
+        self
+    }
+
+    pub fn build(&self, period: Duration) -> CountersCache {
+        CountersCache {
+            max_ttl_cached_counters: self.max_ttl_cached_counters,
+            ttl_ratio_cached_counters: self.ttl_ratio_cached_counters,
+            cache: Cache::new(self.max_cached_counters as u64),
+            batcher: Batcher::new(period),
+        }
     }
 }
 
