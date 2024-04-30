@@ -44,27 +44,25 @@ impl Batcher {
         self.updates.is_empty()
     }
 
-    pub async fn consume<F, Fut, O>(&self, min: usize, consumer: F) -> O
+    pub async fn consume<F, Fut, O>(&self, max: usize, consumer: F) -> O
     where
         F: FnOnce(HashMap<Counter, Arc<CachedCounterValue>>) -> Fut,
         Fut: Future<Output = O>,
     {
         let mut interval = interval(self.interval);
-        let mut ready = self.updates.len() >= min;
+        let mut ready = self.batch_ready(max);
         loop {
             if ready {
-                let mut batch = Vec::with_capacity(min);
-                for entry in &self.updates {
-                    if entry.value().requires_fast_flush(&self.interval) {
-                        batch.push(entry.key().clone());
-                        if batch.len() == min {
-                            break;
-                        }
-                    }
-                }
-                if let Some(remaining) = min.checked_sub(batch.len()) {
-                    let take = self.updates.iter().take(remaining);
-                    batch.append(&mut take.map(|e| e.key().clone()).collect());
+                let mut batch = Vec::with_capacity(max);
+                batch.extend(
+                    self.updates
+                        .iter()
+                        .filter(|entry| entry.value().requires_fast_flush(&self.interval))
+                        .take(max)
+                        .map(|e| e.key().clone()),
+                );
+                if let Some(remaining) = max.checked_sub(batch.len()) {
+                    batch.extend(self.updates.iter().take(remaining).map(|e| e.key().clone()));
                 }
                 let mut result = HashMap::new();
                 for counter in &batch {
@@ -72,19 +70,13 @@ impl Batcher {
                     result.insert(counter.clone(), value);
                 }
                 let result = consumer(result).await;
-                for counter in &batch {
-                    self.updates
-                        .remove_if(counter, |_, v| v.no_pending_writes());
-                }
+                batch.iter().for_each(|counter| {
+                    self.updates.remove_if(counter, |_, v| v.no_pending_writes());
+                });
                 return result;
             } else {
                 ready = select! {
-                    _ = self.notifier.notified() => {
-                        self.updates.len() >= min ||
-                        self.priority_flush
-                            .compare_exchange(true, false, Ordering::Release, Ordering::Acquire)
-                            .is_ok()
-                    },
+                    _ = self.notifier.notified() => self.batch_ready(max),
                     _ = interval.tick() => true,
                 }
             }
@@ -108,6 +100,13 @@ impl Batcher {
             self.priority_flush.store(true, Ordering::Release);
         }
         self.notifier.notify_one();
+    }
+
+    fn batch_ready(&self, size: usize) -> bool {
+        self.updates.len() >= size ||
+            self.priority_flush
+                .compare_exchange(true, false, Ordering::Release, Ordering::Acquire)
+                .is_ok()
     }
 }
 
