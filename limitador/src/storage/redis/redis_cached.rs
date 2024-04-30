@@ -121,7 +121,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
 
         // Update cached values
         for counter in counters.iter() {
-            self.cached_counters.increase_by(counter, delta);
+            self.cached_counters.increase_by(counter, delta).await;
         }
 
         Ok(Authorization::Ok)
@@ -480,14 +480,17 @@ mod tests {
         )]);
 
         let cache = CountersCacheBuilder::new().build(Duration::from_millis(1));
-        cache.batcher().add(
-            counter.clone(),
-            Arc::new(CachedCounterValue::from_authority(
-                &counter,
-                2,
-                Duration::from_secs(60),
-            )),
-        );
+        cache
+            .batcher()
+            .add(
+                counter.clone(),
+                Arc::new(CachedCounterValue::from_authority(
+                    &counter,
+                    2,
+                    Duration::from_secs(60),
+                )),
+            )
+            .await;
         cache.insert(
             counter.clone(),
             Some(1),
