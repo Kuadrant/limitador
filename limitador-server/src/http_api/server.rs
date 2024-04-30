@@ -232,6 +232,7 @@ pub async fn run_http_server(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::prometheus_metrics::tests::TEST_PROMETHEUS_HANDLE;
     use crate::Configuration;
     use actix_web::{test, web};
     use limitador::limit::Limit as LimitadorLimit;
@@ -258,7 +259,9 @@ mod tests {
     async fn test_metrics() {
         let rate_limiter: Arc<Limiter> =
             Arc::new(Limiter::new(Configuration::default()).await.unwrap());
-        let prometheus_metrics: Arc<PrometheusMetrics> = Arc::new(PrometheusMetrics::default());
+        let prometheus_metrics: Arc<PrometheusMetrics> = Arc::new(
+            PrometheusMetrics::new_with_handle(false, TEST_PROMETHEUS_HANDLE.clone()),
+        );
         let data = web::Data::new(RateLimitData::new(rate_limiter, prometheus_metrics));
         let app = test::init_service(
             App::new()
@@ -283,7 +286,9 @@ mod tests {
 
         let limit = create_test_limit(&limiter, namespace, 10).await;
         let rate_limiter: Arc<Limiter> = Arc::new(limiter);
-        let prometheus_metrics: Arc<PrometheusMetrics> = Arc::new(PrometheusMetrics::default());
+        let prometheus_metrics: Arc<PrometheusMetrics> = Arc::new(
+            PrometheusMetrics::new_with_handle(false, TEST_PROMETHEUS_HANDLE.clone()),
+        );
         let data = web::Data::new(RateLimitData::new(rate_limiter, prometheus_metrics));
         let app = test::init_service(
             App::new()
@@ -310,7 +315,9 @@ mod tests {
         let namespace = "test_namespace";
         let _limit = create_test_limit(&limiter, namespace, 1).await;
         let rate_limiter: Arc<Limiter> = Arc::new(limiter);
-        let prometheus_metrics: Arc<PrometheusMetrics> = Arc::new(PrometheusMetrics::default());
+        let prometheus_metrics: Arc<PrometheusMetrics> = Arc::new(
+            PrometheusMetrics::new_with_handle(false, TEST_PROMETHEUS_HANDLE.clone()),
+        );
         let data = web::Data::new(RateLimitData::new(rate_limiter, prometheus_metrics));
         let app = test::init_service(
             App::new()
@@ -355,7 +362,9 @@ mod tests {
         let _limit = create_test_limit(&limiter, namespace, 1).await;
 
         let rate_limiter: Arc<Limiter> = Arc::new(limiter);
-        let prometheus_metrics: Arc<PrometheusMetrics> = Arc::new(PrometheusMetrics::default());
+        let prometheus_metrics: Arc<PrometheusMetrics> = Arc::new(
+            PrometheusMetrics::new_with_handle(false, TEST_PROMETHEUS_HANDLE.clone()),
+        );
         let data = web::Data::new(RateLimitData::new(rate_limiter, prometheus_metrics));
         let app = test::init_service(
             App::new()

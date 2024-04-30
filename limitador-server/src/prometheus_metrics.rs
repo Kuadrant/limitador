@@ -1,5 +1,6 @@
 use metrics::{counter, describe_counter, describe_gauge, describe_histogram, gauge};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+use std::sync::Arc;
 
 use limitador::limit::Namespace;
 
@@ -7,7 +8,7 @@ const NAMESPACE_LABEL: &str = "limitador_namespace";
 const LIMIT_NAME_LABEL: &str = "limit_name";
 
 pub struct PrometheusMetrics {
-    prometheus_handle: PrometheusHandle,
+    prometheus_handle: Arc<PrometheusHandle>,
     use_limit_name_label: bool,
 }
 
@@ -28,6 +29,37 @@ impl PrometheusMetrics {
     // https://prometheus.io/docs/practices/naming/#labels
     pub fn new_with_counters_by_limit_name() -> Self {
         Self::new_with_options(true)
+    }
+
+    pub fn new_with_options(use_limit_name_label: bool) -> Self {
+        Self::new_with_handle(use_limit_name_label, Arc::new(Self::init_handle()))
+    }
+
+    pub(crate) fn new_with_handle(
+        use_limit_name_label: bool,
+        prometheus_handle: Arc<PrometheusHandle>,
+    ) -> Self {
+        describe_histogram!(
+            "counter_latency",
+            "Latency to the underlying counter datastore"
+        );
+        describe_counter!("authorized_calls", "Authorized calls");
+        describe_counter!("limited_calls", "Limited calls");
+        describe_gauge!("limitador_up", "Limitador is running");
+        gauge!("limitador_up").set(1);
+        Self {
+            use_limit_name_label,
+            prometheus_handle,
+        }
+    }
+
+    // Creates and installs the prometheus exporter as global recorder
+    // Only one recorder can be registered for the lifetime of the application
+    fn init_handle() -> PrometheusHandle {
+        let prom_builder = PrometheusBuilder::new();
+        prom_builder
+            .install_recorder()
+            .expect("failed to create prometheus metrics exporter")
     }
 
     pub fn incr_authorized_calls(&self, namespace: &Namespace) {
@@ -51,43 +83,31 @@ impl PrometheusMetrics {
         counter!("limited_calls", &labels).increment(1)
     }
 
-    pub fn new_with_options(use_limit_name_label: bool) -> Self {
-        let prom_builder = PrometheusBuilder::new();
-        let prometheus_handle = prom_builder
-            .install_recorder()
-            .expect("failed to create prometheus metrics exporter");
-
-        describe_histogram!(
-            "counter_latency",
-            "Latency to the underlying counter datastore"
-        );
-        describe_counter!("authorized_calls", "Authorized calls");
-        describe_counter!("limited_calls", "Limited calls");
-        describe_gauge!("limitador_up", "Limitador is running");
-        gauge!("limitador_up").set(1);
-
-        Self {
-            use_limit_name_label,
-            prometheus_handle,
-        }
-    }
-
     pub fn gather_metrics(&self) -> String {
         self.prometheus_handle.render()
     }
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
+    use lazy_static::lazy_static;
+    use metrics_exporter_prometheus::PrometheusHandle;
+
+    // Setting recorder once for all test cases
+    lazy_static! {
+        pub static ref TEST_PROMETHEUS_HANDLE: Arc<PrometheusHandle> =
+            Arc::new(PrometheusMetrics::init_handle());
+    }
 
     #[test]
     fn shows_authorized_calls_by_namespace() {
-        let prometheus_metrics = PrometheusMetrics::new();
+        let prometheus_metrics =
+            PrometheusMetrics::new_with_handle(false, TEST_PROMETHEUS_HANDLE.clone());
 
         let namespaces_with_auth_counts = [
-            ("some_namespace".into(), 2),
-            ("another_namespace".into(), 3),
+            ("auth_calls_by_namespace".into(), 2),
+            ("auth_calls_by_namespace_two".into(), 3),
         ];
 
         namespaces_with_auth_counts
@@ -113,11 +133,12 @@ mod tests {
 
     #[test]
     fn shows_limited_calls_by_namespace() {
-        let prometheus_metrics = PrometheusMetrics::new();
+        let prometheus_metrics =
+            PrometheusMetrics::new_with_handle(false, TEST_PROMETHEUS_HANDLE.clone());
 
         let namespaces_with_limited_counts = [
-            ("some_namespace".into(), 2),
-            ("another_namespace".into(), 3),
+            ("limited_calls_by_namespace".into(), 2),
+            ("limited_calls_by_namespace_two".into(), 3),
         ];
 
         namespaces_with_limited_counts
@@ -143,11 +164,12 @@ mod tests {
 
     #[test]
     fn can_show_limited_calls_by_limit_name() {
-        let prometheus_metrics = PrometheusMetrics::new_with_counters_by_limit_name();
+        let prometheus_metrics =
+            PrometheusMetrics::new_with_handle(true, TEST_PROMETHEUS_HANDLE.clone());
 
         let limits_with_counts = [
-            ("some_namespace".into(), "Some limit", 2),
-            ("some_namespace".into(), "Another limit", 3),
+            ("limited_calls_by_limit_name".into(), "Some limit", 2),
+            ("limited_calls_by_limit_name".into(), "Another limit", 3),
         ];
 
         limits_with_counts
@@ -176,8 +198,9 @@ mod tests {
 
     #[test]
     fn incr_limited_calls_uses_empty_string_when_no_name() {
-        let prometheus_metrics = PrometheusMetrics::new_with_counters_by_limit_name();
-        let namespace = "some namespace".into();
+        let prometheus_metrics =
+            PrometheusMetrics::new_with_handle(true, TEST_PROMETHEUS_HANDLE.clone());
+        let namespace = "limited_calls_empty_name".into();
         prometheus_metrics.incr_limited_calls(&namespace, None);
 
         let metrics_output = prometheus_metrics.gather_metrics();
@@ -194,7 +217,9 @@ mod tests {
 
     #[test]
     fn shows_limitador_up_set_to_1() {
-        let metrics_output = PrometheusMetrics::new().gather_metrics();
+        let metrics_output =
+            PrometheusMetrics::new_with_handle(true, TEST_PROMETHEUS_HANDLE.clone())
+                .gather_metrics();
         assert!(metrics_output.contains("limitador_up 1"))
     }
 
@@ -218,10 +243,10 @@ mod tests {
         limit_name: &str,
     ) -> String {
         format!(
-            "{}{{limit_name=\"{}\",limitador_namespace=\"{}\"}} {}",
+            "{}{{limitador_namespace=\"{}\",limit_name=\"{}\"}} {}",
             metric_name,
-            limit_name,
             namespace.as_ref(),
+            limit_name,
             count,
         )
     }

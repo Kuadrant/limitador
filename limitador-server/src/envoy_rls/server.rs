@@ -276,6 +276,7 @@ mod tests {
 
     use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::rate_limit_descriptor::Entry;
     use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::RateLimitDescriptor;
+    use crate::prometheus_metrics::tests::TEST_PROMETHEUS_HANDLE;
     use crate::Configuration;
 
     use super::*;
@@ -311,7 +312,10 @@ mod tests {
         let rate_limiter = MyRateLimiter::new(
             Arc::new(Limiter::Blocking(limiter)),
             RateLimitHeaders::DraftVersion03,
-            Arc::new(PrometheusMetrics::default()),
+            Arc::new(PrometheusMetrics::new_with_handle(
+                false,
+                TEST_PROMETHEUS_HANDLE.clone(),
+            )),
         );
 
         let req = RateLimitRequest {
@@ -370,7 +374,10 @@ mod tests {
         let rate_limiter = MyRateLimiter::new(
             Arc::new(Limiter::new(Configuration::default()).await.unwrap()),
             RateLimitHeaders::DraftVersion03,
-            Arc::new(PrometheusMetrics::default()),
+            Arc::new(PrometheusMetrics::new_with_handle(
+                false,
+                TEST_PROMETHEUS_HANDLE.clone(),
+            )),
         );
 
         let req = RateLimitRequest {
@@ -401,7 +408,10 @@ mod tests {
         let rate_limiter = MyRateLimiter::new(
             Arc::new(Limiter::new(Configuration::default()).await.unwrap()),
             RateLimitHeaders::DraftVersion03,
-            Arc::new(PrometheusMetrics::default()),
+            Arc::new(PrometheusMetrics::new_with_handle(
+                false,
+                TEST_PROMETHEUS_HANDLE.clone(),
+            )),
         );
 
         let req = RateLimitRequest {
@@ -444,7 +454,10 @@ mod tests {
         let rate_limiter = MyRateLimiter::new(
             Arc::new(Limiter::Blocking(limiter)),
             RateLimitHeaders::DraftVersion03,
-            Arc::new(PrometheusMetrics::default()),
+            Arc::new(PrometheusMetrics::new_with_handle(
+                false,
+                TEST_PROMETHEUS_HANDLE.clone(),
+            )),
         );
 
         let req = RateLimitRequest {
@@ -503,7 +516,10 @@ mod tests {
         let rate_limiter = MyRateLimiter::new(
             Arc::new(Limiter::Blocking(limiter)),
             RateLimitHeaders::DraftVersion03,
-            Arc::new(PrometheusMetrics::default()),
+            Arc::new(PrometheusMetrics::new_with_handle(
+                false,
+                TEST_PROMETHEUS_HANDLE.clone(),
+            )),
         );
 
         let req = RateLimitRequest {
@@ -569,7 +585,10 @@ mod tests {
         let rate_limiter = MyRateLimiter::new(
             Arc::new(Limiter::Blocking(limiter)),
             RateLimitHeaders::DraftVersion03,
-            Arc::new(PrometheusMetrics::default()),
+            Arc::new(PrometheusMetrics::new_with_handle(
+                false,
+                TEST_PROMETHEUS_HANDLE.clone(),
+            )),
         );
 
         let req = RateLimitRequest {
