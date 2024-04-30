@@ -293,7 +293,11 @@ async fn update_counters<C: ConnectionLike>(
     let redis_script = redis::Script::new(BATCH_UPDATE_COUNTERS);
     let mut script_invocation = redis_script.prepare_invoke();
 
-    let mut res: Vec<(Counter, i64, i64)> = Vec::new();
+    let mut res: Vec<(Counter, i64, i64)> = Vec::with_capacity(counters_and_deltas.len());
+    if counters_and_deltas.is_empty() {
+        return Ok(res);
+    }
+
     for (counter, delta) in counters_and_deltas {
         let delta = delta.pending_writes().expect("State machine is wrong!");
         if delta > 0 {
@@ -339,7 +343,7 @@ async fn flush_batcher_and_update_counters<C: ConnectionLike>(
     } else {
         let updated_counters = cached_counters
             .batcher()
-            .consume(1, |counters| update_counters(&mut redis_conn, counters))
+            .consume(100, |counters| update_counters(&mut redis_conn, counters))
             .await
             .or_else(|err| {
                 if err.is_transient() {
