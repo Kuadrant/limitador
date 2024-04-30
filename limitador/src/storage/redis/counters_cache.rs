@@ -193,9 +193,10 @@ impl Batcher {
                 }
                 let result = consumer(result).await;
                 batch.iter().for_each(|counter| {
-                    if let Some(_) = self
+                    if self
                         .updates
                         .remove_if(counter, |_, v| v.no_pending_writes())
+                        .is_some()
                     {
                         self.limiter.add_permits(1);
                     }
