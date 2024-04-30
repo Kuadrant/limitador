@@ -339,7 +339,7 @@ async fn flush_batcher_and_update_counters<C: ConnectionLike>(
     } else {
         let updated_counters = cached_counters
             .batcher()
-            .consume(1, |counters| update_counters(&mut redis_conn, counters))
+            .consume(100, |counters| update_counters(&mut redis_conn, counters))
             .await
             .or_else(|err| {
                 if err.is_transient() {
