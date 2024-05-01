@@ -396,6 +396,7 @@ mod tests {
     mod cached_counter_value {
         use crate::storage::redis::counters_cache::tests::test_counter;
         use crate::storage::redis::counters_cache::CachedCounterValue;
+        use std::ops::Not;
         use std::time::{Duration, SystemTime};
 
         #[test]
@@ -421,9 +422,9 @@ mod tests {
             let counter = test_counter(10, None);
             let value = CachedCounterValue::from_authority(&counter, 0, Duration::from_secs(1));
             value.delta(&counter, 5);
-            assert_eq!(value.no_pending_writes(), false);
+            assert!(value.no_pending_writes().not());
             assert!(value.pending_writes().is_ok());
-            assert_eq!(value.no_pending_writes(), true);
+            assert!(value.no_pending_writes());
         }
 
         #[test]
@@ -431,9 +432,9 @@ mod tests {
             let counter = test_counter(10, None);
             let value = CachedCounterValue::from_authority(&counter, 0, Duration::from_secs(1));
             value.delta(&counter, 5);
-            assert_eq!(value.no_pending_writes(), false);
+            assert!(value.no_pending_writes().not());
             value.set_from_authority(&counter, 6, Duration::from_secs(1));
-            assert_eq!(value.no_pending_writes(), true);
+            assert!(value.no_pending_writes());
             assert_eq!(value.pending_writes(), Ok(0));
         }
 
@@ -441,21 +442,21 @@ mod tests {
         fn from_authority_no_need_to_flush() {
             let counter = test_counter(10, None);
             let value = CachedCounterValue::from_authority(&counter, 0, Duration::from_secs(10));
-            assert_eq!(value.requires_fast_flush(&Duration::from_secs(30)), false);
+            assert!(value.requires_fast_flush(&Duration::from_secs(30)).not());
         }
 
         #[test]
         fn from_authority_needs_to_flush_within_ttl() {
             let counter = test_counter(10, None);
             let value = CachedCounterValue::from_authority(&counter, 0, Duration::from_secs(1));
-            assert_eq!(value.requires_fast_flush(&Duration::from_secs(90)), true);
+            assert!(value.requires_fast_flush(&Duration::from_secs(90)));
         }
 
         #[test]
         fn fake_needs_to_flush_within_ttl() {
             let counter = test_counter(10, None);
             let value = CachedCounterValue::load_from_authority_asap(&counter, 0);
-            assert_eq!(value.requires_fast_flush(&Duration::from_secs(30)), true);
+            assert!(value.requires_fast_flush(&Duration::from_secs(30)));
         }
 
         #[test]
@@ -464,8 +465,8 @@ mod tests {
             let cache_entry_ttl = Duration::from_secs(1);
             let value = CachedCounterValue::from_authority(&counter, 0, cache_entry_ttl);
             let now = SystemTime::now();
-            assert_eq!(value.expired_at(now), false);
-            assert_eq!(value.expired_at(now + cache_entry_ttl), true);
+            assert!(value.expired_at(now).not());
+            assert!(value.expired_at(now + cache_entry_ttl));
         }
 
         #[test]
@@ -475,13 +476,13 @@ mod tests {
             let counter = test_counter(10, None);
             let value = CachedCounterValue::from_authority(&counter, 0, Duration::from_secs(1));
             value.delta(&counter, hits);
-            assert_eq!(value.to_next_window() > Duration::from_millis(59999), true);
+            assert!(value.to_next_window() > Duration::from_millis(59999));
             assert_eq!(value.hits(&counter), hits);
             let remaining = counter.max_value() - hits;
             assert_eq!(value.remaining(&counter), remaining);
-            assert_eq!(value.is_limited(&counter, 1), false);
-            assert_eq!(value.is_limited(&counter, remaining), false);
-            assert_eq!(value.is_limited(&counter, remaining + 1), true);
+            assert!(value.is_limited(&counter, 1).not());
+            assert!(value.is_limited(&counter, remaining).not());
+            assert!(value.is_limited(&counter, remaining + 1));
         }
     }
 

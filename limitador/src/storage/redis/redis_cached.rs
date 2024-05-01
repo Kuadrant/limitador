@@ -424,10 +424,7 @@ mod tests {
             Duration::from_secs(60),
         ));
         arc.delta(&counter, 1);
-        counters_and_deltas.insert(
-            counter.clone(),
-            arc,
-        );
+        counters_and_deltas.insert(counter.clone(), arc);
 
         let mock_response = Value::Bulk(vec![Value::Int(10), Value::Int(60)]);
 
@@ -484,10 +481,7 @@ mod tests {
         let cache = CountersCacheBuilder::new().build(Duration::from_millis(1));
         cache.batcher().add(
             counter.clone(),
-            Arc::new(CachedCounterValue::load_from_authority_asap(
-                &counter,
-                2,
-            )),
+            Arc::new(CachedCounterValue::load_from_authority_asap(&counter, 2)),
         );
         cache.insert(
             counter.clone(),
