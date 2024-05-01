@@ -16,6 +16,10 @@
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "response_headers": {
+          "type": "string",
+          "enum": ["none", "DraftVersion03"]
         }
       },
       "required": [

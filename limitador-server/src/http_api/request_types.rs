@@ -13,6 +13,7 @@ pub struct CheckAndReportInfo {
     pub namespace: String,
     pub values: HashMap<String, String>,
     pub delta: i64,
+    pub response_headers: Option<String>,
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize, Apiv2Schema)]
