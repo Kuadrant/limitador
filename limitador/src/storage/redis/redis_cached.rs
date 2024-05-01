@@ -298,8 +298,8 @@ async fn update_counters<C: ConnectionLike>(
         return Ok(res);
     }
 
-    for (counter, delta) in counters_and_deltas {
-        let delta = delta.pending_writes().expect("State machine is wrong!");
+    for (counter, value) in counters_and_deltas {
+        let delta = value.pending_writes().expect("State machine is wrong!");
         if delta > 0 {
             script_invocation.key(key_for_counter(&counter));
             script_invocation.key(key_for_counters_of_limit(counter.limit()));
@@ -418,13 +418,15 @@ mod tests {
             Default::default(),
         );
 
+        let arc = Arc::new(CachedCounterValue::from_authority(
+            &counter,
+            1,
+            Duration::from_secs(60),
+        ));
+        arc.delta(&counter, 1);
         counters_and_deltas.insert(
             counter.clone(),
-            Arc::new(CachedCounterValue::from_authority(
-                &counter,
-                1,
-                Duration::from_secs(60),
-            )),
+            arc,
         );
 
         let mock_response = Value::Bulk(vec![Value::Int(10), Value::Int(60)]);
@@ -437,7 +439,7 @@ mod tests {
                 .arg(key_for_counters_of_limit(counter.limit()))
                 .arg(60)
                 .arg(1),
-            Ok(mock_response.clone()),
+            Ok(mock_response),
         )]);
 
         let result = update_counters(&mut mock_client, counters_and_deltas).await;
@@ -476,16 +478,15 @@ mod tests {
                 .arg(key_for_counters_of_limit(counter.limit()))
                 .arg(60)
                 .arg(2),
-            Ok(mock_response.clone()),
+            Ok(mock_response),
         )]);
 
         let cache = CountersCacheBuilder::new().build(Duration::from_millis(1));
         cache.batcher().add(
             counter.clone(),
-            Arc::new(CachedCounterValue::from_authority(
+            Arc::new(CachedCounterValue::load_from_authority_asap(
                 &counter,
                 2,
-                Duration::from_secs(60),
             )),
         );
         cache.insert(

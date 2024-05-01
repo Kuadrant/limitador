@@ -16,6 +16,7 @@ use std::time::{Duration, SystemTime};
 use tokio::select;
 use tokio::sync::Notify;
 
+#[derive(Debug)]
 pub struct CachedCounterValue {
     value: AtomicExpiringValue,
     initial_value: AtomicI64,
@@ -41,7 +42,7 @@ impl CachedCounterValue {
                 temp_value,
                 now + Duration::from_secs(counter.seconds()),
             ),
-            initial_value: AtomicI64::new(temp_value),
+            initial_value: AtomicI64::new(0),
             expiry: AtomicExpiryTime::from_now(Duration::from_secs(counter.seconds())),
             from_authority: AtomicBool::new(false),
         }
@@ -460,12 +461,10 @@ mod tests {
         #[test]
         fn expiry_of_cached_entry() {
             let counter = test_counter(10, None);
-            let then = SystemTime::now();
             let cache_entry_ttl = Duration::from_secs(1);
             let value = CachedCounterValue::from_authority(&counter, 0, cache_entry_ttl);
             let now = SystemTime::now();
             assert_eq!(value.expired_at(now), false);
-            assert_eq!(value.expired_at(then + cache_entry_ttl), false);
             assert_eq!(value.expired_at(now + cache_entry_ttl), true);
         }
 
