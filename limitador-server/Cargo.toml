@@ -13,7 +13,7 @@ readme = "README.md"
 edition = "2021"
 
 [features]
-infinispan = [ "limitador/infinispan_storage" ]
+infinispan = ["limitador/infinispan_storage"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -46,7 +46,8 @@ lazy_static = "1.4.0"
 clap = "4.3"
 sysinfo = "0.30.10"
 openssl = { version = "0.10.57", features = ["vendored"] }
-prometheus = "0.13.3"
+metrics = "0.22.3"
+metrics-exporter-prometheus = "0.14.0"
 
 
 [build-dependencies]

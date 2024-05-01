@@ -12,6 +12,7 @@ use crate::storage::redis::{
 };
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
+use metrics::gauge;
 use redis::aio::{ConnectionLike, ConnectionManager};
 use redis::{ConnectionInfo, RedisError};
 use std::collections::{HashMap, HashSet};
@@ -219,8 +220,10 @@ fn flip_partitioned(storage: &AtomicBool, partition: bool) -> bool {
         .is_ok();
     if we_flipped {
         if partition {
+            gauge!("datastore_partitioned").set(1);
             error!("Partition to Redis detected!")
         } else {
+            gauge!("datastore_partitioned").set(0);
             warn!("Partition to Redis resolved!");
         }
     }
