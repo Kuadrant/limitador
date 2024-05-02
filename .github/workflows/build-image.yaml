@@ -133,7 +133,7 @@ jobs:
     name: Build on forks
     # for forks
     if: |
-      github.event.repository.full_name != github.repository)
+      github.event.repository.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
