@@ -22,11 +22,11 @@ jobs:
         run: echo "$GITHUB_CONTEXT"
   build:
     name: Build
-    # for tags and not forks
+    # for regulars pushes, tags and not forks
     if: |
       (startsWith(github.ref, 'refs/tags/')) ||
       (!startsWith(github.ref, 'refs/tags/') &&
-      github.event.pull_request.head.repo.full_name == github.repository)
+      github.event.repository.full_name == github.repository)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -84,11 +84,11 @@ jobs:
           retention-days: 1
   merge:
     runs-on: ubuntu-latest
-    # for tags and not forks
+    # for regulars pushes, tags and not forks
     if: |
       (startsWith(github.ref, 'refs/tags/')) ||
       (!startsWith(github.ref, 'refs/tags/') &&
-      github.event.pull_request.head.repo.full_name == github.repository)
+      github.event.repository.full_name == github.repository)
     needs:
       - build
     steps:
@@ -131,9 +131,9 @@ jobs:
           docker run --rm -t ${{ env.IMG_REGISTRY_HOST }}/${{ env.IMG_REGISTRY_ORG }}/limitador:${{ steps.meta.outputs.version }} limitador-server --help
   build-from-forks:
     name: Build on forks
+    # for forks
     if: |
-      !startsWith(github.ref, 'refs/tags/') &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.repository.full_name != github.repository)
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
@@ -146,3 +146,6 @@ jobs:
           tags: ${{ github.sha }}
           dockerfiles: |
             ./Dockerfile
+      - name: Smoke Test
+        run: |
+          docker run --rm -t limitador:${{ github.sha }} limitador-server --help
