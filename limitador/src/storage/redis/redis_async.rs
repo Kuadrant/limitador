@@ -9,10 +9,11 @@ use crate::storage::redis::is_limited;
 use crate::storage::redis::scripts::{SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS};
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
+use metrics::histogram;
 use redis::{AsyncCommands, RedisError};
 use std::collections::HashSet;
 use std::str::FromStr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tracing::{debug_span, Instrument};
 
 // Note: this implementation does not guarantee exact limits. Ensuring that we
@@ -209,11 +210,14 @@ impl AsyncRedisStorage {
     }
 
     pub async fn is_alive(&self) -> bool {
+        let now = Instant::now();
         self.conn_manager
             .clone()
             .incr::<&str, i32, u64>("LIMITADOR_LIVE_CHECK", 1)
             .await
             .is_ok()
+            .then(|| histogram!("liveness_latency").record(now.elapsed().as_secs_f64()))
+            .is_some()
     }
 
     async fn delete_counters_associated_with_limit(&self, limit: &Limit) -> Result<(), StorageErr> {

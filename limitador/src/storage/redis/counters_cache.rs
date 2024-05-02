@@ -3,6 +3,7 @@ use crate::storage::atomic_expiring_value::AtomicExpiringValue;
 use crate::storage::redis::DEFAULT_MAX_CACHED_COUNTERS;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
+use metrics::gauge;
 use moka::sync::Cache;
 use std::collections::HashMap;
 use std::future::Future;
@@ -150,6 +151,7 @@ impl Batcher {
             }
             Entry::Vacant(miss) => {
                 self.limiter.acquire().await.unwrap().forget();
+                gauge!("batcher_size").increment(1);
                 miss.insert_entry(value);
             }
         };
@@ -190,6 +192,7 @@ impl Batcher {
                         .remove_if(counter, |_, v| v.no_pending_writes());
                     if prev.is_some() {
                         self.limiter.add_permits(1);
+                        gauge!("batcher_size").decrement(1);
                     }
                 });
                 return result;
@@ -232,6 +235,7 @@ impl CountersCache {
         if option.is_none() {
             let from_queue = self.batcher.updates.get(counter);
             if let Some(entry) = from_queue {
+                gauge!("cache_size").increment(1);
                 self.cache.insert(counter.clone(), entry.value().clone());
                 return Some(entry.value().clone());
             }
@@ -255,6 +259,7 @@ impl CountersCache {
             if expiry_ts > SystemTime::now() {
                 let mut from_cache = true;
                 let cached = self.cache.get_with(counter.clone(), || {
+                    gauge!("cache_size").increment(1);
                     from_cache = false;
                     if let Some(entry) = self.batcher.updates.get(&counter) {
                         let cached_value = entry.value();
@@ -277,6 +282,7 @@ impl CountersCache {
 
     pub async fn increase_by(&self, counter: &Counter, delta: u64) {
         let val = self.cache.get_with_by_ref(counter, || {
+            gauge!("cache_size").increment(1);
             if let Some(entry) = self.batcher.updates.get(counter) {
                 entry.value().clone()
             } else {
