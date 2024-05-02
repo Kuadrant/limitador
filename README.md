@@ -12,6 +12,8 @@ library, or as a service. The service exposes HTTP endpoints to apply and observ
 limits. Limitador can be used with Envoy because it also exposes a grpc service, on a different
 port, that implements the Envoy Rate Limit protocol (v3).
 
+This is test for GH actions
+
 - [**Getting started**](#getting-started)
 - [**How it works**](doc/how-it-works.md)
 - [**Configuration**](doc/server/configuration.md)
