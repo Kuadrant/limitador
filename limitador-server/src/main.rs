@@ -381,7 +381,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // check if the real path to the config file changed
                         // (eg: k8s ConfigMap replacement)
                         if canonical_limit_file != last_known_canonical_path {
-                            last_known_canonical_path = canonical_limit_file.clone();
+                            last_known_canonical_path.clone_from(&canonical_limit_file);
                             let limiter = limiter.clone();
                             handle.spawn(async move {
                                 match limiter.load_limits_from_file(&canonical_limit_file).await {

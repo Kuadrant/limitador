@@ -16,11 +16,19 @@ use crate::counter::Counter;
 use crate::limit::Limit;
 
 pub fn key_for_counter(counter: &Counter) -> String {
-    format!(
-        "{},counter:{}",
-        prefix_for_namespace(counter.namespace().as_ref()),
-        serde_json::to_string(counter).unwrap()
-    )
+    if counter.remaining().is_some() || counter.expires_in().is_some() {
+        format!(
+            "{},counter:{}",
+            prefix_for_namespace(counter.namespace().as_ref()),
+            serde_json::to_string(&counter.key()).unwrap()
+        )
+    } else {
+        format!(
+            "{},counter:{}",
+            prefix_for_namespace(counter.namespace().as_ref()),
+            serde_json::to_string(counter).unwrap()
+        )
+    }
 }
 
 pub fn key_for_counters_of_limit(limit: &Limit) -> String {
@@ -79,6 +87,7 @@ mod tests {
     use crate::counter::Counter;
     use crate::Limit;
     use std::collections::HashMap;
+    use std::time::Duration;
 
     #[test]
     fn key_for_limit_format() {
@@ -103,6 +112,17 @@ mod tests {
         assert_eq!(counter, partial_counter_from_counter_key(&raw));
         let prefix = prefix_for_namespace(namespace);
         assert_eq!(&raw[0..prefix.len()], &prefix);
+    }
+
+    #[test]
+    fn counter_key_does_not_include_transient_state() {
+        let namespace = "ns_counter:";
+        let limit = Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"]);
+        let counter = Counter::new(limit.clone(), HashMap::default());
+        let mut other = counter.clone();
+        other.set_remaining(123);
+        other.set_expires_in(Duration::from_millis(456));
+        assert_eq!(key_for_counter(&counter), key_for_counter(&other));
     }
 }
 
