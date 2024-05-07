@@ -52,10 +52,9 @@ impl CachedCounterValue {
         self.expiry.expired_at(now)
     }
 
-    pub fn set_from_authority(&self, counter: &Counter, value: i64, expiry: Duration) {
-        let time_window = Duration::from_secs(counter.seconds());
-        self.initial_value.store(value, Ordering::SeqCst);
-        self.value.set(value, time_window);
+    pub fn add_from_authority(&self, delta: i64, expiry: Duration) {
+        self.value.add_and_set_expiry(delta, expiry);
+        self.initial_value.fetch_add(delta, Ordering::SeqCst);
         self.expiry.update(expiry);
         self.from_authority.store(true, Ordering::Release);
     }
@@ -73,6 +72,10 @@ impl CachedCounterValue {
     }
 
     pub fn pending_writes(&self) -> Result<i64, ()> {
+        self.pending_writes_and_value().map(|(writes, _)| writes)
+    }
+
+    pub fn pending_writes_and_value(&self) -> Result<(i64, i64), ()> {
         let start = self.initial_value.load(Ordering::SeqCst);
         let value = self.value.value_at(SystemTime::now());
         let offset = if start == 0 {
@@ -91,11 +94,11 @@ impl CachedCounterValue {
             .initial_value
             .compare_exchange(start, value, Ordering::SeqCst, Ordering::SeqCst)
         {
-            Ok(_) => Ok(offset),
+            Ok(_) => Ok((offset, value)),
             Err(newer) => {
                 if newer == 0 {
                     // We got reset because of expiry, this fresh value can wait the next iteration
-                    Ok(0)
+                    Ok((0, 0))
                 } else {
                     // Concurrent call to this method?
                     // We could support that with a CAS loop in the future if needed
@@ -250,43 +253,41 @@ impl CountersCache {
         &self.batcher
     }
 
-    pub fn insert(
+    pub fn apply_remote_delta(
         &self,
         counter: Counter,
-        redis_val: Option<i64>,
+        redis_val: i64,
+        remote_deltas: i64,
         redis_ttl_ms: i64,
         ttl_margin: Duration,
-        now: SystemTime,
     ) -> Arc<CachedCounterValue> {
-        let counter_val = redis_val.unwrap_or(0);
         let cache_ttl = self.ttl_from_redis_ttl(
             redis_ttl_ms,
             counter.seconds(),
-            counter_val,
+            redis_val,
             counter.max_value(),
         );
         if let Some(ttl) = cache_ttl.checked_sub(ttl_margin) {
             if ttl > Duration::ZERO {
-                let previous = self.cache.get_with(counter.clone(), || {
+                let mut from_cache = true;
+                let cached = self.cache.get_with(counter.clone(), || {
+                    from_cache = false;
                     if let Some(entry) = self.batcher.updates.get(&counter) {
-                        entry.value().clone()
+                        let cached_value = entry.value();
+                        cached_value.add_from_authority(remote_deltas, ttl);
+                        cached_value.clone()
                     } else {
-                        Arc::new(CachedCounterValue::from_authority(
-                            &counter,
-                            counter_val,
-                            ttl,
-                        ))
+                        Arc::new(CachedCounterValue::from_authority(&counter, redis_val, ttl))
                     }
                 });
-                if previous.expired_at(now) || previous.value.value() < counter_val {
-                    previous.set_from_authority(&counter, counter_val, ttl);
+                if from_cache {
+                    cached.add_from_authority(remote_deltas, ttl);
                 }
-                return previous;
+                return cached;
             }
         }
         Arc::new(CachedCounterValue::load_from_authority_asap(
-            &counter,
-            counter_val,
+            &counter, redis_val,
         ))
     }
 
@@ -428,14 +429,14 @@ mod tests {
         }
 
         #[test]
-        fn setting_from_auth_resets_pending_writes() {
+        fn adding_from_auth_not_affecting_pending_writes() {
             let counter = test_counter(10, None);
             let value = CachedCounterValue::from_authority(&counter, 0, Duration::from_secs(1));
             value.delta(&counter, 5);
             assert!(value.no_pending_writes().not());
-            value.set_from_authority(&counter, 6, Duration::from_secs(1));
-            assert!(value.no_pending_writes());
-            assert_eq!(value.pending_writes(), Ok(0));
+            value.add_from_authority(6, Duration::from_secs(1));
+            assert!(value.no_pending_writes().not());
+            assert_eq!(value.pending_writes(), Ok(5));
         }
 
         #[test]
@@ -621,13 +622,7 @@ mod tests {
         let counter = test_counter(10, None);
 
         let cache = CountersCacheBuilder::new().build(Duration::default());
-        cache.insert(
-            counter.clone(),
-            Some(10),
-            10,
-            Duration::from_secs(0),
-            SystemTime::now(),
-        );
+        cache.apply_remote_delta(counter.clone(), 10, 0, 10, Duration::from_secs(0));
 
         assert!(cache.get(&counter).is_some());
     }
@@ -648,12 +643,12 @@ mod tests {
         let counter = test_counter(max_val, None);
 
         let cache = CountersCacheBuilder::new().build(Duration::default());
-        cache.insert(
+        cache.apply_remote_delta(
             counter.clone(),
-            Some(current_value),
+            current_value,
+            0,
             10,
             Duration::from_secs(0),
-            SystemTime::now(),
         );
 
         assert_eq!(
@@ -663,36 +658,13 @@ mod tests {
     }
 
     #[test]
-    fn insert_saves_zero_when_redis_val_is_none() {
-        let max_val = 10;
-        let counter = test_counter(max_val, None);
-
-        let cache = CountersCacheBuilder::new().build(Duration::default());
-        cache.insert(
-            counter.clone(),
-            None,
-            10,
-            Duration::from_secs(0),
-            SystemTime::now(),
-        );
-
-        assert_eq!(cache.get(&counter).map(|e| e.hits(&counter)).unwrap(), 0);
-    }
-
-    #[test]
     fn increase_by() {
         let current_val = 10;
         let increase_by = 8;
         let counter = test_counter(current_val, None);
 
         let cache = CountersCacheBuilder::new().build(Duration::default());
-        cache.insert(
-            counter.clone(),
-            Some(current_val),
-            10,
-            Duration::from_secs(0),
-            SystemTime::now(),
-        );
+        cache.apply_remote_delta(counter.clone(), current_val, 0, 10, Duration::from_secs(0));
         cache.increase_by(&counter, increase_by);
 
         assert_eq!(
