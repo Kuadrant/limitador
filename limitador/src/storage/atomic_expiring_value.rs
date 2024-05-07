@@ -27,6 +27,7 @@ impl AtomicExpiringValue {
         self.value_at(SystemTime::now())
     }
 
+    #[allow(dead_code)]
     pub fn add_and_set_expiry(&self, delta: i64, expiry: Duration) -> i64 {
         self.expiry.update(expiry);
         self.value.fetch_add(delta, Ordering::SeqCst) + delta
