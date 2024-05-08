@@ -8,6 +8,7 @@ mod redis_sync;
 mod scripts;
 
 pub const DEFAULT_FLUSHING_PERIOD_SEC: u64 = 1;
+pub const DEFAULT_BATCH_SIZE: usize = 100;
 pub const DEFAULT_MAX_CACHED_COUNTERS: usize = 10000;
 pub const DEFAULT_RESPONSE_TIMEOUT_MS: u64 = 350;
 

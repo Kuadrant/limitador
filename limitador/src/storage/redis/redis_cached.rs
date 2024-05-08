@@ -7,7 +7,8 @@ use crate::storage::redis::counters_cache::{
 use crate::storage::redis::redis_async::AsyncRedisStorage;
 use crate::storage::redis::scripts::BATCH_UPDATE_COUNTERS;
 use crate::storage::redis::{
-    DEFAULT_FLUSHING_PERIOD_SEC, DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_RESPONSE_TIMEOUT_MS,
+    DEFAULT_BATCH_SIZE, DEFAULT_FLUSHING_PERIOD_SEC, DEFAULT_MAX_CACHED_COUNTERS,
+    DEFAULT_RESPONSE_TIMEOUT_MS,
 };
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
@@ -146,6 +147,7 @@ impl CachedRedisStorage {
     pub async fn new(redis_url: &str) -> Result<Self, RedisError> {
         Self::new_with_options(
             redis_url,
+            DEFAULT_BATCH_SIZE,
             Duration::from_secs(DEFAULT_FLUSHING_PERIOD_SEC),
             DEFAULT_MAX_CACHED_COUNTERS,
             Duration::from_millis(DEFAULT_RESPONSE_TIMEOUT_MS),
@@ -155,6 +157,7 @@ impl CachedRedisStorage {
 
     async fn new_with_options(
         redis_url: &str,
+        batch_size: usize,
         flushing_period: Duration,
         max_cached_counters: usize,
         response_timeout: Duration,
@@ -193,6 +196,7 @@ impl CachedRedisStorage {
                         storage.is_alive().await,
                         counters_cache_clone.clone(),
                         p.clone(),
+                        batch_size,
                     )
                     .await;
                 }
@@ -224,6 +228,7 @@ fn flip_partitioned(storage: &AtomicBool, partition: bool) -> bool {
 
 pub struct CachedRedisStorageBuilder {
     redis_url: String,
+    batch_size: usize,
     flushing_period: Duration,
     max_cached_counters: usize,
     response_timeout: Duration,
@@ -233,10 +238,16 @@ impl CachedRedisStorageBuilder {
     pub fn new(redis_url: &str) -> Self {
         Self {
             redis_url: redis_url.to_string(),
+            batch_size: DEFAULT_BATCH_SIZE,
             flushing_period: Duration::from_secs(DEFAULT_FLUSHING_PERIOD_SEC),
             max_cached_counters: DEFAULT_MAX_CACHED_COUNTERS,
             response_timeout: Duration::from_millis(DEFAULT_RESPONSE_TIMEOUT_MS),
         }
+    }
+
+    pub fn batch_size(mut self, batch_size: usize) -> Self {
+        self.batch_size = batch_size;
+        self
     }
 
     pub fn flushing_period(mut self, flushing_period: Duration) -> Self {
@@ -257,6 +268,7 @@ impl CachedRedisStorageBuilder {
     pub async fn build(self) -> Result<CachedRedisStorage, RedisError> {
         CachedRedisStorage::new_with_options(
             &self.redis_url,
+            self.batch_size,
             self.flushing_period,
             self.max_cached_counters,
             self.response_timeout,
@@ -319,6 +331,7 @@ async fn flush_batcher_and_update_counters<C: ConnectionLike>(
     storage_is_alive: bool,
     cached_counters: Arc<CountersCache>,
     partitioned: Arc<AtomicBool>,
+    batch_size: usize,
 ) {
     if partitioned.load(Ordering::Acquire) || !storage_is_alive {
         if !cached_counters.batcher().is_empty() {
@@ -327,7 +340,9 @@ async fn flush_batcher_and_update_counters<C: ConnectionLike>(
     } else {
         let updated_counters = cached_counters
             .batcher()
-            .consume(100, |counters| update_counters(&mut redis_conn, counters))
+            .consume(batch_size, |counters| {
+                update_counters(&mut redis_conn, counters)
+            })
             .await
             .or_else(|err| {
                 if err.is_transient() {
@@ -486,8 +501,14 @@ mod tests {
             assert_eq!(c.hits(&counter), 2);
         }
 
-        flush_batcher_and_update_counters(mock_client, true, cached_counters.clone(), partitioned)
-            .await;
+        flush_batcher_and_update_counters(
+            mock_client,
+            true,
+            cached_counters.clone(),
+            partitioned,
+            100,
+        )
+        .await;
 
         if let Some(c) = cached_counters.get(&counter) {
             assert_eq!(c.hits(&counter), 8);

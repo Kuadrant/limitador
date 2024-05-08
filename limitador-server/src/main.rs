@@ -24,8 +24,8 @@ use limitador::storage::disk::DiskStorage;
 #[cfg(feature = "infinispan")]
 use limitador::storage::infinispan::{Consistency, InfinispanStorageBuilder};
 use limitador::storage::redis::{
-    AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder, DEFAULT_FLUSHING_PERIOD_SEC,
-    DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_RESPONSE_TIMEOUT_MS,
+    AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder, DEFAULT_BATCH_SIZE,
+    DEFAULT_FLUSHING_PERIOD_SEC, DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_RESPONSE_TIMEOUT_MS,
 };
 use limitador::storage::{AsyncCounterStorage, AsyncStorage, Storage};
 use limitador::{
@@ -132,6 +132,7 @@ impl Limiter {
         // TODO: Not all the options are configurable via ENV. Add them as needed.
 
         let cached_redis_storage = CachedRedisStorageBuilder::new(redis_url)
+            .batch_size(cache_cfg.batch_size)
             .flushing_period(Duration::from_millis(cache_cfg.flushing_period as u64))
             .max_cached_counters(cache_cfg.max_counters)
             .response_timeout(Duration::from_millis(cache_cfg.response_timeout));
@@ -589,6 +590,18 @@ fn create_config() -> (Configuration, &'static str) {
                 .display_order(4)
                 .arg(redis_url_arg)
                 .arg(
+                    Arg::new("batch")
+                        .long("batch-size")
+                        .action(ArgAction::Set)
+                        .value_parser(clap::value_parser!(u64))
+                        .default_value(
+                            config::env::REDIS_LOCAL_CACHE_BATCH_SIZE
+                                .unwrap_or(leak(DEFAULT_BATCH_SIZE)),
+                        )
+                        .display_order(3)
+                        .help("Size of entries to flush in as single flush"),
+                )
+                .arg(
                     Arg::new("flush")
                         .long("flush-period")
                         .action(ArgAction::Set)
@@ -720,6 +733,7 @@ fn create_config() -> (Configuration, &'static str) {
         Some(("redis_cached", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
             url: sub.get_one::<String>("URL").unwrap().to_owned(),
             cache: Some(RedisStorageCacheConfiguration {
+                batch_size: *sub.get_one("batch").unwrap(),
                 flushing_period: *sub.get_one("flush").unwrap(),
                 max_counters: *sub.get_one("max").unwrap(),
                 response_timeout: *sub.get_one("timeout").unwrap(),
@@ -799,6 +813,10 @@ fn storage_config_from_env() -> Result<StorageConfiguration, ()> {
             url,
             cache: if env_option_is_enabled("REDIS_LOCAL_CACHE_ENABLED") {
                 Some(RedisStorageCacheConfiguration {
+                    batch_size: env::var("REDIS_LOCAL_CACHE_BATCH_SIZE")
+                        .unwrap_or_else(|_| (DEFAULT_BATCH_SIZE).to_string())
+                        .parse()
+                        .expect("Expected an usize"),
                     flushing_period: env::var("REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS")
                         .unwrap_or_else(|_| (DEFAULT_FLUSHING_PERIOD_SEC * 1000).to_string())
                         .parse()
