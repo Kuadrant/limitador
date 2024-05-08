@@ -128,7 +128,9 @@ impl CachedCounterValue {
     }
 
     pub fn requires_fast_flush(&self, within: &Duration) -> bool {
-        self.from_authority.load(Ordering::Acquire).not() || &self.value.ttl() <= within
+        self.from_authority.load(Ordering::Acquire).not()
+            || self.expired_at(SystemTime::now())
+            || &self.value.ttl() <= within
     }
 }
 

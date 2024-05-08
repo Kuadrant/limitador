@@ -75,11 +75,10 @@ impl AsyncCounterStorage for CachedRedisStorage {
         let mut not_cached: Vec<&mut Counter> = vec![];
         let mut first_limited = None;
 
-        let now = SystemTime::now();
         // Check cached counters
         for counter in counters.iter_mut() {
             match self.cached_counters.get(counter) {
-                Some(val) if !val.expired_at(now) => {
+                Some(val) => {
                     if first_limited.is_none() && val.is_limited(counter, delta) {
                         let a =
                             Authorization::Limited(counter.limit().name().map(|n| n.to_owned()));
