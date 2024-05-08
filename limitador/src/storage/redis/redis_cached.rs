@@ -291,43 +291,48 @@ impl CachedRedisStorageBuilder {
 async fn update_counters<C: ConnectionLike>(
     redis_conn: &mut C,
     counters_and_deltas: HashMap<Counter, Arc<CachedCounterValue>>,
-) -> Result<Vec<(Counter, i64, i64)>, StorageErr> {
+) -> Result<Vec<(Counter, i64, i64, i64)>, StorageErr> {
     let redis_script = redis::Script::new(BATCH_UPDATE_COUNTERS);
     let mut script_invocation = redis_script.prepare_invoke();
 
-    let mut res: Vec<(Counter, i64, i64)> = Vec::with_capacity(counters_and_deltas.len());
-    if counters_and_deltas.is_empty() {
-        return Ok(res);
-    }
+    let res = if counters_and_deltas.is_empty() {
+        Default::default()
+    } else {
+        let mut res: Vec<(Counter, i64, i64, i64)> = Vec::with_capacity(counters_and_deltas.len());
 
-    for (counter, value) in counters_and_deltas {
-        let delta = value.pending_writes().expect("State machine is wrong!");
-        if delta > 0 {
-            script_invocation.key(key_for_counter(&counter));
-            script_invocation.key(key_for_counters_of_limit(counter.limit()));
-            script_invocation.arg(counter.seconds());
-            script_invocation.arg(delta);
-            // We need to store the counter in the actual order we are sending it to the script
-            res.push((counter, 0, 0));
+        for (counter, value) in counters_and_deltas {
+            let (delta, last_value_from_redis) = value
+                .pending_writes_and_value()
+                .expect("State machine is wrong!");
+            if delta > 0 {
+                script_invocation.key(key_for_counter(&counter));
+                script_invocation.key(key_for_counters_of_limit(counter.limit()));
+                script_invocation.arg(counter.seconds());
+                script_invocation.arg(delta);
+                // We need to store the counter in the actual order we are sending it to the script
+                res.push((counter, 0, last_value_from_redis, 0));
+            }
         }
-    }
 
-    let span = debug_span!("datastore");
-    // The redis crate is not working with tables, thus the response will be a Vec of counter values
-    let script_res: Vec<i64> = script_invocation
-        .invoke_async(redis_conn)
-        .instrument(span)
-        .await?;
+        let span = debug_span!("datastore");
+        // The redis crate is not working with tables, thus the response will be a Vec of counter values
+        let script_res: Vec<i64> = script_invocation
+            .invoke_async(redis_conn)
+            .instrument(span)
+            .await?;
 
-    // We need to update the values and ttls returned by redis
-    let counters_range = 0..res.len();
-    let script_res_range = (0..script_res.len()).step_by(2);
+        // We need to update the values and ttls returned by redis
+        let counters_range = 0..res.len();
+        let script_res_range = (0..script_res.len()).step_by(2);
 
-    for (i, j) in counters_range.zip(script_res_range) {
-        let (_, val, ttl) = &mut res[i];
-        *val = script_res[j];
-        *ttl = script_res[j + 1];
-    }
+        for (i, j) in counters_range.zip(script_res_range) {
+            let (_, val, delta, ttl) = &mut res[i];
+            *val = script_res[j];
+            *delta = script_res[j] - *delta;
+            *ttl = script_res[j + 1];
+        }
+        res
+    };
 
     Ok(res)
 }
@@ -359,15 +364,15 @@ async fn flush_batcher_and_update_counters<C: ConnectionLike>(
 
         let time_start_update_counters = Instant::now();
 
-        for (counter, value, ttl) in updated_counters {
-            cached_counters.insert(
+        for (counter, new_value, remote_deltas, ttl) in updated_counters {
+            cached_counters.apply_remote_delta(
                 counter,
-                Option::from(value),
+                new_value,
+                remote_deltas,
                 ttl,
                 Duration::from_millis(
                     (Instant::now() - time_start_update_counters).as_millis() as u64
                 ),
-                SystemTime::now(),
             );
         }
     }
@@ -388,7 +393,7 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
-    use std::time::{Duration, SystemTime};
+    use std::time::Duration;
 
     #[tokio::test]
     async fn errs_on_bad_url() {
@@ -408,6 +413,10 @@ mod tests {
 
     #[tokio::test]
     async fn batch_update_counters() {
+        const NEW_VALUE_FROM_REDIS: i64 = 10;
+        const INITIAL_VALUE_FROM_REDIS: i64 = 1;
+        const LOCAL_INCREMENTS: i64 = 2;
+
         let mut counters_and_deltas = HashMap::new();
         let counter = Counter::new(
             Limit::new(
@@ -422,13 +431,13 @@ mod tests {
 
         let arc = Arc::new(CachedCounterValue::from_authority(
             &counter,
-            1,
+            INITIAL_VALUE_FROM_REDIS,
             Duration::from_secs(60),
         ));
-        arc.delta(&counter, 1);
+        arc.delta(&counter, LOCAL_INCREMENTS);
         counters_and_deltas.insert(counter.clone(), arc);
 
-        let mock_response = Value::Bulk(vec![Value::Int(10), Value::Int(60)]);
+        let mock_response = Value::Bulk(vec![Value::Int(NEW_VALUE_FROM_REDIS), Value::Int(60)]);
 
         let mut mock_client = MockRedisConnection::new(vec![MockCmd::new(
             redis::cmd("EVALSHA")
@@ -437,21 +446,22 @@ mod tests {
                 .arg(key_for_counter(&counter))
                 .arg(key_for_counters_of_limit(counter.limit()))
                 .arg(60)
-                .arg(1),
+                .arg(LOCAL_INCREMENTS),
             Ok(mock_response),
         )]);
 
-        let result = update_counters(&mut mock_client, counters_and_deltas).await;
+        let mut result = update_counters(&mut mock_client, counters_and_deltas)
+            .await
+            .unwrap();
 
-        assert!(result.is_ok());
-
-        let (c, v, t) = result.unwrap()[0].clone();
+        let (c, new_value, remote_increments, new_ttl) = result.remove(0);
+        assert_eq!(key_for_counter(&counter), key_for_counter(&c));
+        assert_eq!(NEW_VALUE_FROM_REDIS, new_value);
         assert_eq!(
-            "req.method == \"GET\"",
-            c.limit().conditions().iter().collect::<Vec<_>>()[0]
+            NEW_VALUE_FROM_REDIS - INITIAL_VALUE_FROM_REDIS - LOCAL_INCREMENTS,
+            remote_increments
         );
-        assert_eq!(10, v);
-        assert_eq!(60, t);
+        assert_eq!(60, new_ttl);
     }
 
     #[tokio::test]
@@ -480,18 +490,12 @@ mod tests {
             Ok(mock_response),
         )]);
 
-        let cache = CountersCacheBuilder::new().build(Duration::from_millis(1));
+        let cache = CountersCacheBuilder::new().build(Duration::from_millis(10));
         cache.batcher().add(
             counter.clone(),
             Arc::new(CachedCounterValue::load_from_authority_asap(&counter, 2)),
         );
-        cache.insert(
-            counter.clone(),
-            Some(1),
-            10,
-            Duration::from_secs(0),
-            SystemTime::now(),
-        );
+
         let cached_counters: Arc<CountersCache> = Arc::new(cache);
         let partitioned = Arc::new(AtomicBool::new(false));
 
