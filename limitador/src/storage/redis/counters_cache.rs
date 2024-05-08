@@ -1,5 +1,5 @@
 use crate::counter::Counter;
-use crate::storage::atomic_expiring_value::{AtomicExpiringValue, AtomicExpiryTime};
+use crate::storage::atomic_expiring_value::AtomicExpiringValue;
 use crate::storage::redis::{
     DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC,
     DEFAULT_TTL_RATIO_CACHED_COUNTERS,
@@ -20,17 +20,15 @@ use tokio::sync::Notify;
 pub struct CachedCounterValue {
     value: AtomicExpiringValue,
     initial_value: AtomicI64,
-    expiry: AtomicExpiryTime,
     from_authority: AtomicBool,
 }
 
 impl CachedCounterValue {
-    pub fn from_authority(counter: &Counter, value: i64, ttl: Duration) -> Self {
+    pub fn from_authority(counter: &Counter, value: i64) -> Self {
         let now = SystemTime::now();
         Self {
             value: AtomicExpiringValue::new(value, now + Duration::from_secs(counter.seconds())),
             initial_value: AtomicI64::new(value),
-            expiry: AtomicExpiryTime::from_now(ttl),
             from_authority: AtomicBool::new(true),
         }
     }
@@ -43,19 +41,13 @@ impl CachedCounterValue {
                 now + Duration::from_secs(counter.seconds()),
             ),
             initial_value: AtomicI64::new(0),
-            expiry: AtomicExpiryTime::from_now(Duration::from_secs(counter.seconds())),
             from_authority: AtomicBool::new(false),
         }
-    }
-
-    pub fn expired_at(&self, now: SystemTime) -> bool {
-        self.expiry.expired_at(now)
     }
 
     pub fn add_from_authority(&self, delta: i64, expiry: Duration) {
         self.value.add_and_set_expiry(delta, expiry);
         self.initial_value.fetch_add(delta, Ordering::SeqCst);
-        self.expiry.update(expiry);
         self.from_authority.store(true, Ordering::Release);
     }
 
@@ -131,9 +123,7 @@ impl CachedCounterValue {
     }
 
     pub fn requires_fast_flush(&self, within: &Duration) -> bool {
-        self.from_authority.load(Ordering::Acquire).not()
-            || self.expired_at(SystemTime::now())
-            || &self.value.ttl() <= within
+        self.from_authority.load(Ordering::Acquire).not() || &self.value.ttl() <= within
     }
 }
 
@@ -279,7 +269,7 @@ impl CountersCache {
                         cached_value.add_from_authority(remote_deltas, ttl);
                         cached_value.clone()
                     } else {
-                        Arc::new(CachedCounterValue::from_authority(&counter, redis_val, ttl))
+                        Arc::new(CachedCounterValue::from_authority(&counter, redis_val))
                     }
                 });
                 if from_cache {
@@ -400,12 +390,12 @@ mod tests {
         use crate::storage::redis::counters_cache::tests::test_counter;
         use crate::storage::redis::counters_cache::CachedCounterValue;
         use std::ops::Not;
-        use std::time::{Duration, SystemTime};
+        use std::time::Duration;
 
         #[test]
         fn records_pending_writes() {
             let counter = test_counter(10, None);
-            let value = CachedCounterValue::from_authority(&counter, 0, Duration::from_secs(1));
+            let value = CachedCounterValue::from_authority(&counter, 0);
             assert_eq!(value.pending_writes(), Ok(0));
             value.delta(&counter, 5);
             assert_eq!(value.pending_writes(), Ok(5));
@@ -414,7 +404,7 @@ mod tests {
         #[test]
         fn consumes_pending_writes() {
             let counter = test_counter(10, None);
-            let value = CachedCounterValue::from_authority(&counter, 0, Duration::from_secs(1));
+            let value = CachedCounterValue::from_authority(&counter, 0);
             value.delta(&counter, 5);
             assert_eq!(value.pending_writes(), Ok(5));
             assert_eq!(value.pending_writes(), Ok(0));
@@ -423,7 +413,7 @@ mod tests {
         #[test]
         fn no_pending_writes() {
             let counter = test_counter(10, None);
-            let value = CachedCounterValue::from_authority(&counter, 0, Duration::from_secs(1));
+            let value = CachedCounterValue::from_authority(&counter, 0);
             value.delta(&counter, 5);
             assert!(value.no_pending_writes().not());
             assert!(value.pending_writes().is_ok());
@@ -433,7 +423,7 @@ mod tests {
         #[test]
         fn adding_from_auth_not_affecting_pending_writes() {
             let counter = test_counter(10, None);
-            let value = CachedCounterValue::from_authority(&counter, 0, Duration::from_secs(1));
+            let value = CachedCounterValue::from_authority(&counter, 0);
             value.delta(&counter, 5);
             assert!(value.no_pending_writes().not());
             value.add_from_authority(6, Duration::from_secs(1));
@@ -444,14 +434,14 @@ mod tests {
         #[test]
         fn from_authority_no_need_to_flush() {
             let counter = test_counter(10, None);
-            let value = CachedCounterValue::from_authority(&counter, 0, Duration::from_secs(10));
+            let value = CachedCounterValue::from_authority(&counter, 0);
             assert!(value.requires_fast_flush(&Duration::from_secs(30)).not());
         }
 
         #[test]
         fn from_authority_needs_to_flush_within_ttl() {
             let counter = test_counter(10, None);
-            let value = CachedCounterValue::from_authority(&counter, 0, Duration::from_secs(1));
+            let value = CachedCounterValue::from_authority(&counter, 0);
             assert!(value.requires_fast_flush(&Duration::from_secs(90)));
         }
 
@@ -463,21 +453,11 @@ mod tests {
         }
 
         #[test]
-        fn expiry_of_cached_entry() {
-            let counter = test_counter(10, None);
-            let cache_entry_ttl = Duration::from_secs(1);
-            let value = CachedCounterValue::from_authority(&counter, 0, cache_entry_ttl);
-            let now = SystemTime::now();
-            assert!(value.expired_at(now).not());
-            assert!(value.expired_at(now + cache_entry_ttl));
-        }
-
-        #[test]
         fn delegates_to_underlying_value() {
             let hits = 4;
 
             let counter = test_counter(10, None);
-            let value = CachedCounterValue::from_authority(&counter, 0, Duration::from_secs(1));
+            let value = CachedCounterValue::from_authority(&counter, 0);
             value.delta(&counter, hits);
             assert!(value.to_next_window() > Duration::from_millis(59999));
             assert_eq!(value.hits(&counter), hits);
@@ -519,11 +499,7 @@ mod tests {
                 tokio::spawn(async move {
                     tokio::time::sleep(Duration::from_millis(40)).await;
                     let counter = test_counter(6, None);
-                    let arc = Arc::new(CachedCounterValue::from_authority(
-                        &counter,
-                        0,
-                        Duration::from_secs(1),
-                    ));
+                    let arc = Arc::new(CachedCounterValue::from_authority(&counter, 0));
                     batcher.add(counter, arc);
                 });
             }
@@ -549,11 +525,7 @@ mod tests {
                 tokio::spawn(async move {
                     tokio::time::sleep(Duration::from_millis(40)).await;
                     let counter = test_counter(6, None);
-                    let arc = Arc::new(CachedCounterValue::from_authority(
-                        &counter,
-                        0,
-                        Duration::from_secs(1),
-                    ));
+                    let arc = Arc::new(CachedCounterValue::from_authority(&counter, 0));
                     batcher.add(counter, arc);
                 });
             }
@@ -575,11 +547,7 @@ mod tests {
             let start = SystemTime::now();
             {
                 let counter = test_counter(6, None);
-                let arc = Arc::new(CachedCounterValue::from_authority(
-                    &counter,
-                    0,
-                    Duration::from_secs(1),
-                ));
+                let arc = Arc::new(CachedCounterValue::from_authority(&counter, 0));
                 batcher.add(counter, arc);
             }
             batcher

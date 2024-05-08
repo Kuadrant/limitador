@@ -19,7 +19,7 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 use tracing::{debug_span, error, warn, Instrument};
 
 // This is just a first version.
@@ -432,7 +432,6 @@ mod tests {
         let arc = Arc::new(CachedCounterValue::from_authority(
             &counter,
             INITIAL_VALUE_FROM_REDIS,
-            Duration::from_secs(60),
         ));
         arc.delta(&counter, LOCAL_INCREMENTS);
         counters_and_deltas.insert(counter.clone(), arc);
