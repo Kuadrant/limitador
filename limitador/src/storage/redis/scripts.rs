@@ -38,10 +38,8 @@ pub const BATCH_UPDATE_COUNTERS: &str = "
         if c == tonumber(delta) then
             redis.call('expire', counter_key, ttl)
             redis.call('sadd', limit_key, counter_key)
-            table.insert(res, ttl*1000)
-        else
-            table.insert(res, redis.call('pttl', counter_key))
         end
+        table.insert(res, redis.call('pexpiretime', counter_key))
     end
     return res
 ";

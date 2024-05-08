@@ -1,9 +1,6 @@
 use crate::counter::Counter;
 use crate::storage::atomic_expiring_value::AtomicExpiringValue;
-use crate::storage::redis::{
-    DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC,
-    DEFAULT_TTL_RATIO_CACHED_COUNTERS,
-};
+use crate::storage::redis::{DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_TTL_RATIO_CACHED_COUNTERS};
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use moka::sync::Cache;
@@ -45,8 +42,8 @@ impl CachedCounterValue {
         }
     }
 
-    pub fn add_from_authority(&self, delta: i64, expiry: Duration) {
-        self.value.add_and_set_expiry(delta, expiry);
+    pub fn add_from_authority(&self, delta: i64, expire_at: SystemTime) {
+        self.value.add_and_set_expiry(delta, expire_at);
         self.initial_value.fetch_add(delta, Ordering::SeqCst);
         self.from_authority.store(true, Ordering::Release);
     }
@@ -222,7 +219,6 @@ impl Default for Batcher {
 }
 
 pub struct CountersCache {
-    max_ttl_cached_counters: Duration,
     pub ttl_ratio_cached_counters: u64,
     cache: Cache<Counter, Arc<CachedCounterValue>>,
     batcher: Batcher,
@@ -250,30 +246,24 @@ impl CountersCache {
         counter: Counter,
         redis_val: i64,
         remote_deltas: i64,
-        redis_ttl_ms: i64,
-        ttl_margin: Duration,
+        redis_expiry: i64,
     ) -> Arc<CachedCounterValue> {
-        let cache_ttl = self.ttl_from_redis_ttl(
-            redis_ttl_ms,
-            counter.seconds(),
-            redis_val,
-            counter.max_value(),
-        );
-        if let Some(ttl) = cache_ttl.checked_sub(ttl_margin) {
-            if ttl > Duration::ZERO {
+        if redis_expiry > 0 {
+            let expiry_ts = SystemTime::UNIX_EPOCH + Duration::from_millis(redis_expiry as u64);
+            if expiry_ts > SystemTime::now() {
                 let mut from_cache = true;
                 let cached = self.cache.get_with(counter.clone(), || {
                     from_cache = false;
                     if let Some(entry) = self.batcher.updates.get(&counter) {
                         let cached_value = entry.value();
-                        cached_value.add_from_authority(remote_deltas, ttl);
+                        cached_value.add_from_authority(remote_deltas, expiry_ts);
                         cached_value.clone()
                     } else {
                         Arc::new(CachedCounterValue::from_authority(&counter, redis_val))
                     }
                 });
                 if from_cache {
-                    cached.add_from_authority(remote_deltas, ttl);
+                    cached.add_from_authority(remote_deltas, expiry_ts);
                 }
                 return cached;
             }
@@ -294,55 +284,10 @@ impl CountersCache {
         val.delta(counter, delta);
         self.batcher.add(counter.clone(), val.clone());
     }
-
-    fn ttl_from_redis_ttl(
-        &self,
-        redis_ttl_ms: i64,
-        counter_seconds: u64,
-        counter_val: i64,
-        counter_max: i64,
-    ) -> Duration {
-        // Redis returns -2 when the key does not exist. Ref:
-        // https://redis.io/commands/ttl
-        // This function returns a ttl of the given counter seconds in this
-        // case.
-
-        let counter_ttl = if redis_ttl_ms >= 0 {
-            Duration::from_millis(redis_ttl_ms as u64)
-        } else {
-            Duration::from_secs(counter_seconds)
-        };
-
-        // If a counter is already at counter_max, we can cache it for as long as its TTL
-        // is in Redis. This does not depend on the requests received by other
-        // instances of Limitador. No matter what they do, we know that the
-        // counter is not going to recover its quota until it expires in Redis.
-        if counter_val >= counter_max {
-            return counter_ttl;
-        }
-
-        // Expire the counter in the cache before it expires in Redis.
-        // There might be several Limitador instances updating the Redis
-        // counter. The tradeoff is as follows: the shorter the TTL in the
-        // cache, the sooner we'll take into account those updates coming from
-        // other instances. If the TTL in the cache is long, there will be less
-        // accesses to Redis, so latencies will be better. However, it'll be
-        // easier to go over the limits defined, because not taking into account
-        // updates from other Limitador instances.
-        let mut res =
-            Duration::from_millis(counter_ttl.as_millis() as u64 / self.ttl_ratio_cached_counters);
-
-        if res > self.max_ttl_cached_counters {
-            res = self.max_ttl_cached_counters;
-        }
-
-        res
-    }
 }
 
 pub struct CountersCacheBuilder {
     max_cached_counters: usize,
-    max_ttl_cached_counters: Duration,
     ttl_ratio_cached_counters: u64,
 }
 
@@ -350,18 +295,12 @@ impl CountersCacheBuilder {
     pub fn new() -> Self {
         Self {
             max_cached_counters: DEFAULT_MAX_CACHED_COUNTERS,
-            max_ttl_cached_counters: Duration::from_secs(DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC),
             ttl_ratio_cached_counters: DEFAULT_TTL_RATIO_CACHED_COUNTERS,
         }
     }
 
     pub fn max_cached_counters(mut self, max_cached_counters: usize) -> Self {
         self.max_cached_counters = max_cached_counters;
-        self
-    }
-
-    pub fn max_ttl_cached_counter(mut self, max_ttl_cached_counter: Duration) -> Self {
-        self.max_ttl_cached_counters = max_ttl_cached_counter;
         self
     }
 
@@ -372,7 +311,6 @@ impl CountersCacheBuilder {
 
     pub fn build(&self, period: Duration) -> CountersCache {
         CountersCache {
-            max_ttl_cached_counters: self.max_ttl_cached_counters,
             ttl_ratio_cached_counters: self.ttl_ratio_cached_counters,
             cache: Cache::new(self.max_cached_counters as u64),
             batcher: Batcher::new(period),
@@ -385,12 +323,14 @@ mod tests {
     use super::*;
     use crate::limit::Limit;
     use std::collections::HashMap;
+    use std::ops::Add;
+    use std::time::UNIX_EPOCH;
 
     mod cached_counter_value {
         use crate::storage::redis::counters_cache::tests::test_counter;
         use crate::storage::redis::counters_cache::CachedCounterValue;
-        use std::ops::Not;
-        use std::time::Duration;
+        use std::ops::{Add, Not};
+        use std::time::{Duration, SystemTime};
 
         #[test]
         fn records_pending_writes() {
@@ -426,7 +366,7 @@ mod tests {
             let value = CachedCounterValue::from_authority(&counter, 0);
             value.delta(&counter, 5);
             assert!(value.no_pending_writes().not());
-            value.add_from_authority(6, Duration::from_secs(1));
+            value.add_from_authority(6, SystemTime::now().add(Duration::from_secs(1)));
             assert!(value.no_pending_writes().not());
             assert_eq!(value.pending_writes(), Ok(5));
         }
@@ -592,7 +532,10 @@ mod tests {
         let counter = test_counter(10, None);
 
         let cache = CountersCacheBuilder::new().build(Duration::default());
-        cache.apply_remote_delta(counter.clone(), 10, 0, 10, Duration::from_secs(0));
+        cache.apply_remote_delta(counter.clone(), 10, 0, SystemTime::now()
+            .add(Duration::from_secs(1))
+            .duration_since(UNIX_EPOCH)
+            .unwrap().as_micros() as i64);
 
         assert!(cache.get(&counter).is_some());
     }
@@ -613,13 +556,10 @@ mod tests {
         let counter = test_counter(max_val, None);
 
         let cache = CountersCacheBuilder::new().build(Duration::default());
-        cache.apply_remote_delta(
-            counter.clone(),
-            current_value,
-            0,
-            10,
-            Duration::from_secs(0),
-        );
+        cache.apply_remote_delta(counter.clone(), current_value, 0, SystemTime::now()
+            .add(Duration::from_secs(1))
+            .duration_since(UNIX_EPOCH)
+            .unwrap().as_micros() as i64);
 
         assert_eq!(
             cache.get(&counter).map(|e| e.hits(&counter)).unwrap(),
@@ -634,7 +574,10 @@ mod tests {
         let counter = test_counter(current_val, None);
 
         let cache = CountersCacheBuilder::new().build(Duration::default());
-        cache.apply_remote_delta(counter.clone(), current_val, 0, 10, Duration::from_secs(0));
+        cache.apply_remote_delta(counter.clone(), current_val, 0, SystemTime::now()
+            .add(Duration::from_secs(1))
+            .duration_since(UNIX_EPOCH)
+            .unwrap().as_micros() as i64);
         cache.increase_by(&counter, increase_by);
 
         assert_eq!(

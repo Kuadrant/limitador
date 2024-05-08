@@ -7,8 +7,8 @@ use crate::storage::redis::counters_cache::{
 use crate::storage::redis::redis_async::AsyncRedisStorage;
 use crate::storage::redis::scripts::BATCH_UPDATE_COUNTERS;
 use crate::storage::redis::{
-    DEFAULT_FLUSHING_PERIOD_SEC, DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC,
-    DEFAULT_RESPONSE_TIMEOUT_MS, DEFAULT_TTL_RATIO_CACHED_COUNTERS,
+    DEFAULT_FLUSHING_PERIOD_SEC, DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_RESPONSE_TIMEOUT_MS,
+    DEFAULT_TTL_RATIO_CACHED_COUNTERS,
 };
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
@@ -19,7 +19,7 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tracing::{debug_span, error, warn, Instrument};
 
 // This is just a first version.
@@ -149,7 +149,6 @@ impl CachedRedisStorage {
             redis_url,
             Duration::from_secs(DEFAULT_FLUSHING_PERIOD_SEC),
             DEFAULT_MAX_CACHED_COUNTERS,
-            Duration::from_secs(DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC),
             DEFAULT_TTL_RATIO_CACHED_COUNTERS,
             Duration::from_millis(DEFAULT_RESPONSE_TIMEOUT_MS),
         )
@@ -160,7 +159,6 @@ impl CachedRedisStorage {
         redis_url: &str,
         flushing_period: Duration,
         max_cached_counters: usize,
-        ttl_cached_counters: Duration,
         ttl_ratio_cached_counters: u64,
         response_timeout: Duration,
     ) -> Result<Self, RedisError> {
@@ -179,7 +177,6 @@ impl CachedRedisStorage {
 
         let cached_counters = CountersCacheBuilder::new()
             .max_cached_counters(max_cached_counters)
-            .max_ttl_cached_counter(ttl_cached_counters)
             .ttl_ratio_cached_counter(ttl_ratio_cached_counters)
             .build(flushing_period);
 
@@ -233,7 +230,6 @@ pub struct CachedRedisStorageBuilder {
     redis_url: String,
     flushing_period: Duration,
     max_cached_counters: usize,
-    max_ttl_cached_counters: Duration,
     ttl_ratio_cached_counters: u64,
     response_timeout: Duration,
 }
@@ -244,7 +240,6 @@ impl CachedRedisStorageBuilder {
             redis_url: redis_url.to_string(),
             flushing_period: Duration::from_secs(DEFAULT_FLUSHING_PERIOD_SEC),
             max_cached_counters: DEFAULT_MAX_CACHED_COUNTERS,
-            max_ttl_cached_counters: Duration::from_secs(DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC),
             ttl_ratio_cached_counters: DEFAULT_TTL_RATIO_CACHED_COUNTERS,
             response_timeout: Duration::from_millis(DEFAULT_RESPONSE_TIMEOUT_MS),
         }
@@ -257,11 +252,6 @@ impl CachedRedisStorageBuilder {
 
     pub fn max_cached_counters(mut self, max_cached_counters: usize) -> Self {
         self.max_cached_counters = max_cached_counters;
-        self
-    }
-
-    pub fn max_ttl_cached_counters(mut self, max_ttl_cached_counters: Duration) -> Self {
-        self.max_ttl_cached_counters = max_ttl_cached_counters;
         self
     }
 
@@ -280,7 +270,6 @@ impl CachedRedisStorageBuilder {
             &self.redis_url,
             self.flushing_period,
             self.max_cached_counters,
-            self.max_ttl_cached_counters,
             self.ttl_ratio_cached_counters,
             self.response_timeout,
         )
@@ -326,10 +315,10 @@ async fn update_counters<C: ConnectionLike>(
         let script_res_range = (0..script_res.len()).step_by(2);
 
         for (i, j) in counters_range.zip(script_res_range) {
-            let (_, val, delta, ttl) = &mut res[i];
+            let (_, val, delta, expires_at) = &mut res[i];
             *val = script_res[j];
             *delta = script_res[j] - *delta;
-            *ttl = script_res[j + 1];
+            *expires_at = script_res[j + 1];
         }
         res
     };
@@ -362,18 +351,8 @@ async fn flush_batcher_and_update_counters<C: ConnectionLike>(
             })
             .expect("Unrecoverable Redis error!");
 
-        let time_start_update_counters = Instant::now();
-
         for (counter, new_value, remote_deltas, ttl) in updated_counters {
-            cached_counters.apply_remote_delta(
-                counter,
-                new_value,
-                remote_deltas,
-                ttl,
-                Duration::from_millis(
-                    (Instant::now() - time_start_update_counters).as_millis() as u64
-                ),
-            );
+            cached_counters.apply_remote_delta(counter, new_value, remote_deltas, ttl);
         }
     }
 }
@@ -391,9 +370,10 @@ mod tests {
     use redis::{ErrorKind, Value};
     use redis_test::{MockCmd, MockRedisConnection};
     use std::collections::HashMap;
+    use std::ops::Add;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
-    use std::time::Duration;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     #[tokio::test]
     async fn errs_on_bad_url() {
@@ -436,11 +416,18 @@ mod tests {
         arc.delta(&counter, LOCAL_INCREMENTS);
         counters_and_deltas.insert(counter.clone(), arc);
 
-        let mock_response = Value::Bulk(vec![Value::Int(NEW_VALUE_FROM_REDIS), Value::Int(60)]);
+        let one_sec_from_now = SystemTime::now()
+            .add(Duration::from_secs(1))
+            .duration_since(UNIX_EPOCH)
+            .unwrap();
+        let mock_response = Value::Bulk(vec![
+            Value::Int(NEW_VALUE_FROM_REDIS),
+            Value::Int(one_sec_from_now.as_millis() as i64),
+        ]);
 
         let mut mock_client = MockRedisConnection::new(vec![MockCmd::new(
             redis::cmd("EVALSHA")
-                .arg("1e87383cf7dba2bd0f9972ed73671274e6cbd5da")
+                .arg("95a717e821d8fbdd667b5e4c6fede4c9cad16006")
                 .arg("2")
                 .arg(key_for_counter(&counter))
                 .arg(key_for_counters_of_limit(counter.limit()))
@@ -453,14 +440,14 @@ mod tests {
             .await
             .unwrap();
 
-        let (c, new_value, remote_increments, new_ttl) = result.remove(0);
+        let (c, new_value, remote_increments, expire_at) = result.remove(0);
         assert_eq!(key_for_counter(&counter), key_for_counter(&c));
         assert_eq!(NEW_VALUE_FROM_REDIS, new_value);
         assert_eq!(
             NEW_VALUE_FROM_REDIS - INITIAL_VALUE_FROM_REDIS - LOCAL_INCREMENTS,
             remote_increments
         );
-        assert_eq!(60, new_ttl);
+        assert_eq!(one_sec_from_now.as_millis(), expire_at as u128);
     }
 
     #[tokio::test]
@@ -476,11 +463,20 @@ mod tests {
             Default::default(),
         );
 
-        let mock_response = Value::Bulk(vec![Value::Int(8), Value::Int(60)]);
+        let mock_response = Value::Bulk(vec![
+            Value::Int(8),
+            Value::Int(
+                SystemTime::now()
+                    .add(Duration::from_secs(1))
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as i64,
+            ),
+        ]);
 
         let mock_client = MockRedisConnection::new(vec![MockCmd::new(
             redis::cmd("EVALSHA")
-                .arg("1e87383cf7dba2bd0f9972ed73671274e6cbd5da")
+                .arg("95a717e821d8fbdd667b5e4c6fede4c9cad16006")
                 .arg("2")
                 .arg(key_for_counter(&counter))
                 .arg(key_for_counters_of_limit(counter.limit()))

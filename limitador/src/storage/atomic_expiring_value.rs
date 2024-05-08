@@ -28,8 +28,8 @@ impl AtomicExpiringValue {
     }
 
     #[allow(dead_code)]
-    pub fn add_and_set_expiry(&self, delta: i64, expiry: Duration) -> i64 {
-        self.expiry.update(expiry);
+    pub fn add_and_set_expiry(&self, delta: i64, expire_at: SystemTime) -> i64 {
+        self.expiry.update(expire_at);
         self.value.fetch_add(delta, Ordering::SeqCst) + delta
     }
 
@@ -43,12 +43,6 @@ impl AtomicExpiringValue {
 
     pub fn ttl(&self) -> Duration {
         self.expiry.duration()
-    }
-
-    #[allow(dead_code)]
-    pub fn set(&self, value: i64, ttl: Duration) {
-        self.expiry.update(ttl);
-        self.value.store(value, Ordering::SeqCst);
     }
 }
 
@@ -90,9 +84,9 @@ impl AtomicExpiryTime {
     }
 
     #[allow(dead_code)]
-    pub fn update(&self, ttl: Duration) {
+    pub fn update(&self, expiry: SystemTime) {
         self.expiry
-            .store(Self::since_epoch(SystemTime::now() + ttl), Ordering::SeqCst);
+            .store(Self::since_epoch(expiry), Ordering::SeqCst);
     }
 
     pub fn update_if_expired(&self, ttl: u64, when: SystemTime) -> bool {
