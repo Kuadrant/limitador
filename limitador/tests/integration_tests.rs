@@ -60,7 +60,6 @@ macro_rules! test_with_all_storage_impls {
             async fn [<$function _with_async_redis_and_local_cache>]() {
                 let storage_builder = CachedRedisStorageBuilder::new("redis://127.0.0.1:6379").
                     flushing_period(Duration::from_millis(2)).
-                    ttl_ratio_cached_counters(1).
                     max_cached_counters(10000);
                 let storage = storage_builder.build().await.expect("We need a Redis running locally");
                 storage.clear().await.unwrap();

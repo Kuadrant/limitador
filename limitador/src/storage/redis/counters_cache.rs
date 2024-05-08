@@ -1,6 +1,6 @@
 use crate::counter::Counter;
 use crate::storage::atomic_expiring_value::AtomicExpiringValue;
-use crate::storage::redis::{DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_TTL_RATIO_CACHED_COUNTERS};
+use crate::storage::redis::DEFAULT_MAX_CACHED_COUNTERS;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use moka::sync::Cache;
@@ -219,7 +219,6 @@ impl Default for Batcher {
 }
 
 pub struct CountersCache {
-    pub ttl_ratio_cached_counters: u64,
     cache: Cache<Counter, Arc<CachedCounterValue>>,
     batcher: Batcher,
 }
@@ -288,14 +287,12 @@ impl CountersCache {
 
 pub struct CountersCacheBuilder {
     max_cached_counters: usize,
-    ttl_ratio_cached_counters: u64,
 }
 
 impl CountersCacheBuilder {
     pub fn new() -> Self {
         Self {
             max_cached_counters: DEFAULT_MAX_CACHED_COUNTERS,
-            ttl_ratio_cached_counters: DEFAULT_TTL_RATIO_CACHED_COUNTERS,
         }
     }
 
@@ -304,14 +301,8 @@ impl CountersCacheBuilder {
         self
     }
 
-    pub fn ttl_ratio_cached_counter(mut self, ttl_ratio_cached_counter: u64) -> Self {
-        self.ttl_ratio_cached_counters = ttl_ratio_cached_counter;
-        self
-    }
-
     pub fn build(&self, period: Duration) -> CountersCache {
         CountersCache {
-            ttl_ratio_cached_counters: self.ttl_ratio_cached_counters,
             cache: Cache::new(self.max_cached_counters as u64),
             batcher: Batcher::new(period),
         }
@@ -532,10 +523,16 @@ mod tests {
         let counter = test_counter(10, None);
 
         let cache = CountersCacheBuilder::new().build(Duration::default());
-        cache.apply_remote_delta(counter.clone(), 10, 0, SystemTime::now()
-            .add(Duration::from_secs(1))
-            .duration_since(UNIX_EPOCH)
-            .unwrap().as_micros() as i64);
+        cache.apply_remote_delta(
+            counter.clone(),
+            10,
+            0,
+            SystemTime::now()
+                .add(Duration::from_secs(1))
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_micros() as i64,
+        );
 
         assert!(cache.get(&counter).is_some());
     }
@@ -556,10 +553,16 @@ mod tests {
         let counter = test_counter(max_val, None);
 
         let cache = CountersCacheBuilder::new().build(Duration::default());
-        cache.apply_remote_delta(counter.clone(), current_value, 0, SystemTime::now()
-            .add(Duration::from_secs(1))
-            .duration_since(UNIX_EPOCH)
-            .unwrap().as_micros() as i64);
+        cache.apply_remote_delta(
+            counter.clone(),
+            current_value,
+            0,
+            SystemTime::now()
+                .add(Duration::from_secs(1))
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_micros() as i64,
+        );
 
         assert_eq!(
             cache.get(&counter).map(|e| e.hits(&counter)).unwrap(),
@@ -574,10 +577,16 @@ mod tests {
         let counter = test_counter(current_val, None);
 
         let cache = CountersCacheBuilder::new().build(Duration::default());
-        cache.apply_remote_delta(counter.clone(), current_val, 0, SystemTime::now()
-            .add(Duration::from_secs(1))
-            .duration_since(UNIX_EPOCH)
-            .unwrap().as_micros() as i64);
+        cache.apply_remote_delta(
+            counter.clone(),
+            current_val,
+            0,
+            SystemTime::now()
+                .add(Duration::from_secs(1))
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_micros() as i64,
+        );
         cache.increase_by(&counter, increase_by);
 
         assert_eq!(

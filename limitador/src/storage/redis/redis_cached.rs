@@ -8,7 +8,6 @@ use crate::storage::redis::redis_async::AsyncRedisStorage;
 use crate::storage::redis::scripts::BATCH_UPDATE_COUNTERS;
 use crate::storage::redis::{
     DEFAULT_FLUSHING_PERIOD_SEC, DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_RESPONSE_TIMEOUT_MS,
-    DEFAULT_TTL_RATIO_CACHED_COUNTERS,
 };
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
@@ -149,7 +148,6 @@ impl CachedRedisStorage {
             redis_url,
             Duration::from_secs(DEFAULT_FLUSHING_PERIOD_SEC),
             DEFAULT_MAX_CACHED_COUNTERS,
-            DEFAULT_TTL_RATIO_CACHED_COUNTERS,
             Duration::from_millis(DEFAULT_RESPONSE_TIMEOUT_MS),
         )
         .await
@@ -159,7 +157,6 @@ impl CachedRedisStorage {
         redis_url: &str,
         flushing_period: Duration,
         max_cached_counters: usize,
-        ttl_ratio_cached_counters: u64,
         response_timeout: Duration,
     ) -> Result<Self, RedisError> {
         let info = ConnectionInfo::from_str(redis_url)?;
@@ -177,7 +174,6 @@ impl CachedRedisStorage {
 
         let cached_counters = CountersCacheBuilder::new()
             .max_cached_counters(max_cached_counters)
-            .ttl_ratio_cached_counter(ttl_ratio_cached_counters)
             .build(flushing_period);
 
         let counters_cache = Arc::new(cached_counters);
@@ -230,7 +226,6 @@ pub struct CachedRedisStorageBuilder {
     redis_url: String,
     flushing_period: Duration,
     max_cached_counters: usize,
-    ttl_ratio_cached_counters: u64,
     response_timeout: Duration,
 }
 
@@ -240,7 +235,6 @@ impl CachedRedisStorageBuilder {
             redis_url: redis_url.to_string(),
             flushing_period: Duration::from_secs(DEFAULT_FLUSHING_PERIOD_SEC),
             max_cached_counters: DEFAULT_MAX_CACHED_COUNTERS,
-            ttl_ratio_cached_counters: DEFAULT_TTL_RATIO_CACHED_COUNTERS,
             response_timeout: Duration::from_millis(DEFAULT_RESPONSE_TIMEOUT_MS),
         }
     }
@@ -255,11 +249,6 @@ impl CachedRedisStorageBuilder {
         self
     }
 
-    pub fn ttl_ratio_cached_counters(mut self, ttl_ratio_cached_counters: u64) -> Self {
-        self.ttl_ratio_cached_counters = ttl_ratio_cached_counters;
-        self
-    }
-
     pub fn response_timeout(mut self, response_timeout: Duration) -> Self {
         self.response_timeout = response_timeout;
         self
@@ -270,7 +259,6 @@ impl CachedRedisStorageBuilder {
             &self.redis_url,
             self.flushing_period,
             self.max_cached_counters,
-            self.ttl_ratio_cached_counters,
             self.response_timeout,
         )
         .await

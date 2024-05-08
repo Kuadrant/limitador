@@ -25,7 +25,7 @@ use limitador::storage::disk::DiskStorage;
 use limitador::storage::infinispan::{Consistency, InfinispanStorageBuilder};
 use limitador::storage::redis::{
     AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder, DEFAULT_FLUSHING_PERIOD_SEC,
-    DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_RESPONSE_TIMEOUT_MS, DEFAULT_TTL_RATIO_CACHED_COUNTERS,
+    DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_RESPONSE_TIMEOUT_MS,
 };
 use limitador::storage::{AsyncCounterStorage, AsyncStorage, Storage};
 use limitador::{
@@ -133,7 +133,6 @@ impl Limiter {
 
         let cached_redis_storage = CachedRedisStorageBuilder::new(redis_url)
             .flushing_period(Duration::from_millis(cache_cfg.flushing_period as u64))
-            .ttl_ratio_cached_counters(cache_cfg.ttl_ratio)
             .max_cached_counters(cache_cfg.max_counters)
             .response_timeout(Duration::from_millis(cache_cfg.response_timeout));
 
@@ -590,18 +589,6 @@ fn create_config() -> (Configuration, &'static str) {
                 .display_order(4)
                 .arg(redis_url_arg)
                 .arg(
-                    Arg::new("ratio")
-                        .long("ratio")
-                        .action(ArgAction::Set)
-                        .value_parser(clap::value_parser!(u64))
-                        .default_value(
-                            config::env::REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS
-                                .unwrap_or(leak(DEFAULT_TTL_RATIO_CACHED_COUNTERS)),
-                        )
-                        .display_order(3)
-                        .help("Ratio to apply to the TTL from Redis on cached counters"),
-                )
-                .arg(
                     Arg::new("flush")
                         .long("flush-period")
                         .action(ArgAction::Set)
@@ -734,7 +721,6 @@ fn create_config() -> (Configuration, &'static str) {
             url: sub.get_one::<String>("URL").unwrap().to_owned(),
             cache: Some(RedisStorageCacheConfiguration {
                 flushing_period: *sub.get_one("flush").unwrap(),
-                ttl_ratio: *sub.get_one("ratio").unwrap(),
                 max_counters: *sub.get_one("max").unwrap(),
                 response_timeout: *sub.get_one("timeout").unwrap(),
             }),
@@ -817,10 +803,6 @@ fn storage_config_from_env() -> Result<StorageConfiguration, ()> {
                         .unwrap_or_else(|_| (DEFAULT_FLUSHING_PERIOD_SEC * 1000).to_string())
                         .parse()
                         .expect("Expected an i64"),
-                    ttl_ratio: env::var("REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS")
-                        .unwrap_or_else(|_| DEFAULT_TTL_RATIO_CACHED_COUNTERS.to_string())
-                        .parse()
-                        .expect("Expected an u64"),
                     max_counters: DEFAULT_MAX_CACHED_COUNTERS,
                     response_timeout: DEFAULT_RESPONSE_TIMEOUT_MS,
                 })
