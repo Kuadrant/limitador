@@ -11,6 +11,7 @@ pub struct Timings {
     idle: u64,
     busy: u64,
     last: Instant,
+    updated: bool,
 }
 
 impl Timings {
@@ -19,6 +20,7 @@ impl Timings {
             idle: 0,
             busy: 0,
             last: Instant::now(),
+            updated: false,
         }
     }
 }
@@ -31,6 +33,7 @@ impl ops::Add for Timings {
             busy: self.busy + rhs.busy,
             idle: self.idle + rhs.idle,
             last: self.last.max(rhs.last),
+            updated: self.updated || rhs.updated,
         }
     }
 }
@@ -160,6 +163,7 @@ where
             let now = Instant::now();
             timings.idle += (now - timings.last).as_nanos() as u64;
             timings.last = now;
+            timings.updated = true;
         }
     }
 
@@ -171,6 +175,7 @@ where
             let now = Instant::now();
             timings.busy += (now - timings.last).as_nanos() as u64;
             timings.last = now;
+            timings.updated = true;
         }
     }
 
@@ -210,7 +215,9 @@ where
             }
             // IF we are aggregator call consume function
             if let Some(metrics_group) = self.groups.get(name) {
-                (metrics_group.consumer)(*span_state.group_times.get(name).unwrap())
+                if let Some(t) = span_state.group_times.get(name).filter(|&t| t.updated) {
+                    (metrics_group.consumer)(*t);
+                }
             }
         }
     }
@@ -228,11 +235,13 @@ mod tests {
             idle: 5,
             busy: 5,
             last: now,
+            updated: false,
         };
         let t2 = Timings {
             idle: 3,
             busy: 5,
             last: now,
+            updated: false,
         };
         let t3 = t1 + t2;
         assert_eq!(
@@ -240,7 +249,8 @@ mod tests {
             Timings {
                 idle: 8,
                 busy: 10,
-                last: now
+                last: now,
+                updated: false,
             }
         )
     }
@@ -252,11 +262,13 @@ mod tests {
             idle: 5,
             busy: 5,
             last: now,
+            updated: false,
         };
         let t2 = Timings {
             idle: 3,
             busy: 5,
             last: now,
+            updated: false,
         };
         t1 += t2;
         assert_eq!(
@@ -264,7 +276,8 @@ mod tests {
             Timings {
                 idle: 8,
                 busy: 10,
-                last: now
+                last: now,
+                updated: false,
             }
         )
     }
@@ -277,6 +290,7 @@ mod tests {
             idle: 5,
             busy: 5,
             last: Instant::now(),
+            updated: true,
         };
         span_state.increment(&group, t1);
         assert_eq!(span_state.group_times.get(&group).unwrap().idle, t1.idle);
