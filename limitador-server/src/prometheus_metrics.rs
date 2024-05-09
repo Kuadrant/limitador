@@ -47,6 +47,11 @@ impl PrometheusMetrics {
         describe_counter!("limited_calls", "Limited calls");
         describe_gauge!("limitador_up", "Limitador is running");
         gauge!("limitador_up").set(1);
+        describe_gauge!(
+            "datastore_partitioned",
+            "Limitador is partitioned from backing datastore"
+        );
+        gauge!("datastore_partitioned").set(0);
         Self {
             use_limit_name_label,
             prometheus_handle,
