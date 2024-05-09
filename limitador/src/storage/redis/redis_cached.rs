@@ -330,7 +330,7 @@ async fn update_counters<C: ConnectionLike>(
 
     Ok(res)
 }
-
+#[tracing::instrument(skip_all)]
 async fn flush_batcher_and_update_counters<C: ConnectionLike>(
     mut redis_conn: C,
     storage_is_alive: bool,
