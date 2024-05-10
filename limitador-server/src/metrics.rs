@@ -71,39 +71,39 @@ impl SpanState {
     }
 }
 
-pub struct MetricsGroup<F: Fn(Timings)> {
-    consumer: F,
+pub struct MetricsGroup {
+    consumer: Box<fn(Timings)>,
     records: Vec<String>,
 }
 
-impl<F: Fn(Timings)> MetricsGroup<F> {
-    pub fn new(consumer: F, records: Vec<String>) -> Self {
+impl MetricsGroup {
+    pub fn new(consumer: Box<fn(Timings)>, records: Vec<String>) -> Self {
         Self { consumer, records }
     }
 }
 
-pub struct MetricsLayer<F: Fn(Timings)> {
-    groups: HashMap<String, MetricsGroup<F>>,
+pub struct MetricsLayer {
+    groups: HashMap<String, MetricsGroup>,
 }
 
-impl<F: Fn(Timings)> MetricsLayer<F> {
+impl MetricsLayer {
     pub fn new() -> Self {
         Self {
             groups: HashMap::new(),
         }
     }
 
-    pub fn gather(mut self, aggregate: &str, consumer: F, records: Vec<&str>) -> Self {
+    pub fn gather(mut self, aggregate: &str, consumer: fn(Timings), records: Vec<&str>) -> Self {
         // TODO(adam-cattermole): does not handle case where aggregate already exists
         let rec = records.iter().map(|r| r.to_string()).collect();
         self.groups
             .entry(aggregate.to_string())
-            .or_insert(MetricsGroup::new(consumer, rec));
+            .or_insert(MetricsGroup::new(Box::new(consumer), rec));
         self
     }
 }
 
-impl<S, F: Fn(Timings) + 'static> Layer<S> for MetricsLayer<F>
+impl<S> Layer<S> for MetricsLayer
 where
     S: Subscriber,
     S: for<'lookup> LookupSpan<'lookup>,
