@@ -9,8 +9,6 @@ mod scripts;
 
 pub const DEFAULT_FLUSHING_PERIOD_SEC: u64 = 1;
 pub const DEFAULT_MAX_CACHED_COUNTERS: usize = 10000;
-pub const DEFAULT_MAX_TTL_CACHED_COUNTERS_SEC: u64 = 5;
-pub const DEFAULT_TTL_RATIO_CACHED_COUNTERS: u64 = 10;
 pub const DEFAULT_RESPONSE_TIMEOUT_MS: u64 = 350;
 
 use crate::counter::Counter;

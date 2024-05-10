@@ -163,8 +163,6 @@ pub struct RedisStorageConfiguration {
 #[derive(PartialEq, Eq, Debug)]
 pub struct RedisStorageCacheConfiguration {
     pub flushing_period: i64,
-    pub max_ttl: u64,
-    pub ttl_ratio: u64,
     pub max_counters: usize,
     pub response_timeout: u64,
 }
