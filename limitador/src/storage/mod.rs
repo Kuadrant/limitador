@@ -8,6 +8,7 @@ use thiserror::Error;
 
 #[cfg(feature = "disk_storage")]
 pub mod disk;
+pub mod distributed;
 pub mod in_memory;
 
 #[cfg(feature = "redis_storage")]
