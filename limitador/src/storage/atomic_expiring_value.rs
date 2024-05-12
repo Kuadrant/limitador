@@ -103,6 +103,7 @@ impl AtomicExpiryTime {
         false
     }
 
+    #[allow(dead_code)]
     pub fn merge(&self, other: Self) {
         let mut other = other;
         loop {
@@ -134,6 +135,10 @@ impl AtomicExpiryTime {
     }
 
     pub fn into_inner(self) -> SystemTime {
+        self.expires_at()
+    }
+
+    pub fn expires_at(&self) -> SystemTime {
         SystemTime::UNIX_EPOCH + Duration::from_micros(self.expiry.load(Ordering::SeqCst))
     }
 }
@@ -161,6 +166,12 @@ impl Clone for AtomicExpiringValue {
             value: AtomicU64::new(self.value.load(Ordering::SeqCst)),
             expiry: self.expiry.clone(),
         }
+    }
+}
+
+impl From<SystemTime> for AtomicExpiryTime {
+    fn from(value: SystemTime) -> Self {
+        AtomicExpiryTime::new(value)
     }
 }
 
