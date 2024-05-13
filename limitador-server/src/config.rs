@@ -5,8 +5,7 @@
 // REDIS_URL: StorageType { String }
 // └ REDIS_LOCAL_CACHE_ENABLED: bool
 //   └ REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS: i64 ?!
-//   └ REDIS_LOCAL_CACHE_MAX_TTL_CACHED_COUNTERS_MS: u64 -> Duration
-//   └ REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS: u64
+//   └ REDIS_LOCAL_CACHE_BATCH_SIZE: u64
 //
 // INFINISPAN_URL: StorageType { String }
 //  └ INFINISPAN_CACHE_NAME: String
@@ -39,6 +38,7 @@ pub struct Configuration {
 
 pub mod env {
     use lazy_static::lazy_static;
+    use std::env;
 
     lazy_static! {
         pub static ref LIMITS_FILE: Option<&'static str> = value_for("LIMITS_FILE");
@@ -47,18 +47,19 @@ pub mod env {
         pub static ref HTTP_API_HOST: Option<&'static str> = value_for("HTTP_API_HOST");
         pub static ref HTTP_API_PORT: Option<&'static str> = value_for("HTTP_API_PORT");
         pub static ref TRACING_ENDPOINT: Option<&'static str> = value_for("TRACING_ENDPOINT");
+        pub static ref LIMIT_NAME_IN_PROMETHEUS_LABELS: bool =
+            env_option_is_enabled("LIMIT_NAME_IN_PROMETHEUS_LABELS");
         pub static ref DISK_PATH: Option<&'static str> = value_for("DISK_PATH");
         pub static ref DISK_OPTIMIZE: Option<&'static str> = value_for("DISK_OPTIMIZE");
         pub static ref REDIS_URL: Option<&'static str> = value_for("REDIS_URL");
-        pub static ref REDIS_LOCAL_CACHE_MAX_TTL_CACHED_COUNTERS_MS: Option<&'static str> =
-            value_for("REDIS_LOCAL_CACHE_MAX_TTL_CACHED_COUNTERS_MS");
+        pub static ref REDIS_LOCAL_CACHE_ENABLED: bool =
+            env_option_is_enabled("REDIS_LOCAL_CACHE_ENABLED");
         pub static ref REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS: Option<&'static str> =
             value_for("REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS");
         pub static ref REDIS_LOCAL_CACHE_BATCH_SIZE: Option<&'static str> =
             value_for("REDIS_LOCAL_CACHE_BATCH_SIZE");
-        pub static ref REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS: Option<&'static str> =
-            value_for("REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS");
         pub static ref RATE_LIMIT_HEADERS: Option<&'static str> = value_for("RATE_LIMIT_HEADERS");
+        pub static ref INFINISPAN_URL: Option<&'static str> = value_for("INFINISPAN_URL");
         pub static ref INFINISPAN_CACHE_NAME: Option<&'static str> =
             value_for("INFINISPAN_CACHE_NAME");
         pub static ref INFINISPAN_COUNTERS_CONSISTENCY: Option<&'static str> =
@@ -69,6 +70,13 @@ pub mod env {
         match std::env::var(env_key) {
             Ok(s) => Some(Box::leak(s.into_boxed_str())),
             Err(_) => None,
+        }
+    }
+
+    fn env_option_is_enabled(env_name: &str) -> bool {
+        match env::var(env_name) {
+            Ok(value) => value == "1",
+            Err(_) => false,
         }
     }
 }

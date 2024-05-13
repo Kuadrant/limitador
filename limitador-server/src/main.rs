@@ -777,8 +777,7 @@ fn create_config() -> (Configuration, &'static str) {
         *matches.get_one::<u16>("port").unwrap(),
         matches.get_one::<String>("http_ip").unwrap().into(),
         *matches.get_one::<u16>("http_port").unwrap(),
-        matches.get_flag("limit_name_in_labels")
-            || env_option_is_enabled("LIMIT_NAME_IN_PROMETHEUS_LABELS"),
+        matches.get_flag("limit_name_in_labels") || *config::env::LIMIT_NAME_IN_PROMETHEUS_LABELS,
         matches
             .get_one::<String>("tracing_endpoint")
             .unwrap()
@@ -800,9 +799,9 @@ fn create_config() -> (Configuration, &'static str) {
 }
 
 fn storage_config_from_env() -> Result<StorageConfiguration, ()> {
-    let redis_url = env::var("REDIS_URL");
+    let redis_url = config::env::REDIS_URL.ok_or(());
     let infinispan_url = if cfg!(feature = "infinispan") {
-        env::var("INFINISPAN_URL")
+        config::env::INFINISPAN_URL.ok_or(VarError::NotPresent)
     } else {
         Err(VarError::NotPresent)
     };
@@ -810,15 +809,17 @@ fn storage_config_from_env() -> Result<StorageConfiguration, ()> {
     match (redis_url, infinispan_url) {
         (Ok(_), Ok(_)) => Err(()),
         (Ok(url), Err(_)) => Ok(StorageConfiguration::Redis(RedisStorageConfiguration {
-            url,
-            cache: if env_option_is_enabled("REDIS_LOCAL_CACHE_ENABLED") {
+            url: url.to_owned(),
+            cache: if *config::env::REDIS_LOCAL_CACHE_ENABLED {
                 Some(RedisStorageCacheConfiguration {
-                    batch_size: env::var("REDIS_LOCAL_CACHE_BATCH_SIZE")
-                        .unwrap_or_else(|_| (DEFAULT_BATCH_SIZE).to_string())
+                    batch_size: config::env::REDIS_LOCAL_CACHE_BATCH_SIZE
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| (DEFAULT_BATCH_SIZE).to_string())
                         .parse()
                         .expect("Expected an usize"),
-                    flushing_period: env::var("REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS")
-                        .unwrap_or_else(|_| (DEFAULT_FLUSHING_PERIOD_SEC * 1000).to_string())
+                    flushing_period: config::env::REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| (DEFAULT_FLUSHING_PERIOD_SEC * 1000).to_string())
                         .parse()
                         .expect("Expected an i64"),
                     max_counters: DEFAULT_MAX_CACHED_COUNTERS,
@@ -831,9 +832,9 @@ fn storage_config_from_env() -> Result<StorageConfiguration, ()> {
         #[cfg(feature = "infinispan")]
         (Err(_), Ok(url)) => Ok(StorageConfiguration::Infinispan(
             InfinispanStorageConfiguration {
-                url,
-                cache: env::var("INFINISPAN_CACHE_NAME").ok(),
-                consistency: env::var("INFINISPAN_COUNTERS_CONSISTENCY").ok(),
+                url: url.to_owned(),
+                cache: config::env::INFINISPAN_CACHE_NAME.map(str::to_owned),
+                consistency: config::env::INFINISPAN_COUNTERS_CONSISTENCY.map(str::to_owned),
             },
         )),
         _ => Ok(StorageConfiguration::InMemory(
@@ -856,13 +857,6 @@ fn guess_cache_size() -> Option<u64> {
         free_mem / 1024 / 1024
     );
     Some(size)
-}
-
-fn env_option_is_enabled(env_name: &str) -> bool {
-    match env::var(env_name) {
-        Ok(value) => value == "1",
-        Err(_) => false,
-    }
 }
 
 fn leak<D: Display>(s: D) -> &'static str {
