@@ -54,6 +54,8 @@ pub mod env {
             value_for("REDIS_LOCAL_CACHE_MAX_TTL_CACHED_COUNTERS_MS");
         pub static ref REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS: Option<&'static str> =
             value_for("REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS");
+        pub static ref REDIS_LOCAL_CACHE_BATCH_SIZE: Option<&'static str> =
+            value_for("REDIS_LOCAL_CACHE_BATCH_SIZE");
         pub static ref REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS: Option<&'static str> =
             value_for("REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS");
         pub static ref RATE_LIMIT_HEADERS: Option<&'static str> = value_for("RATE_LIMIT_HEADERS");
@@ -162,6 +164,7 @@ pub struct RedisStorageConfiguration {
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct RedisStorageCacheConfiguration {
+    pub batch_size: usize,
     pub flushing_period: i64,
     pub max_counters: usize,
     pub response_timeout: u64,
