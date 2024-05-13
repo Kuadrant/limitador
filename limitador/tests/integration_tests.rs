@@ -14,6 +14,13 @@ macro_rules! test_with_all_storage_impls {
             }
 
             #[tokio::test]
+            async fn [<$function _distributed_storage>]() {
+                let rate_limiter =
+                    RateLimiter::new_with_storage(Box::new(CrInMemoryStorage::new("test_node".to_owned(), 10_000)));
+                $function(&mut TestsLimiter::new_from_blocking_impl(rate_limiter)).await;
+            }
+
+            #[tokio::test]
             async fn [<$function _disk_storage>]() {
                 let dir = TempDir::new().expect("We should have a dir!");
                 let rate_limiter =
@@ -90,6 +97,7 @@ mod test {
     use limitador::limit::Limit;
     use limitador::storage::disk::{DiskStorage, OptimizeFor};
     use limitador::storage::in_memory::InMemoryStorage;
+    use limitador::storage::distributed::CrInMemoryStorage;
     use std::collections::{HashMap, HashSet};
     use std::thread::sleep;
     use std::time::Duration;

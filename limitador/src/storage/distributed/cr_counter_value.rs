@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime};
 
-struct CrCounterValue<A: Ord> {
+pub struct CrCounterValue<A: Ord> {
     ourselves: A,
     value: AtomicU64,
     others: RwLock<BTreeMap<A, u64>>,
@@ -108,6 +108,10 @@ impl<A: Ord> CrCounterValue<A> {
         }
     }
 
+    pub fn ttl(&self) -> Duration {
+        self.expiry.duration()
+    }
+
     fn into_inner(self) -> (SystemTime, BTreeMap<A, u64>) {
         let Self {
             ourselves,
@@ -125,6 +129,17 @@ impl<A: Ord> CrCounterValue<A> {
         self.expiry.update(expiry);
         self.value.store(0, Ordering::SeqCst);
         guard.clear()
+    }
+}
+
+impl<A: Clone + Ord> Clone for CrCounterValue<A> {
+    fn clone(&self) -> Self {
+        Self {
+            ourselves: self.ourselves.clone(),
+            value: AtomicU64::new(self.value.load(Ordering::SeqCst)),
+            others: RwLock::new(self.others.read().unwrap().clone()),
+            expiry: self.expiry.clone(),
+        }
     }
 }
 
