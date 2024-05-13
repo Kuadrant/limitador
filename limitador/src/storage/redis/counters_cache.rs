@@ -3,7 +3,7 @@ use crate::storage::atomic_expiring_value::AtomicExpiringValue;
 use crate::storage::redis::DEFAULT_MAX_CACHED_COUNTERS;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
-use metrics::gauge;
+use metrics::{gauge, histogram};
 use moka::sync::Cache;
 use std::collections::HashMap;
 use std::future::Future;
@@ -185,6 +185,7 @@ impl Batcher {
                     let value = self.updates.get(counter).unwrap().clone();
                     result.insert(counter.clone(), value);
                 }
+                histogram!("batcher_flush_size").record(result.len() as f64);
                 let result = consumer(result).await;
                 batch.iter().for_each(|counter| {
                     let prev = self
