@@ -17,7 +17,7 @@ macro_rules! test_with_all_storage_impls {
             #[tokio::test]
             async fn [<$function _distributed_storage>]() {
                 let rate_limiter =
-                    RateLimiter::new_with_storage(Box::new(CrInMemoryStorage::new("test_node".to_owned(), 10_000, "127.0.0.1:19876".to_owned(), Some("127.0.0.255:19876".to_owned()))));
+                    RateLimiter::new_with_storage(Box::new(CrInMemoryStorage::new("test_node".to_owned(), 10_000, "127.0.0.1:19876".to_owned(), vec![])));
                 $function(&mut TestsLimiter::new_from_blocking_impl(rate_limiter)).await;
             }
 
@@ -72,11 +72,74 @@ macro_rules! test_with_all_storage_impls {
     };
 }
 
+#[cfg(feature = "distributed_storage")]
+async fn distributed_storage_factory(
+    count: usize,
+) -> Vec<crate::helpers::tests_limiter::TestsLimiter> {
+    use crate::helpers::tests_limiter::TestsLimiter;
+    use limitador::storage::distributed::CrInMemoryStorage;
+    use limitador::RateLimiter;
+
+    let addresses = (0..count)
+        .map(|i| format!("127.0.0.1:{}", 5200 + i))
+        .collect::<Vec<String>>();
+    return (0..count)
+        .map(|i| {
+            let node = format!("n{}", i);
+            let listen_address = addresses.get(i).unwrap().to_owned();
+            let peer_urls = addresses
+                .iter()
+                .map(|x| format!("http://{}", x))
+                .collect::<Vec<String>>();
+
+            TestsLimiter::new_from_blocking_impl(RateLimiter::new_with_storage(Box::new(
+                CrInMemoryStorage::new(node, 10_000, listen_address, peer_urls),
+            )))
+        })
+        .collect::<Vec<TestsLimiter>>();
+}
+
+macro_rules! test_with_distributed_storage_impls {
+    // This macro uses the "paste" crate to define the names of the functions.
+    // Also, the Redis tests cannot be run in parallel. The "serial" tag from
+    // the "serial-test" crate takes care of that.
+    ($function:ident) => {
+        paste::item! {
+            #[cfg(feature = "distributed_storage")]
+            #[tokio::test]
+            async fn [<$function _distributed_storage>]() {
+               $function(crate::distributed_storage_factory).await;
+            }
+        }
+    };
+}
+
 mod helpers;
 
 #[cfg(test)]
 mod test {
     extern crate limitador;
+
+    #[allow(dead_code)]
+    async fn eventually<F>(
+        timeout: Duration,
+        tick: Duration,
+        condition: impl Fn() -> F,
+    ) -> Result<bool, Elapsed>
+    where
+        F: Future<Output = bool>,
+    {
+        tokio::time::timeout(timeout, async move {
+            let mut i = tokio::time::interval(tick);
+            loop {
+                if condition().await {
+                    return true;
+                }
+                i.tick().await;
+            }
+        })
+        .await
+    }
 
     // To be able to pass the tests without Redis
     cfg_if::cfg_if! {
@@ -101,9 +164,11 @@ mod test {
     use limitador::storage::distributed::CrInMemoryStorage;
     use limitador::storage::in_memory::InMemoryStorage;
     use std::collections::{HashMap, HashSet};
+    use std::future::Future;
     use std::thread::sleep;
     use std::time::Duration;
     use tempfile::TempDir;
+    use tokio::time::error::Elapsed;
 
     test_with_all_storage_impls!(get_namespaces);
     test_with_all_storage_impls!(get_namespaces_returns_empty_when_there_arent_any);
@@ -139,6 +204,8 @@ mod test {
     test_with_all_storage_impls!(configure_with_deletes_all_except_the_limits_given);
     test_with_all_storage_impls!(configure_with_updates_the_limits);
     test_with_all_storage_impls!(add_limit_only_adds_if_not_present);
+
+    test_with_distributed_storage_impls!(distributed_rate_limited);
 
     // All these functions need to use async/await. That's needed to support
     // both the sync and the async implementations of the rate limiter.
@@ -1106,5 +1173,63 @@ mod test {
         let known_limit = limits.iter().next().unwrap();
         assert_eq!(known_limit.max_value(), 10);
         assert_eq!(known_limit.name(), None);
+    }
+
+    #[allow(dead_code)]
+    async fn distributed_rate_limited<Fut>(create_distributed_limiters: fn(count: usize) -> Fut)
+    where
+        Fut: Future<Output = Vec<TestsLimiter>>,
+    {
+        let rate_limiters = create_distributed_limiters(2).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        let namespace = "test_namespace";
+        let max_hits = 3;
+        let limit = Limit::new(
+            namespace,
+            max_hits,
+            60,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
+
+        for rate_limiter in rate_limiters.iter() {
+            rate_limiter.add_limit(&limit).await;
+        }
+
+        let mut values: HashMap<String, String> = HashMap::new();
+        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("app_id".to_string(), "test_app_id".to_string());
+
+        for i in 0..max_hits {
+            // Alternate between the two rate limiters
+            let rate_limiter = rate_limiters.get((i % 2) as usize).unwrap();
+            assert!(
+                !rate_limiter
+                    .is_rate_limited(namespace, &values, 1)
+                    .await
+                    .unwrap(),
+                "Must not be limited after {i}"
+            );
+            rate_limiter
+                .update_counters(namespace, &values, 1)
+                .await
+                .unwrap();
+        }
+
+        // eventually it should get rate limited...
+        assert!(eventually(
+            Duration::from_secs(5),
+            Duration::from_millis(100),
+            || async {
+                let rate_limiter = rate_limiters.first().unwrap();
+                rate_limiter
+                    .is_rate_limited(namespace, &values, 1)
+                    .await
+                    .unwrap()
+            }
+        )
+        .await
+        .unwrap());
     }
 }

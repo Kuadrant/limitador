@@ -1,5 +1,5 @@
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::net::ToSocketAddrs;
 use std::ops::Deref;
 use std::sync::{Arc, RwLock};
@@ -7,24 +7,24 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use moka::sync::Cache;
 use serde::{Deserialize, Serialize};
-use tokio::net::UdpSocket;
-use tokio::sync::mpsc;
-use tokio::sync::mpsc::Sender;
 
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
 use crate::storage::distributed::cr_counter_value::CrCounterValue;
+use crate::storage::distributed::grpc::v1::CounterUpdate;
+use crate::storage::distributed::grpc::Broker;
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 
 mod cr_counter_value;
+mod grpc;
 
 type NamespacedLimitCounters<T> = HashMap<Namespace, HashMap<Limit, T>>;
 
 pub struct CrInMemoryStorage {
     identifier: String,
-    sender: Sender<CounterValueMessage>,
     limits_for_namespace: Arc<RwLock<NamespacedLimitCounters<CrCounterValue<String>>>>,
     qualified_counters: Arc<Cache<Counter, Arc<CrCounterValue<String>>>>,
+    broker: Broker,
 }
 
 impl CounterStorage for CrInMemoryStorage {
@@ -248,100 +248,44 @@ impl CounterStorage for CrInMemoryStorage {
     }
 }
 
+pub type LimitsMap = HashMap<Namespace, HashMap<Limit, CrCounterValue<String>>>;
+
 impl CrInMemoryStorage {
     pub fn new(
         identifier: String,
         cache_size: u64,
-        local: String,
-        broadcast: Option<String>,
+        listen_address: String,
+        peer_urls: Vec<String>,
     ) -> Self {
-        let (sender, mut rx) = mpsc::channel(1000);
+        // let (sender, mut rx) = mpsc::channel(1000);
 
-        let local = local.to_socket_addrs().unwrap().next().unwrap();
-        if let Some(remote) = broadcast.clone() {
-            tokio::spawn(async move {
-                let sock = UdpSocket::bind(local).await.unwrap();
-                sock.set_broadcast(true).unwrap();
-                sock.connect(remote).await.unwrap();
-                loop {
-                    let message: CounterValueMessage = rx.recv().await.unwrap();
-                    let buf = postcard::to_stdvec(&message).unwrap();
-                    match sock.send(&buf).await {
-                        Ok(len) => {
-                            if len != buf.len() {
-                                println!("Couldn't send complete message!");
-                            }
-                        }
-                        Err(err) => println!("Couldn't send update: {:?}", err),
-                    };
-                }
-            });
-        }
+        let listen_address = listen_address.to_socket_addrs().unwrap().next().unwrap();
+        let peer_urls = peer_urls.clone();
 
-        let limits_for_namespace = Arc::new(RwLock::new(HashMap::<
-            Namespace,
-            HashMap<Limit, CrCounterValue<String>>,
-        >::new()));
+        let limits_for_namespace = Arc::new(RwLock::new(LimitsMap::new()));
         let qualified_counters: Arc<Cache<Counter, Arc<CrCounterValue<String>>>> =
             Arc::new(Cache::new(cache_size));
 
-        {
-            let limits_for_namespace = limits_for_namespace.clone();
-            let qualified_counters = qualified_counters.clone();
+        let broker = grpc::Broker::new(
+            identifier.clone(),
+            listen_address,
+            peer_urls,
+            limits_for_namespace.clone(),
+            qualified_counters.clone(),
+        );
 
-            if let Some(broadcast) = broadcast.clone() {
-                tokio::spawn(async move {
-                    let sock = UdpSocket::bind(broadcast).await.unwrap();
-                    sock.set_broadcast(true).unwrap();
-                    let mut buf = [0; 1024];
-                    loop {
-                        let (len, addr) = sock.recv_from(&mut buf).await.unwrap();
-                        if addr != local {
-                            match postcard::from_bytes::<CounterValueMessage>(&buf[..len]) {
-                                Ok(message) => {
-                                    let CounterValueMessage {
-                                        counter_key,
-                                        expiry,
-                                        values,
-                                    } = message;
-                                    let counter = <CounterKey as Into<Counter>>::into(counter_key);
-                                    if counter.is_qualified() {
-                                        if let Some(counter) = qualified_counters.get(&counter) {
-                                            counter.merge(
-                                                (UNIX_EPOCH + Duration::from_secs(expiry), values)
-                                                    .into(),
-                                            );
-                                        }
-                                    } else {
-                                        let counters = limits_for_namespace.read().unwrap();
-                                        let limits = counters.get(counter.namespace()).unwrap();
-                                        let value = limits.get(counter.limit()).unwrap();
-                                        value.merge(
-                                            (UNIX_EPOCH + Duration::from_secs(expiry), values)
-                                                .into(),
-                                        );
-                                    };
-                                }
-                                Err(err) => {
-                                    println!(
-                                        "Error from {} bytes: {:?} \n{:?}",
-                                        len,
-                                        err,
-                                        &buf[..len]
-                                    )
-                                }
-                            }
-                        }
-                    }
-                });
-            }
+        {
+            let broker = broker.clone();
+            tokio::spawn(async move {
+                broker.start().await;
+            });
         }
 
         Self {
             identifier,
-            sender,
             limits_for_namespace,
             qualified_counters,
+            broker,
         }
     }
 
@@ -395,25 +339,18 @@ impl CrInMemoryStorage {
         when: SystemTime,
     ) {
         counter.inc_at(delta, Duration::from_secs(key.seconds()), when);
-        let sender = self.sender.clone();
-        let counter = counter.clone();
-        tokio::spawn(async move {
-            let (expiry, values) = counter.into_inner();
-            let message = CounterValueMessage {
-                counter_key: key.into(),
-                expiry: expiry.duration_since(UNIX_EPOCH).unwrap().as_secs(),
-                values,
-            };
-            sender.send(message).await
-        });
-    }
-}
 
-#[derive(Debug, Serialize, Deserialize)]
-struct CounterValueMessage {
-    counter_key: CounterKey,
-    expiry: u64,
-    values: BTreeMap<String, u64>,
+        let counter = counter.clone();
+        let (expiry, values) = counter.into_inner();
+        let key: CounterKey = key.into();
+        let key = postcard::to_stdvec(&key).unwrap();
+
+        self.broker.publish(CounterUpdate {
+            key,
+            values: values.into_iter().collect(),
+            expires_at: expiry.duration_since(UNIX_EPOCH).unwrap().as_secs(),
+        })
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

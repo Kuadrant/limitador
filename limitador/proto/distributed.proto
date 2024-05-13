@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package limitador.service.distributed.v1;
+
+// A packet defines all the types of messages that can be sent between replication peers.
+message Packet {
+  oneof message {
+    // the Hello message is used to introduce a peer to another peer.  It is the first message sent by a peer.
+    Hello hello = 1;
+    // the MembershipUpdate message is used to gossip about the other peers in the cluster:
+    //  1) sent after the first Hello message
+    //  2) sent when the membership state changes
+    MembershipUpdate membership_update = 2;
+    // the Ping message is used to request a pong from the other peer.
+    Ping ping = 3;
+    // the Pong message is used to respond to a ping.
+    Pong pong = 4;
+    // the CounterUpdate message is used to send counter updates.
+    CounterUpdate counter_update = 5;
+  }
+}
+
+// this is the first packet sent by a peer to another peer.
+message Hello {
+  // the peer id of the sending peer
+  string sender_peer_id = 1;
+  // urls that the sending peer thinks it can be reached at.
+  repeated string sender_urls = 2;
+  // url the session initiator used to connect to the receiver peer.
+  optional string receiver_url = 3;
+}
+
+// A request to a peer to respond with a Pong message.
+message Ping {}
+
+// Pong is the response to a Ping and Hello message.
+message Pong {
+  // the current time at of the peer  in milliseconds of UTC time since Unix epoch 1970-01-01T00:00:00Z.
+  uint64 current_time = 3;
+}
+
+message MembershipUpdate {
+  repeated Peer peers = 1;
+}
+
+message Peer {
+  string peer_id = 1;
+  uint32 latency = 2; // the round trip latency to the peer in milliseconds.
+  repeated string urls = 3; // url that can be used to connect to the peer.
+}
+
+message CounterUpdate {
+  bytes key = 1;
+  map<string, uint64> values = 2;
+  uint64 expires_at = 3;
+}
+
+// Replication is the limitador replication service.
+service Replication {
+  rpc Stream(stream Packet) returns (stream Packet) {}
+}

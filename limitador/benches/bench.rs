@@ -147,7 +147,7 @@ fn bench_distributed(c: &mut Criterion) {
                         "test_node".to_owned(),
                         10_000,
                         "127.0.0.1:0".to_owned(),
-                        None,
+                        vec![],
                     ));
                     bench_is_rate_limited(b, test_scenario, storage);
                 })
@@ -162,7 +162,7 @@ fn bench_distributed(c: &mut Criterion) {
                         "test_node".to_owned(),
                         10_000,
                         "127.0.0.1:0".to_owned(),
-                        None,
+                        vec![],
                     ));
                     bench_update_counters(b, test_scenario, storage);
                 })
@@ -177,7 +177,7 @@ fn bench_distributed(c: &mut Criterion) {
                         "test_node".to_owned(),
                         10_000,
                         "127.0.0.1:0".to_owned(),
-                        None,
+                        vec![],
                     ));
                     bench_check_rate_limited_and_update(b, test_scenario, storage);
                 })
