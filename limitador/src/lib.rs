@@ -197,7 +197,7 @@ use std::collections::{HashMap, HashSet};
 use crate::counter::Counter;
 use crate::errors::LimitadorError;
 use crate::limit::{Limit, Namespace};
-use crate::storage::in_memory::InMemoryStorage;
+use crate::storage::distributed::CrInMemoryStorage as InMemoryStorage;
 use crate::storage::{AsyncCounterStorage, AsyncStorage, Authorization, CounterStorage, Storage};
 
 #[macro_use]

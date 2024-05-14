@@ -96,8 +96,8 @@ mod test {
     use crate::helpers::tests_limiter::*;
     use limitador::limit::Limit;
     use limitador::storage::disk::{DiskStorage, OptimizeFor};
-    use limitador::storage::in_memory::InMemoryStorage;
     use limitador::storage::distributed::CrInMemoryStorage;
+    use limitador::storage::in_memory::InMemoryStorage;
     use std::collections::{HashMap, HashSet};
     use std::thread::sleep;
     use std::time::Duration;

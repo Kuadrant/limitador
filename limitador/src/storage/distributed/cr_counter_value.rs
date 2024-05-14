@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime};
 
+#[derive(Debug)]
 pub struct CrCounterValue<A: Ord> {
     ourselves: A,
     value: AtomicU64,
@@ -94,7 +95,9 @@ impl<A: Ord> CrCounterValue<A> {
                 } else {
                     match others.entry(actor) {
                         Entry::Vacant(entry) => {
-                            entry.insert(other_value);
+                            if other_value > 0 {
+                                entry.insert(other_value);
+                            }
                         }
                         Entry::Occupied(mut known) => {
                             let local = known.get_mut();
@@ -112,7 +115,11 @@ impl<A: Ord> CrCounterValue<A> {
         self.expiry.duration()
     }
 
-    fn into_inner(self) -> (SystemTime, BTreeMap<A, u64>) {
+    pub fn expiry(&self) -> SystemTime {
+        self.expiry.expires_at()
+    }
+
+    pub fn into_inner(self) -> (SystemTime, BTreeMap<A, u64>) {
         let Self {
             ourselves,
             value,
@@ -139,6 +146,17 @@ impl<A: Clone + Ord> Clone for CrCounterValue<A> {
             value: AtomicU64::new(self.value.load(Ordering::SeqCst)),
             others: RwLock::new(self.others.read().unwrap().clone()),
             expiry: self.expiry.clone(),
+        }
+    }
+}
+
+impl<A: Clone + Ord + Default> From<(SystemTime, BTreeMap<A, u64>)> for CrCounterValue<A> {
+    fn from(value: (SystemTime, BTreeMap<A, u64>)) -> Self {
+        Self {
+            ourselves: A::default(),
+            value: Default::default(),
+            others: RwLock::new(value.1),
+            expiry: value.0.into(),
         }
     }
 }

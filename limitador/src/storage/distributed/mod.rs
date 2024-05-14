@@ -1,22 +1,30 @@
-mod cr_counter_value;
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::net::ToSocketAddrs;
+use std::ops::Deref;
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use moka::sync::Cache;
+use serde::{Deserialize, Serialize};
+use tokio::net::UdpSocket;
+use tokio::sync::mpsc;
+use tokio::sync::mpsc::Sender;
 
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
 use crate::storage::distributed::cr_counter_value::CrCounterValue;
 use crate::storage::{Authorization, CounterStorage, StorageErr};
-use moka::sync::Cache;
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
-use std::ops::Deref;
-use std::sync::{Arc, RwLock};
-use std::time::{Duration, SystemTime};
+
+mod cr_counter_value;
 
 type NamespacedLimitCounters<T> = HashMap<Namespace, HashMap<Limit, T>>;
 
 pub struct CrInMemoryStorage {
     identifier: String,
-    limits_for_namespace: RwLock<NamespacedLimitCounters<CrCounterValue<String>>>,
-    qualified_counters: Cache<Counter, Arc<CrCounterValue<String>>>,
+    sender: Sender<CounterValueMessage>,
+    limits_for_namespace: Arc<RwLock<NamespacedLimitCounters<CrCounterValue<String>>>>,
+    qualified_counters: Arc<Cache<Counter, Arc<CrCounterValue<String>>>>,
 }
 
 impl CounterStorage for CrInMemoryStorage {
@@ -69,14 +77,14 @@ impl CounterStorage for CrInMemoryStorage {
                 }),
                 Some(counter) => counter,
             };
-            value.inc_at(delta as u64, Duration::from_secs(counter.seconds()), now);
+            self.increment_counter(counter.clone(), &value, delta as u64, now);
         } else {
             match limits_by_namespace.entry(counter.limit().namespace().clone()) {
                 Entry::Vacant(v) => {
                     let mut limits = HashMap::new();
                     let duration = Duration::from_secs(counter.seconds());
                     let counter_val = CrCounterValue::new(self.identifier.clone(), duration);
-                    counter_val.inc_at(delta as u64, duration, now);
+                    self.increment_counter(counter.clone(), &counter_val, delta as u64, now);
                     limits.insert(counter.limit().clone(), counter_val);
                     v.insert(limits);
                 }
@@ -84,12 +92,11 @@ impl CounterStorage for CrInMemoryStorage {
                     Entry::Vacant(v) => {
                         let duration = Duration::from_secs(counter.seconds());
                         let counter_value = CrCounterValue::new(self.identifier.clone(), duration);
-                        counter_value.inc_at(delta as u64, duration, now);
+                        self.increment_counter(counter.clone(), &counter_value, delta as u64, now);
                         v.insert(counter_value);
                     }
                     Entry::Occupied(o) => {
-                        o.get()
-                            .inc_at(delta as u64, Duration::from_secs(counter.seconds()), now);
+                        self.increment_counter(counter.clone(), o.get(), delta as u64, now);
                     }
                 },
             }
@@ -106,8 +113,8 @@ impl CounterStorage for CrInMemoryStorage {
     ) -> Result<Authorization, StorageErr> {
         let limits_by_namespace = self.limits_for_namespace.write().unwrap();
         let mut first_limited = None;
-        let mut counter_values_to_update: Vec<(&CrCounterValue<String>, u64)> = Vec::new();
-        let mut qualified_counter_values_to_updated: Vec<(Arc<CrCounterValue<String>>, u64)> =
+        let mut counter_values_to_update: Vec<(&CrCounterValue<String>, Counter)> = Vec::new();
+        let mut qualified_counter_values_to_updated: Vec<(Arc<CrCounterValue<String>>, Counter)> =
             Vec::new();
         let now = SystemTime::now();
 
@@ -144,7 +151,7 @@ impl CounterStorage for CrInMemoryStorage {
                     return Ok(limited);
                 }
             }
-            counter_values_to_update.push((atomic_expiring_value, counter.seconds()));
+            counter_values_to_update.push((atomic_expiring_value, counter.clone()));
         }
 
         // Process qualified counters
@@ -165,7 +172,7 @@ impl CounterStorage for CrInMemoryStorage {
                 }
             }
 
-            qualified_counter_values_to_updated.push((value, counter.seconds()));
+            qualified_counter_values_to_updated.push((value, counter.clone()));
         }
 
         if let Some(limited) = first_limited {
@@ -173,13 +180,15 @@ impl CounterStorage for CrInMemoryStorage {
         }
 
         // Update counters
-        counter_values_to_update.iter().for_each(|(v, ttl)| {
-            v.inc_at(delta as u64, Duration::from_secs(*ttl), now);
-        });
+        counter_values_to_update
+            .into_iter()
+            .for_each(|(v, counter)| {
+                self.increment_counter(counter, v, delta as u64, now);
+            });
         qualified_counter_values_to_updated
-            .iter()
-            .for_each(|(v, ttl)| {
-                v.inc_at(delta as u64, Duration::from_secs(*ttl), now);
+            .into_iter()
+            .for_each(|(v, counter)| {
+                self.increment_counter(counter, v.deref(), delta as u64, now);
             });
 
         Ok(Authorization::Ok)
@@ -242,11 +251,73 @@ impl CounterStorage for CrInMemoryStorage {
 }
 
 impl CrInMemoryStorage {
-    pub fn new(identifier: String, cache_size: u64) -> Self {
+    pub fn new(identifier: String, cache_size: u64, local: String, broadcast: String) -> Self {
+        let (sender, mut rx) = mpsc::channel(1000);
+
+        let local = local.to_socket_addrs().unwrap().next().unwrap();
+        let remote = broadcast.clone();
+        tokio::spawn(async move {
+            let sock = UdpSocket::bind(local).await.unwrap();
+            sock.set_broadcast(true).unwrap();
+            sock.connect(remote).await.unwrap();
+            loop {
+                let message: CounterValueMessage = rx.recv().await.unwrap();
+                let buf = postcard::to_stdvec(&message).unwrap();
+                match sock.send(&buf).await {
+                    Ok(len) => {
+                        if len != buf.len() {
+                            println!("Couldn't send complete message!");
+                        }
+                    }
+                    Err(err) => println!("Couldn't send update: {:?}", err),
+                };
+            }
+        });
+
+        let limits_for_namespace = Arc::new(RwLock::new(HashMap::<
+            Namespace,
+            HashMap<Limit, CrCounterValue<String>>,
+        >::new()));
+        let qualified_counters = Arc::new(Cache::new(cache_size));
+
+        {
+            let limits_for_namespace = limits_for_namespace.clone();
+            tokio::spawn(async move {
+                let sock = UdpSocket::bind(broadcast).await.unwrap();
+                sock.set_broadcast(true).unwrap();
+                let mut buf = [0; 1024];
+                loop {
+                    let (len, addr) = sock.recv_from(&mut buf).await.unwrap();
+                    if addr != local {
+                        match postcard::from_bytes::<CounterValueMessage>(&buf[..len]) {
+                            Ok(message) => {
+                                let CounterValueMessage {
+                                    counter_key,
+                                    expiry,
+                                    values,
+                                } = message;
+                                let counter = <CounterKey as Into<Counter>>::into(counter_key);
+                                let counters = limits_for_namespace.read().unwrap();
+                                let limits = counters.get(counter.namespace()).unwrap();
+                                let value = limits.get(counter.limit()).unwrap();
+                                value.merge(
+                                    (UNIX_EPOCH + Duration::from_secs(expiry), values).into(),
+                                );
+                            }
+                            Err(err) => {
+                                println!("Error from {} bytes: {:?} \n{:?}", len, err, &buf[..len])
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
         Self {
             identifier,
-            limits_for_namespace: RwLock::new(HashMap::new()),
-            qualified_counters: Cache::new(cache_size),
+            sender,
+            limits_for_namespace,
+            qualified_counters,
         }
     }
 
@@ -290,5 +361,69 @@ impl CrInMemoryStorage {
             Some(current_val) => current_val + delta <= counter.max_value(),
             None => counter.max_value() >= delta,
         }
+    }
+
+    fn increment_counter(
+        &self,
+        key: Counter,
+        counter: &CrCounterValue<String>,
+        delta: u64,
+        when: SystemTime,
+    ) {
+        counter.inc_at(delta, Duration::from_secs(key.seconds()), when);
+        let sender = self.sender.clone();
+        let counter = counter.clone();
+        tokio::spawn(async move {
+            let (expiry, values) = counter.into_inner();
+            let message = CounterValueMessage {
+                counter_key: key.into(),
+                expiry: expiry.duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                values,
+            };
+            sender.send(message).await
+        });
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CounterValueMessage {
+    counter_key: CounterKey,
+    expiry: u64,
+    values: BTreeMap<String, u64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CounterKey {
+    namespace: Namespace,
+    seconds: u64,
+    conditions: HashSet<String>,
+    variables: HashSet<String>,
+    vars: HashMap<String, String>,
+}
+
+impl From<Counter> for CounterKey {
+    fn from(value: Counter) -> Self {
+        Self {
+            namespace: value.namespace().clone(),
+            seconds: value.seconds(),
+            variables: value.limit().variables(),
+            conditions: value.limit().conditions(),
+            vars: value.set_variables().clone(),
+        }
+    }
+}
+
+impl From<CounterKey> for Counter {
+    fn from(value: CounterKey) -> Self {
+        Self::new(
+            Limit::new(
+                value.namespace,
+                0,
+                value.seconds,
+                value.conditions,
+                value.vars.keys(),
+            ),
+            value.vars,
+        )
     }
 }

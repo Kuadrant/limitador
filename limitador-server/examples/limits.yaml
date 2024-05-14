@@ -1,12 +1,10 @@
 ---
 -
   namespace: test_namespace
-  max_value: 10
+  max_value: 1000000
   seconds: 60
   conditions:
-    - "req.method == 'GET'"
   variables:
-    - user_id
 -
   namespace: test_namespace
   max_value: 5
