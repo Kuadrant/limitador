@@ -45,7 +45,7 @@ impl<A: Ord> CrCounterValue<A> {
     pub fn inc_at(&self, increment: u64, time_window: Duration, when: SystemTime) {
         if self
             .expiry
-            .update_if_expired(time_window.as_micros() as u64, when)
+            .update_if_expired(time_window.as_secs(), when)
         {
             self.value.store(increment, Ordering::SeqCst);
         } else {
