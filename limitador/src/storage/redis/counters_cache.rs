@@ -3,7 +3,8 @@ use crate::storage::atomic_expiring_value::AtomicExpiringValue;
 use crate::storage::redis::DEFAULT_MAX_CACHED_COUNTERS;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
-use metrics::{gauge, histogram};
+use metrics::{counter, gauge, histogram};
+use moka::notification::RemovalCause;
 use moka::sync::Cache;
 use std::collections::HashMap;
 use std::future::Future;
@@ -311,9 +312,23 @@ impl CountersCacheBuilder {
         self
     }
 
+    fn eviction_listener(
+        _key: Arc<Counter>,
+        value: Arc<CachedCounterValue>,
+        _removal_cause: RemovalCause,
+    ) {
+        gauge!("cache_size").decrement(1);
+        if value.no_pending_writes().not() {
+            counter!("evicted_pending_writes").increment(1);
+        }
+    }
+
     pub fn build(&self, period: Duration) -> CountersCache {
         CountersCache {
-            cache: Cache::new(self.max_cached_counters as u64),
+            cache: Cache::builder()
+                .max_capacity(self.max_cached_counters as u64)
+                .eviction_listener(Self::eviction_listener)
+                .build(),
             batcher: Batcher::new(period, self.max_cached_counters),
         }
     }
