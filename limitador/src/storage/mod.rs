@@ -3,7 +3,6 @@ use crate::limit::{Limit, Namespace};
 use crate::InMemoryStorage;
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
-use std::env;
 use std::sync::RwLock;
 use thiserror::Error;
 
@@ -11,6 +10,8 @@ use thiserror::Error;
 pub mod disk;
 pub mod distributed;
 pub mod in_memory;
+
+pub use crate::storage::distributed::CrInMemoryStorage as DistributedInMemoryStorage;
 
 #[cfg(feature = "redis_storage")]
 pub mod redis;
@@ -36,18 +37,9 @@ pub struct AsyncStorage {
 
 impl Storage {
     pub fn new(cache_size: u64) -> Self {
-        let local =
-            env::var("LOCAL").expect("We need the env var LOCAL to be set to your local <IP>:port");
-        let broadcast = env::var("BROADCAST")
-            .expect("We need the env var BROADCAST to be set to your broadcast <IP>:port");
         Self {
             limits: RwLock::new(HashMap::new()),
-            counters: Box::new(InMemoryStorage::new(
-                local.to_owned(),
-                cache_size,
-                local,
-                broadcast,
-            )),
+            counters: Box::new(InMemoryStorage::new(cache_size)),
         }
     }
 

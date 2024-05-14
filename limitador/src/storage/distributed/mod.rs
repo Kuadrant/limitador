@@ -29,7 +29,7 @@ pub struct CrInMemoryStorage {
 
 impl CounterStorage for CrInMemoryStorage {
     #[tracing::instrument(skip_all)]
-    fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
+    fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr> {
         let limits_by_namespace = self.limits_for_namespace.read().unwrap();
 
         let mut value = 0;
@@ -44,7 +44,7 @@ impl CounterStorage for CrInMemoryStorage {
             }
         }
 
-        Ok(counter.max_value() as u64 >= value + (delta as u64))
+        Ok(counter.max_value() >= value + delta)
     }
 
     #[tracing::instrument(skip_all)]
@@ -64,7 +64,7 @@ impl CounterStorage for CrInMemoryStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
+    fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr> {
         let mut limits_by_namespace = self.limits_for_namespace.write().unwrap();
         let now = SystemTime::now();
         if counter.is_qualified() {
@@ -77,14 +77,14 @@ impl CounterStorage for CrInMemoryStorage {
                 }),
                 Some(counter) => counter,
             };
-            self.increment_counter(counter.clone(), &value, delta as u64, now);
+            self.increment_counter(counter.clone(), &value, delta, now);
         } else {
             match limits_by_namespace.entry(counter.limit().namespace().clone()) {
                 Entry::Vacant(v) => {
                     let mut limits = HashMap::new();
                     let duration = Duration::from_secs(counter.seconds());
                     let counter_val = CrCounterValue::new(self.identifier.clone(), duration);
-                    self.increment_counter(counter.clone(), &counter_val, delta as u64, now);
+                    self.increment_counter(counter.clone(), &counter_val, delta, now);
                     limits.insert(counter.limit().clone(), counter_val);
                     v.insert(limits);
                 }
@@ -92,11 +92,11 @@ impl CounterStorage for CrInMemoryStorage {
                     Entry::Vacant(v) => {
                         let duration = Duration::from_secs(counter.seconds());
                         let counter_value = CrCounterValue::new(self.identifier.clone(), duration);
-                        self.increment_counter(counter.clone(), &counter_value, delta as u64, now);
+                        self.increment_counter(counter.clone(), &counter_value, delta, now);
                         v.insert(counter_value);
                     }
                     Entry::Occupied(o) => {
-                        self.increment_counter(counter.clone(), o.get(), delta as u64, now);
+                        self.increment_counter(counter.clone(), o.get(), delta, now);
                     }
                 },
             }
@@ -108,7 +108,7 @@ impl CounterStorage for CrInMemoryStorage {
     fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
-        delta: i64,
+        delta: u64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let limits_by_namespace = self.limits_for_namespace.write().unwrap();
@@ -119,11 +119,11 @@ impl CounterStorage for CrInMemoryStorage {
         let now = SystemTime::now();
 
         let mut process_counter =
-            |counter: &mut Counter, value: i64, delta: i64| -> Option<Authorization> {
+            |counter: &mut Counter, value: u64, delta: u64| -> Option<Authorization> {
                 if load_counters {
-                    let remaining = counter.max_value() - (value + delta);
-                    counter.set_remaining(remaining);
-                    if first_limited.is_none() && remaining < 0 {
+                    let remaining = counter.max_value().checked_sub(value + delta);
+                    counter.set_remaining(remaining.unwrap_or(0));
+                    if first_limited.is_none() && remaining.is_none() {
                         first_limited = Some(Authorization::Limited(
                             counter.limit().name().map(|n| n.to_owned()),
                         ));
@@ -144,9 +144,7 @@ impl CounterStorage for CrInMemoryStorage {
                 .and_then(|limits| limits.get(counter.limit()))
                 .unwrap();
 
-            if let Some(limited) =
-                process_counter(counter, atomic_expiring_value.read() as i64, delta)
-            {
+            if let Some(limited) = process_counter(counter, atomic_expiring_value.read(), delta) {
                 if !load_counters {
                     return Ok(limited);
                 }
@@ -166,7 +164,7 @@ impl CounterStorage for CrInMemoryStorage {
                 Some(counter) => counter,
             };
 
-            if let Some(limited) = process_counter(counter, value.read() as i64, delta) {
+            if let Some(limited) = process_counter(counter, value.read(), delta) {
                 if !load_counters {
                     return Ok(limited);
                 }
@@ -183,12 +181,12 @@ impl CounterStorage for CrInMemoryStorage {
         counter_values_to_update
             .into_iter()
             .for_each(|(v, counter)| {
-                self.increment_counter(counter, v, delta as u64, now);
+                self.increment_counter(counter, v, delta, now);
             });
         qualified_counter_values_to_updated
             .into_iter()
             .for_each(|(v, counter)| {
-                self.increment_counter(counter, v.deref(), delta as u64, now);
+                self.increment_counter(counter, v.deref(), delta, now);
             });
 
         Ok(Authorization::Ok)
@@ -208,7 +206,7 @@ impl CounterStorage for CrInMemoryStorage {
                         for (counter, expiring_value) in self.counters_in_namespace(namespace) {
                             let mut counter_with_val = counter.clone();
                             counter_with_val.set_remaining(
-                                counter_with_val.max_value() - expiring_value.read() as i64,
+                                counter_with_val.max_value() - expiring_value.read(),
                             );
                             counter_with_val.set_expires_in(expiring_value.ttl());
                             if counter_with_val.expires_in().unwrap() > Duration::ZERO {
@@ -224,7 +222,7 @@ impl CounterStorage for CrInMemoryStorage {
             if limits.contains(counter.limit()) {
                 let mut counter_with_val = counter.deref().clone();
                 counter_with_val
-                    .set_remaining(counter_with_val.max_value() - expiring_value.read() as i64);
+                    .set_remaining(counter_with_val.max_value() - expiring_value.read());
                 counter_with_val.set_expires_in(expiring_value.ttl());
                 if counter_with_val.expires_in().unwrap() > Duration::ZERO {
                     res.insert(counter_with_val);
@@ -356,7 +354,7 @@ impl CrInMemoryStorage {
         }
     }
 
-    fn counter_is_within_limits(counter: &Counter, current_val: Option<&i64>, delta: i64) -> bool {
+    fn counter_is_within_limits(counter: &Counter, current_val: Option<&u64>, delta: u64) -> bool {
         match current_val {
             Some(current_val) => current_val + delta <= counter.max_value(),
             None => counter.max_value() >= delta,
