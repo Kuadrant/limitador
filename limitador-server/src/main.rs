@@ -593,7 +593,7 @@ fn create_config() -> (Configuration, &'static str) {
                     Arg::new("batch")
                         .long("batch-size")
                         .action(ArgAction::Set)
-                        .value_parser(clap::value_parser!(u64))
+                        .value_parser(clap::value_parser!(usize))
                         .default_value(
                             config::env::REDIS_LOCAL_CACHE_BATCH_SIZE
                                 .unwrap_or(leak(DEFAULT_BATCH_SIZE)),
