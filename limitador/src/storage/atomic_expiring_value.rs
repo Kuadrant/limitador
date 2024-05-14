@@ -134,10 +134,12 @@ impl AtomicExpiryTime {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn into_inner(self) -> SystemTime {
         self.expires_at()
     }
 
+    #[allow(dead_code)]
     pub fn expires_at(&self) -> SystemTime {
         SystemTime::UNIX_EPOCH + Duration::from_micros(self.expiry.load(Ordering::SeqCst))
     }

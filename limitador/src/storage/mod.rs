@@ -8,9 +8,11 @@ use thiserror::Error;
 
 #[cfg(feature = "disk_storage")]
 pub mod disk;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod distributed;
 pub mod in_memory;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub use crate::storage::distributed::CrInMemoryStorage as DistributedInMemoryStorage;
 
 #[cfg(feature = "redis_storage")]
