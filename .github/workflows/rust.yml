@@ -26,14 +26,6 @@ jobs:
   test:
     name: Test Suite
     runs-on: ubuntu-latest
-    services:
-      infinispan:
-        image: infinispan/server:11.0.9.Final
-        ports:
-          - 11222:11222
-        env:
-          USER: username
-          PASS: password
     steps:
       - uses: actions/checkout@v4
       - uses: supercharge/redis-github-action@1.1.0

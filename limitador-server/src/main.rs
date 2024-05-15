@@ -5,8 +5,6 @@
 extern crate log;
 extern crate clap;
 
-#[cfg(feature = "infinispan")]
-use crate::config::InfinispanStorageConfiguration;
 use crate::config::{
     Configuration, DiskStorageConfiguration, InMemoryStorageConfiguration,
     RedisStorageCacheConfiguration, RedisStorageConfiguration, StorageConfiguration,
@@ -21,8 +19,6 @@ use limitador::counter::Counter;
 use limitador::errors::LimitadorError;
 use limitador::limit::Limit;
 use limitador::storage::disk::DiskStorage;
-#[cfg(feature = "infinispan")]
-use limitador::storage::infinispan::{Consistency, InfinispanStorageBuilder};
 use limitador::storage::redis::{
     AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder, DEFAULT_BATCH_SIZE,
     DEFAULT_FLUSHING_PERIOD_SEC, DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_RESPONSE_TIMEOUT_MS,
@@ -38,7 +34,6 @@ use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::{trace, Resource};
 use prometheus_metrics::PrometheusMetrics;
-use std::env::VarError;
 use std::fmt::Display;
 use std::fs;
 use std::path::Path;
@@ -62,13 +57,10 @@ pub mod prometheus_metrics;
 
 const LIMITADOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 const LIMITADOR_PROFILE: &str = env!("LIMITADOR_PROFILE");
-const LIMITADOR_FEATURES: &str = env!("LIMITADOR_FEATURES");
 const LIMITADOR_HEADER: &str = "Limitador Server";
 
 #[derive(Error, Debug)]
 pub enum LimitadorServerError {
-    #[error("please set either the Redis or the Infinispan URL, but not both")]
-    IncompatibleStorages,
     #[error("Invalid limit file: {0}")]
     ConfigFile(String),
     #[error("Internal error: {0}")]
@@ -90,8 +82,6 @@ impl Limiter {
     pub async fn new(config: Configuration) -> Result<Self, LimitadorServerError> {
         let rate_limiter = match config.storage {
             StorageConfiguration::Redis(cfg) => Self::redis_limiter(cfg).await,
-            #[cfg(feature = "infinispan")]
-            StorageConfiguration::Infinispan(cfg) => Self::infinispan_limiter(cfg).await,
             StorageConfiguration::InMemory(cfg) => Self::in_memory_limiter(cfg),
             StorageConfiguration::Disk(cfg) => Self::disk_limiter(cfg),
         };
@@ -141,49 +131,6 @@ impl Limiter {
             eprintln!("Failed to connect to Redis at {redis_url}: {err}");
             process::exit(1)
         })
-    }
-
-    #[cfg(feature = "infinispan")]
-    async fn infinispan_limiter(cfg: InfinispanStorageConfiguration) -> Self {
-        use url::Url;
-
-        let parsed_url = Url::parse(&cfg.url).unwrap();
-
-        let mut builder = InfinispanStorageBuilder::new(
-            format!(
-                "{}://{}:{}",
-                parsed_url.scheme(),
-                parsed_url.host_str().unwrap(),
-                parsed_url.port().unwrap(),
-            ),
-            parsed_url.username(),
-            parsed_url.password().unwrap_or_default(),
-        );
-
-        let consistency: Option<Consistency> = match cfg.consistency {
-            Some(cfg_value) => match cfg_value.try_into() {
-                Ok(consistency) => Some(consistency),
-                Err(_) => {
-                    eprintln!("Invalid consistency mode, will apply the default");
-                    None
-                }
-            },
-            None => None,
-        };
-
-        if let Some(consistency) = consistency {
-            builder = builder.counters_consistency(consistency);
-        }
-
-        let storage = match &cfg.cache {
-            Some(cache_name) => builder.cache_name(cache_name).build().await,
-            None => builder.build().await,
-        };
-
-        let rate_limiter_builder =
-            AsyncRateLimiterBuilder::new(AsyncStorage::with_counter_storage(Box::new(storage)));
-
-        Self::Async(rate_limiter_builder.build())
     }
 
     fn disk_limiter(cfg: DiskStorageConfiguration) -> Self {
@@ -417,10 +364,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn create_config() -> (Configuration, &'static str) {
     let full_version: &'static str = formatcp!(
-        "v{} ({}) {} {}",
+        "v{} ({}) {}",
         LIMITADOR_VERSION,
         env!("LIMITADOR_GIT_HASH"),
-        LIMITADOR_FEATURES,
         LIMITADOR_PROFILE,
     );
 
@@ -633,45 +579,6 @@ fn create_config() -> (Configuration, &'static str) {
                 ),
         );
 
-    #[cfg(feature = "infinispan")]
-    let cmdline = cmdline.subcommand(
-        Command::new("infinispan")
-            .about("Uses Infinispan to store counters")
-            .display_order(5)
-            .arg(
-                Arg::new("URL")
-                    .help("Infinispan URL to use")
-                    .display_order(1)
-                    .required(true)
-                    .index(1),
-            )
-            .arg(
-                Arg::new("cache name")
-                    .short('n')
-                    .long("cache-name")
-                    .action(ArgAction::Set)
-                    .default_value(
-                        config::env::INFINISPAN_CACHE_NAME
-                            .unwrap_or(storage::infinispan::DEFAULT_INFINISPAN_LIMITS_CACHE_NAME),
-                    )
-                    .display_order(2)
-                    .help("Name of the cache to store counters in"),
-            )
-            .arg(
-                Arg::new("consistency")
-                    .short('c')
-                    .long("consistency")
-                    .action(ArgAction::Set)
-                    .default_value(
-                        config::env::INFINISPAN_COUNTERS_CONSISTENCY
-                            .unwrap_or(leak(storage::infinispan::DEFAULT_INFINISPAN_CONSISTENCY)),
-                    )
-                    .value_parser(clap::builder::PossibleValuesParser::new(["Strong", "Weak"]))
-                    .display_order(3)
-                    .help("The consistency to use to read from the cache"),
-            ),
-    );
-
     let matches = cmdline.get_matches();
 
     let limits_file = matches.get_one::<String>("LIMITS_FILE").unwrap();
@@ -739,24 +646,10 @@ fn create_config() -> (Configuration, &'static str) {
                 response_timeout: *sub.get_one("timeout").unwrap(),
             }),
         }),
-        #[cfg(feature = "infinispan")]
-        Some(("infinispan", sub)) => {
-            StorageConfiguration::Infinispan(InfinispanStorageConfiguration {
-                url: sub.get_one::<String>("URL").unwrap().to_owned(),
-                cache: Some(sub.get_one::<String>("cache name").unwrap().to_string()),
-                consistency: Some(sub.get_one::<String>("consistency").unwrap().to_string()),
-            })
-        }
         Some(("memory", sub)) => StorageConfiguration::InMemory(InMemoryStorageConfiguration {
             cache_size: sub.get_one::<u64>("CACHE_SIZE").copied(),
         }),
-        None => match storage_config_from_env() {
-            Ok(storage_cfg) => storage_cfg,
-            Err(_) => {
-                eprintln!("Set either REDIS_URL or INFINISPAN_URL, but not both!");
-                process::exit(1);
-            }
-        },
+        None => storage_config_from_env(),
         _ => unreachable!("Some storage wasn't configured!"),
     };
 
@@ -798,18 +691,10 @@ fn create_config() -> (Configuration, &'static str) {
     (config, full_version)
 }
 
-fn storage_config_from_env() -> Result<StorageConfiguration, ()> {
-    let redis_url = config::env::REDIS_URL.ok_or(());
-    let infinispan_url = if cfg!(feature = "infinispan") {
-        config::env::INFINISPAN_URL.ok_or(VarError::NotPresent)
-    } else {
-        Err(VarError::NotPresent)
-    };
-
-    match (redis_url, infinispan_url) {
-        (Ok(_), Ok(_)) => Err(()),
-        (Ok(url), Err(_)) => Ok(StorageConfiguration::Redis(RedisStorageConfiguration {
-            url: url.to_owned(),
+fn storage_config_from_env() -> StorageConfiguration {
+    if let Some(url) = config::env::REDIS_URL.map(str::to_owned) {
+        StorageConfiguration::Redis(RedisStorageConfiguration {
+            url,
             cache: if *config::env::REDIS_LOCAL_CACHE_ENABLED {
                 Some(RedisStorageCacheConfiguration {
                     batch_size: config::env::REDIS_LOCAL_CACHE_BATCH_SIZE
@@ -828,18 +713,9 @@ fn storage_config_from_env() -> Result<StorageConfiguration, ()> {
             } else {
                 None
             },
-        })),
-        #[cfg(feature = "infinispan")]
-        (Err(_), Ok(url)) => Ok(StorageConfiguration::Infinispan(
-            InfinispanStorageConfiguration {
-                url: url.to_owned(),
-                cache: config::env::INFINISPAN_CACHE_NAME.map(str::to_owned),
-                consistency: config::env::INFINISPAN_COUNTERS_CONSISTENCY.map(str::to_owned),
-            },
-        )),
-        _ => Ok(StorageConfiguration::InMemory(
-            InMemoryStorageConfiguration { cache_size: None },
-        )),
+        })
+    } else {
+        StorageConfiguration::InMemory(InMemoryStorageConfiguration { cache_size: None })
     }
 }
 

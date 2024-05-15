@@ -14,15 +14,8 @@ pub mod wasm;
 #[cfg(feature = "redis_storage")]
 pub mod redis;
 
-#[cfg(feature = "infinispan_storage")]
-pub mod infinispan;
-
 mod atomic_expiring_value;
-#[cfg(any(
-    feature = "disk_storage",
-    feature = "infinispan_storage",
-    feature = "redis_storage"
-))]
+#[cfg(any(feature = "disk_storage", feature = "redis_storage"))]
 mod keys;
 
 pub enum Authorization {

@@ -6,7 +6,6 @@ use std::process::Command;
 fn main() -> Result<(), Box<dyn Error>> {
     set_git_hash("LIMITADOR_GIT_HASH");
     set_profile("LIMITADOR_PROFILE");
-    set_features("LIMITADOR_FEATURES");
     generate_protobuf()
 }
 
@@ -24,14 +23,6 @@ fn generate_protobuf() -> Result<(), Box<dyn Error>> {
             ],
         )?;
     Ok(())
-}
-
-fn set_features(env: &str) {
-    let mut features = vec![];
-    if cfg!(feature = "infinispan") {
-        features.push("+infinispan");
-    }
-    println!("cargo:rustc-env={env}={features:?}");
 }
 
 fn set_profile(env: &str) {

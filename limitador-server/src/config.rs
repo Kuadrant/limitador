@@ -7,10 +7,6 @@
 //   └ REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS: i64 ?!
 //   └ REDIS_LOCAL_CACHE_BATCH_SIZE: u64
 //
-// INFINISPAN_URL: StorageType { String }
-//  └ INFINISPAN_CACHE_NAME: String
-//  └ INFINISPAN_COUNTERS_CONSISTENCY: enum Consistency { Weak, Strong }
-//
 // ENVOY_RLS_HOST: host // just to become ENVOY_RLS_HOST:ENVOY_RLS_PORT as String
 // ENVOY_RLS_PORT: port
 //
@@ -59,11 +55,6 @@ pub mod env {
         pub static ref REDIS_LOCAL_CACHE_BATCH_SIZE: Option<&'static str> =
             value_for("REDIS_LOCAL_CACHE_BATCH_SIZE");
         pub static ref RATE_LIMIT_HEADERS: Option<&'static str> = value_for("RATE_LIMIT_HEADERS");
-        pub static ref INFINISPAN_URL: Option<&'static str> = value_for("INFINISPAN_URL");
-        pub static ref INFINISPAN_CACHE_NAME: Option<&'static str> =
-            value_for("INFINISPAN_CACHE_NAME");
-        pub static ref INFINISPAN_COUNTERS_CONSISTENCY: Option<&'static str> =
-            value_for("INFINISPAN_COUNTERS_CONSISTENCY");
     }
 
     fn value_for(env_key: &'static str) -> Option<&'static str> {
@@ -149,8 +140,6 @@ pub enum StorageConfiguration {
     InMemory(InMemoryStorageConfiguration),
     Disk(DiskStorageConfiguration),
     Redis(RedisStorageConfiguration),
-    #[cfg(feature = "infinispan")]
-    Infinispan(InfinispanStorageConfiguration),
 }
 
 #[derive(PartialEq, Eq, Debug)]
@@ -176,12 +165,4 @@ pub struct RedisStorageCacheConfiguration {
     pub flushing_period: i64,
     pub max_counters: usize,
     pub response_timeout: u64,
-}
-
-#[derive(PartialEq, Eq, Debug)]
-#[cfg(feature = "infinispan")]
-pub struct InfinispanStorageConfiguration {
-    pub url: String,
-    pub cache: Option<String>,
-    pub consistency: Option<String>,
 }
