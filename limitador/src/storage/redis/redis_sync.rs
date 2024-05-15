@@ -27,8 +27,8 @@ impl CounterStorage for RedisStorage {
     fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr> {
         let mut con = self.conn_pool.get()?;
 
-        match con.get::<String, Option<u64>>(key_for_counter(counter))? {
-            Some(val) => Ok(val + delta <= counter.max_value()),
+        match con.get::<String, Option<i64>>(key_for_counter(counter))? {
+            Some(val) => Ok(u64::try_from(val).unwrap_or(0) + delta <= counter.max_value()),
             None => Ok(counter.max_value().checked_sub(delta).is_some()),
         }
     }
@@ -74,7 +74,7 @@ impl CounterStorage for RedisStorage {
                 return Ok(res);
             }
         } else {
-            let counter_vals: Vec<Option<u64>> = redis::cmd("MGET")
+            let counter_vals: Vec<Option<i64>> = redis::cmd("MGET")
                 .arg(counter_keys.clone())
                 .query(&mut *con)?;
 
@@ -82,7 +82,7 @@ impl CounterStorage for RedisStorage {
                 // remaining  = max - (curr_val + delta)
                 let remaining = counter
                     .max_value()
-                    .checked_sub(counter_vals[i].unwrap_or(0) + delta);
+                    .checked_sub(u64::try_from(counter_vals[i].unwrap_or(0)).unwrap_or(0) + delta);
                 if remaining.is_none() {
                     return Ok(Authorization::Limited(
                         counter.limit().name().map(|n| n.to_owned()),
@@ -125,8 +125,12 @@ impl CounterStorage for RedisStorage {
                 // do the "get" + "delete if none" atomically.
                 // This does not cause any bugs, but consumes memory
                 // unnecessarily.
-                if let Some(val) = con.get::<String, Option<u64>>(counter_key.clone())? {
-                    counter.set_remaining(limit.max_value() - val);
+                if let Some(val) = con.get::<String, Option<i64>>(counter_key.clone())? {
+                    counter.set_remaining(
+                        limit
+                            .max_value()
+                            .saturating_sub(u64::try_from(val).unwrap_or(0)),
+                    );
                     let ttl = con.ttl(&counter_key)?;
                     counter.set_expires_in(Duration::from_secs(ttl));
 

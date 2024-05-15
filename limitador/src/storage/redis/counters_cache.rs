@@ -248,10 +248,10 @@ impl CountersCache {
         counter: Counter,
         redis_val: u64,
         remote_deltas: u64,
-        redis_expiry: u64,
+        redis_expiry: i64,
     ) -> Arc<CachedCounterValue> {
         if redis_expiry > 0 {
-            let expiry_ts = SystemTime::UNIX_EPOCH + Duration::from_millis(redis_expiry);
+            let expiry_ts = SystemTime::UNIX_EPOCH + Duration::from_millis(redis_expiry as u64);
             if expiry_ts > SystemTime::now() {
                 let mut from_cache = true;
                 let cached = self.cache.get_with(counter.clone(), || {
@@ -539,7 +539,7 @@ mod tests {
                 .add(Duration::from_secs(1))
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_micros() as u64,
+                .as_micros() as i64,
         );
 
         assert!(cache.get(&counter).is_some());
@@ -569,7 +569,7 @@ mod tests {
                 .add(Duration::from_secs(1))
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_micros() as u64,
+                .as_micros() as i64,
         );
 
         assert_eq!(
@@ -593,7 +593,7 @@ mod tests {
                 .add(Duration::from_secs(1))
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_micros() as u64,
+                .as_micros() as i64,
         );
         cache.increase_by(&counter, increase_by).await;
 

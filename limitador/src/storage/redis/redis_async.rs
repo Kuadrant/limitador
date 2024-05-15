@@ -36,11 +36,11 @@ impl AsyncCounterStorage for AsyncRedisStorage {
         let mut con = self.conn_manager.clone();
 
         match con
-            .get::<String, Option<u64>>(key_for_counter(counter))
+            .get::<String, Option<i64>>(key_for_counter(counter))
             .instrument(debug_span!("datastore"))
             .await?
         {
-            Some(val) => Ok(val + delta <= counter.max_value()),
+            Some(val) => Ok(u64::try_from(val).unwrap_or(0) + delta <= counter.max_value()),
             None => Ok(counter.max_value().checked_sub(delta).is_some()),
         }
     }
@@ -89,7 +89,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                 return Ok(res);
             }
         } else {
-            let counter_vals: Vec<Option<u64>> = {
+            let counter_vals: Vec<Option<i64>> = {
                 redis::cmd("MGET")
                     .arg(counter_keys.clone())
                     .query_async(&mut con)
@@ -101,7 +101,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                 // remaining  = max - (curr_val + delta)
                 let remaining = counter
                     .max_value()
-                    .checked_sub(counter_vals[i].unwrap_or(0) + delta);
+                    .checked_sub(u64::try_from(counter_vals[i].unwrap_or(0)).unwrap_or(0) + delta);
                 if remaining.is_none() {
                     return Ok(Authorization::Limited(
                         counter.limit().name().map(|n| n.to_owned()),
@@ -150,18 +150,18 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                 // This does not cause any bugs, but consumes memory
                 // unnecessarily.
                 let option = {
-                    con.get::<String, Option<u64>>(counter_key.clone())
+                    con.get::<String, Option<i64>>(counter_key.clone())
                         .instrument(debug_span!("datastore"))
                         .await?
                 };
                 if let Some(val) = option {
-                    counter.set_remaining(limit.max_value() - val);
-                    let ttl = {
+                    counter.set_remaining(limit.max_value() - u64::try_from(val).unwrap_or(0));
+                    let ttl: i64 = {
                         con.ttl(&counter_key)
                             .instrument(debug_span!("datastore"))
                             .await?
                     };
-                    counter.set_expires_in(Duration::from_secs(ttl));
+                    counter.set_expires_in(Duration::from_secs(u64::try_from(ttl).unwrap_or(0)));
 
                     res.insert(counter);
                 }

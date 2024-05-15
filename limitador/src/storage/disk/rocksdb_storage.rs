@@ -66,7 +66,12 @@ impl CounterStorage for RocksDbStorage {
 
             if load_counters {
                 counter.set_expires_in(ttl);
-                counter.set_remaining(counter.max_value().checked_sub(val + delta).unwrap_or_default());
+                counter.set_remaining(
+                    counter
+                        .max_value()
+                        .checked_sub(val + delta)
+                        .unwrap_or_default(),
+                );
             }
 
             if counter.max_value() < val + delta {

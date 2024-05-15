@@ -88,7 +88,11 @@ impl AsyncCounterStorage for CachedRedisStorage {
                         first_limited = Some(a);
                     }
                     if load_counters {
-                        counter.set_remaining(val.remaining(counter).checked_sub(delta).unwrap_or_default());
+                        counter.set_remaining(
+                            val.remaining(counter)
+                                .checked_sub(delta)
+                                .unwrap_or_default(),
+                        );
                         counter.set_expires_in(val.to_next_window());
                     }
                 }
@@ -280,14 +284,14 @@ impl CachedRedisStorageBuilder {
 async fn update_counters<C: ConnectionLike>(
     redis_conn: &mut C,
     counters_and_deltas: HashMap<Counter, Arc<CachedCounterValue>>,
-) -> Result<Vec<(Counter, u64, u64, u64)>, StorageErr> {
+) -> Result<Vec<(Counter, u64, u64, i64)>, StorageErr> {
     let redis_script = redis::Script::new(BATCH_UPDATE_COUNTERS);
     let mut script_invocation = redis_script.prepare_invoke();
 
     let res = if counters_and_deltas.is_empty() {
         Default::default()
     } else {
-        let mut res: Vec<(Counter, u64, u64, u64)> = Vec::with_capacity(counters_and_deltas.len());
+        let mut res: Vec<(Counter, u64, u64, i64)> = Vec::with_capacity(counters_and_deltas.len());
 
         for (counter, value) in counters_and_deltas {
             let (delta, last_value_from_redis) = value
@@ -305,7 +309,7 @@ async fn update_counters<C: ConnectionLike>(
 
         let span = debug_span!("datastore");
         // The redis crate is not working with tables, thus the response will be a Vec of counter values
-        let script_res: Vec<u64> = script_invocation
+        let script_res: Vec<i64> = script_invocation
             .invoke_async(redis_conn)
             .instrument(span)
             .await?;
@@ -316,8 +320,10 @@ async fn update_counters<C: ConnectionLike>(
 
         for (i, j) in counters_range.zip(script_res_range) {
             let (_, val, delta, expires_at) = &mut res[i];
-            *val = script_res[j];
-            *delta = script_res[j] - *delta;
+            *val = u64::try_from(script_res[j]).unwrap_or(0);
+            *delta = u64::try_from(script_res[j])
+                .unwrap_or(0)
+                .saturating_sub(*delta);
             *expires_at = script_res[j + 1];
         }
         res
