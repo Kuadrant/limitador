@@ -224,11 +224,11 @@ Arguments:
   <URL>  Redis URL to use
 
 Options:
-      --ttl <TTL>             TTL for cached counters in milliseconds [default: 5000]
-      --ratio <ratio>         Ratio to apply to the TTL from Redis on cached counters [default: 10000]
-      --flush-period <flush>  Flushing period for counters in milliseconds [default: 1000]
-      --max-cached <max>      Maximum amount of counters cached [default: 10000]
-  -h, --help                  Print help
+      --batch-size <batch>          Size of entries to flush in as single flush [default: 100]
+      --flush-period <flush>        Flushing period for counters in milliseconds [default: 1000]
+      --max-cached <max>            Maximum amount of counters cached [default: 10000]
+      --response-timeout <timeout>  Timeout for Redis commands in milliseconds [default: 350]
+  -h, --help                        Print help
 ```
 
 #### `disk`
@@ -375,29 +375,20 @@ sacrifices some rate-limit accuracy. This mode does two things:
 
 #### `REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS`
 
-- Used to configure the local cache when using Redis. See
+- Used to configure the maximum flushing period. See
 [`REDIS_LOCAL_CACHE_ENABLED`](#redis_local_cache_enabled). This env only applies
 when `"REDIS_LOCAL_CACHE_ENABLED" == 1`.
 - Optional. Defaults to `1000`.
 - Format: `integer`. Duration in milliseconds.
 
 
-#### `REDIS_LOCAL_CACHE_MAX_TTL_CACHED_COUNTERS_MS`
+#### `REDIS_LOCAL_CACHE_BATCH_SIZE`
 
-- Used to configure the local cache when using Redis. See
+- Used to configure the maximum number of counters to update in a flush. See
 [`REDIS_LOCAL_CACHE_ENABLED`](#redis_local_cache_enabled). This env only applies
 when `"REDIS_LOCAL_CACHE_ENABLED" == 1`.
-- Optional. Defaults to `5000`.
-- Format: `integer`. Duration in milliseconds.
-
-
-#### `REDIS_LOCAL_CACHE_TTL_RATIO_CACHED_COUNTERS`
-
-- Used to configure the local cache when using Redis. See
-[`REDIS_LOCAL_CACHE_ENABLED`](#redis_local_cache_enabled). This env only applies
-when `"REDIS_LOCAL_CACHE_ENABLED" == 1`.
-- Optional. Defaults to `10`.
-- Format: `integer`.
+- Optional. Defaults to `100`.
+- Format: `integer`. 
 
 
 #### `REDIS_URL`
