@@ -68,20 +68,6 @@ macro_rules! test_with_all_storage_impls {
                 );
                 $function(&mut TestsLimiter::new_from_async_impl(rate_limiter)).await;
             }
-
-            #[cfg(feature = "infinispan_storage")]
-            #[tokio::test]
-            #[serial]
-            async fn [<$function _with_infinispan>]() {
-                let storage = InfinispanStorageBuilder::new(
-                    "http://127.0.0.1:11222", "username", "password"
-                ).build().await;
-                storage.clear().await.unwrap();
-                let rate_limiter = AsyncRateLimiter::new_with_storage(
-                    Box::new(storage)
-                );
-                $function(&mut TestsLimiter::new_from_async_impl(rate_limiter)).await;
-            }
         }
     };
 }
@@ -104,12 +90,6 @@ mod test {
             use crate::test::limitador::storage::CounterStorage;
             use crate::test::limitador::storage::AsyncCounterStorage;
         }
-    }
-
-    cfg_if::cfg_if! {
-       if #[cfg(feature = "infinispan_storage")] {
-           use limitador::storage::infinispan::InfinispanStorageBuilder;
-       }
     }
 
     use self::limitador::counter::Counter;

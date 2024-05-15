@@ -248,31 +248,6 @@ Options:
   -h, --help                 Print help
 ```
 
-#### `infinispan` optional storage - _experimental_
-
-The default binary will _not_ support [Infinispan](https://infinispan.org/) as a storage backend for counters. If you
-want to give it a try, you would need to build your own binary of the server using:
-
-```commandline
-cargo build --release --features=infinispan
-```
-
-Which will add the `infinispan` to the supported `STORAGES`.
-
-```
-USAGE:
-    limitador-server <LIMITS_FILE> infinispan [OPTIONS] <URL>
-
-ARGS:
-    <URL>    Infinispan URL to use
-
-OPTIONS:
-    -n, --cache-name <cache name>      Name of the cache to store counters in [default: limitador]
-    -c, --consistency <consistency>    The consistency to use to read from the cache [default:
-                                       Strong] [possible values: Strong, Weak]
-    -h, --help                         Print help information
-```
-
 For an in-depth coverage of the different topologies supported and how they affect the behavior, see the
 [topologies' document](../topologies.md).
 
@@ -404,34 +379,6 @@ require Redis.
 - Defines the log level.
 - Optional. Defaults to `"error"`.
 - Format: `enum`: `"debug"`, `"error"`, `"info"`, `"warn"`, or `"trace"`.
-
-
-### When built with the `infinispan` feature - _experimental_
-
-#### `INFINISPAN_CACHE_NAME`
-
-- The name of the Infinispan cache that Limitador will use to store limits and
-  counters. This variable applies only when [`INFINISPAN_URL`](#infinispan_url) is
-  set.
-- Optional. By default, Limitador will use a cache called `"limitador"`.
-- Format: `string`.
-
-
-#### `INFINISPAN_COUNTERS_CONSISTENCY`
-
-- Defines the consistency mode for the Infinispan counters created by Limitador.
-  This variable applies only when [`INFINISPAN_URL`](#infinispan_url) is set.
-- Optional. Defaults to `"strong"`.
-- Format: `enum`: `"Strong"` or `"Weak"`.
-
-
-#### `INFINISPAN_URL`
-
-- Infinispan URL. Required only when you want to use Infinispan to store the
-  limits.
-- Optional. By default, Limitador stores the limits in memory and does not
-  require Infinispan.
-- Format: `URL`, in the format of `http://username:password@127.0.0.1:11222`.
 
 
 #### `RATE_LIMIT_HEADERS`

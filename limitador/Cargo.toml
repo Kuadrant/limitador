@@ -12,12 +12,11 @@ documentation = "https://docs.rs/limitador"
 readme = "README.md"
 edition = "2021"
 
-# We make redis and infinispan optional to be able to compile for wasm32.
+# We make redis optional to be able to compile for wasm32.
 [features]
 default = ["disk_storage", "redis_storage"]
 disk_storage = ["rocksdb"]
 redis_storage = ["redis", "r2d2", "tokio"]
-infinispan_storage = ["infinispan", "reqwest", "base64", "tokio"]
 lenient_conditions = []
 
 [dependencies]
@@ -49,9 +48,6 @@ tokio = { version = "1", optional = true, features = [
     "macros",
     "time",
 ] }
-infinispan = { version = "0.3", optional = true }
-reqwest = { version = "0.11", optional = true }
-base64 = { version = "0.22", optional = true }
 
 [dev-dependencies]
 serial_test = "3.0"

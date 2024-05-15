@@ -45,9 +45,6 @@ deploy-redis-otel: clean ## Uses Redis to store counters, instrumented with open
 deploy-disk: clean ## Uses disk to store counters
 	$(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-disk.yaml up
 
-deploy-infinispan: clean ## Uses Infinispan to store counters
-	$(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-infinispan.yaml up
-
 ##@ Helper targets
 
 build: ## Build "limitador-testing" image
@@ -76,7 +73,6 @@ clean-containers: ## clean containers
 	- $(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-memory.yaml down --volumes --remove-orphans
 	- $(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-redis.yaml down --volumes --remove-orphans
 	- $(DOCKER)_compose -f docker-compose-envoy.yaml -f docker-compose-limitador-redis-cached.yaml down --volumes --remove-orphans
-	- $(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-infinispan.yaml down --volumes --remove-orphans
 	- $(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-disk.yaml down --volumes --remove-orphans
 	- $(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-redis-otel.yaml down --volumes --remove-orphans
 	- $(MAKE) cleancerts
