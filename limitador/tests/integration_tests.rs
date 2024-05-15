@@ -34,14 +34,6 @@ macro_rules! test_with_all_storage_impls {
                 $function(&mut TestsLimiter::new_from_blocking_impl(rate_limiter)).await;
             }
 
-            #[tokio::test]
-            async fn [<$function _with_wasm_storage>]() {
-                let rate_limiter = RateLimiter::new_with_storage(
-                    Box::new(WasmStorage::new(Box::new(TestClock {})))
-                );
-                $function(&mut TestsLimiter::new_from_blocking_impl(rate_limiter)).await;
-            }
-
             #[cfg(feature = "redis_storage")]
             #[tokio::test]
             #[serial]
@@ -93,25 +85,15 @@ mod test {
     }
 
     use self::limitador::counter::Counter;
-    use self::limitador::storage::wasm::Clock;
     use self::limitador::RateLimiter;
     use crate::helpers::tests_limiter::*;
     use limitador::limit::Limit;
     use limitador::storage::disk::{DiskStorage, OptimizeFor};
     use limitador::storage::in_memory::InMemoryStorage;
-    use limitador::storage::wasm::WasmStorage;
     use std::collections::{HashMap, HashSet};
     use std::thread::sleep;
-    use std::time::{Duration, SystemTime};
+    use std::time::Duration;
     use tempfile::TempDir;
-
-    // This is only needed for the WASM-compatible storage.
-    pub struct TestClock {}
-    impl Clock for TestClock {
-        fn get_current_time(&self) -> SystemTime {
-            SystemTime::now()
-        }
-    }
 
     test_with_all_storage_impls!(get_namespaces);
     test_with_all_storage_impls!(get_namespaces_returns_empty_when_there_arent_any);

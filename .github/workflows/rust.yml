@@ -74,16 +74,6 @@ jobs:
           protoc-version: '3.19.4'
       - run: cargo bench
 
-  wasm-build:
-    name: Build for WASM
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          target: wasm32-unknown-unknown
-      - run: cargo build --target=wasm32-unknown-unknown --no-default-features --lib --manifest-path ./limitador/Cargo.toml
-
   kind:
     name: Try in kind (Kubernetes in Docker)
     runs-on: ubuntu-latest

@@ -9,7 +9,6 @@ use thiserror::Error;
 #[cfg(feature = "disk_storage")]
 pub mod disk;
 pub mod in_memory;
-pub mod wasm;
 
 #[cfg(feature = "redis_storage")]
 pub mod redis;

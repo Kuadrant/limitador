@@ -40,7 +40,6 @@ impl Counter {
         }
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn key(&self) -> Self {
         Self {
             limit: self.limit.clone(),
