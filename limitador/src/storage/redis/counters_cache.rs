@@ -44,8 +44,11 @@ impl CachedCounterValue {
         }
     }
 
-    pub fn add_from_authority(&self, delta: u64, expire_at: SystemTime) {
-        self.value.add_and_set_expiry(delta, expire_at);
+    pub fn add_from_authority(&self, delta: u64, expire_at: SystemTime, max_value: u64) {
+        let new_val = self.value.add_and_set_expiry(delta, expire_at);
+        if new_val > max_value {
+            histogram!("counter_overshoot").record((new_val - max_value) as f64);
+        }
         self.initial_value.fetch_add(delta, Ordering::SeqCst);
         self.from_authority.store(true, Ordering::Release);
     }
@@ -265,14 +268,18 @@ impl CountersCache {
                     from_cache = false;
                     if let Some(entry) = self.batcher.updates.get(&counter) {
                         let cached_value = entry.value();
-                        cached_value.add_from_authority(remote_deltas, expiry_ts);
+                        cached_value.add_from_authority(
+                            remote_deltas,
+                            expiry_ts,
+                            counter.max_value(),
+                        );
                         cached_value.clone()
                     } else {
                         Arc::new(CachedCounterValue::from_authority(&counter, redis_val))
                     }
                 });
                 if from_cache {
-                    cached.add_from_authority(remote_deltas, expiry_ts);
+                    cached.add_from_authority(remote_deltas, expiry_ts, counter.max_value());
                 }
                 return cached;
             }
@@ -385,7 +392,11 @@ mod tests {
             let value = CachedCounterValue::from_authority(&counter, 0);
             value.delta(&counter, 5);
             assert!(value.no_pending_writes().not());
-            value.add_from_authority(6, SystemTime::now().add(Duration::from_secs(1)));
+            value.add_from_authority(
+                6,
+                SystemTime::now().add(Duration::from_secs(1)),
+                counter.max_value(),
+            );
             assert!(value.no_pending_writes().not());
             assert_eq!(value.pending_writes(), Ok(5));
         }
