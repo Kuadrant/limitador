@@ -61,6 +61,7 @@ pub mod prometheus_metrics;
 
 const LIMITADOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 const LIMITADOR_PROFILE: &str = env!("LIMITADOR_PROFILE");
+const LIMITADOR_FEATURES: &str = env!("LIMITADOR_FEATURES");
 const LIMITADOR_HEADER: &str = "Limitador Server";
 
 #[derive(Error, Debug)]
@@ -370,12 +371,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn create_config() -> (Configuration, &'static str) {
     let full_version: &'static str = formatcp!(
-        "v{} ({}) {}",
+        "v{} ({}) {} {}",
         LIMITADOR_VERSION,
         env!("LIMITADOR_GIT_HASH"),
+        LIMITADOR_FEATURES,
         LIMITADOR_PROFILE,
     );
-
     // wire args based of defaults
     let limit_arg = Arg::new("LIMITS_FILE")
         .action(ArgAction::Set)
