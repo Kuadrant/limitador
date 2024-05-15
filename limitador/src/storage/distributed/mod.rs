@@ -276,10 +276,12 @@ impl CrInMemoryStorage {
             Namespace,
             HashMap<Limit, CrCounterValue<String>>,
         >::new()));
-        let qualified_counters = Arc::new(Cache::new(cache_size));
+        let qualified_counters: Arc<Cache<Counter, Arc<CrCounterValue<String>>>> =
+            Arc::new(Cache::new(cache_size));
 
         {
             let limits_for_namespace = limits_for_namespace.clone();
+            let qualified_counters = qualified_counters.clone();
             tokio::spawn(async move {
                 let sock = UdpSocket::bind(broadcast).await.unwrap();
                 sock.set_broadcast(true).unwrap();
@@ -295,12 +297,21 @@ impl CrInMemoryStorage {
                                     values,
                                 } = message;
                                 let counter = <CounterKey as Into<Counter>>::into(counter_key);
-                                let counters = limits_for_namespace.read().unwrap();
-                                let limits = counters.get(counter.namespace()).unwrap();
-                                let value = limits.get(counter.limit()).unwrap();
-                                value.merge(
-                                    (UNIX_EPOCH + Duration::from_secs(expiry), values).into(),
-                                );
+                                if counter.is_qualified() {
+                                    if let Some(counter) = qualified_counters.get(&counter) {
+                                        counter.merge(
+                                            (UNIX_EPOCH + Duration::from_secs(expiry), values)
+                                                .into(),
+                                        );
+                                    }
+                                } else {
+                                    let counters = limits_for_namespace.read().unwrap();
+                                    let limits = counters.get(counter.namespace()).unwrap();
+                                    let value = limits.get(counter.limit()).unwrap();
+                                    value.merge(
+                                        (UNIX_EPOCH + Duration::from_secs(expiry), values).into(),
+                                    );
+                                };
                             }
                             Err(err) => {
                                 println!("Error from {} bytes: {:?} \n{:?}", len, err, &buf[..len])
