@@ -13,6 +13,7 @@ macro_rules! test_with_all_storage_impls {
                 $function(&mut TestsLimiter::new_from_blocking_impl(rate_limiter)).await;
             }
 
+            #[cfg(feature = "distributed_storage")]
             #[tokio::test]
             async fn [<$function _distributed_storage>]() {
                 let rate_limiter =
@@ -96,6 +97,7 @@ mod test {
     use crate::helpers::tests_limiter::*;
     use limitador::limit::Limit;
     use limitador::storage::disk::{DiskStorage, OptimizeFor};
+    #[cfg(feature = "distributed_storage")]
     use limitador::storage::distributed::CrInMemoryStorage;
     use limitador::storage::in_memory::InMemoryStorage;
     use std::collections::{HashMap, HashSet};

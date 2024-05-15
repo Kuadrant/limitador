@@ -140,6 +140,7 @@ pub enum StorageConfiguration {
     InMemory(InMemoryStorageConfiguration),
     Disk(DiskStorageConfiguration),
     Redis(RedisStorageConfiguration),
+    #[cfg(feature = "distributed_storage")]
     Distributed(DistributedStorageConfiguration),
 }
 
@@ -149,6 +150,7 @@ pub struct InMemoryStorageConfiguration {
 }
 
 #[derive(PartialEq, Eq, Debug)]
+#[cfg(feature = "distributed_storage")]
 pub struct DistributedStorageConfiguration {
     pub name: String,
     pub cache_size: Option<u64>,

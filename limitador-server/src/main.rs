@@ -5,10 +5,11 @@
 extern crate log;
 extern crate clap;
 
+#[cfg(feature = "distributed_storage")]
+use crate::config::DistributedStorageConfiguration;
 use crate::config::{
-    Configuration, DiskStorageConfiguration, DistributedStorageConfiguration,
-    InMemoryStorageConfiguration, RedisStorageCacheConfiguration, RedisStorageConfiguration,
-    StorageConfiguration,
+    Configuration, DiskStorageConfiguration, InMemoryStorageConfiguration,
+    RedisStorageCacheConfiguration, RedisStorageConfiguration, StorageConfiguration,
 };
 use crate::envoy_rls::server::{run_envoy_rls_server, RateLimitHeaders};
 use crate::http_api::server::run_http_server;
@@ -24,6 +25,7 @@ use limitador::storage::redis::{
     AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder, DEFAULT_BATCH_SIZE,
     DEFAULT_FLUSHING_PERIOD_SEC, DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_RESPONSE_TIMEOUT_MS,
 };
+#[cfg(feature = "distributed_storage")]
 use limitador::storage::DistributedInMemoryStorage;
 use limitador::storage::{AsyncCounterStorage, AsyncStorage, Storage};
 use limitador::{
@@ -85,6 +87,7 @@ impl Limiter {
         let rate_limiter = match config.storage {
             StorageConfiguration::Redis(cfg) => Self::redis_limiter(cfg).await,
             StorageConfiguration::InMemory(cfg) => Self::in_memory_limiter(cfg),
+            #[cfg(feature = "distributed_storage")]
             StorageConfiguration::Distributed(cfg) => Self::distributed_limiter(cfg),
             StorageConfiguration::Disk(cfg) => Self::disk_limiter(cfg),
         };
@@ -157,6 +160,7 @@ impl Limiter {
         Self::Blocking(rate_limiter_builder.build())
     }
 
+    #[cfg(feature = "distributed_storage")]
     fn distributed_limiter(cfg: DistributedStorageConfiguration) -> Self {
         let storage = DistributedInMemoryStorage::new(
             cfg.name,
@@ -579,42 +583,44 @@ fn create_config() -> (Configuration, &'static str) {
                         .display_order(6)
                         .help("Timeout for Redis commands in milliseconds"),
                 ),
-        )
-        .subcommand(
-            Command::new("distributed")
-                .about("Replicates CRDT-based counters across multiple Limitador servers")
-                .display_order(5)
-                .arg(
-                    Arg::new("NAME")
-                        .action(ArgAction::Set)
-                        .required(true)
-                        .display_order(2)
-                        .help("Unique name to identify this Limitador instance"),
-                )
-                .arg(
-                    Arg::new("LOCAL")
-                        .action(ArgAction::Set)
-                        .required(true)
-                        .display_order(2)
-                        .help("Local IP:PORT to send datagrams from"),
-                )
-                .arg(
-                    Arg::new("BROADCAST")
-                        .action(ArgAction::Set)
-                        .required(true)
-                        .display_order(3)
-                        .help("Broadcast IP:PORT to send datagrams to"),
-                )
-                .arg(
-                    Arg::new("CACHE_SIZE")
-                        .long("cache")
-                        .short('c')
-                        .action(ArgAction::Set)
-                        .value_parser(value_parser!(u64))
-                        .display_order(4)
-                        .help("Sets the size of the cache for 'qualified counters'"),
-                ),
         );
+
+    #[cfg(feature = "distributed_storage")]
+    let cmdline = cmdline.subcommand(
+        Command::new("distributed")
+            .about("Replicates CRDT-based counters across multiple Limitador servers")
+            .display_order(5)
+            .arg(
+                Arg::new("NAME")
+                    .action(ArgAction::Set)
+                    .required(true)
+                    .display_order(2)
+                    .help("Unique name to identify this Limitador instance"),
+            )
+            .arg(
+                Arg::new("LOCAL")
+                    .action(ArgAction::Set)
+                    .required(true)
+                    .display_order(2)
+                    .help("Local IP:PORT to send datagrams from"),
+            )
+            .arg(
+                Arg::new("BROADCAST")
+                    .action(ArgAction::Set)
+                    .required(true)
+                    .display_order(3)
+                    .help("Broadcast IP:PORT to send datagrams to"),
+            )
+            .arg(
+                Arg::new("CACHE_SIZE")
+                    .long("cache")
+                    .short('c')
+                    .action(ArgAction::Set)
+                    .value_parser(value_parser!(u64))
+                    .display_order(4)
+                    .help("Sets the size of the cache for 'qualified counters'"),
+            ),
+    );
 
     let matches = cmdline.get_matches();
 
@@ -681,6 +687,7 @@ fn create_config() -> (Configuration, &'static str) {
         Some(("memory", sub)) => StorageConfiguration::InMemory(InMemoryStorageConfiguration {
             cache_size: sub.get_one::<u64>("CACHE_SIZE").copied(),
         }),
+        #[cfg(feature = "distributed_storage")]
         Some(("distributed", sub)) => {
             StorageConfiguration::Distributed(DistributedStorageConfiguration {
                 name: sub.get_one::<String>("NAME").unwrap().to_owned(),
