@@ -33,7 +33,7 @@ impl From<RedisError> for StorageErr {
 
 pub fn is_limited(
     counters: &mut [Counter],
-    delta: i64,
+    delta: u64,
     script_res: Vec<Option<i64>>,
 ) -> Option<Authorization> {
     let mut counter_vals: Vec<Option<i64>> = vec![];
@@ -47,8 +47,10 @@ pub fn is_limited(
     let mut first_limited = None;
     for (i, counter) in counters.iter_mut().enumerate() {
         // remaining  = max - (curr_val + delta)
-        let remaining = counter.max_value() - (counter_vals[i].unwrap_or(0) + delta);
-        counter.set_remaining(remaining);
+        let remaining = counter
+            .max_value()
+            .checked_sub((counter_vals[i].unwrap_or(0) as u64) + delta);
+        counter.set_remaining(remaining.unwrap_or_default());
         let expires_in = counter_ttls_msecs[i]
             .map(|x| {
                 if x >= 0 {
@@ -60,7 +62,7 @@ pub fn is_limited(
             .unwrap_or(Duration::from_secs(counter.seconds()));
 
         counter.set_expires_in(expires_in);
-        if first_limited.is_none() && remaining < 0 {
+        if first_limited.is_none() && remaining.is_none() {
             first_limited = Some(Authorization::Limited(
                 counter.limit().name().map(|n| n.to_owned()),
             ))

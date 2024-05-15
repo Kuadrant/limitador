@@ -32,21 +32,21 @@ pub struct AsyncRedisStorage {
 #[async_trait]
 impl AsyncCounterStorage for AsyncRedisStorage {
     #[tracing::instrument(skip_all)]
-    async fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
+    async fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr> {
         let mut con = self.conn_manager.clone();
 
         match con
-            .get::<String, Option<i64>>(key_for_counter(counter))
+            .get::<String, Option<u64>>(key_for_counter(counter))
             .instrument(debug_span!("datastore"))
             .await?
         {
             Some(val) => Ok(val + delta <= counter.max_value()),
-            None => Ok(counter.max_value() - delta >= 0),
+            None => Ok(counter.max_value().checked_sub(delta).is_some()),
         }
     }
 
     #[tracing::instrument(skip_all)]
-    async fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
+    async fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr> {
         let mut con = self.conn_manager.clone();
 
         redis::Script::new(SCRIPT_UPDATE_COUNTER)
@@ -65,7 +65,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
     async fn check_and_update<'a>(
         &self,
         counters: &mut Vec<Counter>,
-        delta: i64,
+        delta: u64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let mut con = self.conn_manager.clone();
@@ -89,7 +89,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                 return Ok(res);
             }
         } else {
-            let counter_vals: Vec<Option<i64>> = {
+            let counter_vals: Vec<Option<u64>> = {
                 redis::cmd("MGET")
                     .arg(counter_keys.clone())
                     .query_async(&mut con)
@@ -99,8 +99,10 @@ impl AsyncCounterStorage for AsyncRedisStorage {
 
             for (i, counter) in counters.iter().enumerate() {
                 // remaining  = max - (curr_val + delta)
-                let remaining = counter.max_value() - (counter_vals[i].unwrap_or(0) + delta);
-                if remaining < 0 {
+                let remaining = counter
+                    .max_value()
+                    .checked_sub(counter_vals[i].unwrap_or(0) + delta);
+                if remaining.is_none() {
                     return Ok(Authorization::Limited(
                         counter.limit().name().map(|n| n.to_owned()),
                     ));
@@ -148,7 +150,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                 // This does not cause any bugs, but consumes memory
                 // unnecessarily.
                 let option = {
-                    con.get::<String, Option<i64>>(counter_key.clone())
+                    con.get::<String, Option<u64>>(counter_key.clone())
                         .instrument(debug_span!("datastore"))
                         .await?
                 };

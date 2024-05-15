@@ -12,14 +12,14 @@ use std::collections::HashMap;
 pub struct CheckAndReportInfo {
     pub namespace: String,
     pub values: HashMap<String, String>,
-    pub delta: i64,
+    pub delta: u64,
     pub response_headers: Option<String>,
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize, Apiv2Schema)]
 pub struct Limit {
     namespace: String,
-    max_value: i64,
+    max_value: u64,
     seconds: u64,
     name: Option<String>,
     conditions: Vec<String>,
@@ -61,7 +61,7 @@ impl From<Limit> for LimitadorLimit {
 pub struct Counter {
     limit: Limit,
     set_variables: HashMap<String, String>,
-    remaining: Option<i64>,
+    remaining: Option<u64>,
     expires_in_seconds: Option<u64>,
 }
 

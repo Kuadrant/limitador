@@ -24,12 +24,12 @@ pub struct RedisStorage {
 
 impl CounterStorage for RedisStorage {
     #[tracing::instrument(skip_all)]
-    fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
+    fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr> {
         let mut con = self.conn_pool.get()?;
 
-        match con.get::<String, Option<i64>>(key_for_counter(counter))? {
+        match con.get::<String, Option<u64>>(key_for_counter(counter))? {
             Some(val) => Ok(val + delta <= counter.max_value()),
-            None => Ok(counter.max_value() - delta >= 0),
+            None => Ok(counter.max_value().checked_sub(delta).is_some()),
         }
     }
 
@@ -39,7 +39,7 @@ impl CounterStorage for RedisStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
+    fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr> {
         let mut con = self.conn_pool.get()?;
 
         redis::Script::new(SCRIPT_UPDATE_COUNTER)
@@ -56,7 +56,7 @@ impl CounterStorage for RedisStorage {
     fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
-        delta: i64,
+        delta: u64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let mut con = self.conn_pool.get()?;
@@ -74,14 +74,16 @@ impl CounterStorage for RedisStorage {
                 return Ok(res);
             }
         } else {
-            let counter_vals: Vec<Option<i64>> = redis::cmd("MGET")
+            let counter_vals: Vec<Option<u64>> = redis::cmd("MGET")
                 .arg(counter_keys.clone())
                 .query(&mut *con)?;
 
             for (i, counter) in counters.iter().enumerate() {
                 // remaining  = max - (curr_val + delta)
-                let remaining = counter.max_value() - (counter_vals[i].unwrap_or(0) + delta);
-                if remaining < 0 {
+                let remaining = counter
+                    .max_value()
+                    .checked_sub(counter_vals[i].unwrap_or(0) + delta);
+                if remaining.is_none() {
                     return Ok(Authorization::Limited(
                         counter.limit().name().map(|n| n.to_owned()),
                     ));
@@ -123,7 +125,7 @@ impl CounterStorage for RedisStorage {
                 // do the "get" + "delete if none" atomically.
                 // This does not cause any bugs, but consumes memory
                 // unnecessarily.
-                if let Some(val) = con.get::<String, Option<i64>>(counter_key.clone())? {
+                if let Some(val) = con.get::<String, Option<u64>>(counter_key.clone())? {
                     counter.set_remaining(limit.max_value() - val);
                     let ttl = con.ttl(&counter_key)?;
                     counter.set_expires_in(Duration::from_secs(ttl));

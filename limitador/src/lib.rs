@@ -310,7 +310,7 @@ impl RateLimiter {
         &self,
         namespace: &Namespace,
         values: &HashMap<String, String>,
-        delta: i64,
+        delta: u64,
     ) -> Result<bool, LimitadorError> {
         let counters = self.counters_that_apply(namespace, values)?;
 
@@ -332,7 +332,7 @@ impl RateLimiter {
         &self,
         namespace: &Namespace,
         values: &HashMap<String, String>,
-        delta: i64,
+        delta: u64,
     ) -> Result<(), LimitadorError> {
         let counters = self.counters_that_apply(namespace, values)?;
 
@@ -346,7 +346,7 @@ impl RateLimiter {
         &self,
         namespace: &Namespace,
         values: &HashMap<String, String>,
-        delta: i64,
+        delta: u64,
         load_counters: bool,
     ) -> Result<CheckResult, LimitadorError> {
         let mut counters = self.counters_that_apply(namespace, values)?;
@@ -482,7 +482,7 @@ impl AsyncRateLimiter {
         &self,
         namespace: &Namespace,
         values: &HashMap<String, String>,
-        delta: i64,
+        delta: u64,
     ) -> Result<bool, LimitadorError> {
         let counters = self.counters_that_apply(namespace, values).await?;
 
@@ -503,7 +503,7 @@ impl AsyncRateLimiter {
         &self,
         namespace: &Namespace,
         values: &HashMap<String, String>,
-        delta: i64,
+        delta: u64,
     ) -> Result<(), LimitadorError> {
         let counters = self.counters_that_apply(namespace, values).await?;
 
@@ -518,7 +518,7 @@ impl AsyncRateLimiter {
         &self,
         namespace: &Namespace,
         values: &HashMap<String, String>,
-        delta: i64,
+        delta: u64,
         load_counters: bool,
     ) -> Result<CheckResult, LimitadorError> {
         // the above where-clause is needed in order to call unwrap().

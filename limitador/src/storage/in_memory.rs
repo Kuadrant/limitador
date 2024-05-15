@@ -18,7 +18,7 @@ pub struct InMemoryStorage {
 
 impl CounterStorage for InMemoryStorage {
     #[tracing::instrument(skip_all)]
-    fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
+    fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr> {
         let limits_by_namespace = self.limits_for_namespace.read().unwrap();
 
         let mut value = 0;
@@ -50,7 +50,7 @@ impl CounterStorage for InMemoryStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
+    fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr> {
         let mut limits_by_namespace = self.limits_for_namespace.write().unwrap();
         let now = SystemTime::now();
         if counter.is_qualified() {
@@ -97,7 +97,7 @@ impl CounterStorage for InMemoryStorage {
     fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
-        delta: i64,
+        delta: u64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let limits_by_namespace = self.limits_for_namespace.write().unwrap();
@@ -108,11 +108,11 @@ impl CounterStorage for InMemoryStorage {
         let now = SystemTime::now();
 
         let mut process_counter =
-            |counter: &mut Counter, value: i64, delta: i64| -> Option<Authorization> {
+            |counter: &mut Counter, value: u64, delta: u64| -> Option<Authorization> {
                 if load_counters {
-                    let remaining = counter.max_value() - (value + delta);
-                    counter.set_remaining(remaining);
-                    if first_limited.is_none() && remaining < 0 {
+                    let remaining = counter.max_value().checked_sub(value + delta);
+                    counter.set_remaining(remaining.unwrap_or_default());
+                    if first_limited.is_none() && remaining.is_none() {
                         first_limited = Some(Authorization::Limited(
                             counter.limit().name().map(|n| n.to_owned()),
                         ));
@@ -278,7 +278,7 @@ impl InMemoryStorage {
         }
     }
 
-    fn counter_is_within_limits(counter: &Counter, current_val: Option<&i64>, delta: i64) -> bool {
+    fn counter_is_within_limits(counter: &Counter, current_val: Option<&u64>, delta: u64) -> bool {
         match current_val {
             Some(current_val) => current_val + delta <= counter.max_value(),
             None => counter.max_value() >= delta,

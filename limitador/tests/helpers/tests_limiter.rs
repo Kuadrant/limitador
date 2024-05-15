@@ -71,7 +71,7 @@ impl TestsLimiter {
         &self,
         namespace: &str,
         values: &HashMap<String, String>,
-        delta: i64,
+        delta: u64,
     ) -> Result<bool, LimitadorError> {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => {
@@ -89,7 +89,7 @@ impl TestsLimiter {
         &self,
         namespace: &str,
         values: &HashMap<String, String>,
-        delta: i64,
+        delta: u64,
     ) -> Result<(), LimitadorError> {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => {
@@ -107,7 +107,7 @@ impl TestsLimiter {
         &self,
         namespace: &str,
         values: &HashMap<String, String>,
-        delta: i64,
+        delta: u64,
         load_counters: bool,
     ) -> Result<CheckResult, LimitadorError> {
         match &self.limiter_impl {

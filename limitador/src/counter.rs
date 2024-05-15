@@ -13,7 +13,7 @@ pub struct Counter {
     #[serde(serialize_with = "ordered_map")]
     set_variables: HashMap<String, String>,
 
-    remaining: Option<i64>,
+    remaining: Option<u64>,
     expires_in: Option<Duration>,
 }
 
@@ -53,7 +53,7 @@ impl Counter {
         &self.limit
     }
 
-    pub fn max_value(&self) -> i64 {
+    pub fn max_value(&self) -> u64 {
         self.limit.max_value()
     }
 
@@ -80,11 +80,11 @@ impl Counter {
         &self.set_variables
     }
 
-    pub fn remaining(&self) -> Option<i64> {
+    pub fn remaining(&self) -> Option<u64> {
         self.remaining
     }
 
-    pub fn set_remaining(&mut self, remaining: i64) {
+    pub fn set_remaining(&mut self, remaining: u64) {
         self.remaining = Some(remaining)
     }
 

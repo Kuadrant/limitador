@@ -48,14 +48,14 @@ pub struct CachedRedisStorage {
 #[async_trait]
 impl AsyncCounterStorage for CachedRedisStorage {
     #[tracing::instrument(skip_all)]
-    async fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
+    async fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr> {
         self.async_redis_storage
             .is_within_limits(counter, delta)
             .await
     }
 
     #[tracing::instrument(skip_all)]
-    async fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
+    async fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr> {
         self.async_redis_storage
             .update_counter(counter, delta)
             .await
@@ -69,7 +69,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
     async fn check_and_update<'a>(
         &self,
         counters: &mut Vec<Counter>,
-        delta: i64,
+        delta: u64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let mut not_cached: Vec<&mut Counter> = vec![];
@@ -88,7 +88,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
                         first_limited = Some(a);
                     }
                     if load_counters {
-                        counter.set_remaining(val.remaining(counter) - delta);
+                        counter.set_remaining(val.remaining(counter).checked_sub(delta).unwrap_or_default());
                         counter.set_expires_in(val.to_next_window());
                     }
                 }
@@ -103,7 +103,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
             for counter in not_cached.iter_mut() {
                 let fake = CachedCounterValue::load_from_authority_asap(counter, 0);
                 let remaining = fake.remaining(counter);
-                if first_limited.is_none() && remaining <= 0 {
+                if first_limited.is_none() && remaining == 0 {
                     first_limited = Some(Authorization::Limited(
                         counter.limit().name().map(|n| n.to_owned()),
                     ));
@@ -280,14 +280,14 @@ impl CachedRedisStorageBuilder {
 async fn update_counters<C: ConnectionLike>(
     redis_conn: &mut C,
     counters_and_deltas: HashMap<Counter, Arc<CachedCounterValue>>,
-) -> Result<Vec<(Counter, i64, i64, i64)>, StorageErr> {
+) -> Result<Vec<(Counter, u64, u64, u64)>, StorageErr> {
     let redis_script = redis::Script::new(BATCH_UPDATE_COUNTERS);
     let mut script_invocation = redis_script.prepare_invoke();
 
     let res = if counters_and_deltas.is_empty() {
         Default::default()
     } else {
-        let mut res: Vec<(Counter, i64, i64, i64)> = Vec::with_capacity(counters_and_deltas.len());
+        let mut res: Vec<(Counter, u64, u64, u64)> = Vec::with_capacity(counters_and_deltas.len());
 
         for (counter, value) in counters_and_deltas {
             let (delta, last_value_from_redis) = value
@@ -305,7 +305,7 @@ async fn update_counters<C: ConnectionLike>(
 
         let span = debug_span!("datastore");
         // The redis crate is not working with tables, thus the response will be a Vec of counter values
-        let script_res: Vec<i64> = script_invocation
+        let script_res: Vec<u64> = script_invocation
             .invoke_async(redis_conn)
             .instrument(span)
             .await?;
@@ -396,9 +396,9 @@ mod tests {
 
     #[tokio::test]
     async fn batch_update_counters() {
-        const NEW_VALUE_FROM_REDIS: i64 = 10;
-        const INITIAL_VALUE_FROM_REDIS: i64 = 1;
-        const LOCAL_INCREMENTS: i64 = 2;
+        const NEW_VALUE_FROM_REDIS: u64 = 10;
+        const INITIAL_VALUE_FROM_REDIS: u64 = 1;
+        const LOCAL_INCREMENTS: u64 = 2;
 
         let mut counters_and_deltas = HashMap::new();
         let counter = Counter::new(
@@ -424,7 +424,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap();
         let mock_response = Value::Bulk(vec![
-            Value::Int(NEW_VALUE_FROM_REDIS),
+            Value::Int(NEW_VALUE_FROM_REDIS as i64),
             Value::Int(one_sec_from_now.as_millis() as i64),
         ]);
 

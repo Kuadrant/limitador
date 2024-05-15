@@ -107,18 +107,18 @@ impl Storage {
         Ok(())
     }
 
-    pub fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
+    pub fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr> {
         self.counters.is_within_limits(counter, delta)
     }
 
-    pub fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
+    pub fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr> {
         self.counters.update_counter(counter, delta)
     }
 
     pub fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
-        delta: i64,
+        delta: u64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         self.counters
@@ -220,19 +220,19 @@ impl AsyncStorage {
     pub async fn is_within_limits(
         &self,
         counter: &Counter,
-        delta: i64,
+        delta: u64,
     ) -> Result<bool, StorageErr> {
         self.counters.is_within_limits(counter, delta).await
     }
 
-    pub async fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
+    pub async fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr> {
         self.counters.update_counter(counter, delta).await
     }
 
     pub async fn check_and_update<'a>(
         &self,
         counters: &mut Vec<Counter>,
-        delta: i64,
+        delta: u64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         self.counters
@@ -255,13 +255,13 @@ impl AsyncStorage {
 }
 
 pub trait CounterStorage: Sync + Send {
-    fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr>;
+    fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr>;
     fn add_counter(&self, limit: &Limit) -> Result<(), StorageErr>;
-    fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
+    fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr>;
     fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
-        delta: i64,
+        delta: u64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr>;
     fn get_counters(&self, limits: &HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr>;
@@ -271,12 +271,12 @@ pub trait CounterStorage: Sync + Send {
 
 #[async_trait]
 pub trait AsyncCounterStorage: Sync + Send {
-    async fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr>;
-    async fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr>;
+    async fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr>;
+    async fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr>;
     async fn check_and_update<'a>(
         &self,
         counters: &mut Vec<Counter>,
-        delta: i64,
+        delta: u64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr>;
     async fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr>;

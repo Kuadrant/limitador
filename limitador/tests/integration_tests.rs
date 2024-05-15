@@ -748,7 +748,7 @@ mod test {
             if let Some(ttl) = counter.expires_in() {
                 assert!(ttl.as_secs() <= 60);
             }
-            assert_eq!(counter.remaining().unwrap(), -1);
+            assert_eq!(counter.remaining().unwrap(), 0);
         }
     }
 

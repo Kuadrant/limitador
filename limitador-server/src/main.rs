@@ -162,21 +162,16 @@ impl Limiter {
             Ok(f) => {
                 let parsed_limits: Result<Vec<Limit>, _> = serde_yaml::from_reader(f);
                 match parsed_limits {
-                    Ok(limits) => match find_first_negative_limit(&limits) {
-                        None => {
-                            match &self {
-                                Self::Blocking(limiter) => limiter.configure_with(limits)?,
-                                Self::Async(limiter) => limiter.configure_with(limits).await?,
-                            }
-                            if limitador::limit::check_deprecated_syntax_usages_and_reset() {
-                                error!("You are using deprecated syntax for your conditions! See the migration guide https://docs.kuadrant.io/limitador/doc/migrations/conditions/")
-                            }
-                            Ok(())
+                    Ok(limits) => {
+                        match &self {
+                            Self::Blocking(limiter) => limiter.configure_with(limits)?,
+                            Self::Async(limiter) => limiter.configure_with(limits).await?,
                         }
-                        Some(index) => Err(LimitadorServerError::ConfigFile(format!(
-                            ".[{index}]: invalid value for `max_value`: positive integer expected"
-                        ))),
-                    },
+                        if limitador::limit::check_deprecated_syntax_usages_and_reset() {
+                            error!("You are using deprecated syntax for your conditions! See the migration guide https://docs.kuadrant.io/limitador/doc/migrations/conditions/")
+                        }
+                        Ok(())
+                    }
                     Err(e) => Err(LimitadorServerError::ConfigFile(format!(
                         "Couldn't parse: {e}"
                     ))),
@@ -189,15 +184,6 @@ impl Limiter {
             ))),
         }
     }
-}
-
-fn find_first_negative_limit(limits: &[Limit]) -> Option<usize> {
-    for (index, limit) in limits.iter().enumerate() {
-        if limit.max_value() < 0 {
-            return Some(index);
-        }
-    }
-    None
 }
 
 #[actix_rt::main]
@@ -588,28 +574,23 @@ fn create_config() -> (Configuration, &'static str) {
             Ok(f) => {
                 let parsed_limits: Result<Vec<Limit>, _> = serde_yaml::from_reader(f);
                 match parsed_limits {
-                    Ok(limits) => match find_first_negative_limit(&limits) {
-                        Some(index) => LimitadorServerError::ConfigFile(format!(
-                            ".[{index}]: invalid value for `max_value`: positive integer expected"
-                        )),
-                        None => {
-                            if limitador::limit::check_deprecated_syntax_usages_and_reset() {
-                                eprintln!("Deprecated syntax for conditions corrected!\n")
-                            }
-
-                            let output: Vec<http_api::LimitVO> =
-                                limits.iter().map(|l| l.into()).collect();
-                            match serde_yaml::to_string(&output) {
-                                Ok(cfg) => {
-                                    println!("{cfg}");
-                                }
-                                Err(err) => {
-                                    eprintln!("Config file is valid, but can't be output: {err}");
-                                }
-                            }
-                            process::exit(0);
+                    Ok(limits) => {
+                        if limitador::limit::check_deprecated_syntax_usages_and_reset() {
+                            eprintln!("Deprecated syntax for conditions corrected!\n")
                         }
-                    },
+
+                        let output: Vec<http_api::LimitVO> =
+                            limits.iter().map(|l| l.into()).collect();
+                        match serde_yaml::to_string(&output) {
+                            Ok(cfg) => {
+                                println!("{cfg}");
+                            }
+                            Err(err) => {
+                                eprintln!("Config file is valid, but can't be output: {err}");
+                            }
+                        }
+                        process::exit(0);
+                    }
                     Err(e) => LimitadorServerError::ConfigFile(format!("Couldn't parse: {e}")),
                 }
             }
@@ -737,30 +718,4 @@ fn guess_cache_size() -> Option<u64> {
 
 fn leak<D: Display>(s: D) -> &'static str {
     return Box::leak(format!("{}", s).into_boxed_str());
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::find_first_negative_limit;
-    use limitador::limit::Limit;
-
-    #[test]
-    fn finds_negative_limits() {
-        let variables: [&str; 0] = [];
-        let mut limits: Vec<Limit> = vec![
-            Limit::new::<_, &str>("foo", 42, 10, [], variables),
-            Limit::new::<_, &str>("foo", -42, 10, [], variables),
-        ];
-
-        assert_eq!(find_first_negative_limit(&limits), Some(1));
-        limits[0].set_max_value(-42);
-        assert_eq!(find_first_negative_limit(&limits), Some(0));
-        limits[1].set_max_value(42);
-        assert_eq!(find_first_negative_limit(&limits), Some(0));
-        limits[0].set_max_value(42);
-        assert_eq!(find_first_negative_limit(&limits), None);
-
-        let nothing: [Limit; 0] = [];
-        assert_eq!(find_first_negative_limit(&nothing), None);
-    }
 }

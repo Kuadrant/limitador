@@ -7,7 +7,7 @@ use moka::sync::Cache;
 use std::collections::HashMap;
 use std::future::Future;
 use std::ops::Not;
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::select;
@@ -16,39 +16,39 @@ use tokio::sync::{Notify, Semaphore};
 #[derive(Debug)]
 pub struct CachedCounterValue {
     value: AtomicExpiringValue,
-    initial_value: AtomicI64,
+    initial_value: AtomicU64,
     from_authority: AtomicBool,
 }
 
 impl CachedCounterValue {
-    pub fn from_authority(counter: &Counter, value: i64) -> Self {
+    pub fn from_authority(counter: &Counter, value: u64) -> Self {
         let now = SystemTime::now();
         Self {
             value: AtomicExpiringValue::new(value, now + Duration::from_secs(counter.seconds())),
-            initial_value: AtomicI64::new(value),
+            initial_value: AtomicU64::new(value),
             from_authority: AtomicBool::new(true),
         }
     }
 
-    pub fn load_from_authority_asap(counter: &Counter, temp_value: i64) -> Self {
+    pub fn load_from_authority_asap(counter: &Counter, temp_value: u64) -> Self {
         let now = SystemTime::now();
         Self {
             value: AtomicExpiringValue::new(
                 temp_value,
                 now + Duration::from_secs(counter.seconds()),
             ),
-            initial_value: AtomicI64::new(0),
+            initial_value: AtomicU64::new(0),
             from_authority: AtomicBool::new(false),
         }
     }
 
-    pub fn add_from_authority(&self, delta: i64, expire_at: SystemTime) {
+    pub fn add_from_authority(&self, delta: u64, expire_at: SystemTime) {
         self.value.add_and_set_expiry(delta, expire_at);
         self.initial_value.fetch_add(delta, Ordering::SeqCst);
         self.from_authority.store(true, Ordering::Release);
     }
 
-    pub fn delta(&self, counter: &Counter, delta: i64) -> i64 {
+    pub fn delta(&self, counter: &Counter, delta: u64) -> u64 {
         let value = self
             .value
             .update(delta, counter.seconds(), SystemTime::now());
@@ -60,24 +60,20 @@ impl CachedCounterValue {
         value
     }
 
-    pub fn pending_writes(&self) -> Result<i64, ()> {
+    pub fn pending_writes(&self) -> Result<u64, ()> {
         self.pending_writes_and_value().map(|(writes, _)| writes)
     }
 
-    pub fn pending_writes_and_value(&self) -> Result<(i64, i64), ()> {
+    pub fn pending_writes_and_value(&self) -> Result<(u64, u64), ()> {
         let start = self.initial_value.load(Ordering::SeqCst);
         let value = self.value.value_at(SystemTime::now());
         let offset = if start == 0 {
             value
         } else {
-            let writes = value - start;
-            if writes >= 0 {
-                writes
-            } else {
-                // self.value expired, is now less than the writes of the previous window
-                // which have not yet been reset... it'll be 0, so treat it as such.
-                value
-            }
+            let writes = value.checked_sub(start);
+            // self.value expired, is now less than the writes of the previous window
+            // which have not yet been reset... it'll be 0, so treat it as such.
+            writes.unwrap_or(value)
         };
         match self
             .initial_value
@@ -103,15 +99,15 @@ impl CachedCounterValue {
         value - start == 0
     }
 
-    pub fn hits(&self, _: &Counter) -> i64 {
+    pub fn hits(&self, _: &Counter) -> u64 {
         self.value.value_at(SystemTime::now())
     }
 
-    pub fn remaining(&self, counter: &Counter) -> i64 {
+    pub fn remaining(&self, counter: &Counter) -> u64 {
         counter.max_value() - self.hits(counter)
     }
 
-    pub fn is_limited(&self, counter: &Counter, delta: i64) -> bool {
+    pub fn is_limited(&self, counter: &Counter, delta: u64) -> bool {
         self.hits(counter) as i128 + delta as i128 > counter.max_value() as i128
     }
 
@@ -250,12 +246,12 @@ impl CountersCache {
     pub fn apply_remote_delta(
         &self,
         counter: Counter,
-        redis_val: i64,
-        remote_deltas: i64,
-        redis_expiry: i64,
+        redis_val: u64,
+        remote_deltas: u64,
+        redis_expiry: u64,
     ) -> Arc<CachedCounterValue> {
         if redis_expiry > 0 {
-            let expiry_ts = SystemTime::UNIX_EPOCH + Duration::from_millis(redis_expiry as u64);
+            let expiry_ts = SystemTime::UNIX_EPOCH + Duration::from_millis(redis_expiry);
             if expiry_ts > SystemTime::now() {
                 let mut from_cache = true;
                 let cached = self.cache.get_with(counter.clone(), || {
@@ -279,7 +275,7 @@ impl CountersCache {
         ))
     }
 
-    pub async fn increase_by(&self, counter: &Counter, delta: i64) {
+    pub async fn increase_by(&self, counter: &Counter, delta: u64) {
         let val = self.cache.get_with_by_ref(counter, || {
             if let Some(entry) = self.batcher.updates.get(counter) {
                 entry.value().clone()
@@ -543,7 +539,7 @@ mod tests {
                 .add(Duration::from_secs(1))
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_micros() as i64,
+                .as_micros() as u64,
         );
 
         assert!(cache.get(&counter).is_some());
@@ -573,7 +569,7 @@ mod tests {
                 .add(Duration::from_secs(1))
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_micros() as i64,
+                .as_micros() as u64,
         );
 
         assert_eq!(
@@ -597,7 +593,7 @@ mod tests {
                 .add(Duration::from_secs(1))
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_micros() as i64,
+                .as_micros() as u64,
         );
         cache.increase_by(&counter, increase_by).await;
 
@@ -607,7 +603,7 @@ mod tests {
         );
     }
 
-    fn test_counter(max_val: i64, other_values: Option<HashMap<String, String>>) -> Counter {
+    fn test_counter(max_val: u64, other_values: Option<HashMap<String, String>>) -> Counter {
         let mut values = HashMap::new();
         values.insert("app_id".to_string(), "1".to_string());
         if let Some(overrides) = other_values {
