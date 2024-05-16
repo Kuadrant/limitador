@@ -27,7 +27,7 @@ impl CachedCounterValue {
     pub fn from_authority(counter: &Counter, value: u64) -> Self {
         let now = SystemTime::now();
         Self {
-            value: AtomicExpiringValue::new(value, now + Duration::from_secs(counter.seconds())),
+            value: AtomicExpiringValue::new(value, now + counter.window()),
             initial_value: AtomicU64::new(value),
             from_authority: AtomicBool::new(true),
         }
@@ -36,10 +36,7 @@ impl CachedCounterValue {
     pub fn load_from_authority_asap(counter: &Counter, temp_value: u64) -> Self {
         let now = SystemTime::now();
         Self {
-            value: AtomicExpiringValue::new(
-                temp_value,
-                now + Duration::from_secs(counter.seconds()),
-            ),
+            value: AtomicExpiringValue::new(temp_value, now + counter.window()),
             initial_value: AtomicU64::new(0),
             from_authority: AtomicBool::new(false),
         }
@@ -57,7 +54,7 @@ impl CachedCounterValue {
     pub fn delta(&self, counter: &Counter, delta: u64) -> u64 {
         let value = self
             .value
-            .update(delta, counter.seconds(), SystemTime::now());
+            .update(delta, counter.window(), SystemTime::now());
         if value == delta {
             // new window, invalidate initial value
             // which happens _after_ the self.value was reset, see `pending_writes`
@@ -133,7 +130,7 @@ impl CachedCounterValue {
         self.hits(counter) as i128 + delta as i128 > counter.max_value() as i128
     }
 
-    pub fn to_next_window(&self) -> Duration {
+    pub fn ttl(&self) -> Duration {
         self.value.ttl()
     }
 
@@ -479,7 +476,7 @@ mod tests {
             let counter = test_counter(10, None);
             let value = CachedCounterValue::from_authority(&counter, 0);
             value.delta(&counter, hits);
-            assert!(value.to_next_window() > Duration::from_millis(59999));
+            assert!(value.ttl() > Duration::from_millis(59999));
             assert_eq!(value.hits(&counter), hits);
             let remaining = counter.max_value() - hits;
             assert_eq!(value.remaining(&counter), remaining);

@@ -56,36 +56,27 @@ impl CounterStorage for InMemoryStorage {
         if counter.is_qualified() {
             let value = match self.qualified_counters.get(counter) {
                 None => self.qualified_counters.get_with(counter.clone(), || {
-                    Arc::new(AtomicExpiringValue::new(
-                        0,
-                        now + Duration::from_secs(counter.seconds()),
-                    ))
+                    Arc::new(AtomicExpiringValue::new(0, now + counter.window()))
                 }),
                 Some(counter) => counter,
             };
-            value.update(delta, counter.seconds(), now);
+            value.update(delta, counter.window(), now);
         } else {
             match limits_by_namespace.entry(counter.limit().namespace().clone()) {
                 Entry::Vacant(v) => {
                     let mut limits = HashMap::new();
                     limits.insert(
                         counter.limit().clone(),
-                        AtomicExpiringValue::new(
-                            delta,
-                            now + Duration::from_secs(counter.seconds()),
-                        ),
+                        AtomicExpiringValue::new(delta, now + counter.window()),
                     );
                     v.insert(limits);
                 }
                 Entry::Occupied(mut o) => match o.get_mut().entry(counter.limit().clone()) {
                     Entry::Vacant(v) => {
-                        v.insert(AtomicExpiringValue::new(
-                            delta,
-                            now + Duration::from_secs(counter.seconds()),
-                        ));
+                        v.insert(AtomicExpiringValue::new(delta, now + counter.window()));
                     }
                     Entry::Occupied(o) => {
-                        o.get().update(delta, counter.seconds(), now);
+                        o.get().update(delta, counter.window(), now);
                     }
                 },
             }
@@ -102,8 +93,8 @@ impl CounterStorage for InMemoryStorage {
     ) -> Result<Authorization, StorageErr> {
         let limits_by_namespace = self.limits_for_namespace.read().unwrap();
         let mut first_limited = None;
-        let mut counter_values_to_update: Vec<(&AtomicExpiringValue, u64)> = Vec::new();
-        let mut qualified_counter_values_to_updated: Vec<(Arc<AtomicExpiringValue>, u64)> =
+        let mut counter_values_to_update: Vec<(&AtomicExpiringValue, Duration)> = Vec::new();
+        let mut qualified_counter_values_to_updated: Vec<(Arc<AtomicExpiringValue>, Duration)> =
             Vec::new();
         let now = SystemTime::now();
 
@@ -138,17 +129,14 @@ impl CounterStorage for InMemoryStorage {
                     return Ok(limited);
                 }
             }
-            counter_values_to_update.push((atomic_expiring_value, counter.seconds()));
+            counter_values_to_update.push((atomic_expiring_value, counter.window()));
         }
 
         // Process qualified counters
         for counter in counters.iter_mut().filter(|c| c.is_qualified()) {
             let value = match self.qualified_counters.get(counter) {
                 None => self.qualified_counters.get_with(counter.clone(), || {
-                    Arc::new(AtomicExpiringValue::new(
-                        0,
-                        now + Duration::from_secs(counter.seconds()),
-                    ))
+                    Arc::new(AtomicExpiringValue::new(0, now + counter.window()))
                 }),
                 Some(counter) => counter,
             };
@@ -159,7 +147,7 @@ impl CounterStorage for InMemoryStorage {
                 }
             }
 
-            qualified_counter_values_to_updated.push((value, counter.seconds()));
+            qualified_counter_values_to_updated.push((value, counter.window()));
         }
 
         if let Some(limited) = first_limited {

@@ -68,8 +68,8 @@ impl Counter {
         false
     }
 
-    pub fn seconds(&self) -> u64 {
-        self.limit.seconds()
+    pub fn window(&self) -> Duration {
+        Duration::from_secs(self.limit.seconds())
     }
 
     pub fn namespace(&self) -> &Namespace {

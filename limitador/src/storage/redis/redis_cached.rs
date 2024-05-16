@@ -93,7 +93,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
                                 .checked_sub(delta)
                                 .unwrap_or_default(),
                         );
-                        counter.set_expires_in(val.to_next_window());
+                        counter.set_expires_in(val.ttl());
                     }
                 }
                 _ => {
@@ -114,7 +114,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
                 }
                 if load_counters {
                     counter.set_remaining(remaining - delta);
-                    counter.set_expires_in(fake.to_next_window()); // todo: this is a plain lie!
+                    counter.set_expires_in(fake.ttl()); // todo: this is a plain lie!
                 }
             }
         }
@@ -298,7 +298,7 @@ async fn update_counters<C: ConnectionLike>(
             if delta > 0 {
                 script_invocation.key(key_for_counter(&counter));
                 script_invocation.key(key_for_counters_of_limit(counter.limit()));
-                script_invocation.arg(counter.seconds());
+                script_invocation.arg(counter.window().as_secs());
                 script_invocation.arg(delta);
                 // We need to store the counter in the actual order we are sending it to the script
                 res.push((counter, last_value_from_redis, delta, 0));
