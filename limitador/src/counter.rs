@@ -40,6 +40,7 @@ impl Counter {
         }
     }
 
+    #[cfg(any(feature = "redis_storage", feature = "disk_storage"))]
     pub(crate) fn key(&self) -> Self {
         Self {
             limit: self.limit.clone(),

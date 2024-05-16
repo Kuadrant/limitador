@@ -42,6 +42,7 @@ impl CachedCounterValue {
         }
     }
 
+    #[cfg(feature = "redis_storage")]
     pub fn add_from_authority(&self, delta: u64, expire_at: SystemTime, max_value: u64) {
         let new_val = self.value.add_and_set_expiry(delta, expire_at);
         if new_val > max_value {

@@ -27,7 +27,7 @@ impl AtomicExpiringValue {
         self.value_at(SystemTime::now())
     }
 
-    #[allow(dead_code)]
+    #[cfg(feature = "redis_storage")]
     pub fn add_and_set_expiry(&self, delta: u64, expiry: SystemTime) -> u64 {
         self.expiry.update(expiry);
         self.value.fetch_add(delta, Ordering::SeqCst) + delta
@@ -59,11 +59,6 @@ impl AtomicExpiryTime {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn from_now(ttl: Duration) -> Self {
-        Self::new(SystemTime::now() + ttl)
-    }
-
     fn since_epoch(when: SystemTime) -> u64 {
         when.duration_since(UNIX_EPOCH)
             .expect("SystemTime before UNIX EPOCH!")
@@ -83,7 +78,7 @@ impl AtomicExpiryTime {
         self.expiry.load(Ordering::SeqCst) <= when
     }
 
-    #[allow(dead_code)]
+    #[cfg(feature = "redis_storage")]
     pub fn update(&self, expiry: SystemTime) {
         self.expiry
             .store(Self::since_epoch(expiry), Ordering::SeqCst);
