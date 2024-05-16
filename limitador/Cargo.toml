@@ -12,7 +12,6 @@ documentation = "https://docs.rs/limitador"
 readme = "README.md"
 edition = "2021"
 
-# We make redis optional to be able to compile for wasm32.
 [features]
 default = ["disk_storage", "redis_storage"]
 disk_storage = ["rocksdb"]
@@ -60,7 +59,7 @@ tokio = { version = "1", features = [
     "rt-multi-thread",
     "macros",
     "time",
-] } # wasm_storage tests use tokio::test
+] }
 
 [[bench]]
 name = "bench"
