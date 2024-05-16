@@ -11,7 +11,6 @@ use paperclip::actix::{
     // extension trait for actix_web::App and proc-macro attributes
     OpenApiExt,
 };
-use std::cmp::Ordering;
 use std::fmt;
 use std::sync::Arc;
 
@@ -248,11 +247,7 @@ pub fn add_response_header(
             counters.sort_by(|a, b| {
                 let a_remaining = a.remaining().unwrap_or(a.max_value());
                 let b_remaining = b.remaining().unwrap_or(b.max_value());
-                if a_remaining - b_remaining < 0 {
-                    Ordering::Less
-                } else {
-                    Ordering::Greater
-                }
+                a_remaining.cmp(&b_remaining)
             });
 
             let mut all_limits_text = String::with_capacity(20 * counters.len());
@@ -272,10 +267,7 @@ pub fn add_response_header(
                     format!("{}{}", counter.max_value(), all_limits_text),
                 ));
 
-                let mut remaining = counter.remaining().unwrap_or(counter.max_value());
-                if remaining < 0 {
-                    remaining = 0
-                }
+                let remaining = counter.remaining().unwrap_or(counter.max_value());
                 resp.insert_header((
                     "X-RateLimit-Remaining".to_string(),
                     format!("{}", remaining),
@@ -581,7 +573,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
-    async fn create_test_limit(limiter: &Limiter, namespace: &str, max: i64) -> LimitadorLimit {
+    async fn create_test_limit(limiter: &Limiter, namespace: &str, max: u64) -> LimitadorLimit {
         // Create a limit
         let limit = LimitadorLimit::new(
             namespace,

@@ -1,39 +1,39 @@
+use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
-use std::sync::atomic::{AtomicI64, AtomicU64};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug)]
 pub(crate) struct AtomicExpiringValue {
-    value: AtomicI64,
+    value: AtomicU64,
     expiry: AtomicExpiryTime,
 }
 
 impl AtomicExpiringValue {
-    pub fn new(value: i64, expiry: SystemTime) -> Self {
+    pub fn new(value: u64, expiry: SystemTime) -> Self {
         Self {
-            value: AtomicI64::new(value),
+            value: AtomicU64::new(value),
             expiry: AtomicExpiryTime::new(expiry),
         }
     }
 
-    pub fn value_at(&self, when: SystemTime) -> i64 {
+    pub fn value_at(&self, when: SystemTime) -> u64 {
         if self.expiry.expired_at(when) {
             return 0;
         }
         self.value.load(Ordering::SeqCst)
     }
 
-    pub fn value(&self) -> i64 {
+    pub fn value(&self) -> u64 {
         self.value_at(SystemTime::now())
     }
 
     #[allow(dead_code)]
-    pub fn add_and_set_expiry(&self, delta: i64, expire_at: SystemTime) -> i64 {
+    pub fn add_and_set_expiry(&self, delta: u64, expire_at: SystemTime) -> u64 {
         self.expiry.update(expire_at);
         self.value.fetch_add(delta, Ordering::SeqCst) + delta
     }
 
-    pub fn update(&self, delta: i64, ttl: u64, when: SystemTime) -> i64 {
+    pub fn update(&self, delta: u64, ttl: u64, when: SystemTime) -> u64 {
         if self.expiry.update_if_expired(ttl, when) {
             self.value.store(delta, Ordering::SeqCst);
             return delta;
@@ -115,7 +115,7 @@ impl Clone for AtomicExpiryTime {
 impl Default for AtomicExpiringValue {
     fn default() -> Self {
         AtomicExpiringValue {
-            value: AtomicI64::new(0),
+            value: AtomicU64::new(0),
             expiry: AtomicExpiryTime::new(UNIX_EPOCH),
         }
     }
@@ -124,7 +124,7 @@ impl Default for AtomicExpiringValue {
 impl Clone for AtomicExpiringValue {
     fn clone(&self) -> Self {
         AtomicExpiringValue {
-            value: AtomicI64::new(self.value.load(Ordering::SeqCst)),
+            value: AtomicU64::new(self.value.load(Ordering::SeqCst)),
             expiry: self.expiry.clone(),
         }
     }
@@ -187,7 +187,7 @@ mod tests {
                 atomic_expiring_value.update(2, 1, now + Duration::from_secs(11));
             });
         });
-        assert!([2i64, 3i64].contains(&atomic_expiring_value.value.load(Ordering::SeqCst)));
+        assert!([2u64, 3u64].contains(&atomic_expiring_value.value.load(Ordering::SeqCst)));
     }
 
     #[test]

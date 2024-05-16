@@ -56,7 +56,7 @@ const TEST_SCENARIOS: &[&TestScenario] = &[
 struct TestCallParams {
     namespace: String,
     values: HashMap<String, String>,
-    delta: i64,
+    delta: u64,
 }
 
 impl Display for TestScenario {
@@ -280,7 +280,7 @@ fn generate_test_data(
         for limit_idx in 0..scenario.n_limits_per_ns {
             test_limits.push(Limit::new(
                 namespace.clone(),
-                i64::MAX,
+                u64::MAX,
                 ((limit_idx * 60) + 10) as u64,
                 conditions.clone(),
                 variables.clone(),

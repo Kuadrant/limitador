@@ -20,7 +20,7 @@ pub struct RocksDbStorage {
 
 impl CounterStorage for RocksDbStorage {
     #[tracing::instrument(skip_all)]
-    fn is_within_limits(&self, counter: &Counter, delta: i64) -> Result<bool, StorageErr> {
+    fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr> {
         let key = key_for_counter(counter);
         let value = self.insert_or_update(&key, counter, 0)?;
         Ok(counter.max_value() >= value.value() + delta)
@@ -32,7 +32,7 @@ impl CounterStorage for RocksDbStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    fn update_counter(&self, counter: &Counter, delta: i64) -> Result<(), StorageErr> {
+    fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr> {
         let key = key_for_counter(counter);
         self.insert_or_update(&key, counter, delta)?;
         Ok(())
@@ -42,7 +42,7 @@ impl CounterStorage for RocksDbStorage {
     fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
-        delta: i64,
+        delta: u64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let mut keys: Vec<Vec<u8>> = Vec::with_capacity(counters.len());
@@ -66,7 +66,12 @@ impl CounterStorage for RocksDbStorage {
 
             if load_counters {
                 counter.set_expires_in(ttl);
-                counter.set_remaining(counter.max_value() - val - delta);
+                counter.set_remaining(
+                    counter
+                        .max_value()
+                        .checked_sub(val + delta)
+                        .unwrap_or_default(),
+                );
             }
 
             if counter.max_value() < val + delta {
@@ -192,7 +197,7 @@ impl RocksDbStorage {
         &self,
         key: &[u8],
         counter: &Counter,
-        delta: i64,
+        delta: u64,
     ) -> Result<ExpiringValue, StorageErr> {
         let now = SystemTime::now();
         let entry = {

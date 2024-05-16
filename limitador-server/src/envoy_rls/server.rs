@@ -1,6 +1,5 @@
 use opentelemetry::global;
 use opentelemetry::propagation::Extractor;
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -100,7 +99,7 @@ impl RateLimitService for MyRateLimiter {
             Limiter::Blocking(limiter) => limiter.check_rate_limited_and_update(
                 &namespace,
                 &values,
-                i64::from(hits_addend),
+                u64::from(hits_addend),
                 self.rate_limit_headers != RateLimitHeaders::None,
             ),
             Limiter::Async(limiter) => {
@@ -108,7 +107,7 @@ impl RateLimitService for MyRateLimiter {
                     .check_rate_limited_and_update(
                         &namespace,
                         &values,
-                        i64::from(hits_addend),
+                        u64::from(hits_addend),
                         self.rate_limit_headers != RateLimitHeaders::None,
                     )
                     .await
@@ -170,11 +169,7 @@ pub fn to_response_header(
             counters.sort_by(|a, b| {
                 let a_remaining = a.remaining().unwrap_or(a.max_value());
                 let b_remaining = b.remaining().unwrap_or(b.max_value());
-                if a_remaining - b_remaining < 0 {
-                    Ordering::Less
-                } else {
-                    Ordering::Greater
-                }
+                a_remaining.cmp(&b_remaining)
             });
 
             let mut all_limits_text = String::with_capacity(20 * counters.len());
@@ -194,10 +189,7 @@ pub fn to_response_header(
                     value: format!("{}{}", counter.max_value(), all_limits_text),
                 });
 
-                let mut remaining = counter.remaining().unwrap_or(counter.max_value());
-                if remaining < 0 {
-                    remaining = 0
-                }
+                let remaining = counter.remaining().unwrap_or(counter.max_value());
                 headers.push(HeaderValue {
                     key: "X-RateLimit-Remaining".to_string(),
                     value: format!("{}", remaining),

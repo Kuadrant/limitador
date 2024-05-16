@@ -4,28 +4,28 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExpiringValue {
-    value: i64,
+    value: u64,
     expiry: SystemTime,
 }
 
 impl ExpiringValue {
-    pub fn new(value: i64, expiry: SystemTime) -> Self {
+    pub fn new(value: u64, expiry: SystemTime) -> Self {
         Self { value, expiry }
     }
 
-    pub fn value_at(&self, when: SystemTime) -> i64 {
+    pub fn value_at(&self, when: SystemTime) -> u64 {
         if self.expiry <= when {
             return 0;
         }
         self.value
     }
 
-    pub fn value(&self) -> i64 {
+    pub fn value(&self) -> u64 {
         self.value_at(SystemTime::now())
     }
 
     #[must_use]
-    pub fn update(self, delta: i64, ttl: u64, now: SystemTime) -> Self {
+    pub fn update(self, delta: u64, ttl: u64, now: SystemTime) -> Self {
         let expiry = if self.expiry <= now {
             now + Duration::from_secs(ttl)
         } else {
@@ -71,7 +71,7 @@ impl TryFrom<&[u8]> for ExpiringValue {
         let raw_val: [u8; 8] = raw[0..8].try_into()?;
         let raw_exp: [u8; 8] = raw[8..16].try_into()?;
 
-        let val = i64::from_be_bytes(raw_val);
+        let val = u64::from_be_bytes(raw_val);
         let exp = u64::from_be_bytes(raw_exp);
 
         Ok(Self {

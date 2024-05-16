@@ -208,7 +208,7 @@ pub mod bin {
             .into_iter()
             .map(|(var, value)| (var.to_string(), value.to_string()))
             .collect();
-        let limit = Limit::new(ns, i64::default(), seconds, conditions, map.keys());
+        let limit = Limit::new(ns, u64::default(), seconds, conditions, map.keys());
         Counter::new(limit, map)
     }
 
