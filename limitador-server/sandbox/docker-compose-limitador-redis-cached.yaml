@@ -20,14 +20,14 @@ services:
       - --grpc-reflection-service
       - /opt/kuadrant/limits/limits.yaml
       - redis_cached
-      - --ttl
-      - "3"
-      - --ratio
-      - "11"
+      - --batch-size
+      - "100"
       - --flush-period
-      - "2"
+      - "1000"
       - --max-cached
-      - "5000"
+      - "10000"
+      - --response-timeout
+      - "350"
       - redis://redis:6379
     expose:
       - "8080"
