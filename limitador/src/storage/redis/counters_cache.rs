@@ -304,32 +304,25 @@ impl CountersCache {
         counter: Counter,
         redis_val: u64,
         remote_deltas: u64,
-        redis_expiry: i64,
+        expiry: SystemTime,
     ) -> Arc<CachedCounterValue> {
-        if redis_expiry > 0 {
-            let expiry_ts = SystemTime::UNIX_EPOCH + Duration::from_millis(redis_expiry as u64);
-            if expiry_ts > SystemTime::now() {
-                let mut from_cache = true;
-                let cached = self.cache.get_with(counter.clone(), || {
+        if expiry > SystemTime::now() {
+            let mut from_cache = true;
+            let cached = self.cache.get_with(counter.clone(), || {
+                from_cache = false;
+                if let Some(entry) = self.batcher.updates.get(&counter) {
                     gauge!("cache_size").increment(1);
-                    from_cache = false;
-                    if let Some(entry) = self.batcher.updates.get(&counter) {
-                        let cached_value = entry.value();
-                        cached_value.add_from_authority(
-                            remote_deltas,
-                            expiry_ts,
-                            counter.max_value(),
-                        );
-                        cached_value.clone()
-                    } else {
-                        Arc::new(CachedCounterValue::from_authority(&counter, redis_val))
-                    }
-                });
-                if from_cache {
-                    cached.add_from_authority(remote_deltas, expiry_ts, counter.max_value());
+                    let cached_value = entry.value();
+                    cached_value.add_from_authority(remote_deltas, expiry, counter.max_value());
+                    cached_value.clone()
+                } else {
+                    Arc::new(CachedCounterValue::from_authority(&counter, redis_val))
                 }
-                return cached;
+            });
+            if from_cache {
+                cached.add_from_authority(remote_deltas, expiry, counter.max_value());
             }
+            return cached;
         }
         Arc::new(CachedCounterValue::load_from_authority_asap(
             &counter, redis_val,
@@ -392,7 +385,6 @@ impl CountersCacheBuilder {
 mod tests {
     use std::collections::HashMap;
     use std::ops::Add;
-    use std::time::UNIX_EPOCH;
 
     use crate::limit::Limit;
 
@@ -620,11 +612,7 @@ mod tests {
             counter.clone(),
             10,
             0,
-            SystemTime::now()
-                .add(Duration::from_secs(1))
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_micros() as i64,
+            SystemTime::now().add(Duration::from_secs(1)),
         );
 
         assert!(cache.get(&counter).is_some());
@@ -650,11 +638,7 @@ mod tests {
             counter.clone(),
             current_value,
             0,
-            SystemTime::now()
-                .add(Duration::from_secs(1))
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_micros() as i64,
+            SystemTime::now().add(Duration::from_secs(1)),
         );
 
         assert_eq!(
@@ -674,11 +658,7 @@ mod tests {
             counter.clone(),
             current_val,
             0,
-            SystemTime::now()
-                .add(Duration::from_secs(1))
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_micros() as i64,
+            SystemTime::now().add(Duration::from_secs(1)),
         );
         cache.increase_by(&counter, increase_by).await;
 
