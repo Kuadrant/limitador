@@ -19,7 +19,7 @@ jobs:
           protoc-version: '3.19.4'
       - uses: supercharge/redis-github-action@1.1.0
         with:
-          redis-version: 5
+          redis-version: 7
       - uses: actions/checkout@v4
         with:
           ref: crate-v${{ github.event.inputs.version }}
