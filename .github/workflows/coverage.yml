@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: supercharge/redis-github-action@1.1.0
         with:
-          redis-version: 5
+          redis-version: 7
       # Nightly is required for code coverage with doctests
       # https://github.com/taiki-e/cargo-llvm-cov/issues/2
       - uses: actions-rust-lang/setup-rust-toolchain@v1
