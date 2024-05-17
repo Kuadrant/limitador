@@ -8,7 +8,12 @@ use thiserror::Error;
 
 #[cfg(feature = "disk_storage")]
 pub mod disk;
+#[cfg(feature = "distributed_storage")]
+pub mod distributed;
 pub mod in_memory;
+
+#[cfg(feature = "distributed_storage")]
+pub use crate::storage::distributed::CrInMemoryStorage as DistributedInMemoryStorage;
 
 #[cfg(feature = "redis_storage")]
 pub mod redis;

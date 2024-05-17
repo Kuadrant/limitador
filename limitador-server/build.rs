@@ -6,6 +6,7 @@ use std::process::Command;
 fn main() -> Result<(), Box<dyn Error>> {
     set_git_hash("LIMITADOR_GIT_HASH");
     set_profile("LIMITADOR_PROFILE");
+    set_features("LIMITADOR_FEATURES");
     generate_protobuf()
 }
 
@@ -29,6 +30,14 @@ fn set_profile(env: &str) {
     if let Ok(profile) = std::env::var("PROFILE") {
         println!("cargo:rustc-env={env}={profile}");
     }
+}
+
+fn set_features(env: &str) {
+    let mut features = vec![];
+    if cfg!(feature = "distributed_storage") {
+        features.push("+distributed");
+    }
+    println!("cargo:rustc-env={env}={features:?}");
 }
 
 fn set_git_hash(env: &str) {

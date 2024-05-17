@@ -102,6 +102,47 @@ impl AtomicExpiryTime {
         }
         false
     }
+
+    #[allow(dead_code)]
+    pub fn merge(&self, other: Self) {
+        let mut other = other;
+        loop {
+            let now = SystemTime::now();
+            other = match self.merge_at(other, now) {
+                Ok(_) => return,
+                Err(other) => other,
+            };
+        }
+    }
+
+    pub fn merge_at(&self, other: Self, when: SystemTime) -> Result<(), Self> {
+        let other_exp = other.expiry.load(Ordering::SeqCst);
+        let expiry = self.expiry.load(Ordering::SeqCst);
+        if other_exp < expiry && other_exp > Self::since_epoch(when) {
+            // if our expiry changed, some thread observed the time window as elapsed...
+            // `other` can't be in the future anymore! Safely ignoring the failure scenario
+            return match self.expiry.compare_exchange(
+                expiry,
+                other_exp,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => Ok(()),
+                Err(_) => Err(other),
+            };
+        }
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn into_inner(self) -> SystemTime {
+        self.expires_at()
+    }
+
+    #[allow(dead_code)]
+    pub fn expires_at(&self) -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_micros(self.expiry.load(Ordering::SeqCst))
+    }
 }
 
 impl Clone for AtomicExpiryTime {
@@ -127,6 +168,12 @@ impl Clone for AtomicExpiringValue {
             value: AtomicU64::new(self.value.load(Ordering::SeqCst)),
             expiry: self.expiry.clone(),
         }
+    }
+}
+
+impl From<SystemTime> for AtomicExpiryTime {
+    fn from(value: SystemTime) -> Self {
+        AtomicExpiryTime::new(value)
     }
 }
 

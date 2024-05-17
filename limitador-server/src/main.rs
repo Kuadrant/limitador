@@ -5,6 +5,8 @@
 extern crate log;
 extern crate clap;
 
+#[cfg(feature = "distributed_storage")]
+use crate::config::DistributedStorageConfiguration;
 use crate::config::{
     Configuration, DiskStorageConfiguration, InMemoryStorageConfiguration,
     RedisStorageCacheConfiguration, RedisStorageConfiguration, StorageConfiguration,
@@ -22,6 +24,8 @@ use limitador::storage::redis::{
     AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder, DEFAULT_BATCH_SIZE,
     DEFAULT_FLUSHING_PERIOD_SEC, DEFAULT_MAX_CACHED_COUNTERS, DEFAULT_RESPONSE_TIMEOUT_MS,
 };
+#[cfg(feature = "distributed_storage")]
+use limitador::storage::DistributedInMemoryStorage;
 use limitador::storage::{AsyncCounterStorage, AsyncStorage, Storage};
 use limitador::{
     storage, AsyncRateLimiter, AsyncRateLimiterBuilder, RateLimiter, RateLimiterBuilder,
@@ -56,6 +60,7 @@ pub mod prometheus_metrics;
 
 const LIMITADOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 const LIMITADOR_PROFILE: &str = env!("LIMITADOR_PROFILE");
+const LIMITADOR_FEATURES: &str = env!("LIMITADOR_FEATURES");
 const LIMITADOR_HEADER: &str = "Limitador Server";
 
 #[derive(Error, Debug)]
@@ -82,6 +87,8 @@ impl Limiter {
         let rate_limiter = match config.storage {
             StorageConfiguration::Redis(cfg) => Self::redis_limiter(cfg).await,
             StorageConfiguration::InMemory(cfg) => Self::in_memory_limiter(cfg),
+            #[cfg(feature = "distributed_storage")]
+            StorageConfiguration::Distributed(cfg) => Self::distributed_limiter(cfg),
             StorageConfiguration::Disk(cfg) => Self::disk_limiter(cfg),
         };
 
@@ -149,6 +156,20 @@ impl Limiter {
     fn in_memory_limiter(cfg: InMemoryStorageConfiguration) -> Self {
         let rate_limiter_builder =
             RateLimiterBuilder::new(cfg.cache_size.or_else(guess_cache_size).unwrap());
+
+        Self::Blocking(rate_limiter_builder.build())
+    }
+
+    #[cfg(feature = "distributed_storage")]
+    fn distributed_limiter(cfg: DistributedStorageConfiguration) -> Self {
+        let storage = DistributedInMemoryStorage::new(
+            cfg.name,
+            cfg.cache_size.or_else(guess_cache_size).unwrap(),
+            cfg.local,
+            cfg.broadcast,
+        );
+        let rate_limiter_builder =
+            RateLimiterBuilder::with_storage(Storage::with_counter_storage(Box::new(storage)));
 
         Self::Blocking(rate_limiter_builder.build())
     }
@@ -355,12 +376,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn create_config() -> (Configuration, &'static str) {
     let full_version: &'static str = formatcp!(
-        "v{} ({}) {}",
+        "v{} ({}) {} {}",
         LIMITADOR_VERSION,
         env!("LIMITADOR_GIT_HASH"),
+        LIMITADOR_FEATURES,
         LIMITADOR_PROFILE,
     );
-
     // wire args based of defaults
     let limit_arg = Arg::new("LIMITS_FILE")
         .action(ArgAction::Set)
@@ -570,6 +591,43 @@ fn create_config() -> (Configuration, &'static str) {
                 ),
         );
 
+    #[cfg(feature = "distributed_storage")]
+    let cmdline = cmdline.subcommand(
+        Command::new("distributed")
+            .about("Replicates CRDT-based counters across multiple Limitador servers")
+            .display_order(5)
+            .arg(
+                Arg::new("NAME")
+                    .action(ArgAction::Set)
+                    .required(true)
+                    .display_order(2)
+                    .help("Unique name to identify this Limitador instance"),
+            )
+            .arg(
+                Arg::new("LOCAL")
+                    .action(ArgAction::Set)
+                    .required(true)
+                    .display_order(2)
+                    .help("Local IP:PORT to send datagrams from"),
+            )
+            .arg(
+                Arg::new("BROADCAST")
+                    .action(ArgAction::Set)
+                    .required(true)
+                    .display_order(3)
+                    .help("Broadcast IP:PORT to send datagrams to"),
+            )
+            .arg(
+                Arg::new("CACHE_SIZE")
+                    .long("cache")
+                    .short('c')
+                    .action(ArgAction::Set)
+                    .value_parser(value_parser!(u64))
+                    .display_order(4)
+                    .help("Sets the size of the cache for 'qualified counters'"),
+            ),
+    );
+
     let matches = cmdline.get_matches();
 
     let limits_file = matches.get_one::<String>("LIMITS_FILE").unwrap();
@@ -635,6 +693,15 @@ fn create_config() -> (Configuration, &'static str) {
         Some(("memory", sub)) => StorageConfiguration::InMemory(InMemoryStorageConfiguration {
             cache_size: sub.get_one::<u64>("CACHE_SIZE").copied(),
         }),
+        #[cfg(feature = "distributed_storage")]
+        Some(("distributed", sub)) => {
+            StorageConfiguration::Distributed(DistributedStorageConfiguration {
+                name: sub.get_one::<String>("NAME").unwrap().to_owned(),
+                local: sub.get_one::<String>("LOCAL").unwrap().to_owned(),
+                broadcast: sub.get_one::<String>("BROADCAST").unwrap().to_owned(),
+                cache_size: sub.get_one::<u64>("CACHE_SIZE").copied(),
+            })
+        }
         None => storage_config_from_env(),
         _ => unreachable!("Some storage wasn't configured!"),
     };

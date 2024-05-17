@@ -12,6 +12,9 @@ documentation = "https://kuadrant.io/docs/limitador"
 readme = "README.md"
 edition = "2021"
 
+[features]
+distributed_storage = ["limitador/distributed_storage"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
