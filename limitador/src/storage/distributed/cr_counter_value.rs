@@ -20,7 +20,7 @@ impl<A: Ord> CrCounterValue<A> {
             ourselves: actor,
             value: Default::default(),
             others: RwLock::default(),
-            expiry: AtomicExpiryTime::from_now(time_window),
+            expiry: AtomicExpiryTime::new(SystemTime::now() + time_window),
         }
     }
 
@@ -43,7 +43,7 @@ impl<A: Ord> CrCounterValue<A> {
     }
 
     pub fn inc_at(&self, increment: u64, time_window: Duration, when: SystemTime) {
-        if self.expiry.update_if_expired(time_window.as_secs(), when) {
+        if self.expiry.update_if_expired(time_window, when) {
             self.value.store(increment, Ordering::SeqCst);
         } else {
             self.value.fetch_add(increment, Ordering::SeqCst);
@@ -59,10 +59,7 @@ impl<A: Ord> CrCounterValue<A> {
             self.inc_at(increment, time_window, when);
         } else {
             let mut guard = self.others.write().unwrap();
-            if self
-                .expiry
-                .update_if_expired(time_window.as_micros() as u64, when)
-            {
+            if self.expiry.update_if_expired(time_window, when) {
                 guard.insert(actor, increment);
             } else {
                 *guard.entry(actor).or_insert(0) += increment;
@@ -109,7 +106,7 @@ impl<A: Ord> CrCounterValue<A> {
     }
 
     pub fn ttl(&self) -> Duration {
-        self.expiry.duration()
+        self.expiry.ttl()
     }
 
     pub fn expiry(&self) -> SystemTime {
@@ -282,6 +279,6 @@ mod tests {
         a.inc(3, later);
         b.inc(2, later);
         a.merge(b);
-        assert!(a.expiry.duration() < sooner);
+        assert!(a.expiry.ttl() < sooner);
     }
 }

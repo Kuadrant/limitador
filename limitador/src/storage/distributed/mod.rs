@@ -72,7 +72,7 @@ impl CounterStorage for CrInMemoryStorage {
                 None => self.qualified_counters.get_with(counter.clone(), || {
                     Arc::new(CrCounterValue::new(
                         self.identifier.clone(),
-                        Duration::from_secs(counter.seconds()),
+                        counter.window(),
                     ))
                 }),
                 Some(counter) => counter,
@@ -82,16 +82,16 @@ impl CounterStorage for CrInMemoryStorage {
             match limits_by_namespace.entry(counter.limit().namespace().clone()) {
                 Entry::Vacant(v) => {
                     let mut limits = HashMap::new();
-                    let duration = Duration::from_secs(counter.seconds());
-                    let counter_val = CrCounterValue::new(self.identifier.clone(), duration);
+                    let counter_val =
+                        CrCounterValue::new(self.identifier.clone(), counter.window());
                     self.increment_counter(counter.clone(), &counter_val, delta, now);
                     limits.insert(counter.limit().clone(), counter_val);
                     v.insert(limits);
                 }
                 Entry::Occupied(mut o) => match o.get_mut().entry(counter.limit().clone()) {
                     Entry::Vacant(v) => {
-                        let duration = Duration::from_secs(counter.seconds());
-                        let counter_value = CrCounterValue::new(self.identifier.clone(), duration);
+                        let counter_value =
+                            CrCounterValue::new(self.identifier.clone(), counter.window());
                         self.increment_counter(counter.clone(), &counter_value, delta, now);
                         v.insert(counter_value);
                     }
@@ -158,7 +158,7 @@ impl CounterStorage for CrInMemoryStorage {
                 None => self.qualified_counters.get_with(counter.clone(), || {
                     Arc::new(CrCounterValue::new(
                         self.identifier.clone(),
-                        Duration::from_secs(counter.seconds()),
+                        counter.window(),
                     ))
                 }),
                 Some(counter) => counter,
@@ -338,8 +338,7 @@ impl CrInMemoryStorage {
         delta: u64,
         when: SystemTime,
     ) {
-        counter.inc_at(delta, Duration::from_secs(key.seconds()), when);
-
+        counter.inc_at(delta, key.window(), when);
         let counter = counter.clone();
         let (expiry, values) = counter.into_inner();
         let key: CounterKey = key.into();
@@ -366,7 +365,7 @@ impl From<Counter> for CounterKey {
     fn from(value: Counter) -> Self {
         Self {
             namespace: value.namespace().clone(),
-            seconds: value.seconds(),
+            seconds: value.window().as_secs(),
             variables: value.limit().variables(),
             conditions: value.limit().conditions(),
             vars: value.set_variables().clone(),
