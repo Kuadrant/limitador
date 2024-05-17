@@ -3,6 +3,8 @@ use crate::storage::atomic_expiring_value::AtomicExpiringValue;
 use crate::storage::redis::DEFAULT_MAX_CACHED_COUNTERS;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
+use metrics::{counter, gauge, histogram};
+use moka::notification::RemovalCause;
 use moka::sync::Cache;
 use std::collections::HashMap;
 use std::future::Future;
@@ -42,8 +44,11 @@ impl CachedCounterValue {
         }
     }
 
-    pub fn add_from_authority(&self, delta: u64, expire_at: SystemTime) {
-        self.value.add_and_set_expiry(delta, expire_at);
+    pub fn add_from_authority(&self, delta: u64, expire_at: SystemTime, max_value: u64) {
+        let new_val = self.value.add_and_set_expiry(delta, expire_at);
+        if new_val > max_value {
+            histogram!("counter_overshoot").record((new_val - max_value) as f64);
+        }
         self.initial_value.fetch_add(delta, Ordering::SeqCst);
         self.from_authority.store(true, Ordering::Release);
     }
@@ -150,6 +155,7 @@ impl Batcher {
             }
             Entry::Vacant(miss) => {
                 self.limiter.acquire().await.unwrap().forget();
+                gauge!("batcher_size").increment(1);
                 miss.insert_entry(value);
             }
         };
@@ -183,6 +189,7 @@ impl Batcher {
                     let value = self.updates.get(counter).unwrap().clone();
                     result.insert(counter.clone(), value);
                 }
+                histogram!("batcher_flush_size").record(result.len() as f64);
                 let result = consumer(result).await;
                 batch.iter().for_each(|counter| {
                     let prev = self
@@ -190,6 +197,7 @@ impl Batcher {
                         .remove_if(counter, |_, v| v.no_pending_writes());
                     if prev.is_some() {
                         self.limiter.add_permits(1);
+                        gauge!("batcher_size").decrement(1);
                     }
                 });
                 return result;
@@ -232,6 +240,7 @@ impl CountersCache {
         if option.is_none() {
             let from_queue = self.batcher.updates.get(counter);
             if let Some(entry) = from_queue {
+                gauge!("cache_size").increment(1);
                 self.cache.insert(counter.clone(), entry.value().clone());
                 return Some(entry.value().clone());
             }
@@ -255,17 +264,22 @@ impl CountersCache {
             if expiry_ts > SystemTime::now() {
                 let mut from_cache = true;
                 let cached = self.cache.get_with(counter.clone(), || {
+                    gauge!("cache_size").increment(1);
                     from_cache = false;
                     if let Some(entry) = self.batcher.updates.get(&counter) {
                         let cached_value = entry.value();
-                        cached_value.add_from_authority(remote_deltas, expiry_ts);
+                        cached_value.add_from_authority(
+                            remote_deltas,
+                            expiry_ts,
+                            counter.max_value(),
+                        );
                         cached_value.clone()
                     } else {
                         Arc::new(CachedCounterValue::from_authority(&counter, redis_val))
                     }
                 });
                 if from_cache {
-                    cached.add_from_authority(remote_deltas, expiry_ts);
+                    cached.add_from_authority(remote_deltas, expiry_ts, counter.max_value());
                 }
                 return cached;
             }
@@ -277,6 +291,7 @@ impl CountersCache {
 
     pub async fn increase_by(&self, counter: &Counter, delta: u64) {
         let val = self.cache.get_with_by_ref(counter, || {
+            gauge!("cache_size").increment(1);
             if let Some(entry) = self.batcher.updates.get(counter) {
                 entry.value().clone()
             } else {
@@ -304,9 +319,23 @@ impl CountersCacheBuilder {
         self
     }
 
+    fn eviction_listener(
+        _key: Arc<Counter>,
+        value: Arc<CachedCounterValue>,
+        _removal_cause: RemovalCause,
+    ) {
+        gauge!("cache_size").decrement(1);
+        if value.no_pending_writes().not() {
+            counter!("evicted_pending_writes").increment(1);
+        }
+    }
+
     pub fn build(&self, period: Duration) -> CountersCache {
         CountersCache {
-            cache: Cache::new(self.max_cached_counters as u64),
+            cache: Cache::builder()
+                .max_capacity(self.max_cached_counters as u64)
+                .eviction_listener(Self::eviction_listener)
+                .build(),
             batcher: Batcher::new(period, self.max_cached_counters),
         }
     }
@@ -363,7 +392,11 @@ mod tests {
             let value = CachedCounterValue::from_authority(&counter, 0);
             value.delta(&counter, 5);
             assert!(value.no_pending_writes().not());
-            value.add_from_authority(6, SystemTime::now().add(Duration::from_secs(1)));
+            value.add_from_authority(
+                6,
+                SystemTime::now().add(Duration::from_secs(1)),
+                counter.max_value(),
+            );
             assert!(value.no_pending_writes().not());
             assert_eq!(value.pending_writes(), Ok(5));
         }

@@ -1,7 +1,9 @@
-use metrics::{counter, describe_counter, describe_gauge, describe_histogram, gauge};
+use metrics::{counter, describe_counter, describe_gauge, describe_histogram, gauge, histogram};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use std::sync::Arc;
+use std::time::Duration;
 
+use crate::metrics::Timings;
 use limitador::limit::Namespace;
 
 const NAMESPACE_LABEL: &str = "limitador_namespace";
@@ -40,13 +42,18 @@ impl PrometheusMetrics {
         prometheus_handle: Arc<PrometheusHandle>,
     ) -> Self {
         describe_histogram!(
-            "counter_latency",
+            "datastore_latency",
             "Latency to the underlying counter datastore"
         );
         describe_counter!("authorized_calls", "Authorized calls");
         describe_counter!("limited_calls", "Limited calls");
         describe_gauge!("limitador_up", "Limitador is running");
         gauge!("limitador_up").set(1);
+        describe_gauge!(
+            "datastore_partitioned",
+            "Limitador is partitioned from backing datastore"
+        );
+        gauge!("datastore_partitioned").set(0);
         Self {
             use_limit_name_label,
             prometheus_handle,
@@ -85,6 +92,10 @@ impl PrometheusMetrics {
 
     pub fn gather_metrics(&self) -> String {
         self.prometheus_handle.render()
+    }
+
+    pub fn record_datastore_latency(timings: Timings) {
+        histogram!("datastore_latency").record(Duration::from(timings).as_secs_f64())
     }
 }
 

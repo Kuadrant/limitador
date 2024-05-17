@@ -12,7 +12,6 @@ use crate::config::{
 use crate::envoy_rls::server::{run_envoy_rls_server, RateLimitHeaders};
 use crate::http_api::server::run_http_server;
 use crate::metrics::MetricsLayer;
-use ::metrics::histogram;
 use clap::{value_parser, Arg, ArgAction, Command};
 use const_format::formatcp;
 use limitador::counter::Counter;
@@ -202,11 +201,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tracing_subscriber::fmt::layer()
         };
 
-        let metrics_layer = MetricsLayer::new().gather(
-            "should_rate_limit",
-            |timings| histogram!("counter_latency").record(Duration::from(timings).as_secs_f64()),
-            vec!["datastore"],
-        );
+        let metrics_layer = MetricsLayer::new()
+            .gather(
+                "should_rate_limit",
+                PrometheusMetrics::record_datastore_latency,
+                vec!["datastore"],
+            )
+            .gather(
+                "flush_batcher_and_update_counters",
+                PrometheusMetrics::record_datastore_latency,
+                vec!["datastore"],
+            );
 
         if !config.tracing_endpoint.is_empty() {
             global::set_text_map_propagator(TraceContextPropagator::new());

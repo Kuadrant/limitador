@@ -307,11 +307,10 @@ async fn update_counters<C: ConnectionLike>(
             }
         }
 
-        let span = debug_span!("datastore");
         // The redis crate is not working with tables, thus the response will be a Vec of counter values
         let script_res: Vec<i64> = script_invocation
             .invoke_async(redis_conn)
-            .instrument(span)
+            .instrument(debug_span!("datastore"))
             .await?;
 
         // We need to update the values and ttls returned by redis
@@ -331,7 +330,7 @@ async fn update_counters<C: ConnectionLike>(
 
     Ok(res)
 }
-
+#[tracing::instrument(skip_all)]
 async fn flush_batcher_and_update_counters<C: ConnectionLike>(
     mut redis_conn: C,
     storage_is_alive: bool,
