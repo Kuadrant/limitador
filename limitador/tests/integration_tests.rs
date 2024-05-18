@@ -17,7 +17,7 @@ macro_rules! test_with_all_storage_impls {
             #[tokio::test]
             async fn [<$function _distributed_storage>]() {
                 let rate_limiter =
-                    RateLimiter::new_with_storage(Box::new(CrInMemoryStorage::new("test_node".to_owned(), 10_000, "127.0.0.1:19876".to_owned(), "127.0.0.255:19876".to_owned())));
+                    RateLimiter::new_with_storage(Box::new(CrInMemoryStorage::new("test_node".to_owned(), 10_000, "127.0.0.1:19876".to_owned(), Some("127.0.0.255:19876".to_owned()))));
                 $function(&mut TestsLimiter::new_from_blocking_impl(rate_limiter)).await;
             }
 

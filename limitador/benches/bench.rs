@@ -1,18 +1,21 @@
-use criterion::{black_box, criterion_group, criterion_main, Bencher, BenchmarkId, Criterion};
-use rand::seq::SliceRandom;
-
-use limitador::limit::Limit;
-#[cfg(feature = "disk_storage")]
-use limitador::storage::disk::{DiskStorage, OptimizeFor};
-use limitador::storage::in_memory::InMemoryStorage;
-use limitador::storage::redis::CachedRedisStorageBuilder;
-use limitador::storage::{AsyncCounterStorage, CounterStorage};
-use limitador::{AsyncRateLimiter, RateLimiter};
-use rand::SeedableRng;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::future::Future;
 use std::time::Instant;
+
+use criterion::{black_box, criterion_group, criterion_main, Bencher, BenchmarkId, Criterion};
+use rand::seq::SliceRandom;
+use rand::SeedableRng;
+
+use limitador::limit::Limit;
+#[cfg(feature = "disk_storage")]
+use limitador::storage::disk::{DiskStorage, OptimizeFor};
+#[cfg(feature = "distributed_storage")]
+use limitador::storage::distributed::CrInMemoryStorage;
+use limitador::storage::in_memory::InMemoryStorage;
+use limitador::storage::redis::CachedRedisStorageBuilder;
+use limitador::storage::{AsyncCounterStorage, CounterStorage};
+use limitador::{AsyncRateLimiter, RateLimiter};
 
 const SEED: u64 = 42;
 
@@ -22,13 +25,30 @@ criterion_group!(benches, bench_in_mem);
 criterion_group!(benches, bench_in_mem, bench_disk);
 #[cfg(all(not(feature = "disk_storage"), feature = "redis_storage"))]
 criterion_group!(benches, bench_in_mem, bench_redis, bench_cached_redis);
-#[cfg(all(feature = "disk_storage", feature = "redis_storage"))]
+#[cfg(all(
+    feature = "disk_storage",
+    feature = "redis_storage",
+    not(feature = "distributed_storage")
+))]
 criterion_group!(
     benches,
     bench_in_mem,
     bench_disk,
     bench_redis,
     bench_cached_redis
+);
+#[cfg(all(
+    feature = "disk_storage",
+    feature = "redis_storage",
+    feature = "distributed_storage"
+))]
+criterion_group!(
+    benches,
+    bench_in_mem,
+    bench_disk,
+    bench_redis,
+    bench_cached_redis,
+    bench_distributed,
 );
 
 criterion_main!(benches);
@@ -79,7 +99,7 @@ impl Display for TestScenario {
 }
 
 fn bench_in_mem(c: &mut Criterion) {
-    let mut group = c.benchmark_group("In memory");
+    let mut group = c.benchmark_group("Memory");
     for scenario in TEST_SCENARIOS {
         group.bench_with_input(
             BenchmarkId::new("is_rate_limited", scenario),
@@ -109,6 +129,63 @@ fn bench_in_mem(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(feature = "distributed_storage")]
+fn bench_distributed(c: &mut Criterion) {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    let mut group = c.benchmark_group("Distributed");
+    for scenario in TEST_SCENARIOS {
+        group.bench_with_input(
+            BenchmarkId::new("is_rate_limited", scenario),
+            scenario,
+            |b: &mut Bencher, test_scenario: &&TestScenario| {
+                runtime.block_on(async move {
+                    let storage = Box::new(CrInMemoryStorage::new(
+                        "test_node".to_owned(),
+                        10_000,
+                        "127.0.0.1:0".to_owned(),
+                        None,
+                    ));
+                    bench_is_rate_limited(b, test_scenario, storage);
+                })
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("update_counters", scenario),
+            scenario,
+            |b: &mut Bencher, test_scenario: &&TestScenario| {
+                runtime.block_on(async move {
+                    let storage = Box::new(CrInMemoryStorage::new(
+                        "test_node".to_owned(),
+                        10_000,
+                        "127.0.0.1:0".to_owned(),
+                        None,
+                    ));
+                    bench_update_counters(b, test_scenario, storage);
+                })
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("check_rate_limited_and_update", scenario),
+            scenario,
+            |b: &mut Bencher, test_scenario: &&TestScenario| {
+                runtime.block_on(async move {
+                    let storage = Box::new(CrInMemoryStorage::new(
+                        "test_node".to_owned(),
+                        10_000,
+                        "127.0.0.1:0".to_owned(),
+                        None,
+                    ));
+                    bench_check_rate_limited_and_update(b, test_scenario, storage);
+                })
+            },
+        );
+    }
+    group.finish();
+}
 #[cfg(feature = "disk_storage")]
 fn bench_disk(c: &mut Criterion) {
     let mut group = c.benchmark_group("Disk");
