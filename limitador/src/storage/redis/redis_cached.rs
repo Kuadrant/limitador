@@ -17,10 +17,11 @@ use redis::aio::{ConnectionLike, ConnectionManager};
 use redis::{ConnectionInfo, RedisError};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
+use std::sync::atomic::Ordering::Acquire;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{debug_span, error, warn, Instrument};
+use tracing::{debug_span, error, info, warn, Instrument};
 
 // This is just a first version.
 //
@@ -189,7 +190,6 @@ impl CachedRedisStorage {
             AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone());
 
         {
-            let storage = async_redis_storage.clone();
             let counters_cache_clone = counters_cache.clone();
             let conn = redis_conn_manager.clone();
             let p = Arc::clone(&partitioned);
@@ -197,7 +197,6 @@ impl CachedRedisStorage {
                 loop {
                     flush_batcher_and_update_counters(
                         conn.clone(),
-                        storage.is_alive().await,
                         counters_cache_clone.clone(),
                         p.clone(),
                         batch_size,
@@ -339,48 +338,51 @@ async fn update_counters<C: ConnectionLike>(
 #[tracing::instrument(skip_all)]
 async fn flush_batcher_and_update_counters<C: ConnectionLike>(
     mut redis_conn: C,
-    storage_is_alive: bool,
     cached_counters: Arc<CountersCache>,
     partitioned: Arc<AtomicBool>,
     batch_size: usize,
 ) {
-    if partitioned.load(Ordering::Acquire) || !storage_is_alive {
-        if !cached_counters.batcher().is_empty() {
+    let updated_counters = cached_counters
+        .batcher()
+        .consume(batch_size, |counters| {
+            if !counters.is_empty() && !partitioned.load(Acquire) {
+                info!("Flushing {} counter updates", counters.len());
+            }
+            update_counters(&mut redis_conn, counters)
+        })
+        .await
+        .map(|res| {
+            // info!("Success {} counters", res.len());
             flip_partitioned(&partitioned, false);
-        }
-    } else {
-        let updated_counters = cached_counters
-            .batcher()
-            .consume(batch_size, |counters| {
-                update_counters(&mut redis_conn, counters)
-            })
-            .await
-            .or_else(|(data, err)| {
-                if err.is_transient() {
-                    flip_partitioned(&partitioned, true);
-                    let counters = data.len();
-                    let mut reverted = 0;
-                    for (counter, old_value, pending_writes, _) in data {
-                        if cached_counters
-                            .return_pending_writes(&counter, old_value, pending_writes)
-                            .is_err()
-                        {
-                            error!("Couldn't revert writes back to {:?}", &counter);
-                        } else {
-                            reverted += 1;
-                        }
-                    }
-                    warn!("Reverted {} of {} counter increments", reverted, counters);
-                    Ok(Vec::new())
-                } else {
-                    Err(err)
+            res
+        })
+        .or_else(|(data, err)| {
+            if err.is_transient() {
+                if flip_partitioned(&partitioned, true) {
+                    warn!("Error flushing {}", err);
                 }
-            })
-            .expect("Unrecoverable Redis error!");
+                let counters = data.len();
+                let mut reverted = 0;
+                for (counter, old_value, pending_writes, _) in data {
+                    if cached_counters
+                        .return_pending_writes(&counter, old_value, pending_writes)
+                        .is_err()
+                    {
+                        error!("Couldn't revert writes back to {:?}", &counter);
+                    } else {
+                        reverted += 1;
+                    }
+                }
+                warn!("Reverted {} of {} counter increments", reverted, counters);
+                Ok(Vec::new())
+            } else {
+                Err(err)
+            }
+        })
+        .expect("Unrecoverable Redis error!");
 
-        for (counter, new_value, remote_deltas, ttl) in updated_counters {
-            cached_counters.apply_remote_delta(counter, new_value, remote_deltas, ttl);
-        }
+    for (counter, new_value, remote_deltas, ttl) in updated_counters {
+        cached_counters.apply_remote_delta(counter, new_value, remote_deltas, ttl);
     }
 }
 
@@ -531,7 +533,6 @@ mod tests {
 
         flush_batcher_and_update_counters(
             mock_client,
-            true,
             cached_counters.clone(),
             partitioned,
             100,

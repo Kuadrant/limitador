@@ -14,7 +14,7 @@ use redis::{AsyncCommands, RedisError};
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
-use tracing::{debug_span, Instrument};
+use tracing::{debug_span, warn, Instrument};
 
 // Note: this implementation does not guarantee exact limits. Ensuring that we
 // never go over the limits would hurt performance. This implementation
@@ -215,6 +215,14 @@ impl AsyncRedisStorage {
             .clone()
             .incr::<&str, i32, u64>("LIMITADOR_LIVE_CHECK", 1)
             .await
+            .map_err(|err| {
+                let err = <RedisError as Into<StorageErr>>::into(err);
+                if !err.is_transient() {
+                    panic!("Unrecoverable Redis error: {}", err);
+                }
+                warn!("Live check failure: {}", err);
+                err
+            })
             .is_ok()
             .then(|| histogram!("liveness_latency").record(now.elapsed().as_secs_f64()))
             .is_some()
