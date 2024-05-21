@@ -249,28 +249,34 @@ impl CounterStorage for CrInMemoryStorage {
 }
 
 impl CrInMemoryStorage {
-    pub fn new(identifier: String, cache_size: u64, local: String, broadcast: String) -> Self {
+    pub fn new(
+        identifier: String,
+        cache_size: u64,
+        local: String,
+        broadcast: Option<String>,
+    ) -> Self {
         let (sender, mut rx) = mpsc::channel(1000);
 
         let local = local.to_socket_addrs().unwrap().next().unwrap();
-        let remote = broadcast.clone();
-        tokio::spawn(async move {
-            let sock = UdpSocket::bind(local).await.unwrap();
-            sock.set_broadcast(true).unwrap();
-            sock.connect(remote).await.unwrap();
-            loop {
-                let message: CounterValueMessage = rx.recv().await.unwrap();
-                let buf = postcard::to_stdvec(&message).unwrap();
-                match sock.send(&buf).await {
-                    Ok(len) => {
-                        if len != buf.len() {
-                            println!("Couldn't send complete message!");
+        if let Some(remote) = broadcast.clone() {
+            tokio::spawn(async move {
+                let sock = UdpSocket::bind(local).await.unwrap();
+                sock.set_broadcast(true).unwrap();
+                sock.connect(remote).await.unwrap();
+                loop {
+                    let message: CounterValueMessage = rx.recv().await.unwrap();
+                    let buf = postcard::to_stdvec(&message).unwrap();
+                    match sock.send(&buf).await {
+                        Ok(len) => {
+                            if len != buf.len() {
+                                println!("Couldn't send complete message!");
+                            }
                         }
-                    }
-                    Err(err) => println!("Couldn't send update: {:?}", err),
-                };
-            }
-        });
+                        Err(err) => println!("Couldn't send update: {:?}", err),
+                    };
+                }
+            });
+        }
 
         let limits_for_namespace = Arc::new(RwLock::new(HashMap::<
             Namespace,
@@ -282,44 +288,53 @@ impl CrInMemoryStorage {
         {
             let limits_for_namespace = limits_for_namespace.clone();
             let qualified_counters = qualified_counters.clone();
-            tokio::spawn(async move {
-                let sock = UdpSocket::bind(broadcast).await.unwrap();
-                sock.set_broadcast(true).unwrap();
-                let mut buf = [0; 1024];
-                loop {
-                    let (len, addr) = sock.recv_from(&mut buf).await.unwrap();
-                    if addr != local {
-                        match postcard::from_bytes::<CounterValueMessage>(&buf[..len]) {
-                            Ok(message) => {
-                                let CounterValueMessage {
-                                    counter_key,
-                                    expiry,
-                                    values,
-                                } = message;
-                                let counter = <CounterKey as Into<Counter>>::into(counter_key);
-                                if counter.is_qualified() {
-                                    if let Some(counter) = qualified_counters.get(&counter) {
-                                        counter.merge(
+
+            if let Some(broadcast) = broadcast.clone() {
+                tokio::spawn(async move {
+                    let sock = UdpSocket::bind(broadcast).await.unwrap();
+                    sock.set_broadcast(true).unwrap();
+                    let mut buf = [0; 1024];
+                    loop {
+                        let (len, addr) = sock.recv_from(&mut buf).await.unwrap();
+                        if addr != local {
+                            match postcard::from_bytes::<CounterValueMessage>(&buf[..len]) {
+                                Ok(message) => {
+                                    let CounterValueMessage {
+                                        counter_key,
+                                        expiry,
+                                        values,
+                                    } = message;
+                                    let counter = <CounterKey as Into<Counter>>::into(counter_key);
+                                    if counter.is_qualified() {
+                                        if let Some(counter) = qualified_counters.get(&counter) {
+                                            counter.merge(
+                                                (UNIX_EPOCH + Duration::from_secs(expiry), values)
+                                                    .into(),
+                                            );
+                                        }
+                                    } else {
+                                        let counters = limits_for_namespace.read().unwrap();
+                                        let limits = counters.get(counter.namespace()).unwrap();
+                                        let value = limits.get(counter.limit()).unwrap();
+                                        value.merge(
                                             (UNIX_EPOCH + Duration::from_secs(expiry), values)
                                                 .into(),
                                         );
-                                    }
-                                } else {
-                                    let counters = limits_for_namespace.read().unwrap();
-                                    let limits = counters.get(counter.namespace()).unwrap();
-                                    let value = limits.get(counter.limit()).unwrap();
-                                    value.merge(
-                                        (UNIX_EPOCH + Duration::from_secs(expiry), values).into(),
-                                    );
-                                };
-                            }
-                            Err(err) => {
-                                println!("Error from {} bytes: {:?} \n{:?}", len, err, &buf[..len])
+                                    };
+                                }
+                                Err(err) => {
+                                    println!(
+                                        "Error from {} bytes: {:?} \n{:?}",
+                                        len,
+                                        err,
+                                        &buf[..len]
+                                    )
+                                }
                             }
                         }
                     }
-                }
-            });
+                });
+            }
         }
 
         Self {

@@ -166,7 +166,7 @@ impl Limiter {
             cfg.name,
             cfg.cache_size.or_else(guess_cache_size).unwrap(),
             cfg.local,
-            cfg.broadcast,
+            Some(cfg.broadcast),
         );
         let rate_limiter_builder =
             RateLimiterBuilder::with_storage(Storage::with_counter_storage(Box::new(storage)));
