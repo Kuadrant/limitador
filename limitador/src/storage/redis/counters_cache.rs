@@ -104,6 +104,22 @@ impl CachedCounterValue {
         value - start == 0
     }
 
+    fn revert_writes(&self, writes: u64) -> Result<(), ()> {
+        let newer = self.initial_value.load(Ordering::SeqCst);
+        if newer > writes {
+            return match self.initial_value.compare_exchange(
+                newer,
+                newer - writes,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Err(expiry) if expiry != 0 => Err(()),
+                _ => Ok(()),
+            };
+        }
+        Ok(())
+    }
+
     pub fn hits(&self, _: &Counter) -> u64 {
         self.value.value_at(SystemTime::now())
     }
@@ -165,10 +181,10 @@ impl Batcher {
         self.notifier.notify_one();
     }
 
-    pub async fn consume<F, Fut, O>(&self, max: usize, consumer: F) -> O
+    pub async fn consume<F, Fut, T, E>(&self, max: usize, consumer: F) -> Result<T, E>
     where
         F: FnOnce(HashMap<Counter, Arc<CachedCounterValue>>) -> Fut,
-        Fut: Future<Output = O>,
+        Fut: Future<Output = Result<T, E>>,
     {
         let mut ready = self.batch_ready(max);
         loop {
@@ -191,15 +207,17 @@ impl Batcher {
                 }
                 histogram!("batcher_flush_size").record(result.len() as f64);
                 let result = consumer(result).await;
-                batch.iter().for_each(|counter| {
-                    let prev = self
-                        .updates
-                        .remove_if(counter, |_, v| v.no_pending_writes());
-                    if prev.is_some() {
-                        self.limiter.add_permits(1);
-                        gauge!("batcher_size").decrement(1);
-                    }
-                });
+                if result.is_ok() {
+                    batch.iter().for_each(|counter| {
+                        let prev = self
+                            .updates
+                            .remove_if(counter, |_, v| v.no_pending_writes());
+                        if prev.is_some() {
+                            self.limiter.add_permits(1);
+                            gauge!("batcher_size").decrement(1);
+                        }
+                    });
+                }
                 return result;
             } else {
                 ready = select! {
@@ -250,6 +268,31 @@ impl CountersCache {
 
     pub fn batcher(&self) -> &Batcher {
         &self.batcher
+    }
+
+    pub fn return_pending_writes(
+        &self,
+        counter: &Counter,
+        value: u64,
+        writes: u64,
+    ) -> Result<(), ()> {
+        if writes != 0 {
+            let mut miss = false;
+            let value = self.cache.get_with_by_ref(counter, || {
+                if let Some(entry) = self.batcher.updates.get(counter) {
+                    entry.value().clone()
+                } else {
+                    miss = true;
+                    let value = Arc::new(CachedCounterValue::from_authority(counter, value));
+                    value.delta(counter, writes);
+                    value
+                }
+            });
+            if miss.not() {
+                return value.revert_writes(writes);
+            }
+        }
+        Ok(())
     }
 
     pub fn apply_remote_delta(
@@ -456,9 +499,10 @@ mod tests {
                 .consume(2, |items| {
                     assert!(items.is_empty());
                     assert!(SystemTime::now().duration_since(start).unwrap() >= duration);
-                    async {}
+                    async { Ok::<(), ()>(()) }
                 })
-                .await;
+                .await
+                .expect("Always Ok!");
         }
 
         #[tokio::test]
@@ -482,9 +526,10 @@ mod tests {
                         SystemTime::now().duration_since(start).unwrap()
                             >= Duration::from_millis(100)
                     );
-                    async {}
+                    async { Ok::<(), ()>(()) }
                 })
-                .await;
+                .await
+                .expect("Always Ok!");
         }
 
         #[tokio::test]
@@ -507,9 +552,10 @@ mod tests {
                     let wait_period = SystemTime::now().duration_since(start).unwrap();
                     assert!(wait_period >= Duration::from_millis(40));
                     assert!(wait_period < Duration::from_millis(50));
-                    async {}
+                    async { Ok::<(), ()>(()) }
                 })
-                .await;
+                .await
+                .expect("Always Ok!");
         }
 
         #[tokio::test]
@@ -528,9 +574,10 @@ mod tests {
                     assert!(
                         SystemTime::now().duration_since(start).unwrap() < Duration::from_millis(5)
                     );
-                    async {}
+                    async { Ok::<(), ()>(()) }
                 })
-                .await;
+                .await
+                .expect("Always Ok!");
         }
 
         #[tokio::test]
@@ -553,9 +600,10 @@ mod tests {
                     let wait_period = SystemTime::now().duration_since(start).unwrap();
                     assert!(wait_period >= Duration::from_millis(40));
                     assert!(wait_period < Duration::from_millis(50));
-                    async {}
+                    async { Ok::<(), ()>(()) }
                 })
-                .await;
+                .await
+                .expect("Always Ok!");
         }
     }
 
