@@ -233,10 +233,7 @@ impl Batcher {
                         info!("Priority flush!");
                         true
                     },
-                    _ = tokio::time::sleep(self.interval) => {
-                        // info!("Time limit hit!");
-                        true
-                    },
+                    _ = tokio::time::sleep(self.interval) => true,
                 }
             }
         }
