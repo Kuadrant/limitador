@@ -531,13 +531,8 @@ mod tests {
             assert_eq!(c.hits(&counter), 2);
         }
 
-        flush_batcher_and_update_counters(
-            mock_client,
-            cached_counters.clone(),
-            partitioned,
-            100,
-        )
-        .await;
+        flush_batcher_and_update_counters(mock_client, cached_counters.clone(), partitioned, 100)
+            .await;
 
         let c = cached_counters.get(&counter).unwrap();
         assert_eq!(c.hits(&counter), 8);
