@@ -12,6 +12,7 @@ use tokio::time::sleep;
 
 use tokio_stream::{wrappers::ReceiverStream, Stream, StreamExt};
 use tonic::{Code, Request, Response, Status, Streaming};
+use tracing::debug;
 
 use crate::counter::Counter;
 use crate::storage::distributed::cr_counter_value::CrCounterValue;
@@ -127,7 +128,7 @@ impl Session {
                         },
                         Some(Err(err)) => {
                             if is_disconnect(&err) {
-                                println!("peer: '{}': disconnected: {:?}", self.peer_id, err);
+                                debug!("peer: '{}': disconnected: {:?}", self.peer_id, err);
                                 return Ok(());
                             } else {
                                 return Err(err);
@@ -142,7 +143,7 @@ impl Session {
     async fn process_packet(&self, packet: Packet) -> Result<(), Status> {
         match packet.message {
             Some(Message::Ping(_)) => {
-                println!("peer: '{}': Ping", self.peer_id);
+                debug!("peer: '{}': Ping", self.peer_id);
                 self.out_stream
                     .clone()
                     .send(Ok(Message::Pong(Pong {
@@ -154,7 +155,7 @@ impl Session {
                     .await?;
             }
             Some(Message::MembershipUpdate(update)) => {
-                println!("peer: '{}': MembershipUpdate", self.peer_id);
+                debug!("peer: '{}': MembershipUpdate", self.peer_id);
                 // add any new peers to peer_trackers
                 let mut state = self.replication_state.write().await;
                 for peer in update.peers {
@@ -185,7 +186,7 @@ impl Session {
                 }
             }
             Some(Message::CounterUpdate(update)) => {
-                println!("peer: '{}': CounterUpdate", self.peer_id);
+                debug!("peer: '{}': CounterUpdate", self.peer_id);
 
                 let counter_key = postcard::from_bytes::<CounterKey>(update.key.as_slice())
                     .map_err(|err| {
@@ -216,7 +217,7 @@ impl Session {
                 };
             }
             _ => {
-                println!("peer: '{}': unsupported packet: {:?}", self.peer_id, packet);
+                debug!("peer: '{}': unsupported packet: {:?}", self.peer_id, packet);
                 return Err(Status::invalid_argument(format!(
                     "unsupported packet {:?}",
                     packet
@@ -406,7 +407,7 @@ impl Broker {
                     match broker.connect_to_peer(peer_url.clone()).await {
                         Ok(_) => return,
                         Err(err) => {
-                            println!("failed to connect with peer '{}': {:?}", peer_url, err);
+                            debug!("failed to connect with peer '{}': {:?}", peer_url, err);
                             sleep(Duration::from_secs(1)).await
                         }
                     }
@@ -425,25 +426,7 @@ impl Broker {
             });
         }
 
-        // // Simulate sending counter updates
-        // {
-        //     let server = server.clone();
-        //     tokio::spawn(async move {
-        //         loop {
-        //             time::sleep(Duration::from_secs(1)).await;
-        //
-        //             let window = Duration::from_secs(10);
-        //             server.publish_counter_update(CounterUpdate {
-        //                 key: "my-counter".to_string(),
-        //                 values: vec![74],
-        //                 expires_at: SystemTime::now().add(window).duration_since(UNIX_EPOCH).unwrap().as_millis() ,
-        //                 window: window.as_millis() as u64,
-        //             }).await;
-        //         }
-        //     });
-        // }
-
-        println!(
+        debug!(
             "peer '{}' listening on: id={}",
             self.broker_state.id, self.listen_address
         );
@@ -483,10 +466,10 @@ impl Broker {
         tokio::spawn(async move {
             match session.process(&mut in_stream).await {
                 Ok(_) => {
-                    println!("client initiated stream ended");
+                    debug!("client initiated stream ended");
                 }
                 Err(err) => {
-                    println!("client initiated stream processing failed {:?}", err);
+                    debug!("client initiated stream processing failed {:?}", err);
                 }
             }
             session.close().await;
@@ -520,14 +503,14 @@ impl Broker {
 
         for (peer_id, urls) in failed_peers {
             for url in urls {
-                println!(
+                debug!(
                     "attempting to reconnect to failed peer '{}' over {:?}",
                     peer_id, url
                 );
                 match self.connect_to_peer(url.clone()).await {
                     Ok(_) => break,
                     Err(err) => {
-                        println!("failed to connect with peer '{}': {:?}", url, err);
+                        debug!("failed to connect with peer '{}': {:?}", url, err);
                     }
                 }
             }
@@ -641,7 +624,7 @@ impl Broker {
                     session: Some(session.clone()),
                 };
 
-                println!(
+                debug!(
                     "peer {} clock skew: {}",
                     peer_id.clone(),
                     &tracker.clock_skew
@@ -670,7 +653,7 @@ impl Replication for Broker {
         &self,
         req: Request<Streaming<Packet>>,
     ) -> Result<Response<Self::StreamStream>, Status> {
-        println!("ReplicationServer::stream");
+        debug!("ReplicationServer::stream");
 
         let mut in_stream = req.into_inner();
         let (tx, rx) = mpsc::channel(1);
@@ -682,10 +665,10 @@ impl Replication for Broker {
                 Ok(Some(mut session)) => {
                     match session.process(&mut in_stream).await {
                         Ok(_) => {
-                            println!("server accepted stream ended");
+                            debug!("server accepted stream ended");
                         }
                         Err(err) => {
-                            println!("server accepted stream processing failed {:?}", err);
+                            debug!("server accepted stream processing failed {:?}", err);
                         }
                     }
                     session.close().await;
@@ -694,7 +677,7 @@ impl Replication for Broker {
                     // dup session..
                 }
                 Err(err) => {
-                    println!("stream handshake failed {:?}", err);
+                    debug!("stream handshake failed {:?}", err);
                 }
             }
         });

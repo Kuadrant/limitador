@@ -6,15 +6,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn generate_protobuf() -> Result<(), Box<dyn Error>> {
-    let proto_path: &Path = "proto/distributed.proto".as_ref();
+    if cfg!(feature = "distributed_storage") {
+        let proto_path: &Path = "proto/distributed.proto".as_ref();
 
-    let proto_dir = proto_path
-        .parent()
-        .expect("proto file should reside in a directory");
+        let proto_dir = proto_path
+            .parent()
+            .expect("proto file should reside in a directory");
 
-    tonic_build::configure()
-        .protoc_arg("--experimental_allow_proto3_optional")
-        .compile(&[proto_path], &[proto_dir])?;
+        tonic_build::configure()
+            .protoc_arg("--experimental_allow_proto3_optional")
+            .compile(&[proto_path], &[proto_dir])?;
+    }
 
     Ok(())
 }
