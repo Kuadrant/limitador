@@ -17,7 +17,6 @@ use redis::aio::{ConnectionLike, ConnectionManager};
 use redis::{ConnectionInfo, RedisError};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-use std::sync::atomic::Ordering::Acquire;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -345,20 +344,20 @@ async fn flush_batcher_and_update_counters<C: ConnectionLike>(
     let updated_counters = cached_counters
         .batcher()
         .consume(batch_size, |counters| {
-            if !counters.is_empty() && !partitioned.load(Acquire) {
+            if !counters.is_empty() && !partitioned.load(Ordering::Acquire) {
                 info!("Flushing {} counter updates", counters.len());
             }
             update_counters(&mut redis_conn, counters)
         })
         .await
         .map(|res| {
-            // info!("Success {} counters", res.len());
             flip_partitioned(&partitioned, false);
             res
         })
         .or_else(|(data, err)| {
             if err.is_transient() {
-                if flip_partitioned(&partitioned, true) {
+                let new_partition = flip_partitioned(&partitioned, true);
+                if new_partition {
                     warn!("Error flushing {}", err);
                 }
                 let counters = data.len();
@@ -373,7 +372,9 @@ async fn flush_batcher_and_update_counters<C: ConnectionLike>(
                         reverted += 1;
                     }
                 }
-                warn!("Reverted {} of {} counter increments", reverted, counters);
+                if new_partition {
+                    warn!("Reverted {} of {} counter increments", reverted, counters);
+                }
                 Ok(Vec::new())
             } else {
                 Err(err)
