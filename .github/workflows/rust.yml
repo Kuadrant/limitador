@@ -64,21 +64,6 @@ jobs:
           protoc-version: '3.19.4'
       - run: cargo clippy --all-features --all-targets -- -D warnings
 
-  bench:
-    name: Bench
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: supercharge/redis-github-action@1.1.0
-        with:
-          redis-version: 7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: Swatinem/rust-cache@v2
-      - uses: abelfodil/protoc-action@v1
-        with:
-          protoc-version: '3.19.4'
-      - run: cargo bench
-
   kind:
     name: Try in kind (Kubernetes in Docker)
     runs-on: ubuntu-latest
