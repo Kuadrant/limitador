@@ -154,8 +154,8 @@ pub struct InMemoryStorageConfiguration {
 pub struct DistributedStorageConfiguration {
     pub name: String,
     pub cache_size: Option<u64>,
-    pub local: String,
-    pub broadcast: String,
+    pub listen_address: String,
+    pub peer_urls: Vec<String>,
 }
 
 #[derive(PartialEq, Eq, Debug)]

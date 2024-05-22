@@ -43,6 +43,10 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{env, process};
+
+#[cfg(feature = "distributed_storage")]
+use clap::parser::ValuesRef;
+
 use sysinfo::{MemoryRefreshKind, RefreshKind, System};
 use thiserror::Error;
 use tokio::runtime::Handle;
@@ -165,8 +169,8 @@ impl Limiter {
         let storage = DistributedInMemoryStorage::new(
             cfg.name,
             cfg.cache_size.or_else(guess_cache_size).unwrap(),
-            cfg.local,
-            Some(cfg.broadcast),
+            cfg.listen_address,
+            cfg.peer_urls,
         );
         let rate_limiter_builder =
             RateLimiterBuilder::with_storage(Storage::with_counter_storage(Box::new(storage)));
@@ -604,18 +608,18 @@ fn create_config() -> (Configuration, &'static str) {
                     .help("Unique name to identify this Limitador instance"),
             )
             .arg(
-                Arg::new("LOCAL")
+                Arg::new("LISTEN_ADDRESS")
                     .action(ArgAction::Set)
                     .required(true)
                     .display_order(2)
-                    .help("Local IP:PORT to send datagrams from"),
+                    .help("Local IP:PORT to listen on for replication"),
             )
             .arg(
-                Arg::new("BROADCAST")
-                    .action(ArgAction::Set)
-                    .required(true)
+                Arg::new("PEER_URLS")
+                    .action(ArgAction::Append)
+                    .required(false)
                     .display_order(3)
-                    .help("Broadcast IP:PORT to send datagrams to"),
+                    .help("A replication peer url that this instance will connect to"),
             )
             .arg(
                 Arg::new("CACHE_SIZE")
@@ -697,8 +701,12 @@ fn create_config() -> (Configuration, &'static str) {
         Some(("distributed", sub)) => {
             StorageConfiguration::Distributed(DistributedStorageConfiguration {
                 name: sub.get_one::<String>("NAME").unwrap().to_owned(),
-                local: sub.get_one::<String>("LOCAL").unwrap().to_owned(),
-                broadcast: sub.get_one::<String>("BROADCAST").unwrap().to_owned(),
+                listen_address: sub.get_one::<String>("LISTEN_ADDRESS").unwrap().to_owned(),
+                peer_urls: sub
+                    .get_many::<String>("PEER_URLS")
+                    .unwrap_or(ValuesRef::default())
+                    .map(|x| x.to_owned())
+                    .collect(),
                 cache_size: sub.get_one::<u64>("CACHE_SIZE").copied(),
             })
         }
