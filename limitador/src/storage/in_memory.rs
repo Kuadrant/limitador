@@ -9,6 +9,22 @@ use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
+struct CounterAuthorizationValues {
+    max_value: i64,
+    seconds: u64,
+    limit_name: Option<String>,
+}
+
+impl From<&mut Counter> for CounterAuthorizationValues {
+    fn from(counter: &mut Counter) -> Self {
+        Self {
+            max_value: counter.max_value(),
+            seconds: counter.seconds(),
+            limit_name: counter.limit().name().map(|n| n.to_owned()),
+        }
+    }
+}
+
 type NamespacedLimitCounters<T> = HashMap<Namespace, HashMap<Limit, T>>;
 
 pub struct InMemoryStorage {
@@ -102,9 +118,12 @@ impl CounterStorage for InMemoryStorage {
     ) -> Result<Authorization, StorageErr> {
         let limits_by_namespace = self.limits_for_namespace.read().unwrap();
         let mut first_limited = None;
-        let mut counter_values_to_update: Vec<(&AtomicExpiringValue, u64)> = Vec::new();
-        let mut qualified_counter_values_to_updated: Vec<(Arc<AtomicExpiringValue>, u64)> =
+        let mut counter_values_to_update: Vec<(&AtomicExpiringValue, CounterAuthorizationValues)> =
             Vec::new();
+        let mut qualified_counter_values_to_updated: Vec<(
+            Arc<AtomicExpiringValue>,
+            CounterAuthorizationValues,
+        )> = Vec::new();
         let now = SystemTime::now();
 
         let mut process_counter =
@@ -126,6 +145,16 @@ impl CounterStorage for InMemoryStorage {
                 None
             };
 
+        let check_post_update = |counter_values: CounterAuthorizationValues,
+                                 expiring_value: &AtomicExpiringValue,
+                                 delta: i64|
+         -> Option<Authorization> {
+            let value = expiring_value.update(delta, counter_values.seconds, now);
+            if value > counter_values.max_value {
+                return Option::from(Authorization::Limited(counter_values.limit_name));
+            }
+            None
+        };
         // Process simple counters
         for counter in counters.iter_mut().filter(|c| !c.is_qualified()) {
             let atomic_expiring_value: &AtomicExpiringValue = limits_by_namespace
@@ -138,7 +167,7 @@ impl CounterStorage for InMemoryStorage {
                     return Ok(limited);
                 }
             }
-            counter_values_to_update.push((atomic_expiring_value, counter.seconds()));
+            counter_values_to_update.push((atomic_expiring_value, counter.into()));
         }
 
         // Process qualified counters
@@ -159,22 +188,29 @@ impl CounterStorage for InMemoryStorage {
                 }
             }
 
-            qualified_counter_values_to_updated.push((value, counter.seconds()));
+            qualified_counter_values_to_updated.push((value, counter.into()));
         }
 
         if let Some(limited) = first_limited {
             return Ok(limited);
         }
 
-        // Update counters
-        counter_values_to_update.iter().for_each(|(v, ttl)| {
-            v.update(delta, *ttl, now);
-        });
-        qualified_counter_values_to_updated
-            .iter()
-            .for_each(|(v, ttl)| {
-                v.update(delta, *ttl, now);
-            });
+        // Update and check counters
+        counter_values_to_update.sort_by(|a, b| a.0.ttl().cmp(&b.0.ttl()));
+
+        for (expiring_value, counter_values) in counter_values_to_update {
+            if let Some(limited) = check_post_update(counter_values, expiring_value, delta) {
+                return Ok(limited);
+            }
+        }
+
+        qualified_counter_values_to_updated.sort_by(|a, b| a.0.ttl().cmp(&b.0.ttl()));
+
+        for (arc_expiring_value, counter_values) in qualified_counter_values_to_updated {
+            if let Some(limited) = check_post_update(counter_values, &arc_expiring_value, delta) {
+                return Ok(limited);
+            }
+        }
 
         Ok(Authorization::Ok)
     }
@@ -295,6 +331,9 @@ impl Default for InMemoryStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::Authorization::Limited;
+    use std::sync::Barrier;
+    use std::thread;
 
     #[test]
     fn counters_for_multiple_limit_per_ns() {
@@ -317,5 +356,80 @@ mod tests {
             storage.counters_in_namespace(counter_1.namespace()).len(),
             2
         );
+    }
+
+    #[test]
+    fn check_and_update_multi_threaded() {
+        let namespace = "test_namespace";
+        let storage = &InMemoryStorage::default();
+        let limit_1 = Limit::new(namespace, 2, 1, vec!["x == \"1\""], vec![""]);
+        let limit_2 = Limit::new(namespace, 3, 2, vec!["x == \"1\""], vec![""]);
+        let counter_1 = Counter::new(limit_1, HashMap::default());
+        let counter_2 = Counter::new(limit_2, HashMap::default());
+
+        storage.update_counter(&counter_1, 1).unwrap();
+        storage.update_counter(&counter_2, 1).unwrap();
+
+        let mut counters_1 = vec![counter_1.clone(), counter_2.clone()];
+        let mut counters_2 = counters_1.clone();
+
+        let results = thread::scope(|s| {
+            let res_1 = s.spawn(|| storage.check_and_update(&mut counters_1, 1, false).unwrap());
+            let res_2 = s.spawn(|| storage.check_and_update(&mut counters_2, 1, false).unwrap());
+            (res_1.join().unwrap(), res_2.join().unwrap())
+        });
+
+        // the order of the results is not guaranteed, one thread might finish before the other and its limited
+        assert!(matches!(
+            results,
+            (Authorization::Ok, Limited(None)) | (Limited(None), Authorization::Ok)
+        ));
+    }
+
+    #[test]
+    fn check_and_update_counters_partially_updated() {
+        let namespace = "test_namespace";
+        let storage = Arc::new(InMemoryStorage::default());
+        let limit_1 = Limit::new(namespace, 2, 1, vec!["x == \"1\""], vec![""]);
+        let limit_2 = Limit::new(namespace, 3, 2, vec!["x == \"1\""], vec![""]);
+        let counter_1 = Counter::new(limit_1, HashMap::default());
+        let counter_2 = Counter::new(limit_2, HashMap::default());
+
+        let barrier = Arc::new(Barrier::new(2));
+
+        storage.update_counter(&counter_1, 1).unwrap();
+        storage.update_counter(&counter_2, 1).unwrap();
+
+        let mut counters_1 = vec![counter_1.clone(), counter_2.clone()];
+        let mut counters_2 = counters_1.clone();
+
+        let storage_clone = Arc::clone(&storage);
+        let barrier_clone = Arc::clone(&barrier);
+        let thread1 = thread::spawn(move || {
+            barrier_clone.wait();
+            storage_clone
+                .check_and_update(&mut counters_1, 1, false)
+                .unwrap();
+        });
+
+        let storage_clone2 = Arc::clone(&storage);
+        let barrier_clone2 = Arc::clone(&barrier);
+        let thread2 = thread::spawn(move || {
+            barrier_clone2.wait();
+            storage_clone2
+                .check_and_update(&mut counters_2, 1, false)
+                .unwrap();
+        });
+
+        thread1.join().unwrap();
+        thread2.join().unwrap();
+
+        let stored_counters = storage.counters_in_namespace(counter_1.namespace());
+
+        assert!([2i64].contains(&stored_counters[&counter_2].value()));
+
+        // a thread _might_ limit in the update phase, and not update the remaining counters
+        // that's why we check for 2 or 3
+        assert!([2i64, 3i64].contains(&stored_counters[&counter_1].value()));
     }
 }
