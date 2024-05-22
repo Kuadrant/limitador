@@ -40,6 +40,7 @@ impl Counter {
         }
     }
 
+    #[cfg(any(feature = "redis_storage", feature = "disk_storage"))]
     pub(crate) fn key(&self) -> Self {
         Self {
             limit: self.limit.clone(),
@@ -68,8 +69,8 @@ impl Counter {
         false
     }
 
-    pub fn seconds(&self) -> u64 {
-        self.limit.seconds()
+    pub fn window(&self) -> Duration {
+        Duration::from_secs(self.limit.seconds())
     }
 
     pub fn namespace(&self) -> &Namespace {

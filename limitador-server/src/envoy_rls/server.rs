@@ -175,7 +175,7 @@ pub fn to_response_header(
             let mut all_limits_text = String::with_capacity(20 * counters.len());
             counters.iter_mut().for_each(|counter| {
                 all_limits_text.push_str(
-                    format!(", {};w={}", counter.max_value(), counter.seconds()).as_str(),
+                    format!(", {};w={}", counter.max_value(), counter.window().as_secs()).as_str(),
                 );
                 if let Some(name) = counter.limit().name() {
                     all_limits_text

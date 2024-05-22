@@ -21,6 +21,7 @@ macro_rules! test_with_all_storage_impls {
                 $function(&mut TestsLimiter::new_from_blocking_impl(rate_limiter)).await;
             }
 
+            #[cfg(feature = "disk_storage")]
             #[tokio::test]
             async fn [<$function _disk_storage>]() {
                 let dir = TempDir::new().expect("We should have a dir!");
@@ -159,6 +160,7 @@ mod test {
     use self::limitador::RateLimiter;
     use crate::helpers::tests_limiter::*;
     use limitador::limit::Limit;
+    #[cfg(feature = "disk_storage")]
     use limitador::storage::disk::{DiskStorage, OptimizeFor};
     #[cfg(feature = "distributed_storage")]
     use limitador::storage::distributed::CrInMemoryStorage;
@@ -167,6 +169,7 @@ mod test {
     use std::future::Future;
     use std::thread::sleep;
     use std::time::Duration;
+    #[cfg(feature = "disk_storage")]
     use tempfile::TempDir;
     use tokio::time::error::Elapsed;
 

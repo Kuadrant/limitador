@@ -56,10 +56,10 @@ pub fn is_limited(
                 if x >= 0 {
                     Duration::from_millis(x as u64)
                 } else {
-                    Duration::from_secs(counter.seconds())
+                    counter.window()
                 }
             })
-            .unwrap_or(Duration::from_secs(counter.seconds()));
+            .unwrap_or(counter.window());
 
         counter.set_expires_in(expires_in);
         if first_limited.is_none() && remaining.is_none() {

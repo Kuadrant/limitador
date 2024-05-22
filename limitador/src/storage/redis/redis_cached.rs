@@ -19,7 +19,7 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{debug_span, error, info, warn, Instrument};
 
 // This is just a first version.
@@ -93,7 +93,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
                                 .checked_sub(delta)
                                 .unwrap_or_default(),
                         );
-                        counter.set_expires_in(val.to_next_window());
+                        counter.set_expires_in(val.ttl());
                     }
                 }
                 _ => {
@@ -114,7 +114,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
                 }
                 if load_counters {
                     counter.set_remaining(remaining - delta);
-                    counter.set_expires_in(fake.to_next_window()); // todo: this is a plain lie!
+                    counter.set_expires_in(fake.ttl()); // todo: this is a plain lie!
                 }
             }
         }
@@ -282,14 +282,16 @@ impl CachedRedisStorageBuilder {
 async fn update_counters<C: ConnectionLike>(
     redis_conn: &mut C,
     counters_and_deltas: HashMap<Counter, Arc<CachedCounterValue>>,
-) -> Result<Vec<(Counter, u64, u64, i64)>, (Vec<(Counter, u64, u64, i64)>, StorageErr)> {
+) -> Result<Vec<(Counter, u64, u64, SystemTime)>, (Vec<(Counter, u64, u64, SystemTime)>, StorageErr)>
+{
     let redis_script = redis::Script::new(BATCH_UPDATE_COUNTERS);
     let mut script_invocation = redis_script.prepare_invoke();
 
     let res = if counters_and_deltas.is_empty() {
         Default::default()
     } else {
-        let mut res: Vec<(Counter, u64, u64, i64)> = Vec::with_capacity(counters_and_deltas.len());
+        let mut res: Vec<(Counter, u64, u64, SystemTime)> =
+            Vec::with_capacity(counters_and_deltas.len());
 
         for (counter, value) in counters_and_deltas {
             let (delta, last_value_from_redis) = value
@@ -298,10 +300,10 @@ async fn update_counters<C: ConnectionLike>(
             if delta > 0 {
                 script_invocation.key(key_for_counter(&counter));
                 script_invocation.key(key_for_counters_of_limit(counter.limit()));
-                script_invocation.arg(counter.seconds());
+                script_invocation.arg(counter.window().as_secs());
                 script_invocation.arg(delta);
                 // We need to store the counter in the actual order we are sending it to the script
-                res.push((counter, last_value_from_redis, delta, 0));
+                res.push((counter, last_value_from_redis, delta, UNIX_EPOCH));
             }
         }
 
@@ -327,7 +329,8 @@ async fn update_counters<C: ConnectionLike>(
                 .unwrap_or(0)
                 .saturating_sub(*val); // new value - previous one = remote writes
             *val = u64::try_from(script_res[j]).unwrap_or(0); // update to value to newest
-            *expires_at = script_res[j + 1];
+            *expires_at =
+                UNIX_EPOCH + Duration::from_millis(u64::try_from(script_res[j + 1]).unwrap_or(0));
         }
         res
     };
@@ -447,13 +450,15 @@ mod tests {
         arc.delta(&counter, LOCAL_INCREMENTS);
         counters_and_deltas.insert(counter.clone(), arc);
 
-        let one_sec_from_now = SystemTime::now()
-            .add(Duration::from_secs(1))
-            .duration_since(UNIX_EPOCH)
-            .unwrap();
+        let one_sec_from_now = SystemTime::now().add(Duration::from_secs(1));
         let mock_response = Value::Bulk(vec![
             Value::Int(NEW_VALUE_FROM_REDIS as i64),
-            Value::Int(one_sec_from_now.as_millis() as i64),
+            Value::Int(
+                one_sec_from_now
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as i64,
+            ),
         ]);
 
         let mut mock_client = MockRedisConnection::new(vec![MockCmd::new(
@@ -478,7 +483,13 @@ mod tests {
             NEW_VALUE_FROM_REDIS - INITIAL_VALUE_FROM_REDIS - LOCAL_INCREMENTS,
             remote_increments
         );
-        assert_eq!(one_sec_from_now.as_millis(), expire_at as u128);
+        assert_eq!(
+            one_sec_from_now
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+            expire_at.duration_since(UNIX_EPOCH).unwrap().as_millis()
+        );
     }
 
     #[tokio::test]

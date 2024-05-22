@@ -27,13 +27,13 @@ impl AtomicExpiringValue {
         self.value_at(SystemTime::now())
     }
 
-    #[allow(dead_code)]
-    pub fn add_and_set_expiry(&self, delta: u64, expire_at: SystemTime) -> u64 {
-        self.expiry.update(expire_at);
+    #[cfg(feature = "redis_storage")]
+    pub fn add_and_set_expiry(&self, delta: u64, expiry: SystemTime) -> u64 {
+        self.expiry.update(expiry);
         self.value.fetch_add(delta, Ordering::SeqCst) + delta
     }
 
-    pub fn update(&self, delta: u64, ttl: u64, when: SystemTime) -> u64 {
+    pub fn update(&self, delta: u64, ttl: Duration, when: SystemTime) -> u64 {
         if self.expiry.update_if_expired(ttl, when) {
             self.value.store(delta, Ordering::SeqCst);
             return delta;
@@ -42,7 +42,7 @@ impl AtomicExpiringValue {
     }
 
     pub fn ttl(&self) -> Duration {
-        self.expiry.duration()
+        self.expiry.ttl()
     }
 }
 
@@ -59,18 +59,13 @@ impl AtomicExpiryTime {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn from_now(ttl: Duration) -> Self {
-        Self::new(SystemTime::now() + ttl)
-    }
-
     fn since_epoch(when: SystemTime) -> u64 {
         when.duration_since(UNIX_EPOCH)
             .expect("SystemTime before UNIX EPOCH!")
             .as_micros() as u64
     }
 
-    pub fn duration(&self) -> Duration {
+    pub fn ttl(&self) -> Duration {
         let expiry =
             SystemTime::UNIX_EPOCH + Duration::from_micros(self.expiry.load(Ordering::SeqCst));
         expiry
@@ -83,14 +78,14 @@ impl AtomicExpiryTime {
         self.expiry.load(Ordering::SeqCst) <= when
     }
 
-    #[allow(dead_code)]
+    #[cfg(feature = "redis_storage")]
     pub fn update(&self, expiry: SystemTime) {
         self.expiry
             .store(Self::since_epoch(expiry), Ordering::SeqCst);
     }
 
-    pub fn update_if_expired(&self, ttl: u64, when: SystemTime) -> bool {
-        let ttl_micros = ttl * 1_000_000;
+    pub fn update_if_expired(&self, ttl: Duration, when: SystemTime) -> bool {
+        let ttl_micros = u64::try_from(ttl.as_micros()).expect("Wow! The future is here!");
         let when_micros = Self::since_epoch(when);
         let expiry = self.expiry.load(Ordering::SeqCst);
         if expiry <= when_micros {
@@ -208,7 +203,7 @@ mod tests {
     fn updates_when_valid() {
         let now = SystemTime::now();
         let val = AtomicExpiringValue::new(42, now + Duration::from_secs(1));
-        val.update(3, 10, now);
+        val.update(3, Duration::from_secs(10), now);
         assert_eq!(val.value_at(now - Duration::from_secs(1)), 45);
     }
 
@@ -217,7 +212,7 @@ mod tests {
         let now = SystemTime::now();
         let val = AtomicExpiringValue::new(42, now);
         assert_eq!(val.ttl(), Duration::ZERO);
-        val.update(3, 10, now);
+        val.update(3, Duration::from_secs(10), now);
         assert_eq!(val.value_at(now - Duration::from_secs(1)), 3);
     }
 
@@ -228,10 +223,14 @@ mod tests {
 
         thread::scope(|s| {
             s.spawn(|| {
-                atomic_expiring_value.update(1, 1, now);
+                atomic_expiring_value.update(1, Duration::from_secs(1), now);
             });
             s.spawn(|| {
-                atomic_expiring_value.update(2, 1, now + Duration::from_secs(11));
+                atomic_expiring_value.update(
+                    2,
+                    Duration::from_secs(1),
+                    now + Duration::from_secs(11),
+                );
             });
         });
         assert!([2u64, 3u64].contains(&atomic_expiring_value.value.load(Ordering::SeqCst)));

@@ -45,7 +45,7 @@ impl CounterStorage for RedisStorage {
         redis::Script::new(SCRIPT_UPDATE_COUNTER)
             .key(key_for_counter(counter))
             .key(key_for_counters_of_limit(counter.limit()))
-            .arg(counter.seconds())
+            .arg(counter.window().as_secs())
             .arg(delta)
             .invoke(&mut *con)?;
 
@@ -97,7 +97,7 @@ impl CounterStorage for RedisStorage {
             redis::Script::new(SCRIPT_UPDATE_COUNTER)
                 .key(key)
                 .key(key_for_counters_of_limit(counter.limit()))
-                .arg(counter.seconds())
+                .arg(counter.window().as_secs())
                 .arg(delta)
                 .invoke(&mut *con)?;
         }

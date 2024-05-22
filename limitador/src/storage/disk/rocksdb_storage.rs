@@ -219,7 +219,7 @@ impl RocksDbStorage {
             let _entered = span.enter();
             self.db
                 .merge(key, <ExpiringValue as Into<Vec<u8>>>::into(expiring_value))?;
-            return Ok(value.update(delta, counter.seconds(), now));
+            return Ok(value.update(delta, counter.window(), now));
         }
         Ok(value)
     }

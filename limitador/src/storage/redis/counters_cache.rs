@@ -27,7 +27,7 @@ impl CachedCounterValue {
     pub fn from_authority(counter: &Counter, value: u64) -> Self {
         let now = SystemTime::now();
         Self {
-            value: AtomicExpiringValue::new(value, now + Duration::from_secs(counter.seconds())),
+            value: AtomicExpiringValue::new(value, now + counter.window()),
             initial_value: AtomicU64::new(value),
             from_authority: AtomicBool::new(true),
         }
@@ -36,15 +36,13 @@ impl CachedCounterValue {
     pub fn load_from_authority_asap(counter: &Counter, temp_value: u64) -> Self {
         let now = SystemTime::now();
         Self {
-            value: AtomicExpiringValue::new(
-                temp_value,
-                now + Duration::from_secs(counter.seconds()),
-            ),
+            value: AtomicExpiringValue::new(temp_value, now + counter.window()),
             initial_value: AtomicU64::new(0),
             from_authority: AtomicBool::new(false),
         }
     }
 
+    #[cfg(feature = "redis_storage")]
     pub fn add_from_authority(&self, delta: u64, expire_at: SystemTime, max_value: u64) {
         let new_val = self.value.add_and_set_expiry(delta, expire_at);
         if new_val > max_value {
@@ -57,7 +55,7 @@ impl CachedCounterValue {
     pub fn delta(&self, counter: &Counter, delta: u64) -> u64 {
         let value = self
             .value
-            .update(delta, counter.seconds(), SystemTime::now());
+            .update(delta, counter.window(), SystemTime::now());
         if value == delta {
             // new window, invalidate initial value
             // which happens _after_ the self.value was reset, see `pending_writes`
@@ -133,7 +131,7 @@ impl CachedCounterValue {
         self.hits(counter) as i128 + delta as i128 > counter.max_value() as i128
     }
 
-    pub fn to_next_window(&self) -> Duration {
+    pub fn ttl(&self) -> Duration {
         self.value.ttl()
     }
 
@@ -307,32 +305,25 @@ impl CountersCache {
         counter: Counter,
         redis_val: u64,
         remote_deltas: u64,
-        redis_expiry: i64,
+        expiry: SystemTime,
     ) -> Arc<CachedCounterValue> {
-        if redis_expiry > 0 {
-            let expiry_ts = SystemTime::UNIX_EPOCH + Duration::from_millis(redis_expiry as u64);
-            if expiry_ts > SystemTime::now() {
-                let mut from_cache = true;
-                let cached = self.cache.get_with(counter.clone(), || {
+        if expiry > SystemTime::now() {
+            let mut from_cache = true;
+            let cached = self.cache.get_with(counter.clone(), || {
+                from_cache = false;
+                if let Some(entry) = self.batcher.updates.get(&counter) {
                     gauge!("cache_size").increment(1);
-                    from_cache = false;
-                    if let Some(entry) = self.batcher.updates.get(&counter) {
-                        let cached_value = entry.value();
-                        cached_value.add_from_authority(
-                            remote_deltas,
-                            expiry_ts,
-                            counter.max_value(),
-                        );
-                        cached_value.clone()
-                    } else {
-                        Arc::new(CachedCounterValue::from_authority(&counter, redis_val))
-                    }
-                });
-                if from_cache {
-                    cached.add_from_authority(remote_deltas, expiry_ts, counter.max_value());
+                    let cached_value = entry.value();
+                    cached_value.add_from_authority(remote_deltas, expiry, counter.max_value());
+                    cached_value.clone()
+                } else {
+                    Arc::new(CachedCounterValue::from_authority(&counter, redis_val))
                 }
-                return cached;
+            });
+            if from_cache {
+                cached.add_from_authority(remote_deltas, expiry, counter.max_value());
             }
+            return cached;
         }
         Arc::new(CachedCounterValue::load_from_authority_asap(
             &counter, redis_val,
@@ -395,7 +386,6 @@ impl CountersCacheBuilder {
 mod tests {
     use std::collections::HashMap;
     use std::ops::Add;
-    use std::time::UNIX_EPOCH;
 
     use crate::limit::Limit;
 
@@ -479,7 +469,7 @@ mod tests {
             let counter = test_counter(10, None);
             let value = CachedCounterValue::from_authority(&counter, 0);
             value.delta(&counter, hits);
-            assert!(value.to_next_window() > Duration::from_millis(59999));
+            assert!(value.ttl() > Duration::from_millis(59999));
             assert_eq!(value.hits(&counter), hits);
             let remaining = counter.max_value() - hits;
             assert_eq!(value.remaining(&counter), remaining);
@@ -623,11 +613,7 @@ mod tests {
             counter.clone(),
             10,
             0,
-            SystemTime::now()
-                .add(Duration::from_secs(1))
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_micros() as i64,
+            SystemTime::now().add(Duration::from_secs(1)),
         );
 
         assert!(cache.get(&counter).is_some());
@@ -653,11 +639,7 @@ mod tests {
             counter.clone(),
             current_value,
             0,
-            SystemTime::now()
-                .add(Duration::from_secs(1))
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_micros() as i64,
+            SystemTime::now().add(Duration::from_secs(1)),
         );
 
         assert_eq!(
@@ -677,11 +659,7 @@ mod tests {
             counter.clone(),
             current_val,
             0,
-            SystemTime::now()
-                .add(Duration::from_secs(1))
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_micros() as i64,
+            SystemTime::now().add(Duration::from_secs(1)),
         );
         cache.increase_by(&counter, increase_by).await;
 

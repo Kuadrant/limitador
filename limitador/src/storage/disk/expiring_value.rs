@@ -25,9 +25,9 @@ impl ExpiringValue {
     }
 
     #[must_use]
-    pub fn update(self, delta: u64, ttl: u64, now: SystemTime) -> Self {
+    pub fn update(self, delta: u64, ttl: Duration, now: SystemTime) -> Self {
         let expiry = if self.expiry <= now {
-            now + Duration::from_secs(ttl)
+            now + ttl
         } else {
             self.expiry
         };
@@ -132,7 +132,11 @@ mod tests {
     #[test]
     fn updates_when_valid() {
         let now = SystemTime::now();
-        let val = ExpiringValue::new(42, now + Duration::from_secs(1)).update(3, 10, now);
+        let val = ExpiringValue::new(42, now + Duration::from_secs(1)).update(
+            3,
+            Duration::from_secs(10),
+            now,
+        );
         assert_eq!(val.value_at(now - Duration::from_secs(1)), 45);
     }
 
@@ -141,7 +145,7 @@ mod tests {
         let now = SystemTime::now();
         let val = ExpiringValue::new(42, now);
         assert_eq!(val.ttl(), Duration::ZERO);
-        let val = val.update(3, 10, now);
+        let val = val.update(3, Duration::from_secs(10), now);
         assert_eq!(val.value_at(now - Duration::from_secs(1)), 3);
     }
 

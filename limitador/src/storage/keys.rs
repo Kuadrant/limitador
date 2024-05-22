@@ -153,7 +153,7 @@ pub mod bin {
 
             CounterKey {
                 ns: counter.namespace().as_ref(),
-                seconds: counter.seconds(),
+                seconds: counter.window().as_secs(),
                 conditions,
                 variables: counter.variables_for_key(),
             }
