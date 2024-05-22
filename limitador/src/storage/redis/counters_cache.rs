@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::select;
 use tokio::sync::{Notify, Semaphore};
+use tracing::info;
 
 #[derive(Debug)]
 pub struct CachedCounterValue {
@@ -221,15 +222,21 @@ impl Batcher {
                 return result;
             } else {
                 ready = select! {
-                    _ = self.notifier.notified() => self.batch_ready(max),
+                    _ = async {
+                        loop {
+                            self.notifier.notified().await;
+                            if self.batch_ready(max) {
+                                break;
+                            }
+                        }
+                    } => {
+                        info!("Priority flush!");
+                        true
+                    },
                     _ = tokio::time::sleep(self.interval) => true,
                 }
             }
         }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.updates.is_empty()
     }
 
     fn batch_ready(&self, size: usize) -> bool {
