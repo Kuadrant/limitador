@@ -1,13 +1,15 @@
-use crate::storage::atomic_expiring_value::AtomicExpiryTime;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, SystemTime};
 
+use crate::storage::atomic_expiring_value::AtomicExpiryTime;
+
 #[derive(Debug)]
 pub struct CrCounterValue<A: Ord> {
     ourselves: A,
+    max_value: u64,
     value: AtomicU64,
     others: RwLock<BTreeMap<A, u64>>,
     expiry: AtomicExpiryTime,
@@ -15,13 +17,18 @@ pub struct CrCounterValue<A: Ord> {
 
 #[allow(dead_code)]
 impl<A: Ord> CrCounterValue<A> {
-    pub fn new(actor: A, time_window: Duration) -> Self {
+    pub fn new(actor: A, max_value: u64, time_window: Duration) -> Self {
         Self {
             ourselves: actor,
+            max_value,
             value: Default::default(),
             others: RwLock::default(),
             expiry: AtomicExpiryTime::new(SystemTime::now() + time_window),
         }
+    }
+
+    pub fn max_value(&self) -> u64 {
+        self.max_value
     }
 
     pub fn read(&self) -> u64 {
@@ -116,6 +123,7 @@ impl<A: Ord> CrCounterValue<A> {
     pub fn into_inner(self) -> (SystemTime, BTreeMap<A, u64>) {
         let Self {
             ourselves,
+            max_value: _,
             value,
             others,
             expiry,
@@ -137,6 +145,7 @@ impl<A: Clone + Ord> Clone for CrCounterValue<A> {
     fn clone(&self) -> Self {
         Self {
             ourselves: self.ourselves.clone(),
+            max_value: self.max_value,
             value: AtomicU64::new(self.value.load(Ordering::SeqCst)),
             others: RwLock::new(self.others.read().unwrap().clone()),
             expiry: self.expiry.clone(),
@@ -148,6 +157,7 @@ impl<A: Clone + Ord + Default> From<(SystemTime, BTreeMap<A, u64>)> for CrCounte
     fn from(value: (SystemTime, BTreeMap<A, u64>)) -> Self {
         Self {
             ourselves: A::default(),
+            max_value: 0,
             value: Default::default(),
             others: RwLock::new(value.1),
             expiry: value.0.into(),
@@ -157,13 +167,14 @@ impl<A: Clone + Ord + Default> From<(SystemTime, BTreeMap<A, u64>)> for CrCounte
 
 #[cfg(test)]
 mod tests {
-    use crate::storage::distributed::cr_counter_value::CrCounterValue;
     use std::time::{Duration, SystemTime};
+
+    use crate::storage::distributed::cr_counter_value::CrCounterValue;
 
     #[test]
     fn local_increments_are_readable() {
         let window = Duration::from_secs(1);
-        let a = CrCounterValue::new('A', window);
+        let a = CrCounterValue::new('A', u64::MAX, window);
         a.inc(3, window);
         assert_eq!(3, a.read());
         a.inc(2, window);
@@ -173,7 +184,7 @@ mod tests {
     #[test]
     fn local_increments_expire() {
         let window = Duration::from_secs(1);
-        let a = CrCounterValue::new('A', window);
+        let a = CrCounterValue::new('A', u64::MAX, window);
         let now = SystemTime::now();
         a.inc_at(3, window, now);
         assert_eq!(3, a.read());
@@ -184,7 +195,7 @@ mod tests {
     #[test]
     fn other_increments_are_readable() {
         let window = Duration::from_secs(1);
-        let a = CrCounterValue::new('A', window);
+        let a = CrCounterValue::new('A', u64::MAX, window);
         a.inc_actor('B', 3, window);
         assert_eq!(3, a.read());
         a.inc_actor('B', 2, window);
@@ -194,7 +205,7 @@ mod tests {
     #[test]
     fn other_increments_expire() {
         let window = Duration::from_secs(1);
-        let a = CrCounterValue::new('A', window);
+        let a = CrCounterValue::new('A', u64::MAX, window);
         let now = SystemTime::now();
         a.inc_actor_at('B', 3, window, now);
         assert_eq!(3, a.read());
@@ -205,8 +216,8 @@ mod tests {
     #[test]
     fn merges() {
         let window = Duration::from_secs(1);
-        let a = CrCounterValue::new('A', window);
-        let b = CrCounterValue::new('B', window);
+        let a = CrCounterValue::new('A', u64::MAX, window);
+        let b = CrCounterValue::new('B', u64::MAX, window);
         a.inc(3, window);
         b.inc(2, window);
         a.merge(b);
@@ -216,8 +227,8 @@ mod tests {
     #[test]
     fn merges_symetric() {
         let window = Duration::from_secs(1);
-        let a = CrCounterValue::new('A', window);
-        let b = CrCounterValue::new('B', window);
+        let a = CrCounterValue::new('A', u64::MAX, window);
+        let b = CrCounterValue::new('B', u64::MAX, window);
         a.inc(3, window);
         b.inc(2, window);
         b.merge(a);
@@ -227,8 +238,8 @@ mod tests {
     #[test]
     fn merges_overrides_with_larger_value() {
         let window = Duration::from_secs(1);
-        let a = CrCounterValue::new('A', window);
-        let b = CrCounterValue::new('B', window);
+        let a = CrCounterValue::new('A', u64::MAX, window);
+        let b = CrCounterValue::new('B', u64::MAX, window);
         a.inc(3, window);
         b.inc(2, window);
         b.inc_actor('A', 2, window); // older value!
@@ -239,8 +250,8 @@ mod tests {
     #[test]
     fn merges_ignore_lesser_values() {
         let window = Duration::from_secs(1);
-        let a = CrCounterValue::new('A', window);
-        let b = CrCounterValue::new('B', window);
+        let a = CrCounterValue::new('A', u64::MAX, window);
+        let b = CrCounterValue::new('B', u64::MAX, window);
         a.inc(3, window);
         b.inc(2, window);
         b.inc_actor('A', 5, window); // newer value!
@@ -251,9 +262,9 @@ mod tests {
     #[test]
     fn merge_ignores_expired_sets() {
         let window = Duration::from_secs(1);
-        let a = CrCounterValue::new('A', Duration::ZERO);
+        let a = CrCounterValue::new('A', u64::MAX, Duration::ZERO);
         a.inc(3, Duration::ZERO);
-        let b = CrCounterValue::new('B', window);
+        let b = CrCounterValue::new('B', u64::MAX, window);
         b.inc(2, window);
         b.merge(a);
         assert_eq!(b.read(), 2);
@@ -262,9 +273,9 @@ mod tests {
     #[test]
     fn merge_ignores_expired_sets_symmetric() {
         let window = Duration::from_secs(1);
-        let a = CrCounterValue::new('A', Duration::ZERO);
+        let a = CrCounterValue::new('A', u64::MAX, Duration::ZERO);
         a.inc(3, Duration::ZERO);
-        let b = CrCounterValue::new('B', window);
+        let b = CrCounterValue::new('B', u64::MAX, window);
         b.inc(2, window);
         a.merge(b);
         assert_eq!(a.read(), 2);
@@ -273,9 +284,9 @@ mod tests {
     #[test]
     fn merge_uses_earliest_expiry() {
         let later = Duration::from_secs(1);
-        let a = CrCounterValue::new('A', later);
+        let a = CrCounterValue::new('A', u64::MAX, later);
         let sooner = Duration::from_millis(200);
-        let b = CrCounterValue::new('B', sooner);
+        let b = CrCounterValue::new('B', u64::MAX, sooner);
         a.inc(3, later);
         b.inc(2, later);
         a.merge(b);

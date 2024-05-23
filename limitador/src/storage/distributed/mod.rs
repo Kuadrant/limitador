@@ -44,6 +44,7 @@ impl CounterStorage for CrInMemoryStorage {
             let key = encode_limit_to_key(limit);
             limits.entry(key).or_insert(CrCounterValue::new(
                 self.identifier.clone(),
+                limit.max_value(),
                 Duration::from_secs(limit.seconds()),
             ));
         }
@@ -59,7 +60,8 @@ impl CounterStorage for CrInMemoryStorage {
         match limits.entry(key.clone()) {
             Entry::Vacant(entry) => {
                 let duration = counter.window();
-                let store_value = CrCounterValue::new(self.identifier.clone(), duration);
+                let store_value =
+                    CrCounterValue::new(self.identifier.clone(), counter.max_value(), duration);
                 self.increment_counter(counter, key, &store_value, delta, now);
                 entry.insert(store_value);
             }
@@ -129,6 +131,7 @@ impl CounterStorage for CrInMemoryStorage {
                 let mut limits = self.limits.write().unwrap();
                 let store_value = limits.entry(key.clone()).or_insert(CrCounterValue::new(
                     self.identifier.clone(),
+                    counter.max_value(),
                     counter.window(),
                 ));
 
@@ -161,10 +164,22 @@ impl CounterStorage for CrInMemoryStorage {
     fn get_counters(&self, limits: &HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
 
+        let limits: HashSet<_> = limits.iter().map(encode_limit_to_key).collect();
+
         let limits_map = self.limits.read().unwrap();
         for (key, counter_value) in limits_map.iter() {
-            let mut counter: Counter = decode_counter_key(key).unwrap().into();
-            if limits.contains(counter.limit()) {
+            let counter_key = decode_counter_key(key).unwrap();
+            let limit_key = if !counter_key.vars.is_empty() {
+                let mut cloned = counter_key.clone();
+                cloned.vars = HashMap::default();
+                cloned.encode()
+            } else {
+                key.clone()
+            };
+
+            if limits.contains(&limit_key) {
+                let counter = (&counter_key, counter_value);
+                let mut counter: Counter = counter.into();
                 counter.set_remaining(counter.max_value() - counter_value.read());
                 counter.set_expires_in(counter_value.ttl());
                 if counter.expires_in().unwrap() > Duration::ZERO {
@@ -264,56 +279,61 @@ impl CrInMemoryStorage {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct CounterKey {
     namespace: Namespace,
     seconds: u64,
-    max_value: u64,
     conditions: HashSet<String>,
     variables: HashSet<String>,
     vars: HashMap<String, String>,
 }
 
+impl CounterKey {
+    fn new(limit: &Limit, vars: HashMap<String, String>) -> Self {
+        CounterKey {
+            namespace: limit.namespace().clone(),
+            seconds: limit.seconds(),
+            variables: limit.variables().clone(),
+            conditions: limit.conditions().clone(),
+            vars,
+        }
+    }
+
+    fn encode(&self) -> Vec<u8> {
+        postcard::to_stdvec(self).unwrap()
+    }
+}
+
+impl From<(&CounterKey, &CrCounterValue<String>)> for Counter {
+    fn from(value: (&CounterKey, &CrCounterValue<String>)) -> Self {
+        let (counter_key, store_value) = value;
+        let max_value = store_value.max_value();
+        let mut counter = Self::new(
+            Limit::new(
+                counter_key.namespace.clone(),
+                max_value,
+                counter_key.seconds,
+                counter_key.conditions.clone(),
+                counter_key.vars.keys(),
+            ),
+            counter_key.vars.clone(),
+        );
+        counter.set_remaining(max_value - store_value.read());
+        counter.set_expires_in(store_value.ttl());
+        counter
+    }
+}
+
 fn encode_counter_to_key(counter: &Counter) -> Vec<u8> {
-    let limit = counter.limit();
-    let key = CounterKey {
-        namespace: limit.namespace().clone(),
-        max_value: limit.max_value(),
-        seconds: limit.seconds(),
-        variables: limit.variables().clone(),
-        conditions: limit.conditions().clone(),
-        vars: counter.set_variables().clone(),
-    };
+    let key = CounterKey::new(counter.limit(), counter.set_variables().clone());
     postcard::to_stdvec(&key).unwrap()
 }
 
 fn encode_limit_to_key(limit: &Limit) -> Vec<u8> {
-    let key = CounterKey {
-        namespace: limit.namespace().clone(),
-        max_value: limit.max_value(),
-        seconds: limit.seconds(),
-        variables: limit.variables().clone(),
-        conditions: limit.conditions().clone(),
-        vars: HashMap::default(),
-    };
+    let key = CounterKey::new(limit, HashMap::default());
     postcard::to_stdvec(&key).unwrap()
 }
 
 fn decode_counter_key(key: &Vec<u8>) -> postcard::Result<CounterKey> {
     postcard::from_bytes(key.as_slice())
-}
-
-impl From<CounterKey> for Counter {
-    fn from(value: CounterKey) -> Self {
-        Self::new(
-            Limit::new(
-                value.namespace,
-                value.max_value,
-                value.seconds,
-                value.conditions,
-                value.vars.keys(),
-            ),
-            value.vars,
-        )
-    }
 }
