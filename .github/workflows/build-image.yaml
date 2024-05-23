@@ -4,8 +4,10 @@ name: Build Image
 on:
   workflow_dispatch:
   push:
-    branches: ['*']
-    tags: ['*']
+    branches:
+      - main
+    tags:
+      - "*"
 
 env:
   IMG_REGISTRY_HOST: quay.io
