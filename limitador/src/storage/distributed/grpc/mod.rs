@@ -5,10 +5,10 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{error::Error, io::ErrorKind, pin::Pin};
 
+use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio::time::sleep;
-
 use tokio_stream::{wrappers::ReceiverStream, Stream, StreamExt};
 use tonic::{Code, Request, Response, Status, Streaming};
 use tracing::debug;
@@ -17,7 +17,7 @@ use crate::storage::distributed::grpc::v1::packet::Message;
 use crate::storage::distributed::grpc::v1::replication_client::ReplicationClient;
 use crate::storage::distributed::grpc::v1::replication_server::{Replication, ReplicationServer};
 use crate::storage::distributed::grpc::v1::{
-    CounterUpdate, Hello, MembershipUpdate, Packet, Peer, Pong,
+    CounterUpdate, Empty, Hello, MembershipUpdate, Packet, Peer, Pong,
 };
 
 // clippy will barf on protobuff generated code for enum variants in
@@ -84,8 +84,8 @@ struct Session {
 
 impl Session {
     async fn close(&mut self) {
-        let mut state = self.replication_state.write().await;
-        if let Some(peer) = state.peer_trackers.get_mut(&self.peer_id) {
+        let mut replication_state = self.replication_state.write().await;
+        if let Some(peer) = replication_state.peer_trackers.get_mut(&self.peer_id) {
             peer.session = None;
         }
     }
@@ -105,11 +105,50 @@ impl Session {
         }))
         .await?;
 
-        let mut udpates_to_send = self.broker_state.publisher.subscribe();
+        // start the re-sync process with the peer, start sending him all the local counter values
+        let (tx, mut rx) = mpsc::channel::<Option<CounterUpdate>>(1);
+        let peer_id = self.peer_id.clone();
+        let out_stream = self.out_stream.clone();
+        tokio::spawn(async move {
+            let mut counter = 0u64;
+            while let Some(rsync_message) = rx.recv().await {
+                match rsync_message {
+                    Some(update) => {
+                        counter += 1;
+                        if let Err(err) = out_stream
+                            .clone()
+                            .send(Ok(Message::CounterUpdate(update)))
+                            .await
+                        {
+                            debug!("peer: '{}': ReSyncRequest: send error: {:?}", peer_id, err);
+                            return;
+                        }
+                    }
+                    None => {
+                        debug!(
+                            "peer: '{}': rysnc completed, sent %d updates: {:?}",
+                            peer_id, counter
+                        );
+                        _ = out_stream
+                            .clone()
+                            .send(Ok(Message::ReSyncEnd(Empty::default())))
+                            .await;
+                    }
+                }
+            }
+        });
+        self.broker_state
+            .on_re_sync
+            .try_send(tx)
+            .map_err(|err| match err {
+                TrySendError::Full(_) => Status::resource_exhausted("re-sync channel full"),
+                TrySendError::Closed(_) => Status::unavailable("re-sync channel closed"),
+            })?;
 
+        let mut updates = self.broker_state.publisher.subscribe();
         loop {
             tokio::select! {
-                update = udpates_to_send.recv() => {
+                update = updates.recv() => {
                     let update = update.map_err(|_| Status::unknown("broadcast error"))?;
                     self.send(Message::CounterUpdate(update)).await?;
                 }
@@ -123,11 +162,11 @@ impl Session {
                             self.process_packet(packet).await?;
                         },
                         Some(Err(err)) => {
-                            if is_disconnect(&err) {
+                            return if is_disconnect(&err) {
                                 debug!("peer: '{}': disconnected: {:?}", self.peer_id, err);
-                                return Ok(());
+                                Ok(())
                             } else {
-                                return Err(err);
+                                Err(err)
                             }
                         },
                     }
@@ -289,13 +328,13 @@ fn is_disconnect(err: &Status) -> bool {
 
 // MessageSender is used to abstract the difference between the server and client sender streams...
 #[derive(Clone)]
-enum MessageSender {
+pub enum MessageSender {
     Server(Sender<Result<Packet, Status>>),
     Client(Sender<Packet>),
 }
 
 impl MessageSender {
-    async fn send(self, message: Result<Message, Status>) -> Result<(), Status> {
+    pub async fn send(self, message: Result<Message, Status>) -> Result<(), Status> {
         match self {
             MessageSender::Server(sender) => {
                 let value = message.map(|x| Packet { message: Some(x) });
@@ -324,6 +363,7 @@ struct BrokerState {
     id: String,
     publisher: broadcast::Sender<CounterUpdate>,
     on_counter_update: Arc<CounterUpdateFn>,
+    on_re_sync: Arc<Sender<Sender<Option<CounterUpdate>>>>,
 }
 
 #[derive(Clone)]
@@ -340,6 +380,7 @@ impl Broker {
         listen_address: SocketAddr,
         peer_urls: Vec<String>,
         on_counter_update: CounterUpdateFn,
+        on_re_sync: Sender<Sender<Option<CounterUpdate>>>,
     ) -> Broker {
         let (tx, _) = broadcast::channel(16);
         let publisher: broadcast::Sender<CounterUpdate> = tx;
@@ -351,6 +392,7 @@ impl Broker {
                 id,
                 publisher,
                 on_counter_update: Arc::new(on_counter_update),
+                on_re_sync: Arc::new(on_re_sync),
             },
             replication_state: Arc::new(RwLock::new(ReplicationState {
                 discovered_urls: HashSet::new(),

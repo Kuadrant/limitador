@@ -5,6 +5,9 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
+use tokio::sync::mpsc::Sender;
+use tracing::debug;
 
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
@@ -217,6 +220,8 @@ impl CrInMemoryStorage {
         let limits = Arc::new(RwLock::new(LimitsMap::new()));
 
         let limits_clone = limits.clone();
+
+        let (re_sync_queue_tx, mut re_sync_queue_rx) = mpsc::channel(100);
         let broker = grpc::Broker::new(
             identifier.clone(),
             listen_address,
@@ -232,12 +237,24 @@ impl CrInMemoryStorage {
                 let value = limits.get(&update.key).unwrap();
                 value.merge((UNIX_EPOCH + Duration::from_secs(update.expires_at), values).into());
             }),
+            re_sync_queue_tx,
         );
 
         {
             let broker = broker.clone();
             tokio::spawn(async move {
                 broker.start().await;
+            });
+        }
+
+        // process the re-sync requests...
+        {
+            let limits = limits.clone();
+            tokio::spawn(async move {
+                let limits = limits.clone();
+                while let Some(sender) = re_sync_queue_rx.recv().await {
+                    process_re_sync(&limits, sender).await;
+                }
             });
         }
 
@@ -277,6 +294,49 @@ impl CrInMemoryStorage {
             expires_at: expiry.duration_since(UNIX_EPOCH).unwrap().as_secs(),
         })
     }
+}
+
+async fn process_re_sync(
+    limits: &Arc<RwLock<HashMap<Vec<u8>, CrCounterValue<String>>>>,
+    sender: Sender<Option<CounterUpdate>>,
+) {
+    // sending all the counters to the peer might take a while, so we don't want to lock
+    // the limits map for too long, lets figure first get the list of keys that needs to be sent.
+    let keys: Vec<_> = {
+        let limits = limits.read().unwrap();
+        limits.keys().cloned().collect()
+    };
+
+    for key in keys {
+        let update = {
+            let limits = limits.read().unwrap();
+            limits.get(&key).and_then(|store_value| {
+                let (expiry, ourself, value) = store_value.clone().into_ourselves_inner();
+                if value == 0 {
+                    None // no point in sending a counter that is empty
+                } else {
+                    let values = HashMap::from([(ourself, value)]);
+                    Some(CounterUpdate {
+                        key: key.clone(),
+                        values,
+                        expires_at: expiry.duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                    })
+                }
+            })
+        };
+        // skip None, it means the counter was deleted.
+        if let Some(update) = update {
+            match sender.send(Some(update)).await {
+                Ok(_) => {}
+                Err(err) => {
+                    debug!("Failed to send re-sync counter update to peer: {:?}", err);
+                    break;
+                }
+            }
+        }
+    }
+    // signal the end of the re-sync
+    _ = sender.send(None).await;
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

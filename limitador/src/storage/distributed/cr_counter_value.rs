@@ -133,6 +133,17 @@ impl<A: Ord> CrCounterValue<A> {
         (expiry.into_inner(), map)
     }
 
+    pub fn into_ourselves_inner(self) -> (SystemTime, A, u64) {
+        let Self {
+            ourselves,
+            max_value: _,
+            value,
+            others: _,
+            expiry,
+        } = self;
+        (expiry.into_inner(), ourselves, value.into_inner())
+    }
+
     fn reset(&self, expiry: SystemTime) {
         let mut guard = self.others.write().unwrap();
         self.expiry.update(expiry);
