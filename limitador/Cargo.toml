@@ -63,6 +63,12 @@ time = "0.3.36"
 serial_test = "3.0"
 criterion = { version = "0.5.1", features = ["html_reports", "async_tokio"] }
 redis-test = { version = "0.4.0", features = ["aio"] }
+redis = { version = "0.25", features = [
+    "connection-manager",
+    "tokio-comp",
+    "tls-native-tls",
+    "tokio-native-tls-comp",
+] }
 paste = "1"
 rand = "0.8"
 tempfile = "3.5.0"

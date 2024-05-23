@@ -13,6 +13,7 @@ use limitador::storage::disk::{DiskStorage, OptimizeFor};
 #[cfg(feature = "distributed_storage")]
 use limitador::storage::distributed::CrInMemoryStorage;
 use limitador::storage::in_memory::InMemoryStorage;
+#[cfg(feature = "redis_storage")]
 use limitador::storage::redis::CachedRedisStorageBuilder;
 use limitador::storage::{AsyncCounterStorage, CounterStorage};
 use limitador::{AsyncRateLimiter, RateLimiter};
