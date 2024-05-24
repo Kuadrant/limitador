@@ -5,18 +5,20 @@ package limitador.service.distributed.v1;
 // A packet defines all the types of messages that can be sent between replication peers.
 message Packet {
   oneof message {
-    // the Hello message is used to introduce a peer to another peer.  It is the first message sent by a peer.
+    // the hello message is used to introduce a peer to another peer.  It is the first message sent by a peer.
     Hello hello = 1;
-    // the MembershipUpdate message is used to gossip about the other peers in the cluster:
+    // the membership_update message is used to gossip about the other peers in the cluster:
     //  1) sent after the first Hello message
     //  2) sent when the membership state changes
     MembershipUpdate membership_update = 2;
-    // the Ping message is used to request a pong from the other peer.
-    Ping ping = 3;
-    // the Pong message is used to respond to a ping.
+    // the ping message is used to request a pong from the other peer.
+    Empty ping = 3;
+    // the pong message is used to respond to a ping.
     Pong pong = 4;
-    // the CounterUpdate message is used to send counter updates.
+    // the counter_update message is used to send counter updates.
     CounterUpdate counter_update = 5;
+    // the re_sync_end message is used to signal that the re-sync process has ended.
+    Empty re_sync_end = 6;
   }
 }
 
@@ -30,8 +32,8 @@ message Hello {
   optional string receiver_url = 3;
 }
 
-// A request to a peer to respond with a Pong message.
-message Ping {}
+// A packet message that does not have any additional data.
+message Empty {}
 
 // Pong is the response to a Ping and Hello message.
 message Pong {

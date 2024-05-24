@@ -133,6 +133,14 @@ impl<A: Ord> CrCounterValue<A> {
         (expiry.into_inner(), map)
     }
 
+    pub fn local_values(&self) -> (SystemTime, &A, u64) {
+        (
+            self.expiry.clone().into_inner(),
+            &self.ourselves,
+            self.value.load(Ordering::Relaxed),
+        )
+    }
+
     fn reset(&self, expiry: SystemTime) {
         let mut guard = self.others.write().unwrap();
         self.expiry.update(expiry);

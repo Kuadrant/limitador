@@ -1184,8 +1184,6 @@ mod test {
         Fut: Future<Output = Vec<TestsLimiter>>,
     {
         let rate_limiters = create_distributed_limiters(2).await;
-        tokio::time::sleep(Duration::from_secs(1)).await;
-
         let namespace = "test_namespace";
         let max_hits = 3;
         let limit = Limit::new(
