@@ -6,13 +6,14 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{error::Error, io::ErrorKind, pin::Pin};
 
 use tokio::sync::mpsc::error::TrySendError;
-use tokio::sync::mpsc::Sender;
-use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::sync::mpsc::{Permit, Sender};
+use tokio::sync::{broadcast, mpsc, Notify, RwLock};
 use tokio::time::sleep;
 use tokio_stream::{wrappers::ReceiverStream, Stream, StreamExt};
 use tonic::{Code, Request, Response, Status, Streaming};
 use tracing::debug;
 
+use crate::storage::distributed::cr_counter_value::CrCounterValue;
 use crate::storage::distributed::grpc::v1::packet::Message;
 use crate::storage::distributed::grpc::v1::replication_client::ReplicationClient;
 use crate::storage::distributed::grpc::v1::replication_server::{Replication, ReplicationServer};
@@ -145,12 +146,47 @@ impl Session {
                 TrySendError::Closed(_) => Status::unavailable("re-sync channel closed"),
             })?;
 
-        let mut updates = self.broker_state.publisher.subscribe();
+        let mut udpates_to_send = self.broker_state.publisher.subscribe();
+        let mut tx_updates_by_key = HashMap::new();
+        let mut tx_updates_order = vec![];
+        let notifier = Notify::default();
+
         loop {
             tokio::select! {
-                update = updates.recv() => {
+                update = udpates_to_send.recv() => {
                     let update = update.map_err(|_| Status::unknown("broadcast error"))?;
-                    self.send(Message::CounterUpdate(update)).await?;
+                    // Multiple updates collapse into a single update for the same key
+                    if !tx_updates_by_key.contains_key(&update.key) {
+                        tx_updates_by_key.insert(update.key.clone(), update.value);
+                        tx_updates_order.push(update.key);
+                        notifier.notify_one();
+                    }
+                }
+                _ = notifier.notified() => {
+                    // while we have pending updates to send...
+                    while !tx_updates_order.is_empty() {
+                        // and we have space on the transmission channel to send the update...
+                        match self.out_stream.clone().try_reserve() {
+                            Err(_) => {
+                                break
+                            },
+                            Ok(permit) => {
+
+                                let key = tx_updates_order.remove(0);
+                                let cr_counter_value = tx_updates_by_key.remove(&key).unwrap().clone();
+                                let (expiry, values) = (*cr_counter_value).clone().into_inner();
+
+                                // only send the update if it has not expired.
+                                if expiry > SystemTime::now() {
+                                    permit.send(Ok(Message::CounterUpdate(CounterUpdate {
+                                        key,
+                                        values: values.into_iter().collect(),
+                                        expires_at: expiry.duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                                    })))?;
+                                }
+                            }
+                        }
+                    }
                 }
                 result = in_stream.next() => {
                     match result {
@@ -354,14 +390,66 @@ impl MessageSender {
             },
         }
     }
+    fn try_reserve(&self) -> Result<MessagePermit<'_>, Status> {
+        match self {
+            MessageSender::Client(sender) => {
+                let permit = sender
+                    .try_reserve()
+                    .map_err(|_| Status::unknown("send error"))?;
+                Ok(MessagePermit::Client(permit))
+            }
+            MessageSender::Server(sender) => {
+                let permit = sender
+                    .try_reserve()
+                    .map_err(|_| Status::unknown("send error"))?;
+                Ok(MessagePermit::Server(permit))
+            }
+        }
+    }
+}
+
+enum MessagePermit<'a> {
+    Server(Permit<'a, Result<Packet, Status>>),
+    Client(Permit<'a, Packet>),
+}
+impl<'a> MessagePermit<'a> {
+    fn send(self, message: Result<Message, Status>) -> Result<(), Status> {
+        match self {
+            MessagePermit::Server(sender) => {
+                let value = message.map(|x| Packet { message: Some(x) });
+                sender.send(value);
+                Ok(())
+            }
+            MessagePermit::Client(sender) => match message {
+                Ok(message) => {
+                    sender.send(Packet {
+                        message: Some(message),
+                    });
+                    Ok(())
+                }
+                Err(err) => Err(err),
+            },
+        }
+    }
 }
 
 type CounterUpdateFn = Pin<Box<dyn Fn(CounterUpdate) + Sync + Send>>;
+#[derive(Clone, Debug)]
+pub struct CounterEntry {
+    pub key: Vec<u8>,
+    pub value: Arc<CrCounterValue<String>>,
+}
+
+impl CounterEntry {
+    pub fn new(key: Vec<u8>, value: Arc<CrCounterValue<String>>) -> Self {
+        Self { key, value }
+    }
+}
 
 #[derive(Clone)]
 struct BrokerState {
     id: String,
-    publisher: broadcast::Sender<CounterUpdate>,
+    publisher: broadcast::Sender<CounterEntry>,
     on_counter_update: Arc<CounterUpdateFn>,
     on_re_sync: Arc<Sender<Sender<Option<CounterUpdate>>>>,
 }
@@ -383,7 +471,7 @@ impl Broker {
         on_re_sync: Sender<Sender<Option<CounterUpdate>>>,
     ) -> Broker {
         let (tx, _) = broadcast::channel(16);
-        let publisher: broadcast::Sender<CounterUpdate> = tx;
+        let publisher: broadcast::Sender<CounterEntry> = tx;
 
         Broker {
             listen_address,
@@ -401,7 +489,7 @@ impl Broker {
         }
     }
 
-    pub fn publish(&self, counter_update: CounterUpdate) {
+    pub fn publish(&self, counter_update: CounterEntry) {
         // ignore the send error, it just means there are no active subscribers
         _ = self.broker_state.publisher.send(counter_update);
     }
