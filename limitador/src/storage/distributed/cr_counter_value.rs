@@ -133,15 +133,12 @@ impl<A: Ord> CrCounterValue<A> {
         (expiry.into_inner(), map)
     }
 
-    pub fn into_ourselves_inner(self) -> (SystemTime, A, u64) {
-        let Self {
-            ourselves,
-            max_value: _,
-            value,
-            others: _,
-            expiry,
-        } = self;
-        (expiry.into_inner(), ourselves, value.into_inner())
+    pub fn local_values(&self) -> (SystemTime, &A, u64) {
+        (
+            self.expiry.clone().into_inner(),
+            &self.ourselves,
+            self.value.load(Ordering::Relaxed),
+        )
     }
 
     fn reset(&self, expiry: SystemTime) {

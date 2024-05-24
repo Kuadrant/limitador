@@ -251,7 +251,6 @@ impl CrInMemoryStorage {
         {
             let limits = limits.clone();
             tokio::spawn(async move {
-                let limits = limits.clone();
                 while let Some(sender) = re_sync_queue_rx.recv().await {
                     process_re_sync(&limits, sender).await;
                 }
@@ -311,11 +310,11 @@ async fn process_re_sync(
         let update = {
             let limits = limits.read().unwrap();
             limits.get(&key).and_then(|store_value| {
-                let (expiry, ourself, value) = store_value.clone().into_ourselves_inner();
-                if value == 0 {
+                let (expiry, ourself, value) = store_value.local_values();
+                if value == 0 || expiry <= SystemTime::now() {
                     None // no point in sending a counter that is empty
                 } else {
-                    let values = HashMap::from([(ourself, value)]);
+                    let values = HashMap::from([(ourself.clone(), value)]);
                     Some(CounterUpdate {
                         key: key.clone(),
                         values,
