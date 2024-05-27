@@ -13,13 +13,13 @@ use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
 use crate::storage::distributed::cr_counter_value::CrCounterValue;
 use crate::storage::distributed::grpc::v1::CounterUpdate;
-use crate::storage::distributed::grpc::Broker;
+use crate::storage::distributed::grpc::{Broker, CounterEntry};
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 
 mod cr_counter_value;
 mod grpc;
 
-pub type LimitsMap = HashMap<Vec<u8>, CrCounterValue<String>>;
+pub type LimitsMap = HashMap<Vec<u8>, Arc<CrCounterValue<String>>>;
 
 pub struct CrInMemoryStorage {
     identifier: String,
@@ -45,11 +45,11 @@ impl CounterStorage for CrInMemoryStorage {
         if limit.variables().is_empty() {
             let mut limits = self.limits.write().unwrap();
             let key = encode_limit_to_key(limit);
-            limits.entry(key).or_insert(CrCounterValue::new(
+            limits.entry(key).or_insert(Arc::new(CrCounterValue::new(
                 self.identifier.clone(),
                 limit.max_value(),
                 Duration::from_secs(limit.seconds()),
-            ));
+            )));
         }
         Ok(())
     }
@@ -63,13 +63,16 @@ impl CounterStorage for CrInMemoryStorage {
         match limits.entry(key.clone()) {
             Entry::Vacant(entry) => {
                 let duration = counter.window();
-                let store_value =
-                    CrCounterValue::new(self.identifier.clone(), counter.max_value(), duration);
-                self.increment_counter(counter, key, &store_value, delta, now);
+                let store_value = Arc::new(CrCounterValue::new(
+                    self.identifier.clone(),
+                    counter.max_value(),
+                    duration,
+                ));
+                self.increment_counter(counter, key, store_value.clone(), delta, now);
                 entry.insert(store_value);
             }
             Entry::Occupied(entry) => {
-                self.increment_counter(counter, key, entry.get(), delta, now);
+                self.increment_counter(counter, key, entry.get().clone(), delta, now);
             }
         };
         Ok(())
@@ -132,11 +135,14 @@ impl CounterStorage for CrInMemoryStorage {
             if !counter_existed {
                 // try again with a write lock to create the counter if it's still missing.
                 let mut limits = self.limits.write().unwrap();
-                let store_value = limits.entry(key.clone()).or_insert(CrCounterValue::new(
-                    self.identifier.clone(),
-                    counter.max_value(),
-                    counter.window(),
-                ));
+                let store_value =
+                    limits
+                        .entry(key.clone())
+                        .or_insert(Arc::new(CrCounterValue::new(
+                            self.identifier.clone(),
+                            counter.max_value(),
+                            counter.window(),
+                        )));
 
                 if let Some(limited) = process_counter(counter, store_value.read(), delta) {
                     if !load_counters {
@@ -157,7 +163,7 @@ impl CounterStorage for CrInMemoryStorage {
             .into_iter()
             .for_each(|(counter, key)| {
                 let store_value = limits.get(&key).unwrap();
-                self.increment_counter(&counter, key, store_value, delta, now);
+                self.increment_counter(&counter, key, store_value.clone(), delta, now);
             });
 
         Ok(Authorization::Ok)
@@ -181,7 +187,7 @@ impl CounterStorage for CrInMemoryStorage {
             };
 
             if limits.contains(&limit_key) {
-                let counter = (&counter_key, counter_value);
+                let counter = (&counter_key, &*counter_value.clone());
                 let mut counter: Counter = counter.into();
                 counter.set_remaining(counter.max_value() - counter_value.read());
                 counter.set_expires_in(counter_value.ttl());
@@ -280,25 +286,17 @@ impl CrInMemoryStorage {
         &self,
         counter: &Counter,
         store_key: Vec<u8>,
-        store_value: &CrCounterValue<String>,
+        store_value: Arc<CrCounterValue<String>>,
         delta: u64,
         when: SystemTime,
     ) {
         store_value.inc_at(delta, counter.window(), when);
-
-        let (expiry, values) = store_value.clone().into_inner();
-        self.broker.publish(CounterUpdate {
-            key: store_key,
-            values: values.into_iter().collect(),
-            expires_at: expiry.duration_since(UNIX_EPOCH).unwrap().as_secs(),
-        })
+        self.broker
+            .publish(CounterEntry::new(store_key, store_value))
     }
 }
 
-async fn process_re_sync(
-    limits: &Arc<RwLock<HashMap<Vec<u8>, CrCounterValue<String>>>>,
-    sender: Sender<Option<CounterUpdate>>,
-) {
+async fn process_re_sync(limits: &Arc<RwLock<LimitsMap>>, sender: Sender<Option<CounterUpdate>>) {
     // sending all the counters to the peer might take a while, so we don't want to lock
     // the limits map for too long, lets figure first get the list of keys that needs to be sent.
     let keys: Vec<_> = {
