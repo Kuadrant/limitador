@@ -3,14 +3,14 @@ use crate::limit::{Limit, Namespace};
 use crate::storage::atomic_expiring_value::AtomicExpiringValue;
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 use moka::sync::Cache;
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
 pub struct InMemoryStorage {
-    simple_limits: RwLock<HashMap<Limit, AtomicExpiringValue>>,
+    simple_limits: RwLock<BTreeMap<Limit, AtomicExpiringValue>>,
     qualified_counters: Cache<Counter, Arc<AtomicExpiringValue>>,
 }
 
@@ -197,7 +197,7 @@ impl CounterStorage for InMemoryStorage {
 impl InMemoryStorage {
     pub fn new(cache_size: u64) -> Self {
         Self {
-            simple_limits: RwLock::new(HashMap::new()),
+            simple_limits: RwLock::new(BTreeMap::new()),
             qualified_counters: Cache::new(cache_size),
         }
     }
