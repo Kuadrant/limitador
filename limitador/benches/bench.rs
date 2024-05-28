@@ -64,6 +64,12 @@ struct TestScenario {
 
 const TEST_SCENARIOS: &[&TestScenario] = &[
     &TestScenario {
+        n_namespaces: 10,
+        n_limits_per_ns: 50,
+        n_conds_per_limit: 10,
+        n_vars_per_limit: 0,
+    },
+    &TestScenario {
         n_namespaces: 1,
         n_limits_per_ns: 1,
         n_conds_per_limit: 1,
