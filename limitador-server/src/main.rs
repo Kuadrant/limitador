@@ -43,6 +43,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{env, process};
+use tracing_subscriber::Layer;
 
 #[cfg(feature = "distributed_storage")]
 use clap::parser::ValuesRef;
@@ -221,9 +222,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or(LevelFilter::ERROR)
         });
         let fmt_layer = if level >= LevelFilter::DEBUG {
-            tracing_subscriber::fmt::layer().with_span_events(FmtSpan::CLOSE)
-        } else {
             tracing_subscriber::fmt::layer()
+                .with_span_events(FmtSpan::CLOSE)
+                .with_filter(level)
+        } else {
+            tracing_subscriber::fmt::layer().with_filter(level)
         };
 
         let metrics_layer = MetricsLayer::new()
@@ -251,16 +254,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     KeyValue::new("service.name", "limitador"),
                 ])))
                 .install_batch(opentelemetry_sdk::runtime::Tokio)?;
+            let tracing_level = level.max(LevelFilter::INFO);
             let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
             tracing_subscriber::registry()
-                .with(level)
                 .with(metrics_layer)
                 .with(fmt_layer)
+                .with(tracing_level)
                 .with(telemetry_layer)
                 .init();
         } else {
             tracing_subscriber::registry()
-                .with(level)
                 .with(metrics_layer)
                 .with(fmt_layer)
                 .init();
