@@ -216,18 +216,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = {
         let (config, version) = create_config();
         println!("{LIMITADOR_HEADER} {version}");
+
         let level = config.log_level.unwrap_or_else(|| {
             tracing_subscriber::filter::EnvFilter::from_default_env()
                 .max_level_hint()
                 .unwrap_or(LevelFilter::ERROR)
         });
-        let fmt_layer = if level >= LevelFilter::DEBUG {
-            tracing_subscriber::fmt::layer()
-                .with_span_events(FmtSpan::CLOSE)
-                .with_filter(level)
-        } else {
-            tracing_subscriber::fmt::layer().with_filter(level)
-        };
+
+        let fmt_layer = tracing_subscriber::fmt::layer()
+            .with_span_events(if level >= LevelFilter::DEBUG {
+                FmtSpan::CLOSE
+            } else {
+                FmtSpan::NONE
+            })
+            .with_filter(level);
 
         let metrics_layer = MetricsLayer::new()
             .gather(
@@ -243,6 +245,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if !config.tracing_endpoint.is_empty() {
             global::set_text_map_propagator(TraceContextPropagator::new());
+
             let tracer = opentelemetry_otlp::new_pipeline()
                 .tracing()
                 .with_exporter(
@@ -254,15 +257,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     KeyValue::new("service.name", "limitador"),
                 ])))
                 .install_batch(opentelemetry_sdk::runtime::Tokio)?;
-            let tracing_level = level.max(LevelFilter::INFO);
+
             let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+
+            // Init tracing subscriber with telemetry
             tracing_subscriber::registry()
                 .with(metrics_layer)
                 .with(fmt_layer)
-                .with(tracing_level)
+                .with(level.max(LevelFilter::INFO))
                 .with(telemetry_layer)
                 .init();
         } else {
+            // Init tracing subscriber without telemetry
             tracing_subscriber::registry()
                 .with(metrics_layer)
                 .with(fmt_layer)
