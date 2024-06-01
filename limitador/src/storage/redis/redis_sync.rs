@@ -9,6 +9,8 @@ use crate::storage::redis::scripts::{SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS};
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 use r2d2::{ManageConnection, Pool};
 use std::collections::HashSet;
+use std::ops::Deref;
+use std::sync::Arc;
 use std::time::Duration;
 
 const DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
@@ -106,7 +108,7 @@ impl CounterStorage for RedisStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    fn get_counters(&self, limits: &HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
+    fn get_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
 
         let mut con = self.conn_pool.get()?;
@@ -143,12 +145,12 @@ impl CounterStorage for RedisStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr> {
+    fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr> {
         let mut con = self.conn_pool.get()?;
 
         for limit in limits {
             let counter_keys =
-                con.smembers::<String, HashSet<String>>(key_for_counters_of_limit(&limit))?;
+                con.smembers::<String, HashSet<String>>(key_for_counters_of_limit(limit.deref()))?;
 
             for counter_key in counter_keys {
                 con.del(counter_key)?;

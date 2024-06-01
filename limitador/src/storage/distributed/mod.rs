@@ -170,10 +170,10 @@ impl CounterStorage for CrInMemoryStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    fn get_counters(&self, limits: &HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
+    fn get_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
 
-        let limits: HashSet<_> = limits.iter().map(encode_limit_to_key).collect();
+        let limits: HashSet<_> = limits.iter().map(|l| encode_limit_to_key(l)).collect();
 
         let limits_map = self.limits.read().unwrap();
         for (key, counter_value) in limits_map.iter() {
@@ -200,9 +200,9 @@ impl CounterStorage for CrInMemoryStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr> {
+    fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr> {
         for limit in limits {
-            self.delete_counters_of_limit(&limit);
+            self.delete_counters_of_limit(limit);
         }
         Ok(())
     }

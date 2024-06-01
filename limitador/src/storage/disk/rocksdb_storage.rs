@@ -11,6 +11,8 @@ use rocksdb::{
     DB,
 };
 use std::collections::{BTreeSet, HashSet};
+use std::ops::Deref;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tracing::trace_span;
 
@@ -91,7 +93,7 @@ impl CounterStorage for RocksDbStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    fn get_counters(&self, limits: &HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
+    fn get_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<HashSet<Counter>, StorageErr> {
         let mut counters = HashSet::default();
         let namepaces: BTreeSet<&str> = limits.iter().map(|l| l.namespace().as_ref()).collect();
         for ns in namepaces {
@@ -113,7 +115,7 @@ impl CounterStorage for RocksDbStorage {
                         }
                         let value: ExpiringValue = value.as_ref().try_into()?;
                         for limit in limits {
-                            if limit == counter.limit() {
+                            if limit.deref() == counter.limit() {
                                 counter.update_to_limit(limit);
                                 let ttl = value.ttl();
                                 counter.set_expires_in(ttl);
@@ -133,8 +135,8 @@ impl CounterStorage for RocksDbStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr> {
-        let counters = self.get_counters(&limits)?;
+    fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr> {
+        let counters = self.get_counters(limits)?;
         for counter in &counters {
             let span = trace_span!("datastore");
             let _entered = span.enter();
