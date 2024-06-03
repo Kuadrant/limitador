@@ -5,6 +5,7 @@ services:
     image: envoyproxy/envoy:v1.20-latest
     depends_on:
       - upstream
+      - limitador
     command:
       - /usr/local/bin/envoy
       - --config-path
