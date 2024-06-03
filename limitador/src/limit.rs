@@ -1,5 +1,5 @@
 use crate::limit::conditions::{ErrorType, Literal, SyntaxError, Token, TokenType};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::error::Error;
@@ -28,7 +28,7 @@ mod deprecated {
 #[cfg(feature = "lenient_conditions")]
 pub use deprecated::check_deprecated_syntax_usages_and_reset;
 
-#[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, Hash, Eq, PartialEq, Clone, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Namespace(String);
 
 impl From<&str> for Namespace {
@@ -49,7 +49,7 @@ impl From<String> for Namespace {
     }
 }
 
-#[derive(Eq, Debug, Clone, Serialize, Deserialize)]
+#[derive(Eq, Debug, Clone, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Limit {
     namespace: Namespace,
     #[serde(skip_serializing, default)]
@@ -60,13 +60,11 @@ pub struct Limit {
 
     // Need to sort to generate the same object when using the JSON as a key or
     // value in Redis.
-    #[serde(serialize_with = "ordered_condition_set")]
-    conditions: HashSet<Condition>,
-    #[serde(serialize_with = "ordered_set")]
-    variables: HashSet<String>,
+    conditions: BTreeSet<Condition>,
+    variables: BTreeSet<String>,
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Eq, Debug, Clone, Hash)]
+#[derive(Deserialize, Serialize, PartialEq, Eq, Debug, Clone, Hash, PartialOrd, Ord)]
 #[serde(try_from = "String", into = "String")]
 pub struct Condition {
     var_name: String,
@@ -265,7 +263,7 @@ impl From<Condition> for String {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone, Hash)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Hash)]
 pub enum Predicate {
     Equal,
     NotEqual,
@@ -287,22 +285,6 @@ impl From<Predicate> for String {
             Predicate::NotEqual => "!=".to_string(),
         }
     }
-}
-
-fn ordered_condition_set<S>(value: &HashSet<Condition>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let ordered: BTreeSet<String> = value.iter().map(|c| c.clone().into()).collect();
-    ordered.serialize(serializer)
-}
-
-fn ordered_set<S>(value: &HashSet<String>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let ordered: BTreeSet<_> = value.iter().collect();
-    ordered.serialize(serializer)
 }
 
 impl Limit {
