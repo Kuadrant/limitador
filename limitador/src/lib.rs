@@ -226,6 +226,49 @@ pub struct CheckResult {
     pub limit_name: Option<String>,
 }
 
+impl CheckResult {
+    pub fn response_header(&mut self) -> HashMap<String, String> {
+        let mut headers = HashMap::new();
+        // sort by the limit remaining..
+        self.counters.sort_by(|a, b| {
+            let a_remaining = a.remaining().unwrap_or(a.max_value());
+            let b_remaining = b.remaining().unwrap_or(b.max_value());
+            a_remaining.cmp(&b_remaining)
+        });
+
+        let mut all_limits_text = String::with_capacity(20 * self.counters.len());
+        self.counters.iter_mut().for_each(|counter| {
+            all_limits_text.push_str(
+                format!(", {};w={}", counter.max_value(), counter.window().as_secs()).as_str(),
+            );
+            if let Some(name) = counter.limit().name() {
+                all_limits_text.push_str(format!(";name=\"{}\"", name.replace('"', "'")).as_str());
+            }
+        });
+
+        if let Some(counter) = self.counters.first() {
+            headers.insert(
+                "X-RateLimit-Limit".to_string(),
+                format!("{}{}", counter.max_value(), all_limits_text),
+            );
+
+            let remaining = counter.remaining().unwrap_or(counter.max_value());
+            headers.insert(
+                "X-RateLimit-Remaining".to_string(),
+                format!("{}", remaining),
+            );
+
+            if let Some(duration) = counter.expires_in() {
+                headers.insert(
+                    "X-RateLimit-Reset".to_string(),
+                    format!("{}", duration.as_secs()),
+                );
+            }
+        }
+        headers
+    }
+}
+
 impl From<CheckResult> for bool {
     fn from(value: CheckResult) -> Self {
         value.limited

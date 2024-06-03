@@ -3,6 +3,7 @@ use crate::prometheus_metrics::PrometheusMetrics;
 use crate::Limiter;
 use actix_web::{http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError};
 use actix_web::{App, HttpServer};
+use limitador::CheckResult;
 use paperclip::actix::{
     api_v2_errors,
     api_v2_operation,
@@ -209,7 +210,7 @@ async fn check_and_report(
                         add_response_header(
                             &mut resp,
                             response_headers.as_str(),
-                            &mut is_rate_limited.counters,
+                            &mut is_rate_limited,
                         );
                         resp.json(())
                     }
@@ -224,7 +225,7 @@ async fn check_and_report(
                         add_response_header(
                             &mut resp,
                             response_headers.as_str(),
-                            &mut is_rate_limited.counters,
+                            &mut is_rate_limited,
                         );
                         resp.json(())
                     }
@@ -238,48 +239,21 @@ async fn check_and_report(
 pub fn add_response_header(
     resp: &mut HttpResponseBuilder,
     rate_limit_headers: &str,
-    counters: &mut [limitador::counter::Counter],
+    result: &mut CheckResult,
 ) {
-    match rate_limit_headers {
+    if rate_limit_headers == "DraftVersion03" {
         // creates response headers per https://datatracker.ietf.org/doc/id/draft-polli-ratelimit-headers-03.html
-        "DraftVersion03" => {
-            // sort by the limit remaining..
-            counters.sort_by(|a, b| {
-                let a_remaining = a.remaining().unwrap_or(a.max_value());
-                let b_remaining = b.remaining().unwrap_or(b.max_value());
-                a_remaining.cmp(&b_remaining)
-            });
-
-            let mut all_limits_text = String::with_capacity(20 * counters.len());
-            counters.iter_mut().for_each(|counter| {
-                all_limits_text.push_str(
-                    format!(", {};w={}", counter.max_value(), counter.window().as_secs()).as_str(),
-                );
-                if let Some(name) = counter.limit().name() {
-                    all_limits_text
-                        .push_str(format!(";name=\"{}\"", name.replace('"', "'")).as_str());
-                }
-            });
-
-            if let Some(counter) = counters.first() {
-                resp.insert_header((
-                    "X-RateLimit-Limit",
-                    format!("{}{}", counter.max_value(), all_limits_text),
-                ));
-
-                let remaining = counter.remaining().unwrap_or(counter.max_value());
-                resp.insert_header((
-                    "X-RateLimit-Remaining".to_string(),
-                    format!("{}", remaining),
-                ));
-
-                if let Some(duration) = counter.expires_in() {
-                    resp.insert_header(("X-RateLimit-Reset", format!("{}", duration.as_secs())));
-                }
+        let headers = result.response_header();
+        if let Some(limit) = headers.get("X-RateLimit-Limit") {
+            resp.insert_header(("X-RateLimit-Limit", limit.clone()));
+        }
+        if let Some(remaining) = headers.get("X-RateLimit-Remaining") {
+            resp.insert_header(("X-RateLimit-Remaining".to_string(), remaining.clone()));
+            if let Some(duration) = headers.get("X-RateLimit-Reset") {
+                resp.insert_header(("X-RateLimit-Reset", duration.clone()));
             }
         }
-        _default => {}
-    };
+    }
 }
 
 pub async fn run_http_server(
