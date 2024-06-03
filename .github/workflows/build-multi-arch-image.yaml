@@ -4,8 +4,8 @@ name: Build Image
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    tags:
+      - "*"
 
 env:
   IMG_REGISTRY_HOST: quay.io
@@ -25,4 +25,4 @@ jobs:
       - name: Build/Push the Container Image
         uses: ./.github/actions/build-image
         with:
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
