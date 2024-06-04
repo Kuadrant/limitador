@@ -62,7 +62,7 @@ impl Counter {
 
     pub fn update_to_limit(&mut self, limit: Arc<Limit>) -> bool {
         if limit == self.limit {
-            self.limit = Arc::clone(&limit);
+            self.limit = limit;
             return true;
         }
         false
