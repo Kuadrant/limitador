@@ -116,7 +116,7 @@ impl CounterStorage for RocksDbStorage {
                         let value: ExpiringValue = value.as_ref().try_into()?;
                         for limit in limits {
                             if limit.deref() == counter.limit() {
-                                counter.update_to_limit(limit);
+                                counter.update_to_limit(Arc::clone(limit));
                                 let ttl = value.ttl();
                                 counter.set_expires_in(ttl);
                                 counter.set_remaining(limit.max_value() - value.value());

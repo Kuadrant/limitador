@@ -11,7 +11,9 @@ use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
 use redis::{AsyncCommands, RedisError};
 use std::collections::HashSet;
+use std::ops::Deref;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug_span, Instrument};
 
@@ -127,20 +129,24 @@ impl AsyncCounterStorage for AsyncRedisStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
+    async fn get_counters(
+        &self,
+        limits: &HashSet<Arc<Limit>>,
+    ) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
 
         let mut con = self.conn_manager.clone();
 
         for limit in limits {
             let counter_keys = {
-                con.smembers::<String, HashSet<String>>(key_for_counters_of_limit(&limit))
+                con.smembers::<String, HashSet<String>>(key_for_counters_of_limit(limit))
                     .instrument(debug_span!("datastore"))
                     .await?
             };
 
             for counter_key in counter_keys {
-                let mut counter: Counter = counter_from_counter_key(&counter_key, &limit);
+                let mut counter: Counter =
+                    counter_from_counter_key(&counter_key, Arc::clone(limit));
 
                 // If the key does not exist, it means that the counter expired,
                 // so we don't have to return it.
@@ -172,9 +178,9 @@ impl AsyncCounterStorage for AsyncRedisStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr> {
+    async fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr> {
         for limit in limits {
-            self.delete_counters_associated_with_limit(&limit)
+            self.delete_counters_associated_with_limit(limit.deref())
                 .instrument(debug_span!("datastore"))
                 .await?
         }

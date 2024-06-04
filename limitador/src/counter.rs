@@ -2,11 +2,12 @@ use crate::limit::{Limit, Namespace};
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct Counter {
-    limit: Limit,
+    limit: Arc<Limit>,
 
     // Need to sort to generate the same object when using the JSON as a key or
     // value in Redis.
@@ -26,9 +27,10 @@ where
 }
 
 impl Counter {
-    pub fn new(limit: Limit, set_variables: HashMap<String, String>) -> Self {
+    pub fn new<L: Into<Arc<Limit>>>(limit: L, set_variables: HashMap<String, String>) -> Self {
         // TODO: check that all the variables defined in the limit are set.
 
+        let limit = limit.into();
         let mut vars = set_variables;
         vars.retain(|var, _| limit.has_variable(var));
 
@@ -43,7 +45,7 @@ impl Counter {
     #[cfg(any(feature = "redis_storage", feature = "disk_storage"))]
     pub(crate) fn key(&self) -> Self {
         Self {
-            limit: self.limit.clone(),
+            limit: Arc::clone(&self.limit),
             set_variables: self.set_variables.clone(),
             remaining: None,
             expires_in: None,
@@ -58,12 +60,9 @@ impl Counter {
         self.limit.max_value()
     }
 
-    pub fn update_to_limit(&mut self, limit: &Limit) -> bool {
-        if limit == &self.limit {
-            self.limit.set_max_value(limit.max_value());
-            if let Some(name) = limit.name() {
-                self.limit.set_name(name.to_string());
-            }
+    pub fn update_to_limit(&mut self, limit: Arc<Limit>) -> bool {
+        if limit == self.limit {
+            self.limit = Arc::clone(&limit);
             return true;
         }
         false

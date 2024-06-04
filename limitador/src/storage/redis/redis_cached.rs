@@ -132,12 +132,15 @@ impl AsyncCounterStorage for CachedRedisStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
+    async fn get_counters(
+        &self,
+        limits: &HashSet<Arc<Limit>>,
+    ) -> Result<HashSet<Counter>, StorageErr> {
         self.async_redis_storage.get_counters(limits).await
     }
 
     #[tracing::instrument(skip_all)]
-    async fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr> {
+    async fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr> {
         self.async_redis_storage.delete_counters(limits).await
     }
 

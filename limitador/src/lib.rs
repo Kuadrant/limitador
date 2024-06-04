@@ -193,6 +193,7 @@
 #![allow(clippy::multiple_crate_versions)]
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::counter::Counter;
 use crate::errors::LimitadorError;
@@ -341,7 +342,11 @@ impl RateLimiter {
     }
 
     pub fn get_limits(&self, namespace: &Namespace) -> HashSet<Limit> {
-        self.storage.get_limits(namespace)
+        self.storage
+            .get_limits(namespace)
+            .iter()
+            .map(|l| (**l).clone())
+            .collect()
     }
 
     pub fn delete_limits(&self, namespace: &Namespace) -> Result<(), LimitadorError> {
@@ -475,12 +480,12 @@ impl RateLimiter {
         namespace: &Namespace,
         values: &HashMap<String, String>,
     ) -> Result<Vec<Counter>, LimitadorError> {
-        let limits = self.get_limits(namespace);
+        let limits = self.storage.get_limits(namespace);
 
         let counters = limits
             .iter()
             .filter(|lim| lim.applies(values))
-            .map(|lim| Counter::new(lim.clone(), values.clone()))
+            .map(|lim| Counter::new(Arc::clone(lim), values.clone()))
             .collect();
 
         Ok(counters)
@@ -513,7 +518,11 @@ impl AsyncRateLimiter {
     }
 
     pub fn get_limits(&self, namespace: &Namespace) -> HashSet<Limit> {
-        self.storage.get_limits(namespace)
+        self.storage
+            .get_limits(namespace)
+            .iter()
+            .map(|l| (**l).clone())
+            .collect()
     }
 
     pub async fn delete_limits(&self, namespace: &Namespace) -> Result<(), LimitadorError> {
@@ -653,12 +662,12 @@ impl AsyncRateLimiter {
         namespace: &Namespace,
         values: &HashMap<String, String>,
     ) -> Result<Vec<Counter>, LimitadorError> {
-        let limits = self.get_limits(namespace);
+        let limits = self.storage.get_limits(namespace);
 
         let counters = limits
             .iter()
             .filter(|lim| lim.applies(values))
-            .map(|lim| Counter::new(lim.clone(), values.clone()))
+            .map(|lim| Counter::new(Arc::clone(lim), values.clone()))
             .collect();
 
         Ok(counters)

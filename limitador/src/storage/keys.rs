@@ -14,6 +14,7 @@
 
 use crate::counter::Counter;
 use crate::limit::Limit;
+use std::sync::Arc;
 
 pub fn key_for_counter(counter: &Counter) -> String {
     if counter.remaining().is_some() || counter.expires_in().is_some() {
@@ -43,9 +44,9 @@ pub fn prefix_for_namespace(namespace: &str) -> String {
     format!("namespace:{{{namespace}}},")
 }
 
-pub fn counter_from_counter_key(key: &str, limit: &Limit) -> Counter {
+pub fn counter_from_counter_key(key: &str, limit: Arc<Limit>) -> Counter {
     let mut counter = partial_counter_from_counter_key(key);
-    if !counter.update_to_limit(limit) {
+    if !counter.update_to_limit(Arc::clone(&limit)) {
         // this means some kind of data corruption _or_ most probably
         // an out of sync `impl PartialEq for Limit` vs `pub fn key_for_counter(counter: &Counter) -> String`
         panic!(
