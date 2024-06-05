@@ -124,7 +124,7 @@ impl TryFrom<&str> for Condition {
 impl Condition {
     #[cfg(feature = "cel_conditions")]
     fn try_from_cel(source: String) -> Result<Self, ConditionParsingError> {
-        match parse(&source.strip_prefix("cel:").unwrap().to_string()) {
+        match parse(source.strip_prefix("cel:").unwrap()) {
             Ok(expression) => Ok(Condition { source, expression }),
             Err(_err) => Err(ConditionParsingError {
                 error: SyntaxError {
@@ -336,7 +336,7 @@ impl TryFrom<String> for Condition {
         if value.clone().starts_with("cel:") {
             return Condition::try_from_cel(value);
         }
-        return Condition::try_from_simple(value);
+        Condition::try_from_simple(value)
     }
 }
 
