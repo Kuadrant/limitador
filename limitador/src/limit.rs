@@ -1,4 +1,3 @@
-use crate::limit::conditions::{ErrorType, Literal, SyntaxError, Token, TokenType};
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::error::Error;
@@ -6,9 +5,17 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 use cel_interpreter::{Context, Expression, Value};
+#[cfg(feature = "cel_conditions")]
+use cel_parser::parse;
 use cel_parser::RelationOp::{Equals, NotEquals};
-use cel_parser::{parse, Atom, RelationOp};
+use cel_parser::{Atom, RelationOp};
 use serde::{Deserialize, Serialize, Serializer};
+
+#[cfg(feature = "lenient_conditions")]
+pub use deprecated::check_deprecated_syntax_usages_and_reset;
+
+use crate::limit::conditions::{ErrorType, Literal, SyntaxError, Token, TokenType};
+
 #[cfg(feature = "lenient_conditions")]
 mod deprecated {
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -27,9 +34,6 @@ mod deprecated {
         DEPRECATED_SYNTAX.fetch_or(true, Ordering::SeqCst);
     }
 }
-
-#[cfg(feature = "lenient_conditions")]
-pub use deprecated::check_deprecated_syntax_usages_and_reset;
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Namespace(String);
@@ -118,6 +122,7 @@ impl TryFrom<&str> for Condition {
 }
 
 impl Condition {
+    #[cfg(feature = "cel_conditions")]
     fn try_from_cel(source: String) -> Result<Self, ConditionParsingError> {
         match parse(&source.strip_prefix("cel:").unwrap().to_string()) {
             Ok(expression) => Ok(Condition { source, expression }),
@@ -172,12 +177,10 @@ impl Condition {
                                         predicate.clone(),
                                         operand.clone(),
                                     ),
-                                    expression: Expression::Relation(
-                                        Box::new(Expression::Ident(var_name.clone().into())),
+                                    expression: Self::simple_expression(
+                                        var_name.as_str(),
                                         predicate,
-                                        Box::new(Expression::Atom(Atom::String(
-                                            operand.clone().into(),
-                                        ))),
+                                        operand.as_str(),
                                     ),
                                 })
                             } else {
@@ -207,12 +210,10 @@ impl Condition {
                                         predicate.clone(),
                                         operand.clone(),
                                     ),
-                                    expression: Expression::Relation(
-                                        Box::new(Expression::Atom(Atom::String(
-                                            operand.clone().into(),
-                                        ))),
+                                    expression: Self::simple_expression(
+                                        var_name.as_str(),
                                         predicate,
-                                        Box::new(Expression::Ident(var_name.clone().into())),
+                                        operand.as_str(),
                                     ),
                                 })
                             } else {
@@ -235,12 +236,10 @@ impl Condition {
                                         Equals,
                                         operand.clone(),
                                     ),
-                                    expression: Expression::Relation(
-                                        Box::new(Expression::Ident(var_name.clone().into())),
+                                    expression: Self::simple_expression(
+                                        var_name.as_str(),
                                         Equals,
-                                        Box::new(Expression::Atom(Atom::String(
-                                            operand.clone().into(),
-                                        ))),
+                                        operand.as_str(),
                                     ),
                                 })
                             } else {
@@ -263,12 +262,10 @@ impl Condition {
                                         Equals,
                                         operand.to_string(),
                                     ),
-                                    expression: Expression::Relation(
-                                        Box::new(Expression::Ident(var_name.clone().into())),
+                                    expression: Self::simple_expression(
+                                        var_name.as_str(),
                                         Equals,
-                                        Box::new(Expression::Atom(Atom::String(
-                                            operand.to_string().into(),
-                                        ))),
+                                        operand.to_string().as_str(),
                                     ),
                                 })
                             } else {
@@ -321,12 +318,21 @@ impl Condition {
             }),
         }
     }
+
+    fn simple_expression(ident: &str, op: RelationOp, lit: &str) -> Expression {
+        Expression::Relation(
+            Box::new(Expression::Ident(ident.to_string().into())),
+            op,
+            Box::new(Expression::Atom(Atom::String(lit.to_string().into()))),
+        )
+    }
 }
 
 impl TryFrom<String> for Condition {
     type Error = ConditionParsingError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
+        #[cfg(feature = "cel_conditions")]
         if value.clone().starts_with("cel:") {
             return Condition::try_from_cel(value);
         }
@@ -970,24 +976,6 @@ mod tests {
     }
 
     #[test]
-    fn limit_applies_when_all_its_conditions_apply_with_subexpression() {
-        let limit = Limit::new(
-            "test_namespace",
-            10,
-            60,
-            vec!["cel:x == string((11 - 1) / 2)", "y == \"2\""],
-            vec!["z"],
-        );
-
-        let mut values: HashMap<String, String> = HashMap::new();
-        values.insert("x".into(), "5".into());
-        values.insert("y".into(), "2".into());
-        values.insert("z".into(), "1".into());
-
-        assert!(limit.applies(&values))
-    }
-
-    #[test]
     fn limit_does_not_apply_if_one_cond_doesnt() {
         let limit = Limit::new(
             "test_namespace",
@@ -1012,7 +1000,7 @@ mod tests {
             result,
             Condition {
                 source: "x == '5'".to_string(),
-                expression: parse("x == '5'").unwrap(),
+                expression: Condition::simple_expression("x", Equals, "5"),
             }
         );
 
@@ -1022,7 +1010,7 @@ mod tests {
             result,
             Condition {
                 source: "  foobar=='ok' ".to_string(),
-                expression: parse("foobar == 'ok'").unwrap(),
+                expression: Condition::simple_expression("foobar", Equals, "ok"),
             }
         );
 
@@ -1032,7 +1020,7 @@ mod tests {
             result,
             Condition {
                 source: "  foobar  ==   'ok'  ".to_string(),
-                expression: parse("  foobar  ==   'ok'  ").unwrap(),
+                expression: Condition::simple_expression("foobar", Equals, "ok"),
             }
         );
     }
@@ -1060,9 +1048,32 @@ mod tests {
     fn condition_serialization() {
         let condition = Condition {
             source: "foobar == \"ok\"".to_string(),
-            expression: parse("foobar == ok").unwrap(),
+            expression: Condition::simple_expression("foobar", Equals, "ok"),
         };
         let result = serde_json::to_string(&condition).expect("Should serialize");
         assert_eq!(result, r#""foobar == \"ok\"""#.to_string());
+    }
+
+    #[cfg(feature = "cel_conditions")]
+    mod cel {
+        use super::*;
+
+        #[test]
+        fn limit_applies_when_all_its_conditions_apply_with_subexpression() {
+            let limit = Limit::new(
+                "test_namespace",
+                10,
+                60,
+                vec!["cel:x == string((11 - 1) / 2)", "y == \"2\""],
+                vec!["z"],
+            );
+
+            let mut values: HashMap<String, String> = HashMap::new();
+            values.insert("x".into(), "5".into());
+            values.insert("y".into(), "2".into());
+            values.insert("z".into(), "1".into());
+
+            assert!(limit.applies(&values))
+        }
     }
 }
