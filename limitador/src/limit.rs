@@ -8,7 +8,7 @@ use cel_interpreter::{Context, Expression, Value};
 #[cfg(feature = "cel_conditions")]
 use cel_parser::parse;
 use cel_parser::RelationOp::{Equals, NotEquals};
-use cel_parser::{Atom, RelationOp};
+use cel_parser::{Atom, Member, RelationOp};
 use serde::{Deserialize, Serialize, Serializer};
 
 #[cfg(feature = "lenient_conditions")]
@@ -321,7 +321,12 @@ impl Condition {
 
     fn simple_expression(ident: &str, op: RelationOp, lit: &str) -> Expression {
         Expression::Relation(
-            Box::new(Expression::Ident(ident.to_string().into())),
+            Box::new(Expression::Member(
+                Box::new(Expression::Ident("vars".to_string().into())),
+                Box::new(Member::Index(Box::new(Expression::Atom(Atom::String(
+                    ident.to_string().into(),
+                ))))),
+            )),
             op,
             Box::new(Expression::Atom(Atom::String(lit.to_string().into()))),
         )
@@ -450,13 +455,16 @@ impl Limit {
 
     fn condition_applies(condition: &Condition, values: &HashMap<String, String>) -> bool {
         let mut context = Context::default();
-        for (key, val) in values {
-            context.add_variable(key.clone(), val.to_owned());
+
+        for (key, value) in values {
+            context.add_variable(key, value.clone());
         }
+
+        context.add_variable("vars", values.clone());
 
         match Value::resolve(&condition.expression, &context) {
             Ok(val) => val == true.into(),
-            Err(_) => false,
+            Err(_err) => false,
         }
     }
 }
@@ -1058,22 +1066,75 @@ mod tests {
     mod cel {
         use super::*;
 
+        fn limit_with_condition(conditions: Vec<&str>) -> Limit {
+            Limit::new("test_namespace", 10, 60, conditions, <Vec<String>>::new())
+        }
+
         #[test]
         fn limit_applies_when_all_its_conditions_apply_with_subexpression() {
-            let limit = Limit::new(
-                "test_namespace",
-                10,
-                60,
-                vec!["cel:x == string((11 - 1) / 2)", "y == \"2\""],
-                vec!["z"],
-            );
+            let limit = limit_with_condition(vec![
+                r#"cel:   x == string((11 - 1) / 2)    "#,
+                r#"       y == "2"                     "#,
+            ]);
 
-            let mut values: HashMap<String, String> = HashMap::new();
-            values.insert("x".into(), "5".into());
-            values.insert("y".into(), "2".into());
-            values.insert("z".into(), "1".into());
+            let values = HashMap::from([
+                ("x".to_string(), "5".to_string()),
+                ("y".to_string(), "2".to_string()),
+            ]);
 
             assert!(limit.applies(&values))
+        }
+
+        #[test]
+        fn vars_with_dot_names() {
+            let values = HashMap::from([("req.method".to_string(), "GET".to_string())]);
+
+            // we can't access complex variables via simple names....
+            let limit = limit_with_condition(vec![r#"cel: req.method == "GET"    "#]);
+            assert!(!limit.applies(&values));
+
+            // But we can access it via the vars map.
+            let limit = limit_with_condition(vec![r#"cel:   vars["req.method"] == "GET"    "#]);
+            assert!(limit.applies(&values));
+        }
+
+        #[test]
+        fn size_function() {
+            let values = HashMap::from([("method".to_string(), "GET".to_string())]);
+            let limit = limit_with_condition(vec![r#"cel:   size(vars["method"]) == 3   "#]);
+            assert!(limit.applies(&values));
+        }
+
+        #[test]
+        fn size_function_and_size_var() {
+            let values = HashMap::from([
+                ("method".to_string(), "GET".to_string()),
+                ("size".to_string(), "50".to_string()),
+            ]);
+
+            let limit = limit_with_condition(vec![r#"cel:   size(method) == 3     "#]);
+            assert!(limit.applies(&values));
+
+            // we can't access simple variables that conflict with built-ins
+            let limit = limit_with_condition(vec![r#"cel:   size == "50"  "#]);
+            assert!(!limit.applies(&values));
+
+            // But we can access it via the vars map.
+            let limit = limit_with_condition(vec![r#"cel:   vars["size"] == "50"  "#]);
+            assert!(limit.applies(&values));
+        }
+
+        #[test]
+        fn vars_var() {
+            let values = HashMap::from([("vars".to_string(), "hello".to_string())]);
+
+            // we can't access simple variables that conflict with built-ins (the vars map)
+            let limit = limit_with_condition(vec![r#"cel:   vars == "hello"     "#]);
+            assert!(!limit.applies(&values));
+
+            // But we can access it via the vars map.
+            let limit = limit_with_condition(vec![r#"cel:   vars["vars"] == "hello"  "#]);
+            assert!(limit.applies(&values));
         }
     }
 }
