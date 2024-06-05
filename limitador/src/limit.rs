@@ -6,8 +6,8 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 use cel_interpreter::{Context, Expression, Value};
-use cel_parser::{Atom, parse, RelationOp};
 use cel_parser::RelationOp::{Equals, NotEquals};
+use cel_parser::{parse, Atom, RelationOp};
 use serde::{Deserialize, Serialize, Serializer};
 #[cfg(feature = "lenient_conditions")]
 mod deprecated {
@@ -118,7 +118,6 @@ impl TryFrom<&str> for Condition {
 }
 
 impl Condition {
-
     fn try_from_cel(source: String) -> Result<Self, ConditionParsingError> {
         match parse(&source.strip_prefix("cel:").unwrap().to_string()) {
             Ok(expression) => Ok(Condition { source, expression }),
@@ -139,15 +138,8 @@ impl Condition {
             NotEquals => "!=",
             _ => unreachable!(),
         };
-        let quotes = if lit.contains('"') {
-            '\''
-        } else {
-            '"'
-        };
-        format!(
-            "{} {} {}{}{}",
-            var_name, predicate, quotes, lit, quotes
-        )
+        let quotes = if lit.contains('"') { '\'' } else { '"' };
+        format!("{} {} {}{}{}", var_name, predicate, quotes, lit, quotes)
     }
 
     fn try_from_simple(source: String) -> Result<Self, ConditionParsingError> {
@@ -175,11 +167,17 @@ impl Condition {
                                     _ => unreachable!(),
                                 };
                                 Ok(Condition {
-                                    source: Condition::simple_source(var_name.clone(), predicate.clone(), operand.clone()),
+                                    source: Condition::simple_source(
+                                        var_name.clone(),
+                                        predicate.clone(),
+                                        operand.clone(),
+                                    ),
                                     expression: Expression::Relation(
                                         Box::new(Expression::Ident(var_name.clone().into())),
                                         predicate,
-                                        Box::new(Expression::Atom(Atom::String(operand.clone().into()))),
+                                        Box::new(Expression::Atom(Atom::String(
+                                            operand.clone().into(),
+                                        ))),
                                     ),
                                 })
                             } else {
@@ -204,9 +202,15 @@ impl Condition {
                                     _ => unreachable!(),
                                 };
                                 Ok(Condition {
-                                    source: Condition::simple_source(var_name.clone(), predicate.clone(), operand.clone()),
+                                    source: Condition::simple_source(
+                                        var_name.clone(),
+                                        predicate.clone(),
+                                        operand.clone(),
+                                    ),
                                     expression: Expression::Relation(
-                                        Box::new(Expression::Atom(Atom::String(operand.clone().into()))),
+                                        Box::new(Expression::Atom(Atom::String(
+                                            operand.clone().into(),
+                                        ))),
                                         predicate,
                                         Box::new(Expression::Ident(var_name.clone().into())),
                                     ),
@@ -226,11 +230,17 @@ impl Condition {
                             {
                                 deprecated::deprecated_syntax_used();
                                 Ok(Condition {
-                                    source: Condition::simple_source(var_name.clone(), Equals, operand.clone()),
+                                    source: Condition::simple_source(
+                                        var_name.clone(),
+                                        Equals,
+                                        operand.clone(),
+                                    ),
                                     expression: Expression::Relation(
                                         Box::new(Expression::Ident(var_name.clone().into())),
                                         Equals,
-                                        Box::new(Expression::Atom(Atom::String(operand.clone().into()))),
+                                        Box::new(Expression::Atom(Atom::String(
+                                            operand.clone().into(),
+                                        ))),
                                     ),
                                 })
                             } else {
@@ -248,11 +258,17 @@ impl Condition {
                             {
                                 deprecated::deprecated_syntax_used();
                                 Ok(Condition {
-                                    source: Condition::simple_source(var_name.clone(), Equals, operand.to_string()),
+                                    source: Condition::simple_source(
+                                        var_name.clone(),
+                                        Equals,
+                                        operand.to_string(),
+                                    ),
                                     expression: Expression::Relation(
                                         Box::new(Expression::Ident(var_name.clone().into())),
                                         Equals,
-                                        Box::new(Expression::Atom(Atom::String(operand.to_string().into()))),
+                                        Box::new(Expression::Atom(Atom::String(
+                                            operand.to_string().into(),
+                                        ))),
                                     ),
                                 })
                             } else {
@@ -321,30 +337,6 @@ impl TryFrom<String> for Condition {
 impl From<Condition> for String {
     fn from(condition: Condition) -> Self {
         condition.source.clone()
-    }
-}
-
-#[derive(PartialEq, Eq, Debug, Clone, Hash)]
-pub enum Predicate {
-    Equal,
-    NotEqual,
-}
-
-impl Predicate {
-    fn test(&self, lhs: &str, rhs: &str) -> bool {
-        match self {
-            Predicate::Equal => lhs == rhs,
-            Predicate::NotEqual => lhs != rhs,
-        }
-    }
-}
-
-impl From<Predicate> for String {
-    fn from(op: Predicate) -> Self {
-        match op {
-            Predicate::Equal => "==".to_string(),
-            Predicate::NotEqual => "!=".to_string(),
-        }
     }
 }
 
