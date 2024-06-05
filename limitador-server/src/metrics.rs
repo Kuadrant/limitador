@@ -56,18 +56,17 @@ struct SpanState {
 }
 
 impl SpanState {
-    fn new(group: String) -> Self {
-        Self {
-            group_times: HashMap::from([(group, Timings::new())]),
-        }
+    fn new(group: &String) -> Self {
+        let mut group_times = HashMap::new();
+        group_times.insert(group.to_owned(), Timings::new());
+        Self { group_times }
     }
 
-    fn increment(&mut self, group: &String, timings: Timings) -> &mut Self {
+    fn increment(&mut self, group: &str, timings: Timings) {
         self.group_times
             .entry(group.to_string())
             .and_modify(|x| *x += timings)
             .or_insert(timings);
-        self
     }
 }
 
@@ -82,23 +81,18 @@ impl MetricsGroup {
     }
 }
 
+#[derive(Default)]
 pub struct MetricsLayer {
     groups: HashMap<String, MetricsGroup>,
 }
 
 impl MetricsLayer {
-    pub fn new() -> Self {
-        Self {
-            groups: HashMap::new(),
-        }
-    }
-
     pub fn gather(mut self, aggregate: &str, consumer: fn(Timings), records: Vec<&str>) -> Self {
         // TODO(adam-cattermole): does not handle case where aggregate already exists
-        let rec = records.iter().map(|r| r.to_string()).collect();
+        let rec = records.iter().map(|&r| r.to_string()).collect();
         self.groups
             .entry(aggregate.to_string())
-            .or_insert(MetricsGroup::new(Box::new(consumer), rec));
+            .or_insert_with(|| MetricsGroup::new(Box::new(consumer), rec));
         self
     }
 }
@@ -111,7 +105,7 @@ where
     fn on_new_span(&self, _attrs: &Attributes<'_>, id: &Id, ctx: Context<'_, S>) {
         let span = ctx.span(id).expect("Span not found, this is a bug");
         let mut extensions = span.extensions_mut();
-        let name = span.name();
+        let name = span.name().to_string();
 
         // if there's a parent
         if let Some(parent) = span.parent() {
@@ -122,33 +116,32 @@ where
         }
 
         // if we are an aggregator
-        if self.groups.contains_key(name) {
+        if self.groups.contains_key(&name) {
             if let Some(span_state) = extensions.get_mut::<SpanState>() {
                 // if the SpanState has come from parent and we must append
                 // (we are a second level aggregator)
                 span_state
                     .group_times
-                    .entry(name.to_string())
-                    .or_insert(Timings::new());
+                    .entry(name.clone())
+                    .or_insert_with(Timings::new);
             } else {
                 // otherwise create a new SpanState with ourselves
-                extensions.insert(SpanState::new(name.to_string()))
+                extensions.insert(SpanState::new(&name))
             }
         }
 
         if let Some(span_state) = extensions.get_mut::<SpanState>() {
             // either we are an aggregator or nested within one
             for group in span_state.group_times.keys() {
-                for record in &self
+                if self
                     .groups
                     .get(group)
                     .expect("Span state contains group times for an unconfigured group")
                     .records
+                    .contains(&name)
                 {
-                    if name == record {
-                        extensions.insert(Timings::new());
-                        return;
-                    }
+                    extensions.insert(Timings::new());
+                    return;
                 }
             }
             // if here we are an intermediate span that should not be recorded
@@ -156,54 +149,48 @@ where
     }
 
     fn on_enter(&self, id: &Id, ctx: Context<'_, S>) {
-        let span = ctx.span(id).expect("Span not found, this is a bug");
-        let mut extensions = span.extensions_mut();
+        if let Some(span) = ctx.span(id) {
+            if let Some(timings) = span.extensions_mut().get_mut::<Timings>() {
+                let now = Instant::now();
+                timings.idle += (now - timings.last).as_nanos() as u64;
+                timings.last = now;
 
-        if let Some(timings) = extensions.get_mut::<Timings>() {
-            let now = Instant::now();
-            timings.idle += (now - timings.last).as_nanos() as u64;
-            timings.last = now;
-            timings.updated = true;
+                timings.updated = true;
+            }
         }
     }
 
     fn on_exit(&self, id: &Id, ctx: Context<'_, S>) {
-        let span = ctx.span(id).expect("Span not found, this is a bug");
-        let mut extensions = span.extensions_mut();
-
-        if let Some(timings) = extensions.get_mut::<Timings>() {
-            let now = Instant::now();
-            timings.busy += (now - timings.last).as_nanos() as u64;
-            timings.last = now;
-            timings.updated = true;
+        if let Some(span) = ctx.span(id) {
+            if let Some(timings) = span.extensions_mut().get_mut::<Timings>() {
+                let now = Instant::now();
+                timings.busy += (now - timings.last).as_nanos() as u64;
+                timings.last = now;
+                timings.updated = true;
+            }
         }
     }
 
     fn on_close(&self, id: Id, ctx: Context<'_, S>) {
         let span = ctx.span(&id).expect("Span not found, this is a bug");
         let mut extensions = span.extensions_mut();
-        let name = span.name();
-        let mut t: Option<Timings> = None;
+        let name = span.name().to_string();
 
-        if let Some(timing) = extensions.get_mut::<Timings>() {
-            let mut time = *timing;
-            time.idle += (Instant::now() - time.last).as_nanos() as u64;
-            t = Some(time);
-        }
+        let timing = extensions.get_mut::<Timings>().map(|t| {
+            let now = Instant::now();
+            t.idle += (now - t.last).as_nanos() as u64;
+            *t
+        });
 
         if let Some(span_state) = extensions.get_mut::<SpanState>() {
-            if let Some(timing) = t {
-                let group_times = span_state.group_times.clone();
+            if let Some(timing) = timing {
                 // iterate over the groups this span belongs to
-                'aggregate: for group in group_times.keys() {
+                for group in span_state.group_times.keys().cloned().collect::<Vec<_>>() {
                     // find the set of records related to these groups in the layer
-                    for record in &self.groups.get(group).unwrap().records {
+                    if self.groups.get(&group).unwrap().records.contains(&name) {
                         // if we are a record for this group then increment the relevant
                         // span-local timing and continue to the next group
-                        if name == record {
-                            span_state.increment(group, timing);
-                            continue 'aggregate;
-                        }
+                        span_state.increment(&group, timing);
                     }
                 }
             }
@@ -214,8 +201,8 @@ where
                 parent.extensions_mut().replace(span_state.clone());
             }
             // IF we are aggregator call consume function
-            if let Some(metrics_group) = self.groups.get(name) {
-                if let Some(t) = span_state.group_times.get(name).filter(|&t| t.updated) {
+            if let Some(metrics_group) = self.groups.get(&name) {
+                if let Some(t) = span_state.group_times.get(&name).filter(|&t| t.updated) {
                     (metrics_group.consumer)(*t);
                 }
             }
@@ -285,7 +272,7 @@ mod tests {
     #[test]
     fn span_state_increment() {
         let group = String::from("group");
-        let mut span_state = SpanState::new(group.clone());
+        let mut span_state = SpanState::new(&group);
         let t1 = Timings {
             idle: 5,
             busy: 5,
@@ -300,7 +287,7 @@ mod tests {
     #[test]
     fn metrics_layer() {
         let consumer = |_| println!("group/record");
-        let ml = MetricsLayer::new().gather("group", consumer, vec!["record"]);
+        let ml = MetricsLayer::default().gather("group", consumer, vec!["record"]);
         assert_eq!(ml.groups.get("group").unwrap().records, vec!["record"]);
     }
 }
