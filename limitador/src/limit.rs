@@ -457,6 +457,10 @@ impl Limit {
         let mut context = Context::default();
 
         for (key, value) in values {
+            if key.starts_with('_') {
+                // reserve _* identifiers for future use.
+                continue;
+            }
             context.add_variable(key, value.clone());
         }
 
@@ -1142,6 +1146,19 @@ mod tests {
 
             // But we can access it via the vars map.
             let limit = limit_with_condition(vec![r#"cel:   vars["vars"] == "hello"  "#]);
+            assert!(limit.applies(&values));
+        }
+
+        #[test]
+        fn underscore_var() {
+            let values = HashMap::from([("_hello".to_string(), "world".to_string())]);
+
+            // _* variables are reserved for future use
+            let limit = limit_with_condition(vec![r#"cel:   _hello == "world"     "#]);
+            assert_false!(limit.applies(&values));
+
+            // But we can access it via the vars map.
+            let limit = limit_with_condition(vec![r#"cel:   vars["_hello"] == "world"  "#]);
             assert!(limit.applies(&values));
         }
     }
