@@ -6,7 +6,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 use cel_interpreter::{Context, Expression, Value};
-use cel_parser::{Atom, parse};
+use cel_parser::{Atom, parse, RelationOp};
 use cel_parser::RelationOp::{Equals, NotEquals};
 use serde::{Deserialize, Serialize, Serializer};
 #[cfg(feature = "lenient_conditions")]
@@ -120,7 +120,7 @@ impl TryFrom<&str> for Condition {
 impl Condition {
 
     fn try_from_cel(source: String) -> Result<Self, ConditionParsingError> {
-        match parse(&source) {
+        match parse(&source.strip_prefix("cel:").unwrap().to_string()) {
             Ok(expression) => Ok(Condition { source, expression }),
             Err(_err) => Err(ConditionParsingError {
                 error: SyntaxError {
@@ -131,6 +131,23 @@ impl Condition {
                 condition: source,
             }),
         }
+    }
+
+    fn simple_source(var_name: String, op: RelationOp, lit: String) -> String {
+        let predicate = match op {
+            Equals => "==",
+            NotEquals => "!=",
+            _ => unreachable!(),
+        };
+        let quotes = if lit.contains('"') {
+            '\''
+        } else {
+            '"'
+        };
+        format!(
+            "{} {} {}{}{}",
+            var_name, predicate, quotes, lit, quotes
+        )
     }
 
     fn try_from_simple(source: String) -> Result<Self, ConditionParsingError> {
@@ -158,7 +175,7 @@ impl Condition {
                                     _ => unreachable!(),
                                 };
                                 Ok(Condition {
-                                    source,
+                                    source: Condition::simple_source(var_name.clone(), predicate.clone(), operand.clone()),
                                     expression: Expression::Relation(
                                         Box::new(Expression::Ident(var_name.clone().into())),
                                         predicate,
@@ -187,7 +204,7 @@ impl Condition {
                                     _ => unreachable!(),
                                 };
                                 Ok(Condition {
-                                    source,
+                                    source: Condition::simple_source(var_name.clone(), predicate.clone(), operand.clone()),
                                     expression: Expression::Relation(
                                         Box::new(Expression::Atom(Atom::String(operand.clone().into()))),
                                         predicate,
@@ -209,7 +226,7 @@ impl Condition {
                             {
                                 deprecated::deprecated_syntax_used();
                                 Ok(Condition {
-                                    source,
+                                    source: Condition::simple_source(var_name.clone(), Equals, operand.clone()),
                                     expression: Expression::Relation(
                                         Box::new(Expression::Ident(var_name.clone().into())),
                                         Equals,
@@ -231,11 +248,11 @@ impl Condition {
                             {
                                 deprecated::deprecated_syntax_used();
                                 Ok(Condition {
-                                    source,
+                                    source: Condition::simple_source(var_name.clone(), Equals, operand.to_string()),
                                     expression: Expression::Relation(
                                         Box::new(Expression::Ident(var_name.clone().into())),
                                         Equals,
-                                        Box::new(Expression::Atom(Atom::String(operand.clone().into()))),
+                                        Box::new(Expression::Atom(Atom::String(operand.to_string().into()))),
                                     ),
                                 })
                             } else {
@@ -295,7 +312,7 @@ impl TryFrom<String> for Condition {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         if value.clone().starts_with("cel:") {
-            return Condition::try_from_cel(value.strip_prefix("cel:").unwrap().to_string());
+            return Condition::try_from_cel(value);
         }
         return Condition::try_from_simple(value);
     }
