@@ -1,12 +1,14 @@
-use crate::limit::conditions::{ErrorType, SyntaxError, Token};
-use cel_interpreter::{Context, Expression, Value};
-use cel_parser::{parse, ParseError};
-use serde::{Deserialize, Serialize, Serializer};
+use crate::limit::conditions::{ErrorType, Literal, SyntaxError, Token, TokenType};
+use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
+use cel_interpreter::{Context, Expression, Value};
+use cel_parser::{Atom, parse};
+use cel_parser::RelationOp::{Equals, NotEquals};
+use serde::{Deserialize, Serialize, Serializer};
 #[cfg(feature = "lenient_conditions")]
 mod deprecated {
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -115,13 +117,12 @@ impl TryFrom<&str> for Condition {
     }
 }
 
-impl TryFrom<String> for Condition {
-    type Error = ConditionParsingError;
+impl Condition {
 
-    fn try_from(source: String) -> Result<Self, Self::Error> {
+    fn try_from_cel(source: String) -> Result<Self, ConditionParsingError> {
         match parse(&source) {
             Ok(expression) => Ok(Condition { source, expression }),
-            Err(err) => Err(ConditionParsingError {
+            Err(_err) => Err(ConditionParsingError {
                 error: SyntaxError {
                     pos: 0,
                     error: ErrorType::MissingToken,
@@ -130,6 +131,173 @@ impl TryFrom<String> for Condition {
                 condition: source,
             }),
         }
+    }
+
+    fn try_from_simple(source: String) -> Result<Self, ConditionParsingError> {
+        match conditions::Scanner::scan(source.clone()) {
+            Ok(tokens) => match tokens.len().cmp(&(3_usize)) {
+                Ordering::Equal => {
+                    match (
+                        &tokens[0].token_type,
+                        &tokens[1].token_type,
+                        &tokens[2].token_type,
+                    ) {
+                        (
+                            TokenType::Identifier,
+                            TokenType::EqualEqual | TokenType::NotEqual,
+                            TokenType::String,
+                        ) => {
+                            if let (
+                                Some(Literal::Identifier(var_name)),
+                                Some(Literal::String(operand)),
+                            ) = (&tokens[0].literal, &tokens[2].literal)
+                            {
+                                let predicate = match &tokens[1].token_type {
+                                    TokenType::EqualEqual => Equals,
+                                    TokenType::NotEqual => NotEquals,
+                                    _ => unreachable!(),
+                                };
+                                Ok(Condition {
+                                    source,
+                                    expression: Expression::Relation(
+                                        Box::new(Expression::Ident(var_name.clone().into())),
+                                        predicate,
+                                        Box::new(Expression::Atom(Atom::String(operand.clone().into()))),
+                                    ),
+                                })
+                            } else {
+                                panic!(
+                                    "Unexpected state {tokens:?} returned from Scanner for: `{source}`"
+                                )
+                            }
+                        }
+                        (
+                            TokenType::String,
+                            TokenType::EqualEqual | TokenType::NotEqual,
+                            TokenType::Identifier,
+                        ) => {
+                            if let (
+                                Some(Literal::String(operand)),
+                                Some(Literal::Identifier(var_name)),
+                            ) = (&tokens[0].literal, &tokens[2].literal)
+                            {
+                                let predicate = match &tokens[1].token_type {
+                                    TokenType::EqualEqual => Equals,
+                                    TokenType::NotEqual => NotEquals,
+                                    _ => unreachable!(),
+                                };
+                                Ok(Condition {
+                                    source,
+                                    expression: Expression::Relation(
+                                        Box::new(Expression::Atom(Atom::String(operand.clone().into()))),
+                                        predicate,
+                                        Box::new(Expression::Ident(var_name.clone().into())),
+                                    ),
+                                })
+                            } else {
+                                panic!(
+                                    "Unexpected state {tokens:?} returned from Scanner for: `{source}`"
+                                )
+                            }
+                        }
+                        #[cfg(feature = "lenient_conditions")]
+                        (TokenType::Identifier, TokenType::EqualEqual, TokenType::Identifier) => {
+                            if let (
+                                Some(Literal::Identifier(var_name)),
+                                Some(Literal::Identifier(operand)),
+                            ) = (&tokens[0].literal, &tokens[2].literal)
+                            {
+                                deprecated::deprecated_syntax_used();
+                                Ok(Condition {
+                                    source,
+                                    expression: Expression::Relation(
+                                        Box::new(Expression::Ident(var_name.clone().into())),
+                                        Equals,
+                                        Box::new(Expression::Atom(Atom::String(operand.clone().into()))),
+                                    ),
+                                })
+                            } else {
+                                panic!(
+                                    "Unexpected state {tokens:?} returned from Scanner for: `{source}`"
+                                )
+                            }
+                        }
+                        #[cfg(feature = "lenient_conditions")]
+                        (TokenType::Identifier, TokenType::EqualEqual, TokenType::Number) => {
+                            if let (
+                                Some(Literal::Identifier(var_name)),
+                                Some(Literal::Number(operand)),
+                            ) = (&tokens[0].literal, &tokens[2].literal)
+                            {
+                                deprecated::deprecated_syntax_used();
+                                Ok(Condition {
+                                    source,
+                                    expression: Expression::Relation(
+                                        Box::new(Expression::Ident(var_name.clone().into())),
+                                        Equals,
+                                        Box::new(Expression::Atom(Atom::String(operand.clone().into()))),
+                                    ),
+                                })
+                            } else {
+                                panic!(
+                                    "Unexpected state {tokens:?} returned from Scanner for: `{source}`"
+                                )
+                            }
+                        }
+                        (t1, t2, _) => {
+                            let faulty = match (t1, t2) {
+                                (
+                                    TokenType::Identifier | TokenType::String,
+                                    TokenType::EqualEqual | TokenType::NotEqual,
+                                ) => 2,
+                                (TokenType::Identifier | TokenType::String, _) => 1,
+                                (_, _) => 0,
+                            };
+                            Err(ConditionParsingError {
+                                error: SyntaxError {
+                                    pos: tokens[faulty].pos,
+                                    error: ErrorType::UnexpectedToken(tokens[faulty].clone()),
+                                },
+                                tokens,
+                                condition: source,
+                            })
+                        }
+                    }
+                }
+                Ordering::Less => Err(ConditionParsingError {
+                    error: SyntaxError {
+                        pos: source.len(),
+                        error: ErrorType::MissingToken,
+                    },
+                    tokens,
+                    condition: source,
+                }),
+                Ordering::Greater => Err(ConditionParsingError {
+                    error: SyntaxError {
+                        pos: tokens[3].pos,
+                        error: ErrorType::UnexpectedToken(tokens[3].clone()),
+                    },
+                    tokens,
+                    condition: source,
+                }),
+            },
+            Err(err) => Err(ConditionParsingError {
+                error: err,
+                tokens: Vec::new(),
+                condition: source,
+            }),
+        }
+    }
+}
+
+impl TryFrom<String> for Condition {
+    type Error = ConditionParsingError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.clone().starts_with("cel:") {
+            return Condition::try_from_cel(value.strip_prefix("cel:").unwrap().to_string());
+        }
+        return Condition::try_from_simple(value);
     }
 }
 
@@ -798,7 +966,7 @@ mod tests {
             "test_namespace",
             10,
             60,
-            vec!["x == string((11 - 1) / 2)", "y == \"2\""],
+            vec!["cel:x == string((11 - 1) / 2)", "y == \"2\""],
             vec!["z"],
         );
 
@@ -860,7 +1028,6 @@ mod tests {
         );
     }
 
-    #[ignore]
     #[test]
     #[cfg(not(feature = "lenient_conditions"))]
     fn invalid_deprecated_condition_parsing() {
@@ -869,10 +1036,9 @@ mod tests {
             .expect("Should fail!");
     }
 
-    #[ignore]
     #[test]
     fn invalid_condition_parsing() {
-        let result = serde_json::from_str::<Condition>(r#""x != 5 ` x > 12""#)
+        let result = serde_json::from_str::<Condition>(r#""x != 5 && x > 12""#)
             .expect_err("should fail parsing");
         assert_eq!(
             result.to_string(),
