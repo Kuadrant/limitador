@@ -886,6 +886,14 @@ mod conditions {
 mod tests {
     use super::*;
 
+    macro_rules! assert_false {
+        ($cond:expr $(,)?) => {
+            paste::item! {
+               assert!(!$cond)
+            }
+        };
+    }
+
     #[test]
     fn limit_can_have_an_optional_name() {
         let mut limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"]);
@@ -915,7 +923,7 @@ mod tests {
         values.insert("x".into(), "1".into());
         values.insert("y".into(), "1".into());
 
-        assert!(!limit.applies(&values))
+        assert_false!(limit.applies(&values))
     }
 
     #[test]
@@ -927,9 +935,9 @@ mod tests {
         values.insert("x".into(), "1".into());
         values.insert("y".into(), "1".into());
 
-        assert!(!limit.applies(&values));
+        assert_false!(limit.applies(&values));
         assert!(check_deprecated_syntax_usages_and_reset());
-        assert!(!check_deprecated_syntax_usages_and_reset());
+        assert_false!(check_deprecated_syntax_usages_and_reset());
 
         let limit = Limit::new("test_namespace", 10, 60, vec!["x == foobar"], vec!["y"]);
 
@@ -939,7 +947,7 @@ mod tests {
 
         assert!(limit.applies(&values));
         assert!(check_deprecated_syntax_usages_and_reset());
-        assert!(!check_deprecated_syntax_usages_and_reset());
+        assert_false!(check_deprecated_syntax_usages_and_reset());
     }
 
     #[test]
@@ -951,7 +959,7 @@ mod tests {
         values.insert("a".into(), "1".into());
         values.insert("y".into(), "1".into());
 
-        assert!(!limit.applies(&values))
+        assert_false!(limit.applies(&values))
     }
 
     #[test]
@@ -962,7 +970,7 @@ mod tests {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "5".into());
 
-        assert!(!limit.applies(&values))
+        assert_false!(limit.applies(&values))
     }
 
     #[test]
@@ -998,7 +1006,7 @@ mod tests {
         values.insert("y".into(), "2".into());
         values.insert("z".into(), "1".into());
 
-        assert!(!limit.applies(&values))
+        assert_false!(limit.applies(&values))
     }
 
     #[test]
@@ -1091,7 +1099,7 @@ mod tests {
 
             // we can't access complex variables via simple names....
             let limit = limit_with_condition(vec![r#"cel: req.method == "GET"    "#]);
-            assert!(!limit.applies(&values));
+            assert_false!(limit.applies(&values));
 
             // But we can access it via the vars map.
             let limit = limit_with_condition(vec![r#"cel:   vars["req.method"] == "GET"    "#]);
@@ -1117,7 +1125,7 @@ mod tests {
 
             // we can't access simple variables that conflict with built-ins
             let limit = limit_with_condition(vec![r#"cel:   size == "50"  "#]);
-            assert!(!limit.applies(&values));
+            assert_false!(limit.applies(&values));
 
             // But we can access it via the vars map.
             let limit = limit_with_condition(vec![r#"cel:   vars["size"] == "50"  "#]);
@@ -1130,7 +1138,7 @@ mod tests {
 
             // we can't access simple variables that conflict with built-ins (the vars map)
             let limit = limit_with_condition(vec![r#"cel:   vars == "hello"     "#]);
-            assert!(!limit.applies(&values));
+            assert_false!(limit.applies(&values));
 
             // But we can access it via the vars map.
             let limit = limit_with_condition(vec![r#"cel:   vars["vars"] == "hello"  "#]);
