@@ -20,7 +20,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tracing::{debug_span, error, info, warn, Instrument};
+use tracing::{error, info, info_span, warn, Instrument};
 
 // This is just a first version.
 //
@@ -313,7 +313,7 @@ async fn update_counters<C: ConnectionLike>(
         // The redis crate is not working with tables, thus the response will be a Vec of counter values
         let script_res: Vec<i64> = match script_invocation
             .invoke_async(redis_conn)
-            .instrument(debug_span!("datastore"))
+            .instrument(info_span!("datastore"))
             .await
         {
             Ok(res) => res,

@@ -15,7 +15,7 @@ use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{debug_span, Instrument};
+use tracing::{info_span, Instrument};
 
 // Note: this implementation does not guarantee exact limits. Ensuring that we
 // never go over the limits would hurt performance. This implementation
@@ -39,7 +39,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
 
         match con
             .get::<String, Option<i64>>(key_for_counter(counter))
-            .instrument(debug_span!("datastore"))
+            .instrument(info_span!("datastore"))
             .await?
         {
             Some(val) => Ok(u64::try_from(val).unwrap_or(0) + delta <= counter.max_value()),
@@ -57,7 +57,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             .arg(counter.window().as_secs())
             .arg(delta)
             .invoke_async::<_, _>(&mut con)
-            .instrument(debug_span!("datastore"))
+            .instrument(info_span!("datastore"))
             .await?;
 
         Ok(())
@@ -84,7 +84,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             let script_res: Vec<Option<i64>> = {
                 script_invocation
                     .invoke_async(&mut con)
-                    .instrument(debug_span!("datastore"))
+                    .instrument(info_span!("datastore"))
                     .await?
             };
             if let Some(res) = is_limited(counters, delta, script_res) {
@@ -95,7 +95,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                 redis::cmd("MGET")
                     .arg(counter_keys.clone())
                     .query_async(&mut con)
-                    .instrument(debug_span!("datastore"))
+                    .instrument(info_span!("datastore"))
                     .await?
             };
 
@@ -121,7 +121,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                 .arg(counter.window().as_secs())
                 .arg(delta)
                 .invoke_async::<_, _>(&mut con)
-                .instrument(debug_span!("datastore"))
+                .instrument(info_span!("datastore"))
                 .await?
         }
 
@@ -140,7 +140,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
         for limit in limits {
             let counter_keys = {
                 con.smembers::<String, HashSet<String>>(key_for_counters_of_limit(limit))
-                    .instrument(debug_span!("datastore"))
+                    .instrument(info_span!("datastore"))
                     .await?
             };
 
@@ -157,14 +157,14 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                 // unnecessarily.
                 let option = {
                     con.get::<String, Option<i64>>(counter_key.clone())
-                        .instrument(debug_span!("datastore"))
+                        .instrument(info_span!("datastore"))
                         .await?
                 };
                 if let Some(val) = option {
                     counter.set_remaining(limit.max_value() - u64::try_from(val).unwrap_or(0));
                     let ttl: i64 = {
                         con.ttl(&counter_key)
-                            .instrument(debug_span!("datastore"))
+                            .instrument(info_span!("datastore"))
                             .await?
                     };
                     counter.set_expires_in(Duration::from_secs(u64::try_from(ttl).unwrap_or(0)));
@@ -181,7 +181,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
     async fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr> {
         for limit in limits {
             self.delete_counters_associated_with_limit(limit.deref())
-                .instrument(debug_span!("datastore"))
+                .instrument(info_span!("datastore"))
                 .await?
         }
         Ok(())
@@ -192,7 +192,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
         let mut con = self.conn_manager.clone();
         redis::cmd("FLUSHDB")
             .query_async(&mut con)
-            .instrument(debug_span!("datastore"))
+            .instrument(info_span!("datastore"))
             .await?;
         Ok(())
     }
@@ -219,13 +219,13 @@ impl AsyncRedisStorage {
 
         let counter_keys = {
             con.smembers::<String, HashSet<String>>(key_for_counters_of_limit(limit))
-                .instrument(debug_span!("datastore"))
+                .instrument(info_span!("datastore"))
                 .await?
         };
 
         for counter_key in counter_keys {
             con.del(counter_key)
-                .instrument(debug_span!("datastore"))
+                .instrument(info_span!("datastore"))
                 .await?;
         }
 
