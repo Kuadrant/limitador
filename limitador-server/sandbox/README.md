@@ -27,6 +27,7 @@ Check out `make help` for all the targets.
 | Disk                     | `make deploy-disk` | Uses disk to store counters                                                                                    |
 | Distributed | `make deploy-distributed` | Counters are held in Limitador (ephemeral) but replicated to other Limitador servers. |
 
+| Distributed 3 Node | `make deploy-distributed-3-node` | Counters are held in Limitador (ephemeral) but replicated to 3 other Limitador servers. |
 
 ### Running Multi Node Distributed Deployments
 

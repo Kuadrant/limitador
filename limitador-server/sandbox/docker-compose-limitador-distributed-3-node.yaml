@@ -1,0 +1,58 @@
+---
+version: '3.8'
+services:
+  limitador:
+    image: limitador-testing-all-features
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        - CARGO_ARGS=--all-features
+    command: |
+      limitador-server --rls-ip 0.0.0.0 --rls-port 8081 --http-ip 0.0.0.0 --http-port "8080" 
+      -vv --grpc-reflection-service /opt/kuadrant/limits/limits.yaml 
+      distributed limitador 0.0.0.0:5001 http://limitador2:5001 http://limitador3:5001
+    expose:
+      - "8080"
+      - "8081"
+      - "5001"
+    ports:
+      - "18080:8080"
+      - "18081:8081"
+      - "15001:5001"
+    volumes:
+      - ./limits.yaml:/opt/kuadrant/limits/limits.yaml
+  limitador2:
+    image: limitador-testing-all-features
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        - CARGO_ARGS=--all-features
+    command: |
+      limitador-server --rls-ip 0.0.0.0 --rls-port 8081 --http-ip 0.0.0.0 --http-port "8080" 
+      -vv --grpc-reflection-service /opt/kuadrant/limits/limits.yaml 
+      distributed limitador2 0.0.0.0:5001 http://limitador:5001 http://limitador3:5001
+    expose:
+      - "8080"
+      - "8081"
+      - "5001"
+    volumes:
+      - ./limits.yaml:/opt/kuadrant/limits/limits.yaml
+  limitador3:
+    image: limitador-testing-all-features
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        - CARGO_ARGS=--all-features
+    command: |
+      limitador-server --rls-ip 0.0.0.0 --rls-port 8081 --http-ip 0.0.0.0 --http-port "8080" 
+      -vv --grpc-reflection-service /opt/kuadrant/limits/limits.yaml 
+      distributed limitador3 0.0.0.0:5001 http://limitador:5001 http://limitador2:5001
+    expose:
+      - "8080"
+      - "8081"
+      - "5001"
+    volumes:
+      - ./limits.yaml:/opt/kuadrant/limits/limits.yaml

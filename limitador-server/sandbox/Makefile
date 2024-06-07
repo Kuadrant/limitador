@@ -48,6 +48,9 @@ deploy-disk: clean ## Uses disk to store counters
 deploy-distributed: clean ## Counters are held in Limitador (ephemeral) but replicated to other Limitador servers.
 	$(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-distributed.yaml up
 
+deploy-distributed-3-node: clean ## Counters are held in Limitador (ephemeral) but replicated to 3 other local Limitador servers.
+	$(DOCKER) compose -f docker-compose-envoy-3-node.yaml -f docker-compose-limitador-distributed-3-node.yaml up
+
 ##@ Helper targets
 
 build: clean ## Build the "limitador-testing" image
