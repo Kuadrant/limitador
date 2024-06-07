@@ -778,14 +778,12 @@ fn configure_tracing_subscriber(config: &Configuration) {
         match config.storage {
             StorageConfiguration::InMemory(_) => tracing_subscriber::registry()
                 .with(fmt_layer(level))
-                .with(level.max(LevelFilter::INFO))
-                .with(telemetry_layer(&config.tracing_endpoint))
+                .with(telemetry_layer(&config.tracing_endpoint, level))
                 .init(),
             _ => tracing_subscriber::registry()
                 .with(metrics_layer)
                 .with(fmt_layer(level))
-                .with(level.max(LevelFilter::INFO))
-                .with(telemetry_layer(&config.tracing_endpoint))
+                .with(telemetry_layer(&config.tracing_endpoint, level))
                 .init(),
         }
     } else {
@@ -815,7 +813,7 @@ where
         .with_filter(level)
 }
 
-fn telemetry_layer<S>(tracing_endpoint: &String) -> impl Layer<S>
+fn telemetry_layer<S>(tracing_endpoint: &String, level: LevelFilter) -> impl Layer<S>
 where
     S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
 {
@@ -837,5 +835,8 @@ where
         .install_batch(opentelemetry_sdk::runtime::Tokio)
         .expect("error installing tokio tracing exporter");
 
-    tracing_opentelemetry::layer().with_tracer(tracer)
+    // Set the level to minimum info if tracing enabled
+    tracing_opentelemetry::layer()
+        .with_tracer(tracer)
+        .with_filter(level.max(LevelFilter::INFO))
 }
