@@ -893,7 +893,7 @@ mod tests {
     macro_rules! assert_false {
         ($cond:expr $(,)?) => {
             paste::item! {
-               assert!(!$cond)
+               assert!(!$cond, "assertion failed: assert_false!({}) was true!", stringify!($cond))
             }
         };
     }
