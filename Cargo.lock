@@ -577,22 +577,21 @@ dependencies = [
 
 [[package]]
 name = "cel-interpreter"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "121ecc72c18bacd45494c0758bd2228d26764454d9b6cffe3ab88a850e5f568e"
+version = "0.7.0"
+source = "git+https://github.com/chirino/cel-rust.git?branch=no-panic-compare#0cf3d6bdee9feb9a6a2107dc6795d09de6fff4cf"
 dependencies = [
  "cel-parser",
  "chrono",
  "nom",
  "paste",
+ "serde",
  "thiserror",
 ]
 
 [[package]]
 name = "cel-parser"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3a85ba148abbc551f1c32c8c0cff279dba234f6d38324bf372ba2395690879e"
+source = "git+https://github.com/chirino/cel-rust.git?branch=no-panic-compare#0cf3d6bdee9feb9a6a2107dc6795d09de6fff4cf"
 dependencies = [
  "lalrpop",
  "lalrpop-util",

@@ -35,7 +35,7 @@ cfg-if = "1"
 tracing = "0.1.40"
 metrics = "0.22.3"
 cel-parser = "0.6.0"
-cel-interpreter = "0.5.0"
+cel-interpreter = "0.7.0"
 
 # Optional dependencies
 rocksdb = { version = "0.22", optional = true, features = ["multi-threaded-cf"] }
@@ -88,3 +88,4 @@ tonic-build = "0.11"
 name = "bench"
 path = "benches/bench.rs"
 harness = false
+

@@ -461,10 +461,10 @@ impl Limit {
                 // reserve _* identifiers for future use.
                 continue;
             }
-            context.add_variable(key, value.clone());
+            context.add_variable_from_value(key, value.clone());
         }
 
-        context.add_variable("vars", values.clone());
+        context.add_variable_from_value("vars", values.clone());
 
         match Value::resolve(&condition.expression, &context) {
             Ok(val) => val == true.into(),

@@ -2,6 +2,11 @@
 members = ["limitador", "limitador-server"]
 resolver = "2"
 
+
+[patch.crates-io]
+cel-interpreter = { git = "https://github.com/chirino/cel-rust.git", branch = "no-panic-compare"}
+cel-parser = { git = "https://github.com/chirino/cel-rust.git", branch = "no-panic-compare"}
+
 [profile.release]
 lto = true
 codegen-units = 1
