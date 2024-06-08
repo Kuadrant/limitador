@@ -1147,6 +1147,10 @@ mod tests {
             // But we can access it via the vars map.
             let limit = limit_with_condition(vec![r#"cel:   vars["vars"] == "hello"  "#]);
             assert!(limit.applies(&values));
+
+            // Or via the vars map with dot notation.
+            let limit = limit_with_condition(vec![r#"cel:   vars.vars == "hello"  "#]);
+            assert!(limit.applies(&values));
         }
 
         #[test]
