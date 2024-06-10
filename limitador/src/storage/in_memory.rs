@@ -168,10 +168,10 @@ impl CounterStorage for InMemoryStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    fn get_counters(&self, limits: &HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr> {
+    fn get_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
 
-        let namespaces: HashSet<&Namespace> = limits.iter().map(Limit::namespace).collect();
+        let namespaces: HashSet<&Namespace> = limits.iter().map(|l| l.namespace()).collect();
         let limits_by_namespace = self.limits_for_namespace.read().unwrap();
 
         for namespace in namespaces {
@@ -209,9 +209,9 @@ impl CounterStorage for InMemoryStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr> {
+    fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr> {
         for limit in limits {
-            self.delete_counters_of_limit(&limit);
+            self.delete_counters_of_limit(limit);
         }
         Ok(())
     }

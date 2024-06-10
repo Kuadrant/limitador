@@ -3,7 +3,7 @@ use crate::limit::{Limit, Namespace};
 use crate::InMemoryStorage;
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use thiserror::Error;
 
 #[cfg(feature = "disk_storage")]
@@ -28,12 +28,12 @@ pub enum Authorization {
 }
 
 pub struct Storage {
-    limits: RwLock<HashMap<Namespace, HashSet<Limit>>>,
+    limits: RwLock<HashMap<Namespace, HashSet<Arc<Limit>>>>,
     counters: Box<dyn CounterStorage>,
 }
 
 pub struct AsyncStorage {
-    limits: RwLock<HashMap<Namespace, HashSet<Limit>>>,
+    limits: RwLock<HashMap<Namespace, HashSet<Arc<Limit>>>>,
     counters: Box<dyn AsyncCounterStorage>,
 }
 
@@ -60,7 +60,7 @@ impl Storage {
         let namespace = limit.namespace().clone();
         let mut limits = self.limits.write().unwrap();
         self.counters.add_counter(&limit).unwrap();
-        limits.entry(namespace).or_default().insert(limit)
+        limits.entry(namespace).or_default().insert(Arc::new(limit))
     }
 
     pub fn update_limit(&self, update: &Limit) -> bool {
@@ -74,24 +74,33 @@ impl Storage {
             };
             if req_update {
                 limits.remove(update);
-                limits.insert(update.clone());
+                limits.insert(Arc::new(update.clone()));
                 return true;
             }
         }
         false
     }
 
-    pub fn get_limits(&self, namespace: &Namespace) -> HashSet<Limit> {
+    pub fn get_limits(&self, namespace: &Namespace) -> HashSet<Arc<Limit>> {
         match self.limits.read().unwrap().get(namespace) {
-            Some(limits) => limits.clone(),
+            // todo revise typing here?
+            Some(limits) => limits.iter().map(Arc::clone).collect(),
             None => HashSet::new(),
         }
     }
 
     pub fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
+        let arc = match self.limits.read().unwrap().get(limit.namespace()) {
+            None => Arc::new(limit.clone()),
+            Some(limits) => limits
+                .iter()
+                .find(|l| ***l == *limit)
+                .cloned()
+                .unwrap_or_else(|| Arc::new(limit.clone())),
+        };
         let mut limits = HashSet::new();
-        limits.insert(limit.clone());
-        self.counters.delete_counters(limits)?;
+        limits.insert(arc);
+        self.counters.delete_counters(&limits)?;
 
         let mut limits = self.limits.write().unwrap();
 
@@ -107,7 +116,7 @@ impl Storage {
 
     pub fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr> {
         if let Some(data) = self.limits.write().unwrap().remove(namespace) {
-            self.counters.delete_counters(data)?;
+            self.counters.delete_counters(&data)?;
         }
         Ok(())
     }
@@ -161,10 +170,10 @@ impl AsyncStorage {
         let mut limits_for_namespace = self.limits.write().unwrap();
 
         match limits_for_namespace.get_mut(&namespace) {
-            Some(limits) => limits.insert(limit),
+            Some(limits) => limits.insert(Arc::new(limit)),
             None => {
                 let mut limits = HashSet::new();
-                limits.insert(limit);
+                limits.insert(Arc::new(limit));
                 limits_for_namespace.insert(namespace, limits);
                 true
             }
@@ -182,24 +191,32 @@ impl AsyncStorage {
             };
             if req_update {
                 limits.remove(update);
-                limits.insert(update.clone());
+                limits.insert(Arc::new(update.clone()));
                 return true;
             }
         }
         false
     }
 
-    pub fn get_limits(&self, namespace: &Namespace) -> HashSet<Limit> {
+    pub fn get_limits(&self, namespace: &Namespace) -> HashSet<Arc<Limit>> {
         match self.limits.read().unwrap().get(namespace) {
-            Some(limits) => limits.iter().cloned().collect(),
+            Some(limits) => limits.iter().map(Arc::clone).collect(),
             None => HashSet::new(),
         }
     }
 
     pub async fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
+        let arc = match self.limits.read().unwrap().get(limit.namespace()) {
+            None => Arc::new(limit.clone()),
+            Some(limits) => limits
+                .iter()
+                .find(|l| ***l == *limit)
+                .cloned()
+                .unwrap_or_else(|| Arc::new(limit.clone())),
+        };
         let mut limits = HashSet::new();
-        limits.insert(limit.clone());
-        self.counters.delete_counters(limits).await?;
+        limits.insert(arc);
+        self.counters.delete_counters(&limits).await?;
 
         let mut limits_for_namespace = self.limits.write().unwrap();
 
@@ -216,8 +233,7 @@ impl AsyncStorage {
     pub async fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr> {
         let option = { self.limits.write().unwrap().remove(namespace) };
         if let Some(data) = option {
-            let limits = data.iter().cloned().collect();
-            self.counters.delete_counters(limits).await?;
+            self.counters.delete_counters(&data).await?;
         }
         Ok(())
     }
@@ -250,7 +266,7 @@ impl AsyncStorage {
         namespace: &Namespace,
     ) -> Result<HashSet<Counter>, StorageErr> {
         let limits = self.get_limits(namespace);
-        self.counters.get_counters(limits).await
+        self.counters.get_counters(&limits).await
     }
 
     pub async fn clear(&self) -> Result<(), StorageErr> {
@@ -269,8 +285,8 @@ pub trait CounterStorage: Sync + Send {
         delta: u64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr>;
-    fn get_counters(&self, limits: &HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr>;
-    fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr>;
+    fn get_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<HashSet<Counter>, StorageErr>; // todo revise typing here?
+    fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr>; // todo revise typing here?
     fn clear(&self) -> Result<(), StorageErr>;
 }
 
@@ -284,8 +300,11 @@ pub trait AsyncCounterStorage: Sync + Send {
         delta: u64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr>;
-    async fn get_counters(&self, limits: HashSet<Limit>) -> Result<HashSet<Counter>, StorageErr>;
-    async fn delete_counters(&self, limits: HashSet<Limit>) -> Result<(), StorageErr>;
+    async fn get_counters(
+        &self,
+        limits: &HashSet<Arc<Limit>>,
+    ) -> Result<HashSet<Counter>, StorageErr>;
+    async fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr>;
     async fn clear(&self) -> Result<(), StorageErr>;
 }
 

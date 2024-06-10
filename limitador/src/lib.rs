@@ -193,6 +193,7 @@
 #![allow(clippy::multiple_crate_versions)]
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::counter::Counter;
 use crate::errors::LimitadorError;
@@ -224,6 +225,49 @@ pub struct CheckResult {
     pub limited: bool,
     pub counters: Vec<Counter>,
     pub limit_name: Option<String>,
+}
+
+impl CheckResult {
+    pub fn response_header(&mut self) -> HashMap<String, String> {
+        let mut headers = HashMap::new();
+        // sort by the limit remaining..
+        self.counters.sort_by(|a, b| {
+            let a_remaining = a.remaining().unwrap_or(a.max_value());
+            let b_remaining = b.remaining().unwrap_or(b.max_value());
+            a_remaining.cmp(&b_remaining)
+        });
+
+        let mut all_limits_text = String::with_capacity(20 * self.counters.len());
+        self.counters.iter_mut().for_each(|counter| {
+            all_limits_text.push_str(
+                format!(", {};w={}", counter.max_value(), counter.window().as_secs()).as_str(),
+            );
+            if let Some(name) = counter.limit().name() {
+                all_limits_text.push_str(format!(";name=\"{}\"", name.replace('"', "'")).as_str());
+            }
+        });
+
+        if let Some(counter) = self.counters.first() {
+            headers.insert(
+                "X-RateLimit-Limit".to_string(),
+                format!("{}{}", counter.max_value(), all_limits_text),
+            );
+
+            let remaining = counter.remaining().unwrap_or(counter.max_value());
+            headers.insert(
+                "X-RateLimit-Remaining".to_string(),
+                format!("{}", remaining),
+            );
+
+            if let Some(duration) = counter.expires_in() {
+                headers.insert(
+                    "X-RateLimit-Reset".to_string(),
+                    format!("{}", duration.as_secs()),
+                );
+            }
+        }
+        headers
+    }
 }
 
 impl From<CheckResult> for bool {
@@ -298,7 +342,11 @@ impl RateLimiter {
     }
 
     pub fn get_limits(&self, namespace: &Namespace) -> HashSet<Limit> {
-        self.storage.get_limits(namespace)
+        self.storage
+            .get_limits(namespace)
+            .iter()
+            .map(|l| (**l).clone())
+            .collect()
     }
 
     pub fn delete_limits(&self, namespace: &Namespace) -> Result<(), LimitadorError> {
@@ -432,12 +480,12 @@ impl RateLimiter {
         namespace: &Namespace,
         values: &HashMap<String, String>,
     ) -> Result<Vec<Counter>, LimitadorError> {
-        let limits = self.get_limits(namespace);
+        let limits = self.storage.get_limits(namespace);
 
         let counters = limits
             .iter()
             .filter(|lim| lim.applies(values))
-            .map(|lim| Counter::new(lim.clone(), values.clone()))
+            .map(|lim| Counter::new(Arc::clone(lim), values.clone()))
             .collect();
 
         Ok(counters)
@@ -470,7 +518,11 @@ impl AsyncRateLimiter {
     }
 
     pub fn get_limits(&self, namespace: &Namespace) -> HashSet<Limit> {
-        self.storage.get_limits(namespace)
+        self.storage
+            .get_limits(namespace)
+            .iter()
+            .map(|l| (**l).clone())
+            .collect()
     }
 
     pub async fn delete_limits(&self, namespace: &Namespace) -> Result<(), LimitadorError> {
@@ -610,12 +662,12 @@ impl AsyncRateLimiter {
         namespace: &Namespace,
         values: &HashMap<String, String>,
     ) -> Result<Vec<Counter>, LimitadorError> {
-        let limits = self.get_limits(namespace);
+        let limits = self.storage.get_limits(namespace);
 
         let counters = limits
             .iter()
             .filter(|lim| lim.applies(values))
-            .map(|lim| Counter::new(lim.clone(), values.clone()))
+            .map(|lim| Counter::new(Arc::clone(lim), values.clone()))
             .collect();
 
         Ok(counters)

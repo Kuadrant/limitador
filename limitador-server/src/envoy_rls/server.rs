@@ -3,12 +3,11 @@ use opentelemetry::propagation::Extractor;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use limitador::CheckResult;
 use tonic::codegen::http::HeaderMap;
 use tonic::{transport, transport::Server, Request, Response, Status};
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-
-use limitador::counter::Counter;
 
 use crate::envoy_rls::server::envoy::config::core::v3::HeaderValue;
 use crate::envoy_rls::server::envoy::service::ratelimit::v3::rate_limit_response::Code;
@@ -27,6 +26,21 @@ include!("envoy_types.rs");
 pub enum RateLimitHeaders {
     None,
     DraftVersion03,
+}
+
+impl RateLimitHeaders {
+    pub fn headers(&self, response: &mut CheckResult) -> Vec<HeaderValue> {
+        let mut headers = match self {
+            RateLimitHeaders::None => Vec::default(),
+            RateLimitHeaders::DraftVersion03 => response
+                .response_header()
+                .into_iter()
+                .map(|(key, value)| HeaderValue { key, value })
+                .collect(),
+        };
+        headers.sort_by(|a, b| a.key.cmp(&b.key));
+        headers
+    }
 }
 
 pub struct MyRateLimiter {
@@ -142,10 +156,7 @@ impl RateLimitService for MyRateLimiter {
             overall_code: resp_code.into(),
             statuses: vec![],
             request_headers_to_add: vec![],
-            response_headers_to_add: to_response_header(
-                &self.rate_limit_headers,
-                &mut rate_limited_resp.counters,
-            ),
+            response_headers_to_add: self.rate_limit_headers.headers(&mut rate_limited_resp),
             raw_body: vec![],
             dynamic_metadata: None,
             quota: None,
@@ -153,58 +164,6 @@ impl RateLimitService for MyRateLimiter {
 
         Ok(Response::new(reply))
     }
-}
-
-pub fn to_response_header(
-    rate_limit_headers: &RateLimitHeaders,
-    counters: &mut [Counter],
-) -> Vec<HeaderValue> {
-    let mut headers = Vec::new();
-    match rate_limit_headers {
-        RateLimitHeaders::None => {}
-
-        // creates response headers per https://datatracker.ietf.org/doc/id/draft-polli-ratelimit-headers-03.html
-        RateLimitHeaders::DraftVersion03 => {
-            // sort by the limit remaining..
-            counters.sort_by(|a, b| {
-                let a_remaining = a.remaining().unwrap_or(a.max_value());
-                let b_remaining = b.remaining().unwrap_or(b.max_value());
-                a_remaining.cmp(&b_remaining)
-            });
-
-            let mut all_limits_text = String::with_capacity(20 * counters.len());
-            counters.iter_mut().for_each(|counter| {
-                all_limits_text.push_str(
-                    format!(", {};w={}", counter.max_value(), counter.window().as_secs()).as_str(),
-                );
-                if let Some(name) = counter.limit().name() {
-                    all_limits_text
-                        .push_str(format!(";name=\"{}\"", name.replace('"', "'")).as_str());
-                }
-            });
-
-            if let Some(counter) = counters.first() {
-                headers.push(HeaderValue {
-                    key: "X-RateLimit-Limit".to_string(),
-                    value: format!("{}{}", counter.max_value(), all_limits_text),
-                });
-
-                let remaining = counter.remaining().unwrap_or(counter.max_value());
-                headers.push(HeaderValue {
-                    key: "X-RateLimit-Remaining".to_string(),
-                    value: format!("{}", remaining),
-                });
-
-                if let Some(duration) = counter.expires_in() {
-                    headers.push(HeaderValue {
-                        key: "X-RateLimit-Reset".to_string(),
-                        value: format!("{}", duration.as_secs()),
-                    });
-                }
-            }
-        }
-    };
-    headers
 }
 
 struct RateLimitRequestHeaders {
