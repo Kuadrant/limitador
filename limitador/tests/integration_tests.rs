@@ -187,6 +187,7 @@ mod test {
     test_with_all_storage_impls!(delete_limits_of_a_namespace_also_deletes_counters);
     test_with_all_storage_impls!(delete_limits_of_an_empty_namespace_does_nothing);
     test_with_all_storage_impls!(rate_limited);
+    test_with_all_storage_impls!(rate_limited_id_counter);
     test_with_all_storage_impls!(multiple_limits_rate_limited);
     test_with_all_storage_impls!(rate_limited_with_delta_higher_than_one);
     test_with_all_storage_impls!(rate_limited_with_delta_higher_than_max);
@@ -493,6 +494,43 @@ mod test {
             vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
+
+        rate_limiter.add_limit(&limit).await;
+
+        let mut values: HashMap<String, String> = HashMap::new();
+        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("app_id".to_string(), "test_app_id".to_string());
+
+        for i in 0..max_hits {
+            assert!(
+                !rate_limiter
+                    .is_rate_limited(namespace, &values, 1)
+                    .await
+                    .unwrap(),
+                "Must not be limited after {i}"
+            );
+            rate_limiter
+                .update_counters(namespace, &values, 1)
+                .await
+                .unwrap();
+        }
+        assert!(rate_limiter
+            .is_rate_limited(namespace, &values, 1)
+            .await
+            .unwrap());
+    }
+
+    async fn rate_limited_id_counter(rate_limiter: &mut TestsLimiter) {
+        let namespace = "test_namespace";
+        let max_hits = 3;
+        let mut limit = Limit::new(
+            namespace,
+            max_hits,
+            60,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
+        limit.set_id("test-rate_limited_id_counter".to_string());
 
         rate_limiter.add_limit(&limit).await;
 

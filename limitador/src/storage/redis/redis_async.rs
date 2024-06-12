@@ -38,7 +38,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
         let mut con = self.conn_manager.clone();
 
         match con
-            .get::<String, Option<i64>>(key_for_counter(counter))
+            .get::<Vec<u8>, Option<i64>>(key_for_counter(counter))
             .instrument(info_span!("datastore"))
             .await?
         {
@@ -71,7 +71,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let mut con = self.conn_manager.clone();
-        let counter_keys: Vec<String> = counters.iter().map(key_for_counter).collect();
+        let counter_keys: Vec<Vec<u8>> = counters.iter().map(key_for_counter).collect();
 
         if load_counters {
             let script = redis::Script::new(VALUES_AND_TTLS);
@@ -139,7 +139,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
 
         for limit in limits {
             let counter_keys = {
-                con.smembers::<String, HashSet<String>>(key_for_counters_of_limit(limit))
+                con.smembers::<Vec<u8>, HashSet<Vec<u8>>>(key_for_counters_of_limit(limit))
                     .instrument(info_span!("datastore"))
                     .await?
             };
@@ -156,7 +156,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                 // This does not cause any bugs, but consumes memory
                 // unnecessarily.
                 let option = {
-                    con.get::<String, Option<i64>>(counter_key.clone())
+                    con.get::<Vec<u8>, Option<i64>>(counter_key.clone())
                         .instrument(info_span!("datastore"))
                         .await?
                 };
@@ -218,7 +218,7 @@ impl AsyncRedisStorage {
         let mut con = self.conn_manager.clone();
 
         let counter_keys = {
-            con.smembers::<String, HashSet<String>>(key_for_counters_of_limit(limit))
+            con.smembers::<Vec<u8>, HashSet<Vec<u8>>>(key_for_counters_of_limit(limit))
                 .instrument(info_span!("datastore"))
                 .await?
         };
