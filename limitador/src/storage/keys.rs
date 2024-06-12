@@ -136,6 +136,21 @@ pub mod bin {
     use crate::limit::Limit;
 
     #[derive(PartialEq, Debug, Serialize, Deserialize)]
+    struct IdCounterKey<'a> {
+        id: &'a str,
+        variables: Vec<(&'a str, &'a str)>,
+    }
+
+    impl<'a> From<&'a Counter> for IdCounterKey<'a> {
+        fn from(counter: &'a Counter) -> Self {
+            IdCounterKey {
+                id: counter.id().as_ref().unwrap().as_ref(),
+                variables: counter.variables_for_key(),
+            }
+        }
+    }
+
+    #[derive(PartialEq, Debug, Serialize, Deserialize)]
     struct CounterKey<'a> {
         ns: &'a str,
         seconds: u64,
@@ -187,6 +202,20 @@ pub mod bin {
         }
     }
 
+    pub fn key_for_counter_v2(counter: &Counter) -> Vec<u8> {
+        let mut encoded_key = Vec::new();
+        if counter.id().is_some() {
+            let key: IdCounterKey = counter.into();
+            encoded_key = postcard::to_extend(&1u8, encoded_key).unwrap();
+            encoded_key = postcard::to_extend(&key, encoded_key).unwrap();
+        } else {
+            let key: CounterKey = counter.into();
+            encoded_key = postcard::to_extend(&2u8, encoded_key).unwrap();
+            encoded_key = postcard::to_extend(&key, encoded_key).unwrap()
+        }
+        encoded_key
+    }
+
     pub fn key_for_counter(counter: &Counter) -> Vec<u8> {
         let key: CounterKey = counter.into();
         postcard::to_stdvec(&key).unwrap()
@@ -215,12 +244,14 @@ pub mod bin {
 
     #[cfg(test)]
     mod tests {
-        use super::{
-            key_for_counter, partial_counter_from_counter_key, prefix_for_namespace, CounterKey,
-        };
         use crate::counter::Counter;
         use crate::Limit;
         use std::collections::HashMap;
+
+        use super::{
+            key_for_counter, key_for_counter_v2, partial_counter_from_counter_key,
+            prefix_for_namespace, CounterKey,
+        };
 
         #[test]
         fn counter_key_serializes_and_back() {
@@ -265,6 +296,35 @@ pub mod bin {
 
             let prefix = prefix_for_namespace(namespace);
             assert_eq!(&serialized_counter[..prefix.len()], &prefix);
+        }
+
+        #[test]
+        fn counters_with_id() {
+            let namespace = "ns_counter:";
+            let limit_without_id =
+                Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"]);
+            let mut limit_with_id =
+                Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"]);
+            limit_with_id.set_id("id200".to_string());
+
+            let counter_with_id = Counter::new(limit_with_id, HashMap::default());
+            let serialized_with_id_counter = key_for_counter(&counter_with_id);
+
+            let counter_without_id = Counter::new(limit_without_id, HashMap::default());
+            let serialized_without_id_counter = key_for_counter(&counter_without_id);
+
+            // the original key_for_counter continues to encode kinda big
+            assert_eq!(serialized_without_id_counter.len(), 35);
+            assert_eq!(serialized_with_id_counter.len(), 35);
+
+            // serialized_counter_v2 will only encode the id.... so it will be smaller for
+            // counters with an id.
+            let serialized_counter_with_id_v2 = key_for_counter_v2(&counter_with_id);
+            assert_eq!(serialized_counter_with_id_v2.clone().len(), 8);
+
+            // but continues to be large for counters without an id.
+            let serialized_counter_without_id_v2 = key_for_counter_v2(&counter_without_id);
+            assert_eq!(serialized_counter_without_id_v2.clone().len(), 36);
         }
     }
 }
