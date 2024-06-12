@@ -23,7 +23,6 @@ ENV CARGO_ARGS=${CARGO_ARGS}
 COPY Cargo.toml Cargo.lock ./
 COPY limitador/Cargo.toml ./limitador/
 COPY limitador-server/Cargo.toml ./limitador-server/
-COPY limitador-server/sandbox/loadtest/Cargo.toml ./limitador-server/sandbox/loadtest/
 RUN mkdir -p limitador-server/src && echo 'fn main() {}' > limitador-server/src/main.rs
 RUN mkdir -p limitador-server/sandbox/loadtest/src && echo 'fn main() {}' > limitador-server/sandbox/loadtest/src/main.rs
 RUN cargo build --release ${CARGO_ARGS}
