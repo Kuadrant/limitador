@@ -4,7 +4,7 @@
 
 # Use bullseye as build image instead of Bookworm as ubi9 does not not have GLIBCXX_3.4.30
 # https://access.redhat.com/solutions/6969351
-FROM --platform=${BUILDPLATFORM} rust:1.78.0-bullseye as limitador-build
+FROM rust:1.78.0-bullseye as limitador-build
 
 RUN apt update && apt upgrade -y \
     && apt install -y protobuf-compiler clang
@@ -12,12 +12,24 @@ RUN apt update && apt upgrade -y \
 WORKDIR /usr/src/limitador
 
 ARG GITHUB_SHA
+ARG CARGO_ARGS
 ENV GITHUB_SHA=${GITHUB_SHA:-unknown}
 ENV RUSTFLAGS="-C target-feature=-crt-static"
 
-COPY . .
+# We set the env here just to make sure that the build is invalidated if the args change
+ENV CARGO_ARGS=${CARGO_ARGS}
 
-RUN cargo build --release
+# The following allows us to cache the Cargo dependency downloads with image layers
+COPY Cargo.toml Cargo.lock ./
+COPY limitador/Cargo.toml ./limitador/
+COPY limitador-server/Cargo.toml ./limitador-server/
+RUN mkdir -p limitador-server/src && echo 'fn main() {}' > limitador-server/src/main.rs
+RUN cargo build --release ${CARGO_ARGS}
+
+COPY ./limitador ./limitador
+COPY ./limitador-server ./limitador-server
+
+RUN cargo build --release ${CARGO_ARGS}
 
 # ------------------------------------------------------------------------------
 # Run Stage

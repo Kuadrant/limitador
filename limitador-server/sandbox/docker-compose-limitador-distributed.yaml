@@ -1,0 +1,24 @@
+---
+version: '3.8'
+services:
+  limitador:
+    image: limitador-testing-all-features
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        - CARGO_ARGS=--all-features
+    command: |
+      limitador-server --rls-ip 0.0.0.0 --rls-port 8081 --http-ip 0.0.0.0 --http-port "8080" 
+      -vv --grpc-reflection-service /opt/kuadrant/limits/limits.yaml 
+      distributed ${PEER_ID:-node1} 0.0.0.0:5001 ${PEER_URLS:-}
+    expose:
+      - "8080"
+      - "8081"
+      - "5001"
+    ports:
+      - "18080:8080"
+      - "18081:8081"
+      - "15001:5001"
+    volumes:
+      - ./limits.yaml:/opt/kuadrant/limits/limits.yaml

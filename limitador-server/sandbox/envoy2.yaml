@@ -1,0 +1,84 @@
+---
+static_resources:
+  listeners:
+  - name: main
+    address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 80
+    filter_chains:
+      - filters:
+        - name: envoy.filters.network.http_connection_manager
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+            stat_prefix: ingress_http
+            route_config:
+              name: local_route
+              virtual_hosts:
+                - name: local_service
+                  domains:
+                    - "*"
+                  routes:
+                    - match:
+                        prefix: "/"
+                      route:
+                        cluster: upstream
+                        rate_limits:
+                          - actions:
+                            - request_headers:
+                                header_name: :method
+                                descriptor_key: req.method
+                            - request_headers:
+                                header_name: :path
+                                descriptor_key: req.path
+            http_filters:
+            - name: envoy.filters.http.ratelimit
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+                domain: "test_namespace"
+                failure_mode_deny: true
+                timeout: 3s
+                rate_limit_service:
+                  transport_api_version: "v3"
+                  grpc_service:
+                    envoy_grpc:
+                      cluster_name: limitador
+            - name: envoy.filters.http.router
+  clusters:
+    - name: upstream
+      connect_timeout: 0.25s
+      type: STRICT_DNS
+      lb_policy: round_robin
+      load_assignment:
+        cluster_name: upstream
+        endpoints:
+        - lb_endpoints:
+          - endpoint:
+              address:
+                socket_address:
+                  address: upstream
+                  port_value: 80
+    - name: limitador
+      connect_timeout: 1s
+      type: STRICT_DNS
+      lb_policy: round_robin
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: limitador
+        endpoints:
+        - lb_endpoints:
+          - endpoint:
+              address:
+                socket_address:
+                  address: limitador2
+                  port_value: 8081
+admin:
+  access_log_path: "/dev/null"
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 8001

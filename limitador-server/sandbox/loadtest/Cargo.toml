@@ -1,0 +1,10 @@
+[package]
+name = "loadtest"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+goose = "^0.17"
+tokio = "^1.12"
+
+[workspace]

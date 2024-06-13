@@ -45,10 +45,19 @@ deploy-redis-otel: clean ## Uses Redis to store counters, instrumented with open
 deploy-disk: clean ## Uses disk to store counters
 	$(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-disk.yaml up
 
+deploy-distributed: clean ## Counters are held in Limitador (ephemeral) but replicated to other Limitador servers.
+	$(DOCKER) compose -f docker-compose-envoy.yaml -f docker-compose-limitador-distributed.yaml up
+
+deploy-distributed-3-node: clean ## Counters are held in Limitador (ephemeral) but replicated to 3 other local Limitador servers.
+	$(DOCKER) compose -f docker-compose-envoy-3-node.yaml -f docker-compose-limitador-distributed-3-node.yaml up
+
 ##@ Helper targets
 
-build: ## Build "limitador-testing" image
-	$(DOCKER) build -t limitador-testing -f ../../Dockerfile ../../
+build: clean ## Build the "limitador-testing" image
+	$(DOCKER) compose -f docker-compose-limitador-memory.yaml build
+
+build-all-features: clean ## Build the image "limitador-testing-all-features" image
+	$(DOCKER) compose -f docker-compose-limitador-distributed.yaml build
 
 ca: ## Create CA cert
 	openssl genrsa -out ca.key 2048
@@ -87,6 +96,21 @@ $(GRPCURL):
 
 .PHONY: grpcurl
 grpcurl: $(GRPCURL) ## Download grpcurl locally if necessary.
+
+.PHONY: ghz
+ghz:
+	$(call go-install-tool,$(PROJECT_PATH)/bin/ghz,github.com/bojand/ghz/cmd/ghz@latest) 
+
+RPS?=1000
+.PHONY: load-test
+load-test: ghz
+	# see https://ghz.sh/docs/load for usage details
+	$(PROJECT_PATH)/bin/ghz 127.0.0.1:18081 --insecure \
+	--call envoy.service.ratelimit.v3.RateLimitService.ShouldRateLimit \
+	--async --concurrency=50 \
+	--rps=$(RPS) \
+	--total=$(RPS)0 \
+	--data-file load-test.json
 
 # go-install-tool will 'go install' any package $2 and install it to $1.
 define go-install-tool

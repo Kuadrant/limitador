@@ -3,9 +3,11 @@ version: '3.8'
 services:
   limitador:
     image: ${LIMITADOR_IMAGE:-limitador-testing}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
     depends_on:
       - jaeger
-      - envoy
       - redis
     command:
       - limitador-server

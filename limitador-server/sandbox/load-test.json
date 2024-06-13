@@ -1,0 +1,18 @@
+{
+    "domain": "test_namespace",
+    "hits_addend": 1,
+    "descriptors": [
+        {   
+            "entries": [
+                {
+                    "key": "req.method",
+                    "value": "GET"
+                },
+                {
+                    "key": "req.path",
+                    "value": "/json"
+                }
+            ]
+        }
+    ]
+}
