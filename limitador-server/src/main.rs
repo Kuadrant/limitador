@@ -43,7 +43,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{env, process};
-use tracing_subscriber::Layer;
 
 #[cfg(feature = "distributed_storage")]
 use clap::parser::ValuesRef;
@@ -52,9 +51,10 @@ use sysinfo::{MemoryRefreshKind, RefreshKind, System};
 use thiserror::Error;
 use tokio::runtime::Handle;
 use tracing::level_filters::LevelFilter;
+use tracing::Subscriber;
 use tracing_subscriber::fmt::format::FmtSpan;
-use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{layer::SubscriberExt, Layer};
 
 mod envoy_rls;
 mod http_api;
@@ -217,63 +217,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (config, version) = create_config();
         println!("{LIMITADOR_HEADER} {version}");
 
-        let level = config.log_level.unwrap_or_else(|| {
-            tracing_subscriber::filter::EnvFilter::from_default_env()
-                .max_level_hint()
-                .unwrap_or(LevelFilter::ERROR)
-        });
-
-        let fmt_layer = tracing_subscriber::fmt::layer()
-            .with_span_events(if level >= LevelFilter::DEBUG {
-                FmtSpan::CLOSE
-            } else {
-                FmtSpan::NONE
-            })
-            .with_filter(level);
-
-        let metrics_layer = MetricsLayer::new()
-            .gather(
-                "should_rate_limit",
-                PrometheusMetrics::record_datastore_latency,
-                vec!["datastore"],
-            )
-            .gather(
-                "flush_batcher_and_update_counters",
-                PrometheusMetrics::record_datastore_latency,
-                vec!["datastore"],
-            );
-
-        if !config.tracing_endpoint.is_empty() {
-            global::set_text_map_propagator(TraceContextPropagator::new());
-
-            let tracer = opentelemetry_otlp::new_pipeline()
-                .tracing()
-                .with_exporter(
-                    opentelemetry_otlp::new_exporter()
-                        .tonic()
-                        .with_endpoint(config.tracing_endpoint.clone()),
-                )
-                .with_trace_config(trace::config().with_resource(Resource::new(vec![
-                    KeyValue::new("service.name", "limitador"),
-                ])))
-                .install_batch(opentelemetry_sdk::runtime::Tokio)?;
-
-            let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
-
-            // Init tracing subscriber with telemetry
-            tracing_subscriber::registry()
-                .with(metrics_layer)
-                .with(fmt_layer)
-                .with(level.max(LevelFilter::INFO))
-                .with(telemetry_layer)
-                .init();
-        } else {
-            // Init tracing subscriber without telemetry
-            tracing_subscriber::registry()
-                .with(metrics_layer)
-                .with(fmt_layer)
-                .init();
-        };
+        configure_tracing_subscriber(&config);
 
         info!("Version: {}", version);
         info!("Using config: {:?}", config);
@@ -807,4 +751,92 @@ fn guess_cache_size() -> Option<u64> {
 
 fn leak<D: Display>(s: D) -> &'static str {
     return Box::leak(format!("{}", s).into_boxed_str());
+}
+
+fn configure_tracing_subscriber(config: &Configuration) {
+    let level = config.log_level.unwrap_or_else(|| {
+        tracing_subscriber::filter::EnvFilter::from_default_env()
+            .max_level_hint()
+            .unwrap_or(LevelFilter::ERROR)
+    });
+
+    let metrics_layer = MetricsLayer::default()
+        .gather(
+            "should_rate_limit",
+            PrometheusMetrics::record_datastore_latency,
+            vec!["datastore"],
+        )
+        .gather(
+            "flush_batcher_and_update_counters",
+            PrometheusMetrics::record_datastore_latency,
+            vec!["datastore"],
+        );
+
+    if !config.tracing_endpoint.is_empty() {
+        // Init tracing subscriber with telemetry
+        // If running in memory initialize without metrics
+        match config.storage {
+            StorageConfiguration::InMemory(_) => tracing_subscriber::registry()
+                .with(fmt_layer(level))
+                .with(telemetry_layer(&config.tracing_endpoint, level))
+                .init(),
+            _ => tracing_subscriber::registry()
+                .with(metrics_layer)
+                .with(fmt_layer(level))
+                .with(telemetry_layer(&config.tracing_endpoint, level))
+                .init(),
+        }
+    } else {
+        // If running in memory initialize without metrics
+        match config.storage {
+            StorageConfiguration::InMemory(_) => {
+                tracing_subscriber::registry().with(fmt_layer(level)).init()
+            }
+            _ => tracing_subscriber::registry()
+                .with(metrics_layer)
+                .with(fmt_layer(level))
+                .init(),
+        }
+    }
+}
+
+fn fmt_layer<S>(level: LevelFilter) -> impl Layer<S>
+where
+    S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+{
+    tracing_subscriber::fmt::layer()
+        .with_span_events(if level >= LevelFilter::DEBUG {
+            FmtSpan::CLOSE
+        } else {
+            FmtSpan::NONE
+        })
+        .with_filter(level)
+}
+
+fn telemetry_layer<S>(tracing_endpoint: &String, level: LevelFilter) -> impl Layer<S>
+where
+    S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+{
+    global::set_text_map_propagator(TraceContextPropagator::new());
+
+    let tracer = opentelemetry_otlp::new_pipeline()
+        .tracing()
+        .with_exporter(
+            opentelemetry_otlp::new_exporter()
+                .tonic()
+                .with_endpoint(tracing_endpoint),
+        )
+        .with_trace_config(
+            trace::config().with_resource(Resource::new(vec![KeyValue::new(
+                "service.name",
+                "limitador",
+            )])),
+        )
+        .install_batch(opentelemetry_sdk::runtime::Tokio)
+        .expect("error installing tokio tracing exporter");
+
+    // Set the level to minimum info if tracing enabled
+    tracing_opentelemetry::layer()
+        .with_tracer(tracer)
+        .with_filter(level.max(LevelFilter::INFO))
 }

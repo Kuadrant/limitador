@@ -14,7 +14,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tracing::trace_span;
+use tracing::debug_span;
 
 pub struct RocksDbStorage {
     db: DBWithThreadMode<MultiThreaded>,
@@ -53,7 +53,7 @@ impl CounterStorage for RocksDbStorage {
             let key = key_for_counter(counter);
             let slice: &[u8] = key.as_ref();
             let entry = {
-                let span = trace_span!("datastore");
+                let span = debug_span!("datastore");
                 let _entered = span.enter();
                 self.db.get(slice)?
             };
@@ -100,7 +100,7 @@ impl CounterStorage for RocksDbStorage {
             let mut iterator = self.db.prefix_iterator(prefix_for_namespace(ns));
             loop {
                 let option = {
-                    let span = trace_span!("datastore");
+                    let span = debug_span!("datastore");
                     let _entered = span.enter();
                     iterator.next()
                 };
@@ -138,7 +138,7 @@ impl CounterStorage for RocksDbStorage {
     fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr> {
         let counters = self.get_counters(limits)?;
         for counter in &counters {
-            let span = trace_span!("datastore");
+            let span = debug_span!("datastore");
             let _entered = span.enter();
             self.db.delete(key_for_counter(counter))?;
         }
@@ -147,10 +147,10 @@ impl CounterStorage for RocksDbStorage {
 
     #[tracing::instrument(skip_all)]
     fn clear(&self) -> Result<(), StorageErr> {
-        let span = trace_span!("datastore");
+        let span = debug_span!("datastore");
         let _entered = span.enter();
         for entry in self.db.iterator(IteratorMode::Start) {
-            let span = trace_span!("datastore");
+            let span = debug_span!("datastore");
             let _entered = span.enter();
             self.db.delete(entry?.0)?
         }
@@ -203,7 +203,7 @@ impl RocksDbStorage {
     ) -> Result<ExpiringValue, StorageErr> {
         let now = SystemTime::now();
         let entry = {
-            let span = trace_span!("datastore");
+            let span = debug_span!("datastore");
             let _entered = span.enter();
             self.db.get(key)?
         };
@@ -217,7 +217,7 @@ impl RocksDbStorage {
         if value.value_at(now) + delta <= counter.max_value() {
             let expiring_value =
                 ExpiringValue::new(delta, now + Duration::from_secs(counter.limit().seconds()));
-            let span = trace_span!("datastore");
+            let span = debug_span!("datastore");
             let _entered = span.enter();
             self.db
                 .merge(key, <ExpiringValue as Into<Vec<u8>>>::into(expiring_value))?;
