@@ -56,15 +56,15 @@ struct SpanState {
 }
 
 impl SpanState {
-    fn new(group: &String) -> Self {
+    fn new(group: String) -> Self {
         let mut group_times = HashMap::new();
-        group_times.insert(group.to_owned(), Timings::new());
+        group_times.insert(group, Timings::new());
         Self { group_times }
     }
 
-    fn increment(&mut self, group: &str, timings: Timings) {
+    fn increment(&mut self, group: String, timings: Timings) {
         self.group_times
-            .entry(group.to_string())
+            .entry(group)
             .and_modify(|x| *x += timings)
             .or_insert(timings);
     }
@@ -126,7 +126,7 @@ where
                     .or_insert_with(Timings::new);
             } else {
                 // otherwise create a new SpanState with ourselves
-                extensions.insert(SpanState::new(&name))
+                extensions.insert(SpanState::new(name.to_owned()))
             }
         }
 
@@ -190,7 +190,7 @@ where
                     if self.groups.get(&group).unwrap().records.contains(&name) {
                         // if we are a record for this group then increment the relevant
                         // span-local timing and continue to the next group
-                        span_state.increment(&group, timing);
+                        span_state.increment(group, timing);
                     }
                 }
             }
@@ -272,14 +272,14 @@ mod tests {
     #[test]
     fn span_state_increment() {
         let group = String::from("group");
-        let mut span_state = SpanState::new(&group);
+        let mut span_state = SpanState::new(group.to_owned());
         let t1 = Timings {
             idle: 5,
             busy: 5,
             last: Instant::now(),
             updated: true,
         };
-        span_state.increment(&group, t1);
+        span_state.increment(group.to_owned(), t1);
         assert_eq!(span_state.group_times.get(&group).unwrap().idle, t1.idle);
         assert_eq!(span_state.group_times.get(&group).unwrap().busy, t1.busy);
     }
