@@ -1,10 +1,20 @@
-use crate::limit::conditions::{ErrorType, Literal, SyntaxError, Token, TokenType};
-use serde::{Deserialize, Serialize, Serializer};
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
+
+use cel_interpreter::{Context, Expression, Value};
+#[cfg(feature = "cel_conditions")]
+use cel_parser::parse;
+use cel_parser::RelationOp::{Equals, NotEquals};
+use cel_parser::{Atom, Member, RelationOp};
+use serde::{Deserialize, Serialize, Serializer};
+
+#[cfg(feature = "lenient_conditions")]
+pub use deprecated::check_deprecated_syntax_usages_and_reset;
+
+use crate::limit::conditions::{ErrorType, Literal, SyntaxError, Token, TokenType};
 
 #[cfg(feature = "lenient_conditions")]
 mod deprecated {
@@ -24,9 +34,6 @@ mod deprecated {
         DEPRECATED_SYNTAX.fetch_or(true, Ordering::SeqCst);
     }
 }
-
-#[cfg(feature = "lenient_conditions")]
-pub use deprecated::check_deprecated_syntax_usages_and_reset;
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Namespace(String);
@@ -66,12 +73,25 @@ pub struct Limit {
     variables: HashSet<String>,
 }
 
-#[derive(Deserialize, Serialize, PartialEq, Eq, Debug, Clone, Hash)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(try_from = "String", into = "String")]
 pub struct Condition {
-    var_name: String,
-    predicate: Predicate,
-    operand: String,
+    source: String,
+    expression: Expression,
+}
+
+impl PartialEq for Condition {
+    fn eq(&self, other: &Self) -> bool {
+        self.expression == other.expression
+    }
+}
+
+impl Eq for Condition {}
+
+impl Hash for Condition {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.source.hash(state)
+    }
 }
 
 #[derive(Debug)]
@@ -101,11 +121,34 @@ impl TryFrom<&str> for Condition {
     }
 }
 
-impl TryFrom<String> for Condition {
-    type Error = ConditionParsingError;
+impl Condition {
+    #[cfg(feature = "cel_conditions")]
+    fn try_from_cel(source: String) -> Result<Self, ConditionParsingError> {
+        match parse(source.strip_prefix("cel:").unwrap()) {
+            Ok(expression) => Ok(Condition { source, expression }),
+            Err(_err) => Err(ConditionParsingError {
+                error: SyntaxError {
+                    pos: 0,
+                    error: ErrorType::MissingToken,
+                },
+                tokens: vec![],
+                condition: source,
+            }),
+        }
+    }
 
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        match conditions::Scanner::scan(value.clone()) {
+    fn simple_source(var_name: String, op: RelationOp, lit: String) -> String {
+        let predicate = match op {
+            Equals => "==",
+            NotEquals => "!=",
+            _ => unreachable!(),
+        };
+        let quotes = if lit.contains('"') { '\'' } else { '"' };
+        format!("{} {} {}{}{}", var_name, predicate, quotes, lit, quotes)
+    }
+
+    fn try_from_simple(source: String) -> Result<Self, ConditionParsingError> {
+        match conditions::Scanner::scan(source.clone()) {
             Ok(tokens) => match tokens.len().cmp(&(3_usize)) {
                 Ordering::Equal => {
                     match (
@@ -124,18 +167,25 @@ impl TryFrom<String> for Condition {
                             ) = (&tokens[0].literal, &tokens[2].literal)
                             {
                                 let predicate = match &tokens[1].token_type {
-                                    TokenType::EqualEqual => Predicate::Equal,
-                                    TokenType::NotEqual => Predicate::NotEqual,
+                                    TokenType::EqualEqual => Equals,
+                                    TokenType::NotEqual => NotEquals,
                                     _ => unreachable!(),
                                 };
                                 Ok(Condition {
-                                    var_name: var_name.clone(),
-                                    predicate,
-                                    operand: operand.clone(),
+                                    source: Condition::simple_source(
+                                        var_name.clone(),
+                                        predicate.clone(),
+                                        operand.clone(),
+                                    ),
+                                    expression: Self::simple_expression(
+                                        var_name.as_str(),
+                                        predicate,
+                                        operand.as_str(),
+                                    ),
                                 })
                             } else {
                                 panic!(
-                                    "Unexpected state {tokens:?} returned from Scanner for: `{value}`"
+                                    "Unexpected state {tokens:?} returned from Scanner for: `{source}`"
                                 )
                             }
                         }
@@ -150,18 +200,25 @@ impl TryFrom<String> for Condition {
                             ) = (&tokens[0].literal, &tokens[2].literal)
                             {
                                 let predicate = match &tokens[1].token_type {
-                                    TokenType::EqualEqual => Predicate::Equal,
-                                    TokenType::NotEqual => Predicate::NotEqual,
+                                    TokenType::EqualEqual => Equals,
+                                    TokenType::NotEqual => NotEquals,
                                     _ => unreachable!(),
                                 };
                                 Ok(Condition {
-                                    var_name: var_name.clone(),
-                                    predicate,
-                                    operand: operand.clone(),
+                                    source: Condition::simple_source(
+                                        var_name.clone(),
+                                        predicate.clone(),
+                                        operand.clone(),
+                                    ),
+                                    expression: Self::simple_expression(
+                                        var_name.as_str(),
+                                        predicate,
+                                        operand.as_str(),
+                                    ),
                                 })
                             } else {
                                 panic!(
-                                    "Unexpected state {tokens:?} returned from Scanner for: `{value}`"
+                                    "Unexpected state {tokens:?} returned from Scanner for: `{source}`"
                                 )
                             }
                         }
@@ -174,13 +231,20 @@ impl TryFrom<String> for Condition {
                             {
                                 deprecated::deprecated_syntax_used();
                                 Ok(Condition {
-                                    var_name: var_name.clone(),
-                                    predicate: Predicate::Equal,
-                                    operand: operand.clone(),
+                                    source: Condition::simple_source(
+                                        var_name.clone(),
+                                        Equals,
+                                        operand.clone(),
+                                    ),
+                                    expression: Self::simple_expression(
+                                        var_name.as_str(),
+                                        Equals,
+                                        operand.as_str(),
+                                    ),
                                 })
                             } else {
                                 panic!(
-                                    "Unexpected state {tokens:?} returned from Scanner for: `{value}`"
+                                    "Unexpected state {tokens:?} returned from Scanner for: `{source}`"
                                 )
                             }
                         }
@@ -193,13 +257,20 @@ impl TryFrom<String> for Condition {
                             {
                                 deprecated::deprecated_syntax_used();
                                 Ok(Condition {
-                                    var_name: var_name.clone(),
-                                    predicate: Predicate::Equal,
-                                    operand: operand.to_string(),
+                                    source: Condition::simple_source(
+                                        var_name.clone(),
+                                        Equals,
+                                        operand.to_string(),
+                                    ),
+                                    expression: Self::simple_expression(
+                                        var_name.as_str(),
+                                        Equals,
+                                        operand.to_string().as_str(),
+                                    ),
                                 })
                             } else {
                                 panic!(
-                                    "Unexpected state {tokens:?} returned from Scanner for: `{value}`"
+                                    "Unexpected state {tokens:?} returned from Scanner for: `{source}`"
                                 )
                             }
                         }
@@ -218,18 +289,18 @@ impl TryFrom<String> for Condition {
                                     error: ErrorType::UnexpectedToken(tokens[faulty].clone()),
                                 },
                                 tokens,
-                                condition: value,
+                                condition: source,
                             })
                         }
                     }
                 }
                 Ordering::Less => Err(ConditionParsingError {
                     error: SyntaxError {
-                        pos: value.len(),
+                        pos: source.len(),
                         error: ErrorType::MissingToken,
                     },
                     tokens,
-                    condition: value,
+                    condition: source,
                 }),
                 Ordering::Greater => Err(ConditionParsingError {
                     error: SyntaxError {
@@ -237,55 +308,46 @@ impl TryFrom<String> for Condition {
                         error: ErrorType::UnexpectedToken(tokens[3].clone()),
                     },
                     tokens,
-                    condition: value,
+                    condition: source,
                 }),
             },
             Err(err) => Err(ConditionParsingError {
                 error: err,
                 tokens: Vec::new(),
-                condition: value,
+                condition: source,
             }),
         }
+    }
+
+    fn simple_expression(ident: &str, op: RelationOp, lit: &str) -> Expression {
+        Expression::Relation(
+            Box::new(Expression::Member(
+                Box::new(Expression::Ident("vars".to_string().into())),
+                Box::new(Member::Index(Box::new(Expression::Atom(Atom::String(
+                    ident.to_string().into(),
+                ))))),
+            )),
+            op,
+            Box::new(Expression::Atom(Atom::String(lit.to_string().into()))),
+        )
+    }
+}
+
+impl TryFrom<String> for Condition {
+    type Error = ConditionParsingError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        #[cfg(feature = "cel_conditions")]
+        if value.clone().starts_with("cel:") {
+            return Condition::try_from_cel(value);
+        }
+        Condition::try_from_simple(value)
     }
 }
 
 impl From<Condition> for String {
     fn from(condition: Condition) -> Self {
-        let p = &condition.predicate;
-        let predicate: String = p.clone().into();
-        let quotes = if condition.operand.contains('"') {
-            '\''
-        } else {
-            '"'
-        };
-        format!(
-            "{} {} {}{}{}",
-            condition.var_name, predicate, quotes, condition.operand, quotes
-        )
-    }
-}
-
-#[derive(PartialEq, Eq, Debug, Clone, Hash)]
-pub enum Predicate {
-    Equal,
-    NotEqual,
-}
-
-impl Predicate {
-    fn test(&self, lhs: &str, rhs: &str) -> bool {
-        match self {
-            Predicate::Equal => lhs == rhs,
-            Predicate::NotEqual => lhs != rhs,
-        }
-    }
-}
-
-impl From<Predicate> for String {
-    fn from(op: Predicate) -> Self {
-        match op {
-            Predicate::Equal => "==".to_string(),
-            Predicate::NotEqual => "!=".to_string(),
-        }
+        condition.source.clone()
     }
 }
 
@@ -392,12 +454,21 @@ impl Limit {
     }
 
     fn condition_applies(condition: &Condition, values: &HashMap<String, String>) -> bool {
-        let left_operand = condition.var_name.as_str();
-        let right_operand = condition.operand.as_str();
+        let mut context = Context::default();
 
-        match values.get(left_operand) {
-            Some(val) => condition.predicate.test(val, right_operand),
-            None => false,
+        for (key, value) in values {
+            if key.starts_with('_') {
+                // reserve _* identifiers for future use.
+                continue;
+            }
+            context.add_variable_from_value(key, value.clone());
+        }
+
+        context.add_variable_from_value("vars", values.clone());
+
+        match Value::resolve(&condition.expression, &context) {
+            Ok(val) => val == true.into(),
+            Err(_err) => false,
         }
     }
 }
@@ -819,6 +890,14 @@ mod conditions {
 mod tests {
     use super::*;
 
+    macro_rules! assert_false {
+        ($cond:expr $(,)?) => {
+            paste::item! {
+               assert!(!$cond, "assertion failed: assert_false!({}) was true!", stringify!($cond))
+            }
+        };
+    }
+
     #[test]
     fn limit_can_have_an_optional_name() {
         let mut limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"]);
@@ -848,7 +927,7 @@ mod tests {
         values.insert("x".into(), "1".into());
         values.insert("y".into(), "1".into());
 
-        assert!(!limit.applies(&values))
+        assert_false!(limit.applies(&values))
     }
 
     #[test]
@@ -860,9 +939,9 @@ mod tests {
         values.insert("x".into(), "1".into());
         values.insert("y".into(), "1".into());
 
-        assert!(!limit.applies(&values));
+        assert_false!(limit.applies(&values));
         assert!(check_deprecated_syntax_usages_and_reset());
-        assert!(!check_deprecated_syntax_usages_and_reset());
+        assert_false!(check_deprecated_syntax_usages_and_reset());
 
         let limit = Limit::new("test_namespace", 10, 60, vec!["x == foobar"], vec!["y"]);
 
@@ -872,7 +951,7 @@ mod tests {
 
         assert!(limit.applies(&values));
         assert!(check_deprecated_syntax_usages_and_reset());
-        assert!(!check_deprecated_syntax_usages_and_reset());
+        assert_false!(check_deprecated_syntax_usages_and_reset());
     }
 
     #[test]
@@ -884,7 +963,7 @@ mod tests {
         values.insert("a".into(), "1".into());
         values.insert("y".into(), "1".into());
 
-        assert!(!limit.applies(&values))
+        assert_false!(limit.applies(&values))
     }
 
     #[test]
@@ -895,7 +974,7 @@ mod tests {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "5".into());
 
-        assert!(!limit.applies(&values))
+        assert_false!(limit.applies(&values))
     }
 
     #[test]
@@ -931,7 +1010,7 @@ mod tests {
         values.insert("y".into(), "2".into());
         values.insert("z".into(), "1".into());
 
-        assert!(!limit.applies(&values))
+        assert_false!(limit.applies(&values))
     }
 
     #[test]
@@ -940,9 +1019,8 @@ mod tests {
         assert_eq!(
             result,
             Condition {
-                var_name: "x".to_string(),
-                predicate: Predicate::Equal,
-                operand: "5".to_string(),
+                source: "x == '5'".to_string(),
+                expression: Condition::simple_expression("x", Equals, "5"),
             }
         );
 
@@ -951,9 +1029,8 @@ mod tests {
         assert_eq!(
             result,
             Condition {
-                var_name: "foobar".to_string(),
-                predicate: Predicate::Equal,
-                operand: "ok".to_string(),
+                source: "  foobar=='ok' ".to_string(),
+                expression: Condition::simple_expression("foobar", Equals, "ok"),
             }
         );
 
@@ -962,9 +1039,8 @@ mod tests {
         assert_eq!(
             result,
             Condition {
-                var_name: "foobar".to_string(),
-                predicate: Predicate::Equal,
-                operand: "ok".to_string(),
+                source: "  foobar  ==   'ok'  ".to_string(),
+                expression: Condition::simple_expression("foobar", Equals, "ok"),
             }
         );
     }
@@ -991,11 +1067,103 @@ mod tests {
     #[test]
     fn condition_serialization() {
         let condition = Condition {
-            var_name: "foobar".to_string(),
-            predicate: Predicate::Equal,
-            operand: "ok".to_string(),
+            source: "foobar == \"ok\"".to_string(),
+            expression: Condition::simple_expression("foobar", Equals, "ok"),
         };
         let result = serde_json::to_string(&condition).expect("Should serialize");
         assert_eq!(result, r#""foobar == \"ok\"""#.to_string());
+    }
+
+    #[cfg(feature = "cel_conditions")]
+    mod cel {
+        use super::*;
+
+        fn limit_with_condition(conditions: Vec<&str>) -> Limit {
+            Limit::new("test_namespace", 10, 60, conditions, <Vec<String>>::new())
+        }
+
+        #[test]
+        fn limit_applies_when_all_its_conditions_apply_with_subexpression() {
+            let limit = limit_with_condition(vec![
+                r#"cel:   x == string((11 - 1) / 2)    "#,
+                r#"       y == "2"                     "#,
+            ]);
+
+            let values = HashMap::from([
+                ("x".to_string(), "5".to_string()),
+                ("y".to_string(), "2".to_string()),
+            ]);
+
+            assert!(limit.applies(&values))
+        }
+
+        #[test]
+        fn vars_with_dot_names() {
+            let values = HashMap::from([("req.method".to_string(), "GET".to_string())]);
+
+            // we can't access complex variables via simple names....
+            let limit = limit_with_condition(vec![r#"cel: req.method == "GET"    "#]);
+            assert_false!(limit.applies(&values));
+
+            // But we can access it via the vars map.
+            let limit = limit_with_condition(vec![r#"cel:   vars["req.method"] == "GET"    "#]);
+            assert!(limit.applies(&values));
+        }
+
+        #[test]
+        fn size_function() {
+            let values = HashMap::from([("method".to_string(), "GET".to_string())]);
+            let limit = limit_with_condition(vec![r#"cel:   size(vars["method"]) == 3   "#]);
+            assert!(limit.applies(&values));
+        }
+
+        #[test]
+        fn size_function_and_size_var() {
+            let values = HashMap::from([
+                ("method".to_string(), "GET".to_string()),
+                ("size".to_string(), "50".to_string()),
+            ]);
+
+            let limit = limit_with_condition(vec![r#"cel:   size(method) == 3     "#]);
+            assert!(limit.applies(&values));
+
+            // we can't access simple variables that conflict with built-ins
+            let limit = limit_with_condition(vec![r#"cel:   size == "50"  "#]);
+            assert_false!(limit.applies(&values));
+
+            // But we can access it via the vars map.
+            let limit = limit_with_condition(vec![r#"cel:   vars["size"] == "50"  "#]);
+            assert!(limit.applies(&values));
+        }
+
+        #[test]
+        fn vars_var() {
+            let values = HashMap::from([("vars".to_string(), "hello".to_string())]);
+
+            // we can't access simple variables that conflict with built-ins (the vars map)
+            let limit = limit_with_condition(vec![r#"cel:   vars == "hello"     "#]);
+            assert_false!(limit.applies(&values));
+
+            // But we can access it via the vars map.
+            let limit = limit_with_condition(vec![r#"cel:   vars["vars"] == "hello"  "#]);
+            assert!(limit.applies(&values));
+
+            // Or via the vars map with dot notation.
+            let limit = limit_with_condition(vec![r#"cel:   vars.vars == "hello"  "#]);
+            assert!(limit.applies(&values));
+        }
+
+        #[test]
+        fn underscore_var() {
+            let values = HashMap::from([("_hello".to_string(), "world".to_string())]);
+
+            // _* variables are reserved for future use
+            let limit = limit_with_condition(vec![r#"cel:   _hello == "world"     "#]);
+            assert_false!(limit.applies(&values));
+
+            // But we can access it via the vars map.
+            let limit = limit_with_condition(vec![r#"cel:   vars["_hello"] == "world"  "#]);
+            assert!(limit.applies(&values));
+        }
     }
 }

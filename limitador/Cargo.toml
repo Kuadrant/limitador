@@ -18,6 +18,7 @@ disk_storage = ["rocksdb"]
 distributed_storage = ["tokio", "tokio-stream", "h2", "base64", "uuid", "tonic", "tonic-reflection", "prost", "prost-types"]
 redis_storage = ["redis", "r2d2", "tokio"]
 lenient_conditions = []
+cel_conditions = []
 
 [dependencies]
 moka = { version = "0.12", features = ["sync"] }
@@ -33,6 +34,8 @@ async-trait = "0.1"
 cfg-if = "1"
 tracing = "0.1.40"
 metrics = "0.22.3"
+cel-parser = "0.6.0"
+cel-interpreter = "0.7.0"
 
 # Optional dependencies
 rocksdb = { version = "0.22", optional = true, features = ["multi-threaded-cf"] }
@@ -85,3 +88,4 @@ tonic-build = "0.11"
 name = "bench"
 path = "benches/bench.rs"
 harness = false
+
