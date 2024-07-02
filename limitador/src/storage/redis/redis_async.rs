@@ -56,7 +56,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             .key(key_for_counters_of_limit(counter.limit()))
             .arg(counter.window().as_secs())
             .arg(delta)
-            .invoke_async::<_, _>(&mut con)
+            .invoke_async::<_, ()>(&mut con)
             .instrument(info_span!("datastore"))
             .await?;
 
@@ -191,7 +191,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
     async fn clear(&self) -> Result<(), StorageErr> {
         let mut con = self.conn_manager.clone();
         redis::cmd("FLUSHDB")
-            .query_async(&mut con)
+            .query_async::<_, ()>(&mut con)
             .instrument(info_span!("datastore"))
             .await?;
         Ok(())
@@ -224,7 +224,7 @@ impl AsyncRedisStorage {
         };
 
         for counter_key in counter_keys {
-            con.del(counter_key)
+            con.del::<_, ()>(counter_key)
                 .instrument(info_span!("datastore"))
                 .await?;
         }
