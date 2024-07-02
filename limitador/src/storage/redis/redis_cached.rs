@@ -356,9 +356,8 @@ async fn flush_batcher_and_update_counters<C: ConnectionLike>(
             update_counters(&mut redis_conn, counters)
         })
         .await
-        .map(|res| {
+        .inspect(|_| {
             flip_partitioned(&partitioned, false);
-            res
         })
         .or_else(|(data, err)| {
             if err.is_transient() {

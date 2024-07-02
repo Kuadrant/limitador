@@ -36,13 +36,13 @@
 //!
 //! The definition of a limit includes:
 //! - A namespace that identifies the resource to limit. It could be an API, a
-//! Kubernetes service, a proxy ID, etc.
+//!   Kubernetes service, a proxy ID, etc.
 //! - A value.
 //! - The length of the period in seconds.
 //! - Conditions that define when to apply the limit.
 //! - A set of variables. For example, if we need to define the same limit for
-//! each "user_id", instead of creating a limit for each hardcoded ID, we just
-//! need to define "user_id" as a variable.
+//!   each "user_id", instead of creating a limit for each hardcoded ID, we just
+//!   need to define "user_id" as a variable.
 //!
 //! If we used Limitador in a context where it receives an HTTP request we could
 //! define a limit like this to allow 10 requests per minute and per user_id
