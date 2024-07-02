@@ -72,6 +72,10 @@ impl Counter {
         Duration::from_secs(self.limit.seconds())
     }
 
+    pub fn id(&self) -> &Option<String> {
+        self.limit.id()
+    }
+
     pub fn namespace(&self) -> &Namespace {
         self.limit.namespace()
     }

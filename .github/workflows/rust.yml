@@ -22,7 +22,7 @@ jobs:
       - uses: abelfodil/protoc-action@v1
         with:
           protoc-version: '3.19.4'
-      - run: cargo check
+      - run: cargo check --all-features
 
   test:
     name: Test Suite

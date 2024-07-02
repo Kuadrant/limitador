@@ -4,22 +4,22 @@ use std::net::ToSocketAddrs;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tracing::debug;
 
 use crate::counter::Counter;
-use crate::limit::{Limit, Namespace};
+use crate::limit::Limit;
 use crate::storage::distributed::cr_counter_value::CrCounterValue;
 use crate::storage::distributed::grpc::v1::CounterUpdate;
 use crate::storage::distributed::grpc::{Broker, CounterEntry};
+use crate::storage::keys::bin::key_for_counter_v2;
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 
 mod cr_counter_value;
 mod grpc;
 
-pub type LimitsMap = HashMap<Vec<u8>, Arc<CrCounterValue<String>>>;
+pub type LimitsMap = HashMap<Vec<u8>, Arc<CounterEntry>>;
 
 pub struct CrInMemoryStorage {
     identifier: String,
@@ -35,7 +35,7 @@ impl CounterStorage for CrInMemoryStorage {
         let mut value = 0;
         let key = encode_counter_to_key(counter);
         if let Some(counter_value) = limits.get(&key) {
-            value = counter_value.read()
+            value = counter_value.value.read()
         }
         Ok(counter.max_value() >= value + delta)
     }
@@ -45,11 +45,15 @@ impl CounterStorage for CrInMemoryStorage {
         if limit.variables().is_empty() {
             let mut limits = self.limits.write().unwrap();
             let key = encode_limit_to_key(limit);
-            limits.entry(key).or_insert(Arc::new(CrCounterValue::new(
-                self.identifier.clone(),
-                limit.max_value(),
-                Duration::from_secs(limit.seconds()),
-            )));
+            limits.entry(key.clone()).or_insert(Arc::new(CounterEntry {
+                key,
+                counter: Counter::new(limit.clone(), HashMap::default()),
+                value: CrCounterValue::new(
+                    self.identifier.clone(),
+                    limit.max_value(),
+                    Duration::from_secs(limit.seconds()),
+                ),
+            }));
         }
         Ok(())
     }
@@ -63,16 +67,20 @@ impl CounterStorage for CrInMemoryStorage {
         match limits.entry(key.clone()) {
             Entry::Vacant(entry) => {
                 let duration = counter.window();
-                let store_value = Arc::new(CrCounterValue::new(
-                    self.identifier.clone(),
-                    counter.max_value(),
-                    duration,
-                ));
-                self.increment_counter(counter, key, store_value.clone(), delta, now);
-                entry.insert(store_value);
+                let value = Arc::new(CounterEntry {
+                    key: key.clone(),
+                    counter: counter.clone(),
+                    value: CrCounterValue::new(
+                        self.identifier.clone(),
+                        counter.max_value(),
+                        duration,
+                    ),
+                });
+                self.increment_counter(value.clone(), delta, now);
+                entry.insert(value);
             }
             Entry::Occupied(entry) => {
-                self.increment_counter(counter, key, entry.get().clone(), delta, now);
+                self.increment_counter(entry.get().clone(), delta, now);
             }
         };
         Ok(())
@@ -86,7 +94,7 @@ impl CounterStorage for CrInMemoryStorage {
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let mut first_limited = None;
-        let mut counter_values_to_update: Vec<(Counter, Vec<u8>)> = Vec::new();
+        let mut counter_values_to_update: Vec<Vec<u8>> = Vec::new();
         let now = SystemTime::now();
 
         let mut process_counter =
@@ -120,12 +128,14 @@ impl CounterStorage for CrInMemoryStorage {
                 match limits.get(&key) {
                     None => false,
                     Some(store_value) => {
-                        if let Some(limited) = process_counter(counter, store_value.read(), delta) {
+                        if let Some(limited) =
+                            process_counter(counter, store_value.value.read(), delta)
+                        {
                             if !load_counters {
                                 return Ok(limited);
                             }
                         }
-                        counter_values_to_update.push((counter.clone(), key));
+                        counter_values_to_update.push(key);
                         true
                     }
                 }
@@ -135,21 +145,22 @@ impl CounterStorage for CrInMemoryStorage {
             if !counter_existed {
                 // try again with a write lock to create the counter if it's still missing.
                 let mut limits = self.limits.write().unwrap();
-                let store_value =
-                    limits
-                        .entry(key.clone())
-                        .or_insert(Arc::new(CrCounterValue::new(
-                            self.identifier.clone(),
-                            counter.max_value(),
-                            counter.window(),
-                        )));
+                let store_value = limits.entry(key.clone()).or_insert(Arc::new(CounterEntry {
+                    key: key.clone(),
+                    counter: counter.clone(),
+                    value: CrCounterValue::new(
+                        self.identifier.clone(),
+                        counter.max_value(),
+                        counter.window(),
+                    ),
+                }));
 
-                if let Some(limited) = process_counter(counter, store_value.read(), delta) {
+                if let Some(limited) = process_counter(counter, store_value.value.read(), delta) {
                     if !load_counters {
                         return Ok(limited);
                     }
                 }
-                counter_values_to_update.push((counter.clone(), key));
+                counter_values_to_update.push(key);
             }
         }
 
@@ -159,12 +170,10 @@ impl CounterStorage for CrInMemoryStorage {
 
         // Update counters
         let limits = self.limits.read().unwrap();
-        counter_values_to_update
-            .into_iter()
-            .for_each(|(counter, key)| {
-                let store_value = limits.get(&key).unwrap();
-                self.increment_counter(&counter, key, store_value.clone(), delta, now);
-            });
+        counter_values_to_update.into_iter().for_each(|key| {
+            let store_value = limits.get(&key).unwrap();
+            self.increment_counter(store_value.clone(), delta, now);
+        });
 
         Ok(Authorization::Ok)
     }
@@ -172,25 +181,12 @@ impl CounterStorage for CrInMemoryStorage {
     #[tracing::instrument(skip_all)]
     fn get_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
-
-        let limits: HashSet<_> = limits.iter().map(|l| encode_limit_to_key(l)).collect();
-
         let limits_map = self.limits.read().unwrap();
-        for (key, counter_value) in limits_map.iter() {
-            let counter_key = decode_counter_key(key).unwrap();
-            let limit_key = if !counter_key.vars.is_empty() {
-                let mut cloned = counter_key.clone();
-                cloned.vars = HashMap::default();
-                cloned.encode()
-            } else {
-                key.clone()
-            };
-
-            if limits.contains(&limit_key) {
-                let counter = (&counter_key, &*counter_value.clone());
-                let mut counter: Counter = counter.into();
-                counter.set_remaining(counter.max_value() - counter_value.read());
-                counter.set_expires_in(counter_value.ttl());
+        for (_, counter_entry) in limits_map.iter() {
+            if limits.contains(counter_entry.counter.limit()) {
+                let mut counter: Counter = counter_entry.counter.clone();
+                counter.set_remaining(counter.max_value() - counter_entry.value.read());
+                counter.set_expires_in(counter_entry.value.ttl());
                 if counter.expires_in().unwrap() > Duration::ZERO {
                     res.insert(counter);
                 }
@@ -241,7 +237,9 @@ impl CrInMemoryStorage {
                 );
                 let limits = limits_clone.read().unwrap();
                 let value = limits.get(&update.key).unwrap();
-                value.merge((UNIX_EPOCH + Duration::from_secs(update.expires_at), values).into());
+                value
+                    .value
+                    .merge((UNIX_EPOCH + Duration::from_secs(update.expires_at), values).into());
             }),
             re_sync_queue_tx,
         );
@@ -282,17 +280,11 @@ impl CrInMemoryStorage {
         }
     }
 
-    fn increment_counter(
-        &self,
-        counter: &Counter,
-        store_key: Vec<u8>,
-        store_value: Arc<CrCounterValue<String>>,
-        delta: u64,
-        when: SystemTime,
-    ) {
-        store_value.inc_at(delta, counter.window(), when);
-        self.broker
-            .publish(CounterEntry::new(store_key, store_value))
+    fn increment_counter(&self, counter_entry: Arc<CounterEntry>, delta: u64, when: SystemTime) {
+        counter_entry
+            .value
+            .inc_at(delta, counter_entry.counter.window(), when);
+        self.broker.publish(counter_entry)
     }
 }
 
@@ -308,7 +300,7 @@ async fn process_re_sync(limits: &Arc<RwLock<LimitsMap>>, sender: Sender<Option<
         let update = {
             let limits = limits.read().unwrap();
             limits.get(&key).and_then(|store_value| {
-                let (expiry, ourself, value) = store_value.local_values();
+                let (expiry, ourself, value) = store_value.value.local_values();
                 if value == 0 || expiry <= SystemTime::now() {
                     None // no point in sending a counter that is empty
                 } else {
@@ -336,61 +328,11 @@ async fn process_re_sync(limits: &Arc<RwLock<LimitsMap>>, sender: Sender<Option<
     _ = sender.send(None).await;
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct CounterKey {
-    namespace: Namespace,
-    seconds: u64,
-    conditions: HashSet<String>,
-    variables: HashSet<String>,
-    vars: HashMap<String, String>,
-}
-
-impl CounterKey {
-    fn new(limit: &Limit, vars: HashMap<String, String>) -> Self {
-        CounterKey {
-            namespace: limit.namespace().clone(),
-            seconds: limit.seconds(),
-            variables: limit.variables().clone(),
-            conditions: limit.conditions().clone(),
-            vars,
-        }
-    }
-
-    fn encode(&self) -> Vec<u8> {
-        postcard::to_stdvec(self).unwrap()
-    }
-}
-
-impl From<(&CounterKey, &CrCounterValue<String>)> for Counter {
-    fn from(value: (&CounterKey, &CrCounterValue<String>)) -> Self {
-        let (counter_key, store_value) = value;
-        let max_value = store_value.max_value();
-        let mut counter = Self::new(
-            Limit::new(
-                counter_key.namespace.clone(),
-                max_value,
-                counter_key.seconds,
-                counter_key.conditions.clone(),
-                counter_key.vars.keys(),
-            ),
-            counter_key.vars.clone(),
-        );
-        counter.set_remaining(max_value - store_value.read());
-        counter.set_expires_in(store_value.ttl());
-        counter
-    }
-}
-
 fn encode_counter_to_key(counter: &Counter) -> Vec<u8> {
-    let key = CounterKey::new(counter.limit(), counter.set_variables().clone());
-    postcard::to_stdvec(&key).unwrap()
+    key_for_counter_v2(counter)
 }
 
 fn encode_limit_to_key(limit: &Limit) -> Vec<u8> {
-    let key = CounterKey::new(limit, HashMap::default());
-    postcard::to_stdvec(&key).unwrap()
-}
-
-fn decode_counter_key(key: &Vec<u8>) -> postcard::Result<CounterKey> {
-    postcard::from_bytes(key.as_slice())
+    let counter = Counter::new(limit.clone(), HashMap::default());
+    key_for_counter_v2(&counter)
 }

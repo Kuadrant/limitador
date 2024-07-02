@@ -51,6 +51,8 @@ impl From<String> for Namespace {
 
 #[derive(Eq, Debug, Clone, Serialize, Deserialize)]
 pub struct Limit {
+    #[serde(skip_serializing, default)]
+    id: Option<String>,
     namespace: Namespace,
     #[serde(skip_serializing, default)]
     max_value: u64,
@@ -319,6 +321,7 @@ impl Limit {
     {
         // the above where-clause is needed in order to call unwrap().
         Self {
+            id: None,
             namespace: namespace.into(),
             max_value,
             seconds,
@@ -333,6 +336,14 @@ impl Limit {
 
     pub fn namespace(&self) -> &Namespace {
         &self.namespace
+    }
+
+    pub fn set_id(&mut self, value: String) {
+        self.id = Some(value);
+    }
+
+    pub fn id(&self) -> &Option<String> {
+        &self.id
     }
 
     pub fn max_value(&self) -> u64 {
@@ -997,5 +1008,19 @@ mod tests {
         };
         let result = serde_json::to_string(&condition).expect("Should serialize");
         assert_eq!(result, r#""foobar == \"ok\"""#.to_string());
+    }
+
+    #[test]
+    fn limit_id() {
+        let mut limit = Limit::new(
+            "test_namespace",
+            10,
+            60,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
+        limit.set_id("test_id".to_string());
+
+        assert_eq!(limit.id().clone(), Some("test_id".to_string()))
     }
 }
