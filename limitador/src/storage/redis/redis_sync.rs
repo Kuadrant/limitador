@@ -49,7 +49,7 @@ impl CounterStorage for RedisStorage {
             .key(key_for_counters_of_limit(counter.limit()))
             .arg(counter.window().as_secs())
             .arg(delta)
-            .invoke(&mut *con)?;
+            .invoke::<()>(&mut *con)?;
 
         Ok(())
     }
@@ -101,7 +101,7 @@ impl CounterStorage for RedisStorage {
                 .key(key_for_counters_of_limit(counter.limit()))
                 .arg(counter.window().as_secs())
                 .arg(delta)
-                .invoke(&mut *con)?;
+                .invoke::<()>(&mut *con)?;
         }
 
         Ok(Authorization::Ok)
@@ -154,7 +154,7 @@ impl CounterStorage for RedisStorage {
                 con.smembers::<String, HashSet<String>>(key_for_counters_of_limit(limit.deref()))?;
 
             for counter_key in counter_keys {
-                con.del(counter_key)?;
+                con.del::<_, ()>(counter_key)?;
             }
         }
 
