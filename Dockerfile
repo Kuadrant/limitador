@@ -2,8 +2,6 @@
 # Build Stage
 # ------------------------------------------------------------------------------
 
-# Use bullseye as build image instead of Bookworm as ubi9 does not not have GLIBCXX_3.4.30
-# https://access.redhat.com/solutions/6969351
 FROM rust:1.79.0-bullseye as limitador-build
 
 RUN apt update && apt upgrade -y \
