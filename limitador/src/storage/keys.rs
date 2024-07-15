@@ -129,6 +129,22 @@ mod tests {
     }
 
     #[test]
+    fn key_for_limit_with_id_format() {
+        let mut limit = Limit::new(
+            "example.com",
+            10,
+            60,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
+        limit.set_id("test_id".to_string());
+        assert_eq!(
+            "\u{2}\u{7}test_id".as_bytes(),
+            key_for_counters_of_limit(&limit)
+        )
+    }
+
+    #[test]
     fn counter_key_and_counter_are_symmetric() {
         let namespace = "ns_counter:";
         let limit = Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"]);
