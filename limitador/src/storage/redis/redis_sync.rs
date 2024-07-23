@@ -29,7 +29,7 @@ impl CounterStorage for RedisStorage {
     fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr> {
         let mut con = self.conn_pool.get()?;
 
-        match con.get::<String, Option<i64>>(key_for_counter(counter))? {
+        match con.get::<Vec<u8>, Option<i64>>(key_for_counter(counter))? {
             Some(val) => Ok(u64::try_from(val).unwrap_or(0) + delta <= counter.max_value()),
             None => Ok(counter.max_value().checked_sub(delta).is_some()),
         }
@@ -62,7 +62,7 @@ impl CounterStorage for RedisStorage {
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let mut con = self.conn_pool.get()?;
-        let counter_keys: Vec<String> = counters.iter().map(key_for_counter).collect();
+        let counter_keys: Vec<Vec<u8>> = counters.iter().map(key_for_counter).collect();
 
         if load_counters {
             let script = redis::Script::new(VALUES_AND_TTLS);
@@ -115,7 +115,7 @@ impl CounterStorage for RedisStorage {
 
         for limit in limits {
             let counter_keys =
-                con.smembers::<String, HashSet<String>>(key_for_counters_of_limit(limit))?;
+                con.smembers::<Vec<u8>, HashSet<Vec<u8>>>(key_for_counters_of_limit(limit))?;
 
             for counter_key in counter_keys {
                 let mut counter: Counter =
@@ -128,7 +128,7 @@ impl CounterStorage for RedisStorage {
                 // do the "get" + "delete if none" atomically.
                 // This does not cause any bugs, but consumes memory
                 // unnecessarily.
-                if let Some(val) = con.get::<String, Option<i64>>(counter_key.clone())? {
+                if let Some(val) = con.get::<Vec<u8>, Option<i64>>(counter_key.clone())? {
                     counter.set_remaining(
                         limit
                             .max_value()
@@ -150,8 +150,8 @@ impl CounterStorage for RedisStorage {
         let mut con = self.conn_pool.get()?;
 
         for limit in limits {
-            let counter_keys =
-                con.smembers::<String, HashSet<String>>(key_for_counters_of_limit(limit.deref()))?;
+            let counter_keys = con
+                .smembers::<Vec<u8>, HashSet<Vec<u8>>>(key_for_counters_of_limit(limit.deref()))?;
 
             for counter_key in counter_keys {
                 con.del::<_, ()>(counter_key)?;

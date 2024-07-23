@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{error::Error, io::ErrorKind, pin::Pin};
 
+use crate::counter::Counter;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::{Permit, Sender};
 use tokio::sync::{broadcast, mpsc, Notify, RwLock};
@@ -156,9 +157,10 @@ impl Session {
                 update = udpates_to_send.recv() => {
                     let update = update.map_err(|_| Status::unknown("broadcast error"))?;
                     // Multiple updates collapse into a single update for the same key
-                    if !tx_updates_by_key.contains_key(&update.key) {
-                        tx_updates_by_key.insert(update.key.clone(), update.value);
-                        tx_updates_order.push(update.key);
+                    let key = &update.key.clone();
+                    if !tx_updates_by_key.contains_key(key) {
+                        tx_updates_by_key.insert(key.clone(), update);
+                        tx_updates_order.push(key.clone());
                         notifier.notify_one();
                     }
                 }
@@ -174,7 +176,7 @@ impl Session {
 
                                 let key = tx_updates_order.remove(0);
                                 let cr_counter_value = tx_updates_by_key.remove(&key).unwrap().clone();
-                                let (expiry, values) = (*cr_counter_value).clone().into_inner();
+                                let (expiry, values) = cr_counter_value.value.clone().into_inner();
 
                                 // only send the update if it has not expired.
                                 if expiry > SystemTime::now() {
@@ -437,19 +439,24 @@ type CounterUpdateFn = Pin<Box<dyn Fn(CounterUpdate) + Sync + Send>>;
 #[derive(Clone, Debug)]
 pub struct CounterEntry {
     pub key: Vec<u8>,
-    pub value: Arc<CrCounterValue<String>>,
+    pub counter: Counter,
+    pub value: CrCounterValue<String>,
 }
 
 impl CounterEntry {
-    pub fn new(key: Vec<u8>, value: Arc<CrCounterValue<String>>) -> Self {
-        Self { key, value }
+    pub fn new(key: Vec<u8>, counter: Counter, value: CrCounterValue<String>) -> Self {
+        Self {
+            key,
+            counter,
+            value,
+        }
     }
 }
 
 #[derive(Clone)]
 struct BrokerState {
     id: String,
-    publisher: broadcast::Sender<CounterEntry>,
+    publisher: broadcast::Sender<Arc<CounterEntry>>,
     on_counter_update: Arc<CounterUpdateFn>,
     on_re_sync: Arc<Sender<Sender<Option<CounterUpdate>>>>,
 }
@@ -471,7 +478,7 @@ impl Broker {
         on_re_sync: Sender<Sender<Option<CounterUpdate>>>,
     ) -> Broker {
         let (tx, _) = broadcast::channel(16);
-        let publisher: broadcast::Sender<CounterEntry> = tx;
+        let publisher: broadcast::Sender<Arc<CounterEntry>> = tx;
 
         Broker {
             listen_address,
@@ -489,7 +496,7 @@ impl Broker {
         }
     }
 
-    pub fn publish(&self, counter_update: CounterEntry) {
+    pub fn publish(&self, counter_update: Arc<CounterEntry>) {
         // ignore the send error, it just means there are no active subscribers
         _ = self.broker_state.publisher.send(counter_update);
     }

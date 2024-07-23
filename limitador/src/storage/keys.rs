@@ -14,37 +14,56 @@
 
 use crate::counter::Counter;
 use crate::limit::Limit;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-pub fn key_for_counter(counter: &Counter) -> String {
-    if counter.remaining().is_some() || counter.expires_in().is_some() {
-        format!(
-            "{},counter:{}",
-            prefix_for_namespace(counter.namespace().as_ref()),
-            serde_json::to_string(&counter.key()).unwrap()
-        )
+pub fn key_for_counter(counter: &Counter) -> Vec<u8> {
+    if counter.id().is_none() {
+        // continue to use the legacy text encoding...
+        let namespace = counter.namespace().as_ref();
+        let key = if counter.remaining().is_some() || counter.expires_in().is_some() {
+            format!(
+                "namespace:{{{namespace}}},counter:{}",
+                serde_json::to_string(&counter.key()).unwrap()
+            )
+        } else {
+            format!(
+                "namespace:{{{namespace}}},counter:{}",
+                serde_json::to_string(counter).unwrap()
+            )
+        };
+        key.into_bytes()
     } else {
-        format!(
-            "{},counter:{}",
-            prefix_for_namespace(counter.namespace().as_ref()),
-            serde_json::to_string(counter).unwrap()
-        )
+        // if the id is set, use the new binary encoding...
+        bin::key_for_counter_v2(counter)
     }
 }
 
-pub fn key_for_counters_of_limit(limit: &Limit) -> String {
-    format!(
-        "namespace:{{{}}},counters_of_limit:{}",
-        limit.namespace().as_ref(),
-        serde_json::to_string(limit).unwrap()
-    )
+pub fn key_for_counters_of_limit(limit: &Limit) -> Vec<u8> {
+    if limit.id().is_none() {
+        let namespace = limit.namespace().as_ref();
+        format!(
+            "namespace:{{{namespace}}},counters_of_limit:{}",
+            serde_json::to_string(limit).unwrap()
+        )
+        .into_bytes()
+    } else {
+        #[derive(PartialEq, Debug, Serialize, Deserialize)]
+        struct IdLimitKey<'a> {
+            id: &'a str,
+        }
+
+        let id = limit.id().as_ref().unwrap();
+        let key = IdLimitKey { id: id.as_ref() };
+
+        let mut encoded_key = Vec::new();
+        encoded_key = postcard::to_extend(&2u8, encoded_key).unwrap();
+        encoded_key = postcard::to_extend(&key, encoded_key).unwrap();
+        encoded_key
+    }
 }
 
-pub fn prefix_for_namespace(namespace: &str) -> String {
-    format!("namespace:{{{namespace}}},")
-}
-
-pub fn counter_from_counter_key(key: &str, limit: Arc<Limit>) -> Counter {
+pub fn counter_from_counter_key(key: &Vec<u8>, limit: Arc<Limit>) -> Counter {
     let mut counter = partial_counter_from_counter_key(key);
     if !counter.update_to_limit(Arc::clone(&limit)) {
         // this means some kind of data corruption _or_ most probably
@@ -58,33 +77,38 @@ pub fn counter_from_counter_key(key: &str, limit: Arc<Limit>) -> Counter {
     counter
 }
 
-pub fn partial_counter_from_counter_key(key: &str) -> Counter {
-    let namespace_prefix = "namespace:";
-    let counter_prefix = ",counter:";
+pub fn partial_counter_from_counter_key(key: &Vec<u8>) -> Counter {
+    if key.starts_with(b"namespace:") {
+        let key = String::from_utf8_lossy(key.as_ref());
 
-    // Find the start position of the counter portion
-    let start_pos_namespace = key
-        .find(namespace_prefix)
-        .expect("Namespace not found in the key");
-    let start_pos_counter = key[start_pos_namespace..]
-        .find(counter_prefix)
-        .expect("Counter not found in the key")
-        + start_pos_namespace
-        + counter_prefix.len();
+        // It's using to the legacy text encoding...
+        let namespace_prefix = "namespace:";
+        let counter_prefix = ",counter:";
 
-    // Extract counter JSON substring and deserialize it
-    let counter_str = &key[start_pos_counter..];
-    let counter: Counter =
-        serde_json::from_str(counter_str).expect("Failed to deserialize counter JSON");
-    counter
+        // Find the start position of the counter portion
+        let start_pos_namespace = key
+            .find(namespace_prefix)
+            .expect("Namespace not found in the key");
+        let start_pos_counter = key[start_pos_namespace..]
+            .find(counter_prefix)
+            .expect("Counter not found in the key")
+            + start_pos_namespace
+            + counter_prefix.len();
+
+        // Extract counter JSON substring and deserialize it
+        let counter_str = &key[start_pos_counter..];
+        let counter: Counter =
+            serde_json::from_str(counter_str).expect("Failed to deserialize counter JSON");
+        counter
+    } else {
+        // It's using to the new binary encoding...
+        bin::partial_counter_from_counter_key_v2(key)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        key_for_counter, key_for_counters_of_limit, partial_counter_from_counter_key,
-        prefix_for_namespace,
-    };
+    use super::{key_for_counter, key_for_counters_of_limit, partial_counter_from_counter_key};
     use crate::counter::Counter;
     use crate::Limit;
     use std::collections::HashMap;
@@ -100,8 +124,24 @@ mod tests {
             vec!["app_id"],
         );
         assert_eq!(
-            "namespace:{example.com},counters_of_limit:{\"namespace\":\"example.com\",\"seconds\":60,\"conditions\":[\"req.method == \\\"GET\\\"\"],\"variables\":[\"app_id\"]}",
+            "namespace:{example.com},counters_of_limit:{\"namespace\":\"example.com\",\"seconds\":60,\"conditions\":[\"req.method == \\\"GET\\\"\"],\"variables\":[\"app_id\"]}".as_bytes(),
             key_for_counters_of_limit(&limit))
+    }
+
+    #[test]
+    fn key_for_limit_with_id_format() {
+        let mut limit = Limit::new(
+            "example.com",
+            10,
+            60,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
+        limit.set_id("test_id".to_string());
+        assert_eq!(
+            "\u{2}\u{7}test_id".as_bytes(),
+            key_for_counters_of_limit(&limit)
+        )
     }
 
     #[test]
@@ -111,8 +151,6 @@ mod tests {
         let counter = Counter::new(limit.clone(), HashMap::default());
         let raw = key_for_counter(&counter);
         assert_eq!(counter, partial_counter_from_counter_key(&raw));
-        let prefix = prefix_for_namespace(namespace);
-        assert_eq!(&raw[0..prefix.len()], &prefix);
     }
 
     #[test]
@@ -134,6 +172,21 @@ pub mod bin {
 
     use crate::counter::Counter;
     use crate::limit::Limit;
+
+    #[derive(PartialEq, Debug, Serialize, Deserialize)]
+    struct IdCounterKey<'a> {
+        id: &'a str,
+        variables: Vec<(&'a str, &'a str)>,
+    }
+
+    impl<'a> From<&'a Counter> for IdCounterKey<'a> {
+        fn from(counter: &'a Counter) -> Self {
+            IdCounterKey {
+                id: counter.id().as_ref().unwrap().as_ref(),
+                variables: counter.variables_for_key(),
+            }
+        }
+    }
 
     #[derive(PartialEq, Debug, Serialize, Deserialize)]
     struct CounterKey<'a> {
@@ -187,6 +240,54 @@ pub mod bin {
         }
     }
 
+    pub fn key_for_counter_v2(counter: &Counter) -> Vec<u8> {
+        let mut encoded_key = Vec::new();
+        if counter.id().is_none() {
+            let key: CounterKey = counter.into();
+            encoded_key = postcard::to_extend(&1u8, encoded_key).unwrap();
+            encoded_key = postcard::to_extend(&key, encoded_key).unwrap()
+        } else {
+            let key: IdCounterKey = counter.into();
+            encoded_key = postcard::to_extend(&2u8, encoded_key).unwrap();
+            encoded_key = postcard::to_extend(&key, encoded_key).unwrap();
+        }
+        encoded_key
+    }
+
+    pub fn partial_counter_from_counter_key_v2(key: &[u8]) -> Counter {
+        let (version, key) = postcard::take_from_bytes::<u8>(key).unwrap();
+        match version {
+            1u8 => {
+                let CounterKey {
+                    ns,
+                    seconds,
+                    conditions,
+                    variables,
+                } = postcard::from_bytes(key).unwrap();
+
+                let map: HashMap<String, String> = variables
+                    .into_iter()
+                    .map(|(var, value)| (var.to_string(), value.to_string()))
+                    .collect();
+                let limit = Limit::new(ns, u64::default(), seconds, conditions, map.keys());
+                Counter::new(limit, map)
+            }
+            2u8 => {
+                let IdCounterKey { id, variables } = postcard::from_bytes(key).unwrap();
+                let map: HashMap<String, String> = variables
+                    .into_iter()
+                    .map(|(var, value)| (var.to_string(), value.to_string()))
+                    .collect();
+
+                // we are not able to rebuild the full limit since we only have the id and variables.
+                let mut limit = Limit::new::<&str, &str>("", u64::default(), 0, vec![], map.keys());
+                limit.set_id(id.to_string());
+                Counter::new(limit, map)
+            }
+            _ => panic!("Unknown version: {}", version),
+        }
+    }
+
     pub fn key_for_counter(counter: &Counter) -> Vec<u8> {
         let key: CounterKey = counter.into();
         postcard::to_stdvec(&key).unwrap()
@@ -215,12 +316,14 @@ pub mod bin {
 
     #[cfg(test)]
     mod tests {
-        use super::{
-            key_for_counter, partial_counter_from_counter_key, prefix_for_namespace, CounterKey,
-        };
         use crate::counter::Counter;
         use crate::Limit;
         use std::collections::HashMap;
+
+        use super::{
+            key_for_counter, key_for_counter_v2, partial_counter_from_counter_key,
+            prefix_for_namespace, CounterKey,
+        };
 
         #[test]
         fn counter_key_serializes_and_back() {
@@ -265,6 +368,35 @@ pub mod bin {
 
             let prefix = prefix_for_namespace(namespace);
             assert_eq!(&serialized_counter[..prefix.len()], &prefix);
+        }
+
+        #[test]
+        fn counters_with_id() {
+            let namespace = "ns_counter:";
+            let limit_without_id =
+                Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"]);
+            let mut limit_with_id =
+                Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"]);
+            limit_with_id.set_id("id200".to_string());
+
+            let counter_with_id = Counter::new(limit_with_id, HashMap::default());
+            let serialized_with_id_counter = key_for_counter(&counter_with_id);
+
+            let counter_without_id = Counter::new(limit_without_id, HashMap::default());
+            let serialized_without_id_counter = key_for_counter(&counter_without_id);
+
+            // the original key_for_counter continues to encode kinda big
+            assert_eq!(serialized_without_id_counter.len(), 35);
+            assert_eq!(serialized_with_id_counter.len(), 35);
+
+            // serialized_counter_v2 will only encode the id.... so it will be smaller for
+            // counters with an id.
+            let serialized_counter_with_id_v2 = key_for_counter_v2(&counter_with_id);
+            assert_eq!(serialized_counter_with_id_v2.clone().len(), 8);
+
+            // but continues to be large for counters without an id.
+            let serialized_counter_without_id_v2 = key_for_counter_v2(&counter_without_id);
+            assert_eq!(serialized_counter_without_id_v2.clone().len(), 36);
         }
     }
 }
