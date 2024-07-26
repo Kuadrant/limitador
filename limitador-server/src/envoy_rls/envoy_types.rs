@@ -3,7 +3,11 @@ pub mod envoy {
         pub mod core {
             // clippy will barf on protobuff generated code for enum variants in
             // v3::socket_option::SocketState, so allow this lint
-            #[allow(clippy::enum_variant_names, clippy::derive_partial_eq_without_eq)]
+            #[allow(
+                clippy::enum_variant_names,
+                clippy::derive_partial_eq_without_eq,
+                clippy::doc_lazy_continuation
+            )]
             pub mod v3 {
                 tonic::include_proto!("envoy.config.core.v3");
             }
@@ -30,7 +34,7 @@ pub mod envoy {
 
     pub mod service {
         pub mod ratelimit {
-            #[allow(clippy::derive_partial_eq_without_eq)]
+            #[allow(clippy::derive_partial_eq_without_eq, clippy::doc_lazy_continuation)]
             pub mod v3 {
                 tonic::include_proto!("envoy.service.ratelimit.v3");
             }
