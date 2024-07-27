@@ -45,7 +45,7 @@ const_format = "0.2.31"
 lazy_static = "1.4.0"
 clap = "4.3"
 sysinfo = "0.30.10"
-openssl = { version = "0.10.57", features = ["vendored"] }
+openssl = { version = "0.10.66", features = ["vendored"] }
 metrics = "0.22.3"
 metrics-exporter-prometheus = "0.14.0"
 
