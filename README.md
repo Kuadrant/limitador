@@ -6,6 +6,7 @@
 [![Docker Repository on Quay](https://quay.io/repository/kuadrant/limitador/status
 "Docker Repository on Quay")](https://quay.io/repository/kuadrant/limitador)
 [![codecov](https://codecov.io/gh/Kuadrant/limitador/branch/main/graph/badge.svg?token=CE9LD3XCJT)](https://codecov.io/gh/Kuadrant/limitador)
+[![FOSSA Status](https://app.fossa.com/api/projects/custom%2B162%2Fgit%2Bgithub.com%2FKuadrant%2Flimitador.svg?type=shield&issueType=license)](https://app.fossa.com/projects/custom%2B162%2Fgit%2Bgithub.com%2FKuadrant%2Flimitador?ref=badge_shield&issueType=license)
 
 Limitador is a generic rate-limiter written in Rust. It can be used as a
 library, or as a service. The service exposes HTTP endpoints to apply and observe
@@ -87,3 +88,5 @@ for live discussions about the roadmap and more.
 ## License
 
 [Apache 2.0 License](LICENSE)
+
+[![FOSSA Status](https://app.fossa.com/api/projects/custom%2B162%2Fgit%2Bgithub.com%2FKuadrant%2Flimitador.svg?type=large&issueType=license)](https://app.fossa.com/projects/custom%2B162%2Fgit%2Bgithub.com%2FKuadrant%2Flimitador?ref=badge_large&issueType=license)
