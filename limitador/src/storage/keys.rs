@@ -130,14 +130,14 @@ mod tests {
 
     #[test]
     fn key_for_limit_with_id_format() {
-        let mut limit = Limit::new(
+        let limit = Limit::with_id(
+            "test_id",
             "example.com",
             10,
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
-        limit.set_id("test_id".to_string());
         assert_eq!(
             "\u{2}\u{7}test_id".as_bytes(),
             key_for_counters_of_limit(&limit)
@@ -280,8 +280,14 @@ pub mod bin {
                     .collect();
 
                 // we are not able to rebuild the full limit since we only have the id and variables.
-                let mut limit = Limit::new::<&str, &str>("", u64::default(), 0, vec![], map.keys());
-                limit.set_id(id.to_string());
+                let limit = Limit::with_id::<&str, &str, &str>(
+                    id,
+                    "",
+                    u64::default(),
+                    0,
+                    vec![],
+                    map.keys(),
+                );
                 Counter::new(limit, map)
             }
             _ => panic!("Unknown version: {}", version),
@@ -316,14 +322,13 @@ pub mod bin {
 
     #[cfg(test)]
     mod tests {
-        use crate::counter::Counter;
-        use crate::Limit;
-        use std::collections::HashMap;
-
         use super::{
             key_for_counter, key_for_counter_v2, partial_counter_from_counter_key,
             prefix_for_namespace, CounterKey,
         };
+        use crate::counter::Counter;
+        use crate::Limit;
+        use std::collections::HashMap;
 
         #[test]
         fn counter_key_serializes_and_back() {
@@ -375,9 +380,14 @@ pub mod bin {
             let namespace = "ns_counter:";
             let limit_without_id =
                 Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"]);
-            let mut limit_with_id =
-                Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"]);
-            limit_with_id.set_id("id200".to_string());
+            let limit_with_id = Limit::with_id(
+                "id200",
+                namespace,
+                1,
+                1,
+                vec!["req.method == 'GET'"],
+                vec!["app_id"],
+            );
 
             let counter_with_id = Counter::new(limit_with_id, HashMap::default());
             let serialized_with_id_counter = key_for_counter(&counter_with_id);
