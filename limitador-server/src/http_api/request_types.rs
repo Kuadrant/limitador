@@ -30,7 +30,7 @@ pub struct Limit {
 impl From<&LimitadorLimit> for Limit {
     fn from(ll: &LimitadorLimit) -> Self {
         Self {
-            id: ll.id().clone(),
+            id: ll.id().map(|id| id.to_string()),
             namespace: ll.namespace().as_ref().to_string(),
             max_value: ll.max_value(),
             seconds: ll.seconds(),

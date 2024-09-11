@@ -40,26 +40,25 @@ pub fn key_for_counter(counter: &Counter) -> Vec<u8> {
 }
 
 pub fn key_for_counters_of_limit(limit: &Limit) -> Vec<u8> {
-    if limit.id().is_none() {
+    if let Some(id) = limit.id() {
+        #[derive(PartialEq, Debug, Serialize, Deserialize)]
+        struct IdLimitKey<'a> {
+            id: &'a str,
+        }
+
+        let key = IdLimitKey { id };
+
+        let mut encoded_key = Vec::new();
+        encoded_key = postcard::to_extend(&2u8, encoded_key).unwrap();
+        encoded_key = postcard::to_extend(&key, encoded_key).unwrap();
+        encoded_key
+    } else {
         let namespace = limit.namespace().as_ref();
         format!(
             "namespace:{{{namespace}}},counters_of_limit:{}",
             serde_json::to_string(limit).unwrap()
         )
         .into_bytes()
-    } else {
-        #[derive(PartialEq, Debug, Serialize, Deserialize)]
-        struct IdLimitKey<'a> {
-            id: &'a str,
-        }
-
-        let id = limit.id().as_ref().unwrap();
-        let key = IdLimitKey { id: id.as_ref() };
-
-        let mut encoded_key = Vec::new();
-        encoded_key = postcard::to_extend(&2u8, encoded_key).unwrap();
-        encoded_key = postcard::to_extend(&key, encoded_key).unwrap();
-        encoded_key
     }
 }
 
@@ -182,7 +181,7 @@ pub mod bin {
     impl<'a> From<&'a Counter> for IdCounterKey<'a> {
         fn from(counter: &'a Counter) -> Self {
             IdCounterKey {
-                id: counter.id().as_ref().unwrap().as_ref(),
+                id: counter.id().unwrap(),
                 variables: counter.variables_for_key(),
             }
         }

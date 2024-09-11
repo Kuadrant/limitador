@@ -72,7 +72,7 @@ impl Counter {
         Duration::from_secs(self.limit.seconds())
     }
 
-    pub fn id(&self) -> &Option<String> {
+    pub fn id(&self) -> Option<&str> {
         self.limit.id()
     }
 

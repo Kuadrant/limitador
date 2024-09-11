@@ -364,8 +364,8 @@ impl Limit {
         &self.namespace
     }
 
-    pub fn id(&self) -> &Option<String> {
-        &self.id
+    pub fn id(&self) -> Option<&str> {
+        self.id.as_deref()
     }
 
     pub fn max_value(&self) -> u64 {
@@ -1043,6 +1043,6 @@ mod tests {
             vec!["app_id"],
         );
 
-        assert_eq!(limit.id().clone(), Some("test_id".to_string()))
+        assert_eq!(limit.id(), Some("test_id"))
     }
 }
