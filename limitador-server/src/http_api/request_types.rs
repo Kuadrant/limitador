@@ -30,7 +30,7 @@ pub struct Limit {
 impl From<&LimitadorLimit> for Limit {
     fn from(ll: &LimitadorLimit) -> Self {
         Self {
-            id: ll.id().clone(),
+            id: ll.id().map(|id| id.to_string()),
             namespace: ll.namespace().as_ref().to_string(),
             max_value: ll.max_value(),
             seconds: ll.seconds(),
@@ -43,17 +43,24 @@ impl From<&LimitadorLimit> for Limit {
 
 impl From<Limit> for LimitadorLimit {
     fn from(limit: Limit) -> Self {
-        let mut limitador_limit = Self::new(
-            limit.namespace,
-            limit.max_value,
-            limit.seconds,
-            limit.conditions,
-            limit.variables,
-        );
-
-        if let Some(id) = limit.id {
-            limitador_limit.set_id(id);
-        }
+        let mut limitador_limit = if let Some(id) = limit.id {
+            Self::with_id(
+                id,
+                limit.namespace,
+                limit.max_value,
+                limit.seconds,
+                limit.conditions,
+                limit.variables,
+            )
+        } else {
+            Self::new(
+                limit.namespace,
+                limit.max_value,
+                limit.seconds,
+                limit.conditions,
+                limit.variables,
+            )
+        };
 
         if let Some(name) = limit.name {
             limitador_limit.set_name(name)

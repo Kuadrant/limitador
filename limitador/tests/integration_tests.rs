@@ -523,14 +523,14 @@ mod test {
     async fn rate_limited_id_counter(rate_limiter: &mut TestsLimiter) {
         let namespace = "test_namespace";
         let max_hits = 3;
-        let mut limit = Limit::new(
+        let limit = Limit::with_id(
+            "test-rate_limited_id_counter",
             namespace,
             max_hits,
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
-        limit.set_id("test-rate_limited_id_counter".to_string());
 
         rate_limiter.add_limit(&limit).await;
 

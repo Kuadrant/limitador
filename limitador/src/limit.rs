@@ -334,16 +334,38 @@ impl Limit {
         }
     }
 
+    pub fn with_id<S: Into<String>, N: Into<Namespace>, T: TryInto<Condition>>(
+        id: S,
+        namespace: N,
+        max_value: u64,
+        seconds: u64,
+        conditions: impl IntoIterator<Item = T>,
+        variables: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self
+    where
+        <N as TryInto<Namespace>>::Error: core::fmt::Debug,
+        <T as TryInto<Condition>>::Error: core::fmt::Debug,
+    {
+        Self {
+            id: Some(id.into()),
+            namespace: namespace.into(),
+            max_value,
+            seconds,
+            name: None,
+            conditions: conditions
+                .into_iter()
+                .map(|cond| cond.try_into().expect("Invalid condition"))
+                .collect(),
+            variables: variables.into_iter().map(|var| var.into()).collect(),
+        }
+    }
+
     pub fn namespace(&self) -> &Namespace {
         &self.namespace
     }
 
-    pub fn set_id(&mut self, value: String) {
-        self.id = Some(value);
-    }
-
-    pub fn id(&self) -> &Option<String> {
-        &self.id
+    pub fn id(&self) -> Option<&str> {
+        self.id.as_deref()
     }
 
     pub fn max_value(&self) -> u64 {
@@ -1012,15 +1034,15 @@ mod tests {
 
     #[test]
     fn limit_id() {
-        let mut limit = Limit::new(
+        let limit = Limit::with_id(
+            "test_id",
             "test_namespace",
             10,
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
         );
-        limit.set_id("test_id".to_string());
 
-        assert_eq!(limit.id().clone(), Some("test_id".to_string()))
+        assert_eq!(limit.id(), Some("test_id"))
     }
 }
