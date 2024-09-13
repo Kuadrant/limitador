@@ -505,7 +505,7 @@ impl Broker {
         self.clone().peer_urls.into_iter().for_each(|peer_url| {
             let broker = self.clone();
             let peer_url = peer_url.clone();
-            _ = tokio::spawn(async move {
+            tokio::spawn(async move {
                 // Keep trying until we get once successful connection handshake.  Once that
                 // happens, we will know the peer_id and can recover by reconnecting to the peer
                 loop {
