@@ -1,3 +1,4 @@
+#[allow(unknown_lints)]
 pub mod envoy {
     pub mod config {
         pub mod core {

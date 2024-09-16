@@ -341,7 +341,7 @@ async fn update_counters<C: ConnectionLike>(
     Ok(res)
 }
 
-#[allow(clippy::manual_inspect)]
+#[allow(unknown_lints, clippy::manual_inspect)]
 #[tracing::instrument(skip_all)]
 async fn flush_batcher_and_update_counters<C: ConnectionLike>(
     mut redis_conn: C,
