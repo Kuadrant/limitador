@@ -2,7 +2,7 @@ use limitador::counter::Counter as LimitadorCounter;
 use limitador::limit::Limit as LimitadorLimit;
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 // We need to define the Limit and Counter types. They're basically the same as
 // defined in the lib but with some modifications to be able to derive
@@ -73,7 +73,7 @@ impl From<Limit> for LimitadorLimit {
 #[derive(Debug, Eq, PartialEq, Serialize, Apiv2Schema)]
 pub struct Counter {
     limit: Limit,
-    set_variables: HashMap<String, String>,
+    set_variables: BTreeMap<String, String>,
     remaining: Option<u64>,
     expires_in_seconds: Option<u64>,
 }

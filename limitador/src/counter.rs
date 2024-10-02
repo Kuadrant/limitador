@@ -1,5 +1,5 @@
 use crate::limit::{Limit, Namespace};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -9,21 +9,10 @@ use std::time::Duration;
 pub struct Counter {
     limit: Arc<Limit>,
 
-    // Need to sort to generate the same object when using the JSON as a key or
-    // value in Redis.
-    #[serde(serialize_with = "ordered_map")]
-    set_variables: HashMap<String, String>,
+    set_variables: BTreeMap<String, String>,
 
     remaining: Option<u64>,
     expires_in: Option<Duration>,
-}
-
-fn ordered_map<S>(value: &HashMap<String, String>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let ordered: BTreeMap<_, _> = value.iter().collect();
-    ordered.serialize(serializer)
 }
 
 impl Counter {
@@ -36,7 +25,7 @@ impl Counter {
 
         Self {
             limit,
-            set_variables: vars,
+            set_variables: vars.into_iter().collect(),
             remaining: None,
             expires_in: None,
         }
@@ -80,7 +69,7 @@ impl Counter {
         self.limit.namespace()
     }
 
-    pub fn set_variables(&self) -> &HashMap<String, String> {
+    pub fn set_variables(&self) -> &BTreeMap<String, String> {
         &self.set_variables
     }
 
