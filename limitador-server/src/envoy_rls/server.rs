@@ -206,7 +206,7 @@ pub async fn run_envoy_rls_server(
         true => Some(
             tonic_reflection::server::Builder::configure()
                 .register_encoded_file_descriptor_set(rls_proto::RLS_DESCRIPTOR_SET)
-                .build()
+                .build_v1()
                 .unwrap(),
         ),
     };
