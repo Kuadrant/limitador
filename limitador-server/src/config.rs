@@ -15,7 +15,27 @@
 
 use crate::envoy_rls::server::RateLimitHeaders;
 use limitador::storage;
+use std::fmt;
 use tracing::level_filters::LevelFilter;
+use url::Url;
+
+pub fn redacted_url(url: String) -> String {
+    return match Url::parse(url.as_str()) {
+        Ok(url_object) => {
+            if url_object.password().is_some() {
+                let mut owned_url = url_object.clone();
+                if owned_url.set_password(Some("****")).is_ok() {
+                    String::from(owned_url)
+                } else {
+                    url.clone()
+                }
+            } else {
+                url.clone()
+            }
+        }
+        Err(_) => url.clone(),
+    };
+}
 
 #[derive(Debug)]
 pub struct Configuration {
@@ -164,10 +184,22 @@ pub struct DiskStorageConfiguration {
     pub optimization: storage::disk::OptimizeFor,
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq)]
 pub struct RedisStorageConfiguration {
     pub url: String,
     pub cache: Option<RedisStorageCacheConfiguration>,
+}
+
+impl fmt::Debug for RedisStorageConfiguration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Foo")
+            .field("cache", &self.cache)
+            .field(
+                "url",
+                &format_args!("{}", redacted_url(self.url.clone()).as_str()),
+            )
+            .finish()
+    }
 }
 
 #[derive(PartialEq, Eq, Debug)]
