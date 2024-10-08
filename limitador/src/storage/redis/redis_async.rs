@@ -9,7 +9,7 @@ use crate::storage::redis::is_limited;
 use crate::storage::redis::scripts::{SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS};
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
-use redis::{AsyncCommands, RedisError};
+use redis::{AsyncCommands, ErrorKind, RedisError};
 use std::collections::HashSet;
 use std::ops::Deref;
 use std::str::FromStr;
@@ -127,10 +127,21 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                 )
                 .ignore()
         }
-        pipeline
+        if let Err(err) = pipeline
             .query_async::<()>(&mut con)
             .instrument(info_span!("datastore"))
-            .await?;
+            .await
+        {
+            if err.kind() == ErrorKind::NoScriptError {
+                self.load_script(SCRIPT_UPDATE_COUNTER).await?;
+                pipeline
+                    .query_async::<()>(&mut con)
+                    .instrument(info_span!("datastore"))
+                    .await?
+            } else {
+                Err(err)?
+            }
+        }
 
         Ok(Authorization::Ok)
     }
