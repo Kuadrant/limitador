@@ -29,10 +29,10 @@ Options:
           The port to listen on for HTTP [default: 8080]
   -l, --limit-name-in-labels
           Include the Limit Name in prometheus label
+      --tracing-endpoint <tracing_endpoint>
+          The host for the tracing service [default: ]
   -v...
           Sets the level of verbosity
-      --tracing-endpoint <tracing_endpoint>
-          The endpoint for the tracing service
       --validate
           Validates the LIMITS_FILE and exits
   -H, --rate-limit-headers <rate_limit_headers>
@@ -90,13 +90,13 @@ required:
 Here is an example of such a limit definition:
 
 ```yaml
-namespace: example.org
-max_value: 10
-seconds: 60
-conditions:
-  - "req.method == 'GET'"
-variables:
-  - user_id
+- namespace: example.org
+  max_value: 10
+  seconds: 60
+  conditions:
+    - "req.method == 'GET'"
+  variables:
+    - user_id
 ```
 
  - `namespace` namespaces the limit, will generally be the domain, [see here](../how-it-works.md)
