@@ -56,7 +56,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             .key(key_for_counters_of_limit(counter.limit()))
             .arg(counter.window().as_secs())
             .arg(delta)
-            .invoke_async::<_, ()>(&mut con)
+            .invoke_async::<_>(&mut con)
             .instrument(info_span!("datastore"))
             .await?;
 
@@ -112,18 +112,26 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             }
         }
 
-        // TODO: this can be optimized by using pipelines with multiple updates
-        for (counter_idx, key) in counter_keys.into_iter().enumerate() {
+        let script = redis::Script::new(SCRIPT_UPDATE_COUNTER);
+        script.prepare_invoke().load_async(&mut con).await?;
+        let mut pipeline = redis::pipe();
+        let mut pipeline = &mut pipeline;
+        for (counter_idx, key) in counter_keys.iter().enumerate() {
             let counter = &counters[counter_idx];
-            redis::Script::new(SCRIPT_UPDATE_COUNTER)
-                .key(key)
-                .key(key_for_counters_of_limit(counter.limit()))
-                .arg(counter.window().as_secs())
-                .arg(delta)
-                .invoke_async::<_, _>(&mut con)
-                .instrument(info_span!("datastore"))
-                .await?
+            pipeline = pipeline
+                .invoke_script(
+                    script
+                        .key(key)
+                        .key(key_for_counters_of_limit(counter.limit()))
+                        .arg(counter.window().as_secs())
+                        .arg(delta),
+                )
+                .ignore()
         }
+        pipeline
+            .query_async(&mut con)
+            .instrument(info_span!("datastore"))
+            .await?;
 
         Ok(Authorization::Ok)
     }
@@ -191,7 +199,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
     async fn clear(&self) -> Result<(), StorageErr> {
         let mut con = self.conn_manager.clone();
         redis::cmd("FLUSHDB")
-            .query_async::<_, ()>(&mut con)
+            .query_async::<_>(&mut con)
             .instrument(info_span!("datastore"))
             .await?;
         Ok(())

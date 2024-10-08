@@ -164,7 +164,7 @@ impl CounterStorage for RedisStorage {
     #[tracing::instrument(skip_all)]
     fn clear(&self) -> Result<(), StorageErr> {
         let mut con = self.conn_pool.get()?;
-        redis::cmd("FLUSHDB").execute(&mut *con);
+        redis::cmd("FLUSHDB").exec(&mut *con)?;
         Ok(())
     }
 }

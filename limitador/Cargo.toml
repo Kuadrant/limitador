@@ -36,11 +36,12 @@ metrics = "0.22.3"
 
 # Optional dependencies
 rocksdb = { version = "0.22", optional = true, features = ["multi-threaded-cf"] }
-redis = { version = "0.25", optional = true, features = [
+redis = { version = "0.27", optional = true, features = [
     "connection-manager",
     "tokio-comp",
     "tls-native-tls",
     "tokio-native-tls-comp",
+    "script",
 ] }
 r2d2 = { version = "0.8", optional = true }
 tokio = { version = "1", optional = true, features = [
@@ -62,8 +63,8 @@ time = "0.3.36"
 [dev-dependencies]
 serial_test = "3.0"
 criterion = { version = "0.5.1", features = ["html_reports", "async_tokio"] }
-redis-test = { version = "0.4.0", features = ["aio"] }
-redis = { version = "0.25", features = [
+redis-test = { version = "0.6.0", features = ["aio"] }
+redis = { version = "0.27", features = [
     "connection-manager",
     "tokio-comp",
     "tls-native-tls",
