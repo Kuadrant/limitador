@@ -187,7 +187,7 @@ impl CachedRedisStorage {
         let counters_cache = Arc::new(cached_counters);
         let partitioned = Arc::new(AtomicBool::new(false));
         let async_redis_storage =
-            AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone());
+            AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone()).await?;
 
         {
             let counters_cache_clone = counters_cache.clone();
@@ -205,6 +205,10 @@ impl CachedRedisStorage {
                 }
             });
         }
+
+        async_redis_storage
+            .load_script(BATCH_UPDATE_COUNTERS)
+            .await?;
 
         Ok(Self {
             cached_counters: counters_cache,

@@ -113,7 +113,6 @@ impl AsyncCounterStorage for AsyncRedisStorage {
         }
 
         let script = redis::Script::new(SCRIPT_UPDATE_COUNTER);
-        script.prepare_invoke().load_async(&mut con).await?;
         let mut pipeline = redis::pipe();
         let mut pipeline = &mut pipeline;
         for (counter_idx, key) in counter_keys.iter().enumerate() {
@@ -209,17 +208,23 @@ impl AsyncCounterStorage for AsyncRedisStorage {
 impl AsyncRedisStorage {
     pub async fn new(redis_url: &str) -> Result<Self, RedisError> {
         let info = ConnectionInfo::from_str(redis_url)?;
-        Ok(Self {
-            conn_manager: ConnectionManager::new(
+        Self::new_with_conn_manager(
+            ConnectionManager::new(
                 redis::Client::open(info)
                     .expect("This couldn't fail in the past, yet now it did somehow!"),
             )
             .await?,
-        })
+        )
+        .await
     }
 
-    pub fn new_with_conn_manager(conn_manager: ConnectionManager) -> Self {
-        Self { conn_manager }
+    pub async fn new_with_conn_manager(
+        conn_manager: ConnectionManager,
+    ) -> Result<Self, RedisError> {
+        let store = Self { conn_manager };
+        store.load_script(SCRIPT_UPDATE_COUNTER).await?;
+        store.load_script(VALUES_AND_TTLS).await?;
+        Ok(store)
     }
 
     async fn delete_counters_associated_with_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
@@ -237,6 +242,13 @@ impl AsyncRedisStorage {
                 .await?;
         }
 
+        Ok(())
+    }
+
+    pub(super) async fn load_script(&self, script: &str) -> Result<(), RedisError> {
+        let mut con = self.conn_manager.clone();
+        let script = redis::Script::new(script);
+        script.prepare_invoke().load_async(&mut con).await?;
         Ok(())
     }
 }
