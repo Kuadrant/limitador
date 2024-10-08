@@ -133,13 +133,13 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             .await
         {
             if err.kind() == ErrorKind::NoScriptError {
-                self.load_script(SCRIPT_UPDATE_COUNTER).await?;
+                script.prepare_invoke().load_async(&mut con).await?;
                 pipeline
                     .query_async::<()>(&mut con)
                     .instrument(info_span!("datastore"))
-                    .await?
+                    .await?;
             } else {
-                Err(err)?
+                Err(err)?;
             }
         }
 
