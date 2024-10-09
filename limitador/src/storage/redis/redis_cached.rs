@@ -13,7 +13,7 @@ use crate::storage::redis::{
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
 use metrics::gauge;
-use redis::aio::{ConnectionLike, ConnectionManager};
+use redis::aio::{ConnectionLike, ConnectionManager, ConnectionManagerConfig};
 use redis::{ConnectionInfo, RedisError};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
@@ -170,15 +170,13 @@ impl CachedRedisStorage {
         response_timeout: Duration,
     ) -> Result<Self, RedisError> {
         let info = ConnectionInfo::from_str(redis_url)?;
-        let redis_conn_manager = ConnectionManager::new_with_backoff_and_timeouts(
+        let redis_conn_manager = ConnectionManager::new_with_config(
             redis::Client::open(info)
                 .expect("This couldn't fail in the past, yet now it did somehow!"),
-            2,
-            100,
-            1,
-            response_timeout,
-            // TLS handshake might result in an additional 2 RTTs to Redis, adding some headroom as well
-            (response_timeout * 3) + Duration::from_millis(50),
+            ConnectionManagerConfig::default()
+                .set_connection_timeout((response_timeout * 3) + Duration::from_millis(50))
+                .set_response_timeout(response_timeout)
+                .set_number_of_retries(1),
         )
         .await?;
 
@@ -189,7 +187,7 @@ impl CachedRedisStorage {
         let counters_cache = Arc::new(cached_counters);
         let partitioned = Arc::new(AtomicBool::new(false));
         let async_redis_storage =
-            AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone());
+            AsyncRedisStorage::new_with_conn_manager(redis_conn_manager.clone()).await?;
 
         {
             let counters_cache_clone = counters_cache.clone();
@@ -207,6 +205,10 @@ impl CachedRedisStorage {
                 }
             });
         }
+
+        async_redis_storage
+            .load_script(BATCH_UPDATE_COUNTERS)
+            .await?;
 
         Ok(Self {
             cached_counters: counters_cache,
@@ -456,7 +458,7 @@ mod tests {
         counters_and_deltas.insert(counter.clone(), arc);
 
         let one_sec_from_now = SystemTime::now().add(Duration::from_secs(1));
-        let mock_response = Value::Bulk(vec![
+        let mock_response = Value::Array(vec![
             Value::Int(NEW_VALUE_FROM_REDIS as i64),
             Value::Int(
                 one_sec_from_now
@@ -510,7 +512,7 @@ mod tests {
             Default::default(),
         );
 
-        let mock_response = Value::Bulk(vec![
+        let mock_response = Value::Array(vec![
             Value::Int(8),
             Value::Int(
                 SystemTime::now()

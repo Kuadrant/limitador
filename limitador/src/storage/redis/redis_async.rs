@@ -9,7 +9,7 @@ use crate::storage::redis::is_limited;
 use crate::storage::redis::scripts::{SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS};
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
-use redis::{AsyncCommands, RedisError};
+use redis::{AsyncCommands, ErrorKind, RedisError};
 use std::collections::HashSet;
 use std::ops::Deref;
 use std::str::FromStr;
@@ -56,7 +56,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             .key(key_for_counters_of_limit(counter.limit()))
             .arg(counter.window().as_secs())
             .arg(delta)
-            .invoke_async::<_, ()>(&mut con)
+            .invoke_async::<()>(&mut con)
             .instrument(info_span!("datastore"))
             .await?;
 
@@ -112,17 +112,35 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             }
         }
 
-        // TODO: this can be optimized by using pipelines with multiple updates
-        for (counter_idx, key) in counter_keys.into_iter().enumerate() {
+        let script = redis::Script::new(SCRIPT_UPDATE_COUNTER);
+        let mut pipeline = redis::pipe();
+        let mut pipeline = &mut pipeline;
+        for (counter_idx, key) in counter_keys.iter().enumerate() {
             let counter = &counters[counter_idx];
-            redis::Script::new(SCRIPT_UPDATE_COUNTER)
-                .key(key)
-                .key(key_for_counters_of_limit(counter.limit()))
-                .arg(counter.window().as_secs())
-                .arg(delta)
-                .invoke_async::<_, _>(&mut con)
-                .instrument(info_span!("datastore"))
-                .await?
+            pipeline = pipeline
+                .invoke_script(
+                    script
+                        .key(key)
+                        .key(key_for_counters_of_limit(counter.limit()))
+                        .arg(counter.window().as_secs())
+                        .arg(delta),
+                )
+                .ignore()
+        }
+        if let Err(err) = pipeline
+            .query_async::<()>(&mut con)
+            .instrument(info_span!("datastore"))
+            .await
+        {
+            if err.kind() == ErrorKind::NoScriptError {
+                script.prepare_invoke().load_async(&mut con).await?;
+                pipeline
+                    .query_async::<()>(&mut con)
+                    .instrument(info_span!("datastore"))
+                    .await?;
+            } else {
+                Err(err)?;
+            }
         }
 
         Ok(Authorization::Ok)
@@ -191,7 +209,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
     async fn clear(&self) -> Result<(), StorageErr> {
         let mut con = self.conn_manager.clone();
         redis::cmd("FLUSHDB")
-            .query_async::<_, ()>(&mut con)
+            .query_async::<()>(&mut con)
             .instrument(info_span!("datastore"))
             .await?;
         Ok(())
@@ -201,17 +219,23 @@ impl AsyncCounterStorage for AsyncRedisStorage {
 impl AsyncRedisStorage {
     pub async fn new(redis_url: &str) -> Result<Self, RedisError> {
         let info = ConnectionInfo::from_str(redis_url)?;
-        Ok(Self {
-            conn_manager: ConnectionManager::new(
+        Self::new_with_conn_manager(
+            ConnectionManager::new(
                 redis::Client::open(info)
                     .expect("This couldn't fail in the past, yet now it did somehow!"),
             )
             .await?,
-        })
+        )
+        .await
     }
 
-    pub fn new_with_conn_manager(conn_manager: ConnectionManager) -> Self {
-        Self { conn_manager }
+    pub async fn new_with_conn_manager(
+        conn_manager: ConnectionManager,
+    ) -> Result<Self, RedisError> {
+        let store = Self { conn_manager };
+        store.load_script(SCRIPT_UPDATE_COUNTER).await?;
+        store.load_script(VALUES_AND_TTLS).await?;
+        Ok(store)
     }
 
     async fn delete_counters_associated_with_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
@@ -231,6 +255,13 @@ impl AsyncRedisStorage {
 
         con.del::<_, ()>(key_for_counters_of_limit(limit)).await?;
 
+        Ok(())
+    }
+
+    pub(super) async fn load_script(&self, script: &str) -> Result<(), RedisError> {
+        let mut con = self.conn_manager.clone();
+        let script = redis::Script::new(script);
+        script.prepare_invoke().load_async(&mut con).await?;
         Ok(())
     }
 }
