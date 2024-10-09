@@ -229,6 +229,8 @@ impl AsyncRedisStorage {
                 .await?;
         }
 
+        con.del::<_, ()>(key_for_counters_of_limit(limit)).await?;
+
         Ok(())
     }
 }

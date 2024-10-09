@@ -156,6 +156,7 @@ impl CounterStorage for RedisStorage {
             for counter_key in counter_keys {
                 con.del::<_, ()>(counter_key)?;
             }
+            con.del::<_, ()>(key_for_counters_of_limit(limit))?;
         }
 
         Ok(())
