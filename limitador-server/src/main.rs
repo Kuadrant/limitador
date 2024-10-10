@@ -8,7 +8,7 @@ extern crate clap;
 #[cfg(feature = "distributed_storage")]
 use crate::config::DistributedStorageConfiguration;
 use crate::config::{
-    Configuration, DiskStorageConfiguration, InMemoryStorageConfiguration,
+    redacted_url, Configuration, DiskStorageConfiguration, InMemoryStorageConfiguration,
     RedisStorageCacheConfiguration, RedisStorageConfiguration, StorageConfiguration,
 };
 use crate::envoy_rls::server::{run_envoy_rls_server, RateLimitHeaders};
@@ -121,7 +121,8 @@ impl Limiter {
         AsyncRedisStorage::new(redis_url)
             .await
             .unwrap_or_else(|err| {
-                eprintln!("Failed to connect to Redis at {redis_url}: {err}");
+                let redacted_redis_url = redacted_url(String::from(redis_url));
+                eprintln!("Failed to connect to Redis at {redacted_redis_url}: {err}");
                 process::exit(1)
             })
     }
@@ -139,7 +140,8 @@ impl Limiter {
             .response_timeout(Duration::from_millis(cache_cfg.response_timeout));
 
         cached_redis_storage.build().await.unwrap_or_else(|err| {
-            eprintln!("Failed to connect to Redis at {redis_url}: {err}");
+            let redacted_redis_url = redacted_url(String::from(redis_url));
+            eprintln!("Failed to connect to Redis at {redacted_redis_url}: {err}");
             process::exit(1)
         })
     }

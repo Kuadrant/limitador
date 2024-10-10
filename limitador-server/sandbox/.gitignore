@@ -3,4 +3,5 @@
 *.key
 *.pem
 *.csr
+*.srl
 report.html
