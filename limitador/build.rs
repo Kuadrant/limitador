@@ -15,7 +15,7 @@ fn generate_protobuf() -> Result<(), Box<dyn Error>> {
 
         tonic_build::configure()
             .protoc_arg("--experimental_allow_proto3_optional")
-            .compile(&[proto_path], &[proto_dir])?;
+            .compile_protos(&[proto_path], &[proto_dir])?;
     }
 
     Ok(())

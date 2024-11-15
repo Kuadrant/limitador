@@ -21,18 +21,15 @@ lenient_conditions = []
 
 [dependencies]
 moka = { version = "0.12", features = ["sync"] }
-dashmap = "5.5.3"
-getrandom = { version = "0.2", features = ["js"] }
+dashmap = "6.1"
 serde = { version = "1", features = ["derive", "rc"] }
 postcard = { version = "1.0.4", features = ["use-std"] }
 serde_json = "1"
-rmp-serde = "1.1.0"
-thiserror = "1"
-futures = "0.3"
+thiserror = "2"
 async-trait = "0.1"
 cfg-if = "1"
 tracing = "0.1.40"
-metrics = "0.22.3"
+metrics = "0.24"
 
 # Optional dependencies
 rocksdb = { version = "0.22", optional = true, features = ["multi-threaded-cf"] }
@@ -52,13 +49,12 @@ tokio = { version = "1", optional = true, features = [
 
 base64 = { version = "0.22", optional = true }
 tokio-stream = { version = "0.1", optional = true }
-h2 = { version = "0.3", optional = true }
+h2 = { version = "0.4", optional = true }
 uuid = { version = "1.8.0", features = ["v4", "fast-rng"], optional = true }
 tonic = { version = "0.12.3", optional = true }
 tonic-reflection = { version = "0.12.3", optional = true }
 prost = { version = "0.13.3", optional = true }
 prost-types = { version = "0.13.3", optional = true }
-time = "0.3.36"
 
 [dev-dependencies]
 serial_test = "3.0"
@@ -80,7 +76,7 @@ tokio = { version = "1", features = [
 ] }
 
 [build-dependencies]
-tonic-build = "0.11"
+tonic-build = "0.12"
 
 [[bench]]
 name = "bench"

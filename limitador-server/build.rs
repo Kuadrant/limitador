@@ -15,7 +15,7 @@ fn generate_protobuf() -> Result<(), Box<dyn Error>> {
     tonic_build::configure()
         .build_server(true)
         .file_descriptor_set_path(original_out_dir.join("rls.bin"))
-        .compile(
+        .compile_protos(
             &["envoy/service/ratelimit/v3/rls.proto"],
             &[
                 "vendor/protobufs/data-plane-api",
