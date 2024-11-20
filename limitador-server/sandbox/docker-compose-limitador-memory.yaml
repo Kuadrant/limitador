@@ -1,5 +1,4 @@
 ---
-version: '3.8'
 services:
   limitador:
     image: ${LIMITADOR_IMAGE:-limitador-testing}
@@ -27,4 +26,6 @@ services:
       - "18080:8080"
       - "18081:8081"
     volumes:
-      - ./limits.yaml:/opt/kuadrant/limits/limits.yaml
+      # the entire path needs to be mounted
+      # or inotify events are not triggered for updates on the mounted file
+      - ./:/opt/kuadrant/limits
