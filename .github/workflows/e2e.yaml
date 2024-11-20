@@ -67,7 +67,7 @@ jobs:
           command: |
             ip=$(kubectl get nodes -lkubernetes.io/hostname!=kind-control-plane -ojsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}')
             port=$(kubectl get service limitador -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
-            curl -s "http://${ip}:${port}/limits/test" | tee output-limits.json 
+            curl -s "http://${ip}:${port}/limits/test" | tee output-limits.json
             jq --exit-status '.[] | select(.max_value == 1000)' output-limits.json
       - name: Update limit in the configmap
         run: |
@@ -87,5 +87,50 @@ jobs:
           command: |
             ip=$(kubectl get nodes -lkubernetes.io/hostname!=kind-control-plane -ojsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}')
             port=$(kubectl get service limitador -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
-            curl -s "http://${ip}:${port}/limits/test" | tee output-limits-new.json 
+            curl -s "http://${ip}:${port}/limits/test" | tee output-limits-new.json
             jq --exit-status '.[] | select(.max_value == 2000)' output-limits-new.json
+  limits_file_watcher_on_docker:
+    name: Limits File Watcher in docker environment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Run docker compose
+        run: |
+          docker compose -f ./limitador-server/sandbox/docker-compose-limitador-memory.yaml up -d
+      - name: Wait for limitador availability
+        uses: nick-fields/retry@v2
+        with:
+          timeout_seconds: 10
+          max_attempts: 10
+          command: |
+            curl --fail -s "http://127.0.0.1:18080/status"
+      - name: Read limits from HTTP endpoint
+        uses: nick-fields/retry@v2
+        with:
+          timeout_seconds: 10
+          max_attempts: 10
+          command: |
+            curl -s "http://127.0.0.1:18080/limits/test_namespace" | tee output-limits.json
+            NUM_LIMITS=$(jq --exit-status 'length' output-limits.json) && test ${NUM_LIMITS} -eq 3
+      - name: Update limits
+        run: |
+          cat <<EOF >> ./limitador-server/sandbox/limits.yaml
+          - namespace: other_namespace
+            max_value: 1
+            seconds: 10
+            conditions:
+              - "a == '1'"
+            variables: []
+          EOF
+      - name: Read new limits from HTTP endpoint
+        uses: nick-fields/retry@v2
+        with:
+          timeout_seconds: 10
+          max_attempts: 10
+          retry_wait_seconds: 30
+          command: |
+            curl -s "http://127.0.0.1:18080/limits/other_namespace" | tee other-limits.json
+            NUM_LIMITS=$(jq --exit-status 'length' other-limits.json) && test ${NUM_LIMITS} -eq 1
