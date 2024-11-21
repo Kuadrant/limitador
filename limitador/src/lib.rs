@@ -694,3 +694,48 @@ fn classify_limits_by_namespace(
 
     res
 }
+
+#[cfg(test)]
+mod test {
+    use crate::limit::Limit;
+    use crate::RateLimiter;
+    use std::collections::HashMap;
+
+    #[test]
+    fn properly_updates_existing_limits() {
+        let rl = RateLimiter::new(100);
+        let namespace = "foo";
+
+        let l = Limit::new::<_, String>(
+            namespace,
+            42,
+            100,
+            Vec::<String>::default(),
+            Vec::<String>::default(),
+        );
+        rl.add_limit(l.clone());
+        let limits = rl.get_limits(&namespace.into());
+        assert_eq!(limits.len(), 1);
+        assert!(limits.contains(&l));
+        assert_eq!(limits.iter().next().unwrap().max_value(), 42);
+
+        let r = rl
+            .check_rate_limited_and_update(&namespace.into(), &HashMap::default(), 1, true)
+            .unwrap();
+        assert_eq!(r.counters.first().unwrap().max_value(), 42);
+
+        let mut l = l.clone();
+        l.set_max_value(50);
+
+        rl.configure_with([l.clone()]).unwrap();
+        let limits = rl.get_limits(&namespace.into());
+        assert_eq!(limits.len(), 1);
+        assert!(limits.contains(&l));
+        assert_eq!(limits.iter().next().unwrap().max_value(), 50);
+
+        let r = rl
+            .check_rate_limited_and_update(&namespace.into(), &HashMap::default(), 1, true)
+            .unwrap();
+        assert_eq!(r.counters.first().unwrap().max_value(), 50);
+    }
+}
