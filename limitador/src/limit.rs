@@ -49,7 +49,7 @@ impl From<String> for Namespace {
     }
 }
 
-#[derive(Eq, Debug, Clone, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Eq, Debug, Clone, Serialize, Deserialize)]
 pub struct Limit {
     #[serde(skip_serializing, default)]
     id: Option<String>,
@@ -423,6 +423,27 @@ impl Hash for Limit {
         self.seconds.hash(state);
         self.conditions.iter().for_each(|e| e.hash(state));
         self.variables.iter().for_each(|e| e.hash(state));
+    }
+}
+
+impl PartialOrd for Limit {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Limit {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.namespace.cmp(&other.namespace) {
+            Ordering::Equal => match self.seconds.cmp(&other.seconds) {
+                Ordering::Equal => match self.conditions.cmp(&other.conditions) {
+                    Ordering::Equal => self.variables.cmp(&other.variables),
+                    cmp => cmp,
+                },
+                cmp => cmp,
+            },
+            cmp => cmp,
+        }
     }
 }
 
@@ -833,6 +854,7 @@ mod conditions {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cmp::Ordering::Equal;
 
     #[test]
     fn limit_can_have_an_optional_name() {
@@ -1026,5 +1048,29 @@ mod tests {
         );
 
         assert_eq!(limit.id(), Some("test_id"))
+    }
+
+    #[test]
+    fn partial_equality() {
+        let limit1 = Limit::with_id(
+            "test_id",
+            "test_namespace",
+            42,
+            60,
+            vec!["req.method == 'GET'"],
+            vec!["app_id"],
+        );
+
+        let mut limit2 = Limit::new(
+            limit1.namespace.clone(),
+            limit1.max_value + 10,
+            limit1.seconds,
+            limit1.conditions.clone(),
+            limit1.variables.clone(),
+        );
+        limit2.set_name("Who cares?".to_string());
+
+        assert_eq!(limit1.partial_cmp(&limit2), Some(Equal));
+        assert_eq!(limit1, limit2);
     }
 }
