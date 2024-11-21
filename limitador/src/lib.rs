@@ -719,7 +719,10 @@ mod test {
         assert!(limits.contains(&l));
         assert_eq!(limits.iter().next().unwrap().max_value(), 42);
 
-        let _ = rl.check_rate_limited_and_update(&namespace.into(), &HashMap::default(), 1, false);
+        let r = rl
+            .check_rate_limited_and_update(&namespace.into(), &HashMap::default(), 1, true)
+            .unwrap();
+        assert_eq!(r.counters.first().unwrap().max_value(), 42);
 
         let mut l = l.clone();
         l.set_max_value(50);
@@ -730,6 +733,9 @@ mod test {
         assert!(limits.contains(&l));
         assert_eq!(limits.iter().next().unwrap().max_value(), 50);
 
-        let _ = rl.check_rate_limited_and_update(&namespace.into(), &HashMap::default(), 1, false);
+        let r = rl
+            .check_rate_limited_and_update(&namespace.into(), &HashMap::default(), 1, true)
+            .unwrap();
+        assert_eq!(r.counters.first().unwrap().max_value(), 50);
     }
 }
