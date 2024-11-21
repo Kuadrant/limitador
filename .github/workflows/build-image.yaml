@@ -25,9 +25,11 @@ jobs:
           - dockerfile: Dockerfile
             platform: linux/amd64
             scope: build-amd
+            artifactsuffix: amd
           - dockerfile: Dockerfile.aarch64
             platform: linux/arm64
             scope: build-arm
+            artifactsuffix: arm
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -68,7 +70,7 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: digests
+          name: digests-${{ matrix.artifactsuffix }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -80,7 +82,7 @@ jobs:
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
-          name: digests
+          pattern: digests-*
           path: /tmp/digests
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -107,7 +109,7 @@ jobs:
         working-directory: /tmp/digests
         run: |
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.IMG_REGISTRY_HOST }}/${{ env.IMG_REGISTRY_ORG }}/limitador@sha256:%s ' *)
+            $(printf '${{ env.IMG_REGISTRY_HOST }}/${{ env.IMG_REGISTRY_ORG }}/limitador@sha256:%s ' $(find . -type f -exec basename {} \;))
       - name: Inspect image
         run: |
           docker buildx imagetools inspect ${{ env.IMG_REGISTRY_HOST }}/${{ env.IMG_REGISTRY_ORG }}/limitador:${{ steps.meta.outputs.version }}
