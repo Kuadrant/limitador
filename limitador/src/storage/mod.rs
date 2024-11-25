@@ -3,8 +3,9 @@ use crate::limit::{Limit, Namespace};
 use crate::InMemoryStorage;
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 use std::sync::{Arc, RwLock};
-use thiserror::Error;
 
 #[cfg(feature = "disk_storage")]
 pub mod disk;
@@ -308,11 +309,23 @@ pub trait AsyncCounterStorage: Sync + Send {
     async fn clear(&self) -> Result<(), StorageErr>;
 }
 
-#[derive(Error, Debug)]
-#[error("error while accessing the limits storage: {msg}")]
+#[derive(Debug)]
 pub struct StorageErr {
     msg: String,
+    source: Option<Box<dyn Error + 'static>>,
     transient: bool,
+}
+
+impl Display for StorageErr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "error while accessing the limits storage: {}", self.msg)
+    }
+}
+
+impl Error for StorageErr {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        self.source.as_ref().map(|source| source.as_ref())
+    }
 }
 
 impl StorageErr {

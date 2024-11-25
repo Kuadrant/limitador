@@ -236,6 +236,7 @@ impl From<::r2d2::Error> for StorageErr {
     fn from(e: ::r2d2::Error) -> Self {
         Self {
             msg: e.to_string(),
+            source: Some(Box::new(e)),
             transient: false,
         }
     }

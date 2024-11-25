@@ -8,9 +8,11 @@ pub use rocksdb_storage::RocksDbStorage as DiskStorage;
 
 impl From<rocksdb::Error> for StorageErr {
     fn from(error: rocksdb::Error) -> Self {
+        let transient = error.kind() == ErrorKind::TimedOut || error.kind() == ErrorKind::TryAgain;
         Self {
             msg: format!("Underlying storage error: {error}"),
-            transient: error.kind() == ErrorKind::TimedOut || error.kind() == ErrorKind::TryAgain,
+            source: Some(Box::new(error)),
+            transient,
         }
     }
 }
