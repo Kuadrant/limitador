@@ -1,9 +1,9 @@
 use limitador::counter::Counter as LimitadorCounter;
+use limitador::errors::LimitadorError;
 use limitador::limit::Limit as LimitadorLimit;
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
-
 // We need to define the Limit and Counter types. They're basically the same as
 // defined in the lib but with some modifications to be able to derive
 // Apiv2Schema (needed to generate the OpenAPI specs).
@@ -41,8 +41,10 @@ impl From<&LimitadorLimit> for Limit {
     }
 }
 
-impl From<Limit> for LimitadorLimit {
-    fn from(limit: Limit) -> Self {
+impl TryFrom<Limit> for LimitadorLimit {
+    type Error = LimitadorError;
+
+    fn try_from(limit: Limit) -> Result<Self, Self::Error> {
         let mut limitador_limit = if let Some(id) = limit.id {
             Self::with_id(
                 id,
@@ -51,7 +53,7 @@ impl From<Limit> for LimitadorLimit {
                 limit.seconds,
                 limit.conditions,
                 limit.variables,
-            )
+            )?
         } else {
             Self::new(
                 limit.namespace,
@@ -59,14 +61,14 @@ impl From<Limit> for LimitadorLimit {
                 limit.seconds,
                 limit.conditions,
                 limit.variables,
-            )
+            )?
         };
 
         if let Some(name) = limit.name {
             limitador_limit.set_name(name)
         }
 
-        limitador_limit
+        Ok(limitador_limit)
     }
 }
 

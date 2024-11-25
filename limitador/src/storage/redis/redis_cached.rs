@@ -446,7 +446,8 @@ mod tests {
                 60,
                 vec!["req.method == 'GET'"],
                 vec!["app_id"],
-            ),
+            )
+            .expect("This must be a valid limit!"),
             Default::default(),
         );
 
@@ -508,7 +509,8 @@ mod tests {
                 60,
                 vec!["req.method == 'POST'"],
                 vec!["app_id"],
-            ),
+            )
+            .expect("This must be a valid limit!"),
             Default::default(),
         );
 
@@ -567,7 +569,8 @@ mod tests {
                 60,
                 vec!["req.method == 'POST'"],
                 vec!["app_id"],
-            ),
+            )
+            .expect("This must be a valid limit!"),
             Default::default(),
         );
 

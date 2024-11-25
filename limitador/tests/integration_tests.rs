@@ -222,14 +222,16 @@ mod test {
                 60,
                 vec!["req.method == 'GET'"],
                 vec!["app_id"],
-            ),
+            )
+            .expect("This must be a valid limit!"),
             Limit::new(
                 "second_namespace",
                 20,
                 60,
                 vec!["req.method == 'GET'"],
                 vec!["app_id"],
-            ),
+            )
+            .expect("This must be a valid limit!"),
         ];
 
         for limit in limits {
@@ -254,7 +256,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         let lim2 = Limit::new(
             "second_namespace",
@@ -262,7 +265,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         for limit in [&lim1, &lim2] {
             rate_limiter.add_limit(limit).await;
@@ -286,7 +290,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -306,7 +311,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             Vec::<String>::new(),
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -328,7 +334,8 @@ mod test {
             60,
             vec!["req.method == 'POST'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         let limit_2 = Limit::new(
             namespace,
@@ -336,7 +343,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit_1).await;
         rate_limiter.add_limit(&limit_2).await;
@@ -355,7 +363,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -372,7 +381,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -407,14 +417,16 @@ mod test {
                 60,
                 vec!["req.method == 'POST'"],
                 vec!["app_id"],
-            ),
+            )
+            .expect("This must be a valid limit!"),
             Limit::new(
                 namespace,
                 5,
                 60,
                 vec!["req.method == 'GET'"],
                 vec!["app_id"],
-            ),
+            )
+            .expect("This must be a valid limit!"),
         ];
 
         for limit in limits.iter() {
@@ -433,16 +445,16 @@ mod test {
         let namespace2 = "test_namespace_2";
 
         rate_limiter
-            .add_limit(&Limit::new(
-                namespace1,
-                10,
-                60,
-                vec!["x == '10'"],
-                vec!["z"],
-            ))
+            .add_limit(
+                &Limit::new(namespace1, 10, 60, vec!["x == '10'"], vec!["z"])
+                    .expect("This must be a valid limit!"),
+            )
             .await;
         rate_limiter
-            .add_limit(&Limit::new(namespace2, 5, 60, vec!["x == '10'"], vec!["z"]))
+            .add_limit(
+                &Limit::new(namespace2, 5, 60, vec!["x == '10'"], vec!["z"])
+                    .expect("This must be a valid limit!"),
+            )
             .await;
 
         rate_limiter.delete_limits(namespace1).await.unwrap();
@@ -459,7 +471,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -493,7 +506,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -530,7 +544,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -567,14 +582,16 @@ mod test {
                 60,
                 vec!["req.method == 'GET'"],
                 vec!["app_id"],
-            ),
+            )
+            .expect("This must be a valid limit!"),
             Limit::new(
                 namespace,
                 max_hits + 1,
                 60,
                 vec!["req.method == 'POST'"],
                 vec!["app_id"],
-            ),
+            )
+            .expect("This must be a valid limit!"),
         ];
 
         for limit in limits {
@@ -635,7 +652,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -670,7 +688,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -693,7 +712,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -747,7 +767,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -771,7 +792,8 @@ mod test {
             60,
             Vec::<String>::new(), // unconditional
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -794,7 +816,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -831,7 +854,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -881,7 +905,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -910,7 +935,8 @@ mod test {
             60,
             Vec::<String>::new(), // unconditional
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -938,7 +964,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -995,7 +1022,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -1016,7 +1044,8 @@ mod test {
             limit_time,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -1041,7 +1070,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         let second_limit = Limit::new(
             "second_namespace",
@@ -1049,7 +1079,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter
             .configure_with(vec![first_limit.clone(), second_limit.clone()])
@@ -1080,7 +1111,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit).await;
 
@@ -1119,7 +1151,8 @@ mod test {
             1,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         let limit_to_be_deleted = Limit::new(
             namespace,
@@ -1127,7 +1160,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         for limit in [&limit_to_be_kept, &limit_to_be_deleted].iter() {
             rate_limiter.add_limit(limit).await;
@@ -1153,7 +1187,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         let limit_update = Limit::new(
             namespace,
@@ -1161,7 +1196,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         rate_limiter.add_limit(&limit_orig).await;
 
@@ -1185,7 +1221,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         let limit_2 = Limit::new(
             namespace,
@@ -1193,7 +1230,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         let mut limit_3 = Limit::new(
             namespace,
@@ -1201,7 +1239,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
         limit_3.set_name("Name is irrelevant too".to_owned());
 
         assert!(rate_limiter.add_limit(&limit_1).await);
@@ -1230,7 +1269,8 @@ mod test {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         for rate_limiter in rate_limiters.iter() {
             rate_limiter.add_limit(&limit).await;

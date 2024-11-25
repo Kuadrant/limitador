@@ -682,7 +682,8 @@ mod tests {
                 60,
                 vec!["req.method == 'POST'"],
                 vec!["app_id"],
-            ),
+            )
+            .expect("This must be a valid limit!"),
             values,
         )
     }
