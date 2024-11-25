@@ -318,7 +318,7 @@ pub struct StorageErr {
 
 impl Display for StorageErr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "error while accessing the limits storage: {}", self.msg)
+        write!(f, "counter storage error: {}", self.msg)
     }
 }
 

@@ -1844,7 +1844,6 @@ dependencies = [
  "serde_json",
  "serial_test",
  "tempfile",
- "thiserror 2.0.3",
  "tokio",
  "tokio-stream",
  "tonic 0.12.3",
