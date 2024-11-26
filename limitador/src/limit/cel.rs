@@ -24,7 +24,14 @@ pub(super) mod errors {
         }
     }
 
-    impl Error for EvaluationError {}
+    impl Error for EvaluationError {
+        fn source(&self) -> Option<&(dyn Error + 'static)> {
+            match self {
+                EvaluationError::UnexpectedValueType(_) => None,
+                EvaluationError::ExecutionError(err) => Some(err),
+            }
+        }
+    }
 
     #[derive(Debug)]
     pub struct ParseError {
