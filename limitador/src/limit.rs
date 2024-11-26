@@ -855,6 +855,12 @@ mod conditions {
     }
 }
 
+pub use cel::Expression as CelExpression;
+pub use cel::ParseError;
+pub use cel::Predicate as CelPredicate;
+
+pub(super) mod cel;
+
 #[cfg(test)]
 mod tests {
     use super::*;
