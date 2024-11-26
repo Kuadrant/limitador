@@ -54,6 +54,8 @@ tonic = { version = "0.12.3", optional = true }
 tonic-reflection = { version = "0.12.3", optional = true }
 prost = { version = "0.13.3", optional = true }
 prost-types = { version = "0.13.3", optional = true }
+cel-parser = "0.8.0"
+cel-interpreter = { version = "0.9.0", features = ["chrono", "regex"] }
 
 [dev-dependencies]
 serial_test = "3.0"
