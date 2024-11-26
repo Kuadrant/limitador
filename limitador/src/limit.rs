@@ -25,6 +25,8 @@ mod deprecated {
     }
 }
 
+use crate::errors::LimitadorError;
+use crate::LimitadorResult;
 #[cfg(feature = "lenient_conditions")]
 pub use deprecated::check_deprecated_syntax_usages_and_reset;
 
@@ -296,23 +298,26 @@ impl Limit {
         seconds: u64,
         conditions: impl IntoIterator<Item = T>,
         variables: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Self
+    ) -> LimitadorResult<Self>
     where
         <N as TryInto<Namespace>>::Error: core::fmt::Debug,
         <T as TryInto<Condition>>::Error: core::fmt::Debug,
+        LimitadorError: From<<T as TryInto<Condition>>::Error>,
     {
         // the above where-clause is needed in order to call unwrap().
-        Self {
-            id: None,
-            namespace: namespace.into(),
-            max_value,
-            seconds,
-            name: None,
-            conditions: conditions
-                .into_iter()
-                .map(|cond| cond.try_into().expect("Invalid condition"))
-                .collect(),
-            variables: variables.into_iter().map(|var| var.into()).collect(),
+        let conditions: Result<BTreeSet<_>, _> =
+            conditions.into_iter().map(|cond| cond.try_into()).collect();
+        match conditions {
+            Ok(conditions) => Ok(Self {
+                id: None,
+                namespace: namespace.into(),
+                max_value,
+                seconds,
+                name: None,
+                conditions,
+                variables: variables.into_iter().map(|var| var.into()).collect(),
+            }),
+            Err(err) => Err(err.into()),
         }
     }
 
@@ -323,22 +328,21 @@ impl Limit {
         seconds: u64,
         conditions: impl IntoIterator<Item = T>,
         variables: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Self
+    ) -> LimitadorResult<Self>
     where
-        <N as TryInto<Namespace>>::Error: core::fmt::Debug,
-        <T as TryInto<Condition>>::Error: core::fmt::Debug,
+        LimitadorError: From<<T as TryInto<Condition>>::Error>,
     {
-        Self {
-            id: Some(id.into()),
-            namespace: namespace.into(),
-            max_value,
-            seconds,
-            name: None,
-            conditions: conditions
-                .into_iter()
-                .map(|cond| cond.try_into().expect("Invalid condition"))
-                .collect(),
-            variables: variables.into_iter().map(|var| var.into()).collect(),
+        match conditions.into_iter().map(|cond| cond.try_into()).collect() {
+            Ok(conditions) => Ok(Self {
+                id: Some(id.into()),
+                namespace: namespace.into(),
+                max_value,
+                seconds,
+                name: None,
+                conditions,
+                variables: variables.into_iter().map(|var| var.into()).collect(),
+            }),
+            Err(err) => Err(err.into()),
         }
     }
 
@@ -858,7 +862,8 @@ mod tests {
 
     #[test]
     fn limit_can_have_an_optional_name() {
-        let mut limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"]);
+        let mut limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"])
+            .expect("This must be a valid limit!");
         assert!(limit.name.is_none());
 
         let name = "Test Limit";
@@ -868,7 +873,8 @@ mod tests {
 
     #[test]
     fn limit_applies() {
-        let limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"]);
+        let limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"])
+            .expect("This must be a valid limit!");
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "5".into());
@@ -879,7 +885,8 @@ mod tests {
 
     #[test]
     fn limit_does_not_apply_when_cond_is_false() {
-        let limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"]);
+        let limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"])
+            .expect("This must be a valid limit!");
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "1".into());
@@ -891,7 +898,8 @@ mod tests {
     #[test]
     #[cfg(feature = "lenient_conditions")]
     fn limit_does_not_apply_when_cond_is_false_deprecated_style() {
-        let limit = Limit::new("test_namespace", 10, 60, vec!["x == 5"], vec!["y"]);
+        let limit = Limit::new("test_namespace", 10, 60, vec!["x == 5"], vec!["y"])
+            .expect("This must be a valid limit!");
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "1".into());
@@ -901,7 +909,8 @@ mod tests {
         assert!(check_deprecated_syntax_usages_and_reset());
         assert!(!check_deprecated_syntax_usages_and_reset());
 
-        let limit = Limit::new("test_namespace", 10, 60, vec!["x == foobar"], vec!["y"]);
+        let limit = Limit::new("test_namespace", 10, 60, vec!["x == foobar"], vec!["y"])
+            .expect("This must be a valid limit!");
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "foobar".into());
@@ -914,7 +923,8 @@ mod tests {
 
     #[test]
     fn limit_does_not_apply_when_cond_var_is_not_set() {
-        let limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"]);
+        let limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"])
+            .expect("This must be a valid limit!");
 
         // Notice that "x" is not set
         let mut values: HashMap<String, String> = HashMap::new();
@@ -926,7 +936,8 @@ mod tests {
 
     #[test]
     fn limit_does_not_apply_when_var_not_set() {
-        let limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"]);
+        let limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"])
+            .expect("This must be a valid limit!");
 
         // Notice that "y" is not set
         let mut values: HashMap<String, String> = HashMap::new();
@@ -943,7 +954,8 @@ mod tests {
             60,
             vec!["x == \"5\"", "y == \"2\""],
             vec!["z"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "5".into());
@@ -961,7 +973,8 @@ mod tests {
             60,
             vec!["x == \"5\"", "y == \"2\""],
             vec!["z"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "3".into());
@@ -1045,7 +1058,8 @@ mod tests {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         assert_eq!(limit.id(), Some("test_id"))
     }
@@ -1059,7 +1073,8 @@ mod tests {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         let mut limit2 = Limit::new(
             limit1.namespace.clone(),
@@ -1067,7 +1082,8 @@ mod tests {
             limit1.seconds,
             limit1.conditions.clone(),
             limit1.variables.clone(),
-        );
+        )
+        .expect("This must be a valid limit!");
         limit2.set_name("Who cares?".to_string());
 
         assert_eq!(limit1.partial_cmp(&limit2), Some(Equal));

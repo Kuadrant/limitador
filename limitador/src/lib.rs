@@ -73,7 +73,7 @@
 //!      60,
 //!      vec!["req.method == 'GET'"],
 //!      vec!["user_id"],
-//! );
+//! ).unwrap();
 //! let mut rate_limiter = RateLimiter::new(1000);
 //!
 //! // Add a limit
@@ -105,7 +105,7 @@
 //!      60,
 //!      vec!["req.method == 'GET'"],
 //!      vec!["user_id"],
-//! );
+//! ).unwrap();
 //! rate_limiter.add_limit(limit);
 //!
 //! // We've defined a limit of 2. So we can report 2 times before being
@@ -169,7 +169,7 @@
 //!      60,
 //!      vec!["req.method == 'GET'"],
 //!      vec!["user_id"],
-//! );
+//! ).unwrap();
 //!
 //! async {
 //!     let rate_limiter = AsyncRateLimiter::new_with_storage(
@@ -220,6 +220,8 @@ pub struct AsyncRateLimiter {
 pub struct RateLimiterBuilder {
     storage: Storage,
 }
+
+type LimitadorResult<T> = Result<T, LimitadorError>;
 
 pub struct CheckResult {
     pub limited: bool,
@@ -336,7 +338,7 @@ impl RateLimiter {
         self.storage.add_limit(limit)
     }
 
-    pub fn delete_limit(&self, limit: &Limit) -> Result<(), LimitadorError> {
+    pub fn delete_limit(&self, limit: &Limit) -> LimitadorResult<()> {
         self.storage.delete_limit(limit)?;
         Ok(())
     }
@@ -349,7 +351,7 @@ impl RateLimiter {
             .collect()
     }
 
-    pub fn delete_limits(&self, namespace: &Namespace) -> Result<(), LimitadorError> {
+    pub fn delete_limits(&self, namespace: &Namespace) -> LimitadorResult<()> {
         self.storage.delete_limits(namespace)?;
         Ok(())
     }
@@ -359,7 +361,7 @@ impl RateLimiter {
         namespace: &Namespace,
         values: &HashMap<String, String>,
         delta: u64,
-    ) -> Result<bool, LimitadorError> {
+    ) -> LimitadorResult<bool> {
         let counters = self.counters_that_apply(namespace, values)?;
 
         for counter in counters {
@@ -381,7 +383,7 @@ impl RateLimiter {
         namespace: &Namespace,
         values: &HashMap<String, String>,
         delta: u64,
-    ) -> Result<(), LimitadorError> {
+    ) -> LimitadorResult<()> {
         let counters = self.counters_that_apply(namespace, values)?;
 
         counters
@@ -396,7 +398,7 @@ impl RateLimiter {
         values: &HashMap<String, String>,
         delta: u64,
         load_counters: bool,
-    ) -> Result<CheckResult, LimitadorError> {
+    ) -> LimitadorResult<CheckResult> {
         let mut counters = self.counters_that_apply(namespace, values)?;
 
         if counters.is_empty() {
@@ -431,7 +433,7 @@ impl RateLimiter {
         }
     }
 
-    pub fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, LimitadorError> {
+    pub fn get_counters(&self, namespace: &Namespace) -> LimitadorResult<HashSet<Counter>> {
         self.storage
             .get_counters(namespace)
             .map_err(|err| err.into())
@@ -440,10 +442,7 @@ impl RateLimiter {
     // Deletes all the limits stored except the ones received in the params. For
     // every limit received, if it does not exist, it is created. If it already
     // exists, its associated counters are not reset.
-    pub fn configure_with(
-        &self,
-        limits: impl IntoIterator<Item = Limit>,
-    ) -> Result<(), LimitadorError> {
+    pub fn configure_with(&self, limits: impl IntoIterator<Item = Limit>) -> LimitadorResult<()> {
         let limits_to_keep_or_create = classify_limits_by_namespace(limits);
 
         let namespaces_limits_to_keep_or_create: HashSet<Namespace> =
@@ -479,7 +478,7 @@ impl RateLimiter {
         &self,
         namespace: &Namespace,
         values: &HashMap<String, String>,
-    ) -> Result<Vec<Counter>, LimitadorError> {
+    ) -> LimitadorResult<Vec<Counter>> {
         let limits = self.storage.get_limits(namespace);
 
         let counters = limits
@@ -512,7 +511,7 @@ impl AsyncRateLimiter {
         self.storage.add_limit(limit)
     }
 
-    pub async fn delete_limit(&self, limit: &Limit) -> Result<(), LimitadorError> {
+    pub async fn delete_limit(&self, limit: &Limit) -> LimitadorResult<()> {
         self.storage.delete_limit(limit).await?;
         Ok(())
     }
@@ -525,7 +524,7 @@ impl AsyncRateLimiter {
             .collect()
     }
 
-    pub async fn delete_limits(&self, namespace: &Namespace) -> Result<(), LimitadorError> {
+    pub async fn delete_limits(&self, namespace: &Namespace) -> LimitadorResult<()> {
         self.storage.delete_limits(namespace).await?;
         Ok(())
     }
@@ -535,7 +534,7 @@ impl AsyncRateLimiter {
         namespace: &Namespace,
         values: &HashMap<String, String>,
         delta: u64,
-    ) -> Result<bool, LimitadorError> {
+    ) -> LimitadorResult<bool> {
         let counters = self.counters_that_apply(namespace, values).await?;
 
         for counter in counters {
@@ -556,7 +555,7 @@ impl AsyncRateLimiter {
         namespace: &Namespace,
         values: &HashMap<String, String>,
         delta: u64,
-    ) -> Result<(), LimitadorError> {
+    ) -> LimitadorResult<()> {
         let counters = self.counters_that_apply(namespace, values).await?;
 
         for counter in counters {
@@ -572,7 +571,7 @@ impl AsyncRateLimiter {
         values: &HashMap<String, String>,
         delta: u64,
         load_counters: bool,
-    ) -> Result<CheckResult, LimitadorError> {
+    ) -> LimitadorResult<CheckResult> {
         // the above where-clause is needed in order to call unwrap().
         let mut counters = self.counters_that_apply(namespace, values).await?;
 
@@ -609,10 +608,7 @@ impl AsyncRateLimiter {
         }
     }
 
-    pub async fn get_counters(
-        &self,
-        namespace: &Namespace,
-    ) -> Result<HashSet<Counter>, LimitadorError> {
+    pub async fn get_counters(&self, namespace: &Namespace) -> LimitadorResult<HashSet<Counter>> {
         self.storage
             .get_counters(namespace)
             .await
@@ -625,7 +621,7 @@ impl AsyncRateLimiter {
     pub async fn configure_with(
         &self,
         limits: impl IntoIterator<Item = Limit>,
-    ) -> Result<(), LimitadorError> {
+    ) -> LimitadorResult<()> {
         let limits_to_keep_or_create = classify_limits_by_namespace(limits);
 
         let namespaces_limits_to_keep_or_create: HashSet<Namespace> =
@@ -661,7 +657,7 @@ impl AsyncRateLimiter {
         &self,
         namespace: &Namespace,
         values: &HashMap<String, String>,
-    ) -> Result<Vec<Counter>, LimitadorError> {
+    ) -> LimitadorResult<Vec<Counter>> {
         let limits = self.storage.get_limits(namespace);
 
         let counters = limits
@@ -712,7 +708,8 @@ mod test {
             100,
             Vec::<String>::default(),
             Vec::<String>::default(),
-        );
+        )
+        .expect("This must be a valid limit!");
         rl.add_limit(l.clone());
         let limits = rl.get_limits(&namespace.into());
         assert_eq!(limits.len(), 1);

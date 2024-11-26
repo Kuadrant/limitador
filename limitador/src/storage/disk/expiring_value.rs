@@ -95,9 +95,10 @@ impl From<ExpiringValue> for Vec<u8> {
 }
 
 impl From<TryFromSliceError> for StorageErr {
-    fn from(_: TryFromSliceError) -> Self {
+    fn from(e: TryFromSliceError) -> Self {
         Self {
             msg: "Corrupted byte sequence while reading 8 bytes for 64-bit integer".to_owned(),
+            source: Some(Box::new(e)),
             transient: false,
         }
     }

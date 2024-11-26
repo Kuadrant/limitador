@@ -252,14 +252,16 @@ mod tests {
     fn counters_for_multiple_limit_per_ns() {
         let storage = InMemoryStorage::default();
         let namespace = "test_namespace";
-        let limit_1 = Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"]);
+        let limit_1 = Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"])
+            .expect("This must be a valid limit!");
         let limit_2 = Limit::new(
             namespace,
             1,
             10,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
         let counter_1 = Counter::new(limit_1, HashMap::default());
         let counter_2 = Counter::new(limit_2, HashMap::default());
         storage.update_counter(&counter_1, 1).unwrap();

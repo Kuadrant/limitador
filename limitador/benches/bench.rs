@@ -547,13 +547,16 @@ fn generate_test_limits(scenario: &TestScenario) -> (Vec<Limit>, Vec<TestCallPar
         let namespace = idx_namespace.to_string();
 
         for limit_idx in 0..scenario.n_limits_per_ns {
-            test_limits.push(Limit::new(
-                namespace.clone(),
-                u64::MAX,
-                ((limit_idx * 60) + 10) as u64,
-                conditions.clone(),
-                variables.clone(),
-            ))
+            test_limits.push(
+                Limit::new(
+                    namespace.clone(),
+                    u64::MAX,
+                    ((limit_idx * 60) + 10) as u64,
+                    conditions.clone(),
+                    variables.clone(),
+                )
+                .expect("This must be a valid limit!"),
+            )
         }
 
         call_params.push(TestCallParams {

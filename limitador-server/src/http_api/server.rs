@@ -555,7 +555,8 @@ mod tests {
             60,
             vec!["req.method == 'GET'"],
             vec!["app_id"],
-        );
+        )
+        .expect("This must be a valid limit!");
 
         match &limiter {
             Limiter::Blocking(limiter) => limiter.add_limit(limit.clone()),
