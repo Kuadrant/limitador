@@ -3,20 +3,20 @@
   max_value: 10
   seconds: 60
   conditions:
-    - "req.method == 'GET'"
-    - "req.path != '/json'"
+    - "req_method == 'GET'"
+    - "req_path != '/json'"
   variables: []
 - namespace: test_namespace
   max_value: 5
   seconds: 60
   conditions:
-    - "req.method == 'POST'"
-    - "req.path != '/json'"
+    - "req_method == 'POST'"
+    - "req_path != '/json'"
   variables: []
 - namespace: test_namespace
   max_value: 50000
   seconds: 10
   conditions:
-    - "req.method == 'GET'"
-    - "req.path == '/json'"
+    - "req_method == 'GET'"
+    - "req_path == '/json'"
   variables: []

@@ -253,7 +253,7 @@ mod tests {
             namespace,
             1,
             60,
-            vec!["req.method == 'GET'"],
+            vec!["req_method == 'GET'"],
             vec!["app_id"],
         )
         .expect("This must be a valid limit!");
@@ -275,7 +275,7 @@ mod tests {
             descriptors: vec![RateLimitDescriptor {
                 entries: vec![
                     Entry {
-                        key: "req.method".to_string(),
+                        key: "req_method".to_string(),
                         value: "GET".to_string(),
                     },
                     Entry {
@@ -336,7 +336,7 @@ mod tests {
             domain: "test_namespace".to_string(),
             descriptors: vec![RateLimitDescriptor {
                 entries: vec![Entry {
-                    key: "req.method".to_string(),
+                    key: "req_method".to_string(),
                     value: "GET".to_string(),
                 }],
                 limit: None,
@@ -370,7 +370,7 @@ mod tests {
             domain: "".to_string(),
             descriptors: vec![RateLimitDescriptor {
                 entries: vec![Entry {
-                    key: "req.method".to_string(),
+                    key: "req_method".to_string(),
                     value: "GET".to_string(),
                 }],
                 limit: None,

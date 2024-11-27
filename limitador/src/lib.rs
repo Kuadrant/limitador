@@ -54,7 +54,7 @@
 //!     "my_namespace",
 //!      10,
 //!      60,
-//!      vec!["req.method == 'GET'"],
+//!      vec!["req_method == 'GET'"],
 //!      vec!["user_id"],
 //! );
 //! ```
@@ -71,7 +71,7 @@
 //!     "my_namespace",
 //!      10,
 //!      60,
-//!      vec!["req.method == 'GET'"],
+//!      vec!["req_method == 'GET'"],
 //!      vec!["user_id"],
 //! ).unwrap();
 //! let mut rate_limiter = RateLimiter::new(1000);

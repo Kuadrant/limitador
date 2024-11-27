@@ -1063,7 +1063,7 @@ mod tests {
             "test_namespace",
             10,
             60,
-            vec!["req.method == 'GET'"],
+            vec!["req_method == 'GET'"],
             vec!["app_id"],
         )
         .expect("This must be a valid limit!");
@@ -1078,7 +1078,7 @@ mod tests {
             "test_namespace",
             42,
             60,
-            vec!["req.method == 'GET'"],
+            vec!["req_method == 'GET'"],
             vec!["app_id"],
         )
         .expect("This must be a valid limit!");
@@ -1087,7 +1087,7 @@ mod tests {
             limit1.namespace.clone(),
             limit1.max_value + 10,
             limit1.seconds,
-            vec!["req.method == 'GET'"],
+            vec!["req_method == 'GET'"],
             limit1.variables.clone(),
         )
         .expect("This must be a valid limit!");

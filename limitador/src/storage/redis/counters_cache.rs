@@ -680,7 +680,7 @@ mod tests {
                 "test_namespace",
                 max_val,
                 60,
-                vec!["req.method == 'POST'"],
+                vec!["req_method == 'POST'"],
                 vec!["app_id"],
             )
             .expect("This must be a valid limit!"),

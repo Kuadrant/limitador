@@ -5,11 +5,11 @@
         {   
             "entries": [
                 {
-                    "key": "req.method",
+                    "key": "req_method",
                     "value": "GET"
                 },
                 {
-                    "key": "req.path",
+                    "key": "req_path",
                     "value": "/json"
                 }
             ]

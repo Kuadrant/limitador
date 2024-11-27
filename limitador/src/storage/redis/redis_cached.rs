@@ -444,7 +444,7 @@ mod tests {
                 "test_namespace",
                 10,
                 60,
-                vec!["req.method == 'GET'"],
+                vec!["req_method == 'GET'"],
                 vec!["app_id"],
             )
             .expect("This must be a valid limit!"),
@@ -507,7 +507,7 @@ mod tests {
                 "test_namespace",
                 10,
                 60,
-                vec!["req.method == 'POST'"],
+                vec!["req_method == 'POST'"],
                 vec!["app_id"],
             )
             .expect("This must be a valid limit!"),
@@ -567,7 +567,7 @@ mod tests {
                 "test_namespace",
                 10,
                 60,
-                vec!["req.method == 'POST'"],
+                vec!["req_method == 'POST'"],
                 vec!["app_id"],
             )
             .expect("This must be a valid limit!"),
