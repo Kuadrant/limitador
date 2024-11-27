@@ -17,7 +17,6 @@ default = ["disk_storage", "redis_storage"]
 disk_storage = ["rocksdb"]
 distributed_storage = ["tokio", "tokio-stream", "h2", "base64", "uuid", "tonic", "tonic-reflection", "prost", "prost-types"]
 redis_storage = ["redis", "r2d2", "tokio"]
-lenient_conditions = []
 
 [dependencies]
 moka = { version = "0.12", features = ["sync"] }
