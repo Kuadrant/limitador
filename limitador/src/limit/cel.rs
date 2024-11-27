@@ -92,14 +92,24 @@ impl Context<'_> {
             ctx.add_variable_from_value(root, Value::Map(map));
         }
 
-        let limit_data = cel_interpreter::objects::Map::from(HashMap::from([(
-            "name",
-            limit
-                .name
-                .as_ref()
-                .map(|n| Value::String(Arc::new(n.to_string())))
-                .unwrap_or(Value::Null),
-        )]));
+        let limit_data = cel_interpreter::objects::Map::from(HashMap::from([
+            (
+                "name",
+                limit
+                    .name
+                    .as_ref()
+                    .map(|n| Value::String(Arc::new(n.to_string())))
+                    .unwrap_or(Value::Null),
+            ),
+            (
+                "id",
+                limit
+                    .id
+                    .as_ref()
+                    .map(|n| Value::String(Arc::new(n.to_string())))
+                    .unwrap_or(Value::Null),
+            ),
+        ]));
         ctx.add_variable_from_value("limit", Value::Map(limit_data));
 
         Self {
@@ -218,7 +228,12 @@ impl Predicate {
     }
 
     pub fn test(&self, ctx: &Context) -> Result<bool, EvaluationError> {
-        if !self.variables.iter().all(|v| ctx.variables.contains(v)) {
+        if !self
+            .variables
+            .iter()
+            .filter(|binding| binding.as_str() != "limit")
+            .all(|v| ctx.variables.contains(v))
+        {
             return Ok(false);
         }
         match self.expression.resolve(ctx)? {
@@ -279,7 +294,8 @@ impl From<Predicate> for String {
 #[cfg(test)]
 mod tests {
     use super::{Context, Expression, Predicate};
-    use std::collections::HashSet;
+    use crate::limit::Limit;
+    use std::collections::{HashMap, HashSet};
 
     #[test]
     fn expression() {
@@ -318,6 +334,41 @@ mod tests {
             pred.test(&ctx()).map_err(|e| format!("{e}")),
             Err("unexpected value of type integer: `42`".to_string())
         );
+    }
+
+    #[test]
+    fn context_has_limit_info() {
+        let mut limit = Limit::new(
+            "ns",
+            42,
+            10,
+            vec!["limit.name == 'named_limit'"],
+            Vec::<String>::default(),
+        )
+        .expect("failed to create");
+        assert!(!limit.applies(&HashMap::default()));
+        limit.set_name("named_limit".to_string());
+        assert!(limit.applies(&HashMap::default()));
+        let limit = Limit::with_id(
+            "my_id",
+            "ns",
+            42,
+            10,
+            vec!["limit.id == 'my_id'"],
+            Vec::<String>::default(),
+        )
+        .expect("failed to create");
+        assert!(limit.applies(&HashMap::default()));
+        let limit = Limit::with_id(
+            "my_id",
+            "ns",
+            42,
+            10,
+            vec!["limit.id == 'other_id'"],
+            Vec::<String>::default(),
+        )
+        .expect("failed to create");
+        assert!(!limit.applies(&HashMap::default()));
     }
 
     fn ctx<'a>() -> Context<'a> {
