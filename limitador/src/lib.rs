@@ -49,7 +49,7 @@
 //! when the HTTP method is "GET".
 //!
 //! ```
-//! use limitador::limit::Limit;
+//! use limitador::Limit;
 //! let limit = Limit::new(
 //!     "my_namespace",
 //!      10,
@@ -65,8 +65,7 @@
 //! # Manage limits
 //!
 //! ```
-//! use limitador::RateLimiter;
-//! use limitador::limit::Limit;
+//! use limitador::{RateLimiter, Limit};
 //! let limit = Limit::new(
 //!     "my_namespace",
 //!      10,
@@ -93,8 +92,7 @@
 //! # Apply limits
 //!
 //! ```
-//! use limitador::RateLimiter;
-//! use limitador::limit::Limit;
+//! use limitador::{RateLimiter, Limit};
 //! use std::collections::HashMap;
 //!
 //! let mut rate_limiter = RateLimiter::new(1000);
@@ -160,8 +158,7 @@
 //! ```
 //! #[cfg(feature = "redis_storage")]
 //! # {
-//! use limitador::AsyncRateLimiter;
-//! use limitador::limit::Limit;
+//! use limitador::{AsyncRateLimiter, Limit};
 //! use limitador::storage::redis::AsyncRedisStorage;
 //! let limit = Limit::new(
 //!      "my_namespace",
@@ -195,9 +192,10 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::counter::Counter;
-use crate::errors::LimitadorError;
-use crate::limit::{Limit, Namespace};
+pub use crate::counter::Counter;
+pub use crate::errors::LimitadorError;
+pub use crate::limit::{Limit, Namespace};
+
 use crate::storage::in_memory::InMemoryStorage;
 use crate::storage::{AsyncCounterStorage, AsyncStorage, Authorization, CounterStorage, Storage};
 
