@@ -55,7 +55,7 @@
 //!      10,
 //!      60,
 //!      vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-//!      vec!["user_id"],
+//!      vec!["user_id".try_into().expect("failed parsing!")],
 //! );
 //! ```
 //!
@@ -72,7 +72,7 @@
 //!      10,
 //!      60,
 //!      vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-//!      vec!["user_id"],
+//!      vec!["user_id".try_into().expect("failed parsing!")],
 //! );
 //! let mut rate_limiter = RateLimiter::new(1000);
 //!
@@ -104,7 +104,7 @@
 //!      2,
 //!      60,
 //!      vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-//!      vec!["user_id"],
+//!      vec!["user_id".try_into().expect("failed parsing!")],
 //! );
 //! rate_limiter.add_limit(limit);
 //!
@@ -168,7 +168,7 @@
 //!      10,
 //!      60,
 //!      vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-//!      vec!["user_id"],
+//!      vec!["user_id".try_into().expect("failed parsing!")],
 //! );
 //!
 //! async {
@@ -481,13 +481,11 @@ impl RateLimiter {
     ) -> LimitadorResult<Vec<Counter>> {
         let limits = self.storage.get_limits(namespace);
 
-        let counters = limits
+        limits
             .iter()
             .filter(|lim| lim.applies(values))
             .map(|lim| Counter::new(Arc::clone(lim), values.clone()))
-            .collect();
-
-        Ok(counters)
+            .collect()
     }
 }
 
@@ -660,13 +658,11 @@ impl AsyncRateLimiter {
     ) -> LimitadorResult<Vec<Counter>> {
         let limits = self.storage.get_limits(namespace);
 
-        let counters = limits
+        limits
             .iter()
             .filter(|lim| lim.applies(values))
             .map(|lim| Counter::new(Arc::clone(lim), values.clone()))
-            .collect();
-
-        Ok(counters)
+            .collect()
     }
 }
 
@@ -693,7 +689,7 @@ fn classify_limits_by_namespace(
 
 #[cfg(test)]
 mod test {
-    use crate::limit::Limit;
+    use crate::limit::{Expression, Limit};
     use crate::RateLimiter;
     use std::collections::HashMap;
 
@@ -702,7 +698,7 @@ mod test {
         let rl = RateLimiter::new(100);
         let namespace = "foo";
 
-        let l = Limit::new(namespace, 42, 100, vec![], Vec::<String>::default());
+        let l = Limit::new(namespace, 42, 100, vec![], Vec::<Expression>::default());
         rl.add_limit(l.clone());
         let limits = rl.get_limits(&namespace.into());
         assert_eq!(limits.len(), 1);

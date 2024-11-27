@@ -1,7 +1,7 @@
 use cel::Context;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 
@@ -45,7 +45,7 @@ pub struct Limit {
     // Need to sort to generate the same object when using the JSON as a key or
     // value in Redis.
     conditions: BTreeSet<Predicate>,
-    variables: BTreeSet<String>,
+    variables: BTreeSet<Expression>,
 }
 
 impl Limit {
@@ -54,7 +54,7 @@ impl Limit {
         max_value: u64,
         seconds: u64,
         conditions: impl IntoIterator<Item = Predicate>,
-        variables: impl IntoIterator<Item = impl Into<String>>,
+        variables: impl IntoIterator<Item = Expression>,
     ) -> Self
     where
         <N as TryInto<Namespace>>::Error: Debug,
@@ -66,7 +66,7 @@ impl Limit {
             seconds,
             name: None,
             conditions: conditions.into_iter().collect(),
-            variables: variables.into_iter().map(|var| var.into()).collect(),
+            variables: variables.into_iter().collect(),
         }
     }
 
@@ -76,7 +76,7 @@ impl Limit {
         max_value: u64,
         seconds: u64,
         conditions: impl IntoIterator<Item = Predicate>,
-        variables: impl IntoIterator<Item = impl Into<String>>,
+        variables: impl IntoIterator<Item = Expression>,
     ) -> Self {
         Self {
             id: Some(id.into()),
@@ -85,7 +85,7 @@ impl Limit {
             seconds,
             name: None,
             conditions: conditions.into_iter().collect(),
-            variables: variables.into_iter().map(|var| var.into()).collect(),
+            variables: variables.into_iter().collect(),
         }
     }
 
@@ -125,21 +125,41 @@ impl Limit {
     }
 
     pub fn variables(&self) -> HashSet<String> {
-        self.variables.iter().map(|var| var.into()).collect()
+        self.variables
+            .iter()
+            .map(|var| var.source().into())
+            .collect()
+    }
+
+    pub fn resolve_variables(
+        &self,
+        vars: HashMap<String, String>,
+    ) -> Result<BTreeMap<String, String>, EvaluationError> {
+        let ctx = Context::new(self, String::default(), &vars);
+        let mut map = BTreeMap::new();
+        for variable in &self.variables {
+            let name = variable.variables().concat().to_string();
+            let value = variable.eval(&ctx)?;
+            map.insert(name, value);
+        }
+        Ok(map)
     }
 
     #[cfg(feature = "disk_storage")]
     pub(crate) fn variables_for_key(&self) -> Vec<&str> {
         let mut variables = Vec::with_capacity(self.variables.len());
         for var in &self.variables {
-            variables.push(var.as_str());
+            variables.push(var.source());
         }
         variables.sort();
         variables
     }
 
     pub fn has_variable(&self, var: &str) -> bool {
-        self.variables.contains(var)
+        self.variables
+            .iter()
+            .flat_map(|v| v.variables())
+            .any(|v| v.as_str() == var)
     }
 
     pub fn applies(&self, values: &HashMap<String, String>) -> bool {
@@ -149,7 +169,10 @@ impl Limit {
             .iter()
             .all(|predicate| predicate.test(&ctx).unwrap());
 
-        let all_vars_are_set = self.variables.iter().all(|var| values.contains_key(var));
+        let all_vars_are_set = self
+            .variables
+            .iter()
+            .all(|var| values.contains_key(var.source()));
 
         all_conditions_apply && all_vars_are_set
     }
@@ -206,7 +229,7 @@ mod tests {
             10,
             60,
             vec!["x == \"5\"".try_into().expect("failed parsing!")],
-            vec!["y"],
+            vec!["y".try_into().expect("failed parsing!")],
         );
         assert!(limit.name.is_none());
 
@@ -222,7 +245,7 @@ mod tests {
             10,
             60,
             vec!["x == \"5\"".try_into().expect("failed parsing!")],
-            vec!["y"],
+            vec!["y".try_into().expect("failed parsing!")],
         );
 
         let mut values: HashMap<String, String> = HashMap::new();
@@ -239,7 +262,7 @@ mod tests {
             10,
             60,
             vec!["x == \"5\"".try_into().expect("failed parsing!")],
-            vec!["y"],
+            vec!["y".try_into().expect("failed parsing!")],
         );
 
         let mut values: HashMap<String, String> = HashMap::new();
@@ -256,7 +279,7 @@ mod tests {
             10,
             60,
             vec!["x == \"5\"".try_into().expect("failed parsing!")],
-            vec!["y"],
+            vec!["y".try_into().expect("failed parsing!")],
         );
 
         // Notice that "x" is not set
@@ -274,7 +297,7 @@ mod tests {
             10,
             60,
             vec!["x == \"5\"".try_into().expect("failed parsing!")],
-            vec!["y"],
+            vec!["y".try_into().expect("failed parsing!")],
         );
 
         // Notice that "y" is not set
@@ -294,7 +317,7 @@ mod tests {
                 "x == \"5\"".try_into().expect("failed parsing!"),
                 "y == \"2\"".try_into().expect("failed parsing!"),
             ],
-            vec!["z"],
+            vec!["z".try_into().expect("failed parsing!")],
         );
 
         let mut values: HashMap<String, String> = HashMap::new();
@@ -315,7 +338,7 @@ mod tests {
                 "x == \"5\"".try_into().expect("failed parsing!"),
                 "y == \"2\"".try_into().expect("failed parsing!"),
             ],
-            vec!["z"],
+            vec!["z".try_into().expect("failed parsing!")],
         );
 
         let mut values: HashMap<String, String> = HashMap::new();
@@ -334,7 +357,7 @@ mod tests {
             10,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         assert_eq!(limit.id(), Some("test_id"))
@@ -348,7 +371,7 @@ mod tests {
             42,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         let mut limit2 = Limit::new(
@@ -365,6 +388,18 @@ mod tests {
     }
 
     #[test]
+    fn resolves_variables() {
+        let limit = Limit::new(
+            "",
+            10,
+            60,
+            Vec::default(),
+            ["int(x) * 3".try_into().expect("failed parsing!")],
+        );
+        assert!(limit.has_variable("x"));
+    }
+
+    #[test]
     fn conditions_have_limit_info() {
         let mut limit = Limit::new(
             "ns",
@@ -373,7 +408,7 @@ mod tests {
             vec!["limit.name == 'named_limit'"
                 .try_into()
                 .expect("failed parsing!")],
-            Vec::<String>::default(),
+            Vec::default(),
         );
         assert!(!limit.applies(&HashMap::default()));
 
@@ -389,7 +424,7 @@ mod tests {
                 "limit.id == 'my_id'".try_into().expect("failed parsing!"),
                 "limit.name == null".try_into().expect("failed parsing!"),
             ],
-            Vec::<String>::default(),
+            Vec::default(),
         );
         assert!(limit.applies(&HashMap::default()));
 
@@ -401,7 +436,7 @@ mod tests {
             vec!["limit.id == 'other_id'"
                 .try_into()
                 .expect("failed parsing!")],
-            Vec::<String>::default(),
+            Vec::default(),
         );
         assert!(!limit.applies(&HashMap::default()));
     }

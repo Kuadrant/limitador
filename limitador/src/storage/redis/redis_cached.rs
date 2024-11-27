@@ -445,10 +445,11 @@ mod tests {
                 10,
                 60,
                 vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-                vec!["app_id"],
+                vec!["app_id".try_into().expect("failed parsing!")],
             ),
-            Default::default(),
-        );
+            HashMap::from([("app_id".to_string(), "foo".to_string())]),
+        )
+        .expect("counter creation failed!");
 
         let arc = Arc::new(CachedCounterValue::from_authority(
             &counter,
@@ -507,10 +508,11 @@ mod tests {
                 10,
                 60,
                 vec!["req_method == 'POST'".try_into().expect("failed parsing!")],
-                vec!["app_id"],
+                vec!["app_id".try_into().expect("failed parsing!")],
             ),
-            Default::default(),
-        );
+            HashMap::from([("app_id".to_string(), "foo".to_string())]),
+        )
+        .expect("counter creation failed!");
 
         let mock_response = Value::Array(vec![
             Value::Int(8),
@@ -566,10 +568,11 @@ mod tests {
                 10,
                 60,
                 vec!["req_method == 'POST'".try_into().expect("failed parsing!")],
-                vec!["app_id"],
+                vec!["app_id".try_into().expect("failed parsing!")],
             ),
-            Default::default(),
-        );
+            HashMap::from([("app_id".to_string(), "foo".to_string())]),
+        )
+        .expect("counter creation failed!");
 
         let error: RedisError = io::Error::new(io::ErrorKind::TimedOut, "That was long!").into();
         assert!(error.is_timeout());

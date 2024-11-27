@@ -254,7 +254,7 @@ mod tests {
             1,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         let limiter = RateLimiter::new(10_000);
@@ -399,7 +399,7 @@ mod tests {
                 10,
                 60,
                 vec!["x == '1'".try_into().expect("failed parsing!")],
-                vec!["z"],
+                vec!["z".try_into().expect("failed parsing!")],
             ),
             Limit::new(
                 namespace,
@@ -409,7 +409,7 @@ mod tests {
                     "x == '1'".try_into().expect("failed parsing!"),
                     "y == '2'".try_into().expect("failed parsing!"),
                 ],
-                vec!["z"],
+                vec!["z".try_into().expect("failed parsing!")],
             ),
         ]
         .into_iter()
@@ -479,7 +479,7 @@ mod tests {
             10,
             60,
             vec!["x == '1'".try_into().expect("failed parsing!")],
-            vec!["y"],
+            vec!["y".try_into().expect("failed parsing!")],
         );
 
         let limiter = RateLimiter::new(10_000);
@@ -554,7 +554,7 @@ mod tests {
             1,
             60,
             vec!["x == '1'".try_into().expect("failed parsing!")],
-            vec!["y"],
+            vec!["y".try_into().expect("failed parsing!")],
         );
 
         let limiter = RateLimiter::new(10_000);

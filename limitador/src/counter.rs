@@ -1,4 +1,5 @@
 use crate::limit::{Limit, Namespace};
+use crate::LimitadorResult;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
@@ -16,19 +17,37 @@ pub struct Counter {
 }
 
 impl Counter {
-    pub fn new<L: Into<Arc<Limit>>>(limit: L, set_variables: HashMap<String, String>) -> Self {
-        // TODO: check that all the variables defined in the limit are set.
-
+    pub fn new<L: Into<Arc<Limit>>>(
+        limit: L,
+        set_variables: HashMap<String, String>,
+    ) -> LimitadorResult<Self> {
         let limit = limit.into();
         let mut vars = set_variables;
         vars.retain(|var, _| limit.has_variable(var));
 
-        Self {
+        let variables = limit.resolve_variables(vars)?;
+        Ok(Self {
+            limit,
+            set_variables: variables,
+            remaining: None,
+            expires_in: None,
+        })
+    }
+
+    pub(super) fn resolved_vars<L: Into<Arc<Limit>>>(
+        limit: L,
+        set_variables: HashMap<String, String>,
+    ) -> LimitadorResult<Self> {
+        let limit = limit.into();
+        let mut vars = set_variables;
+        vars.retain(|var, _| limit.has_variable(var));
+
+        Ok(Self {
             limit,
             set_variables: vars.into_iter().collect(),
             remaining: None,
             expires_in: None,
-        }
+        })
     }
 
     #[cfg(any(feature = "redis_storage", feature = "disk_storage"))]
@@ -118,5 +137,30 @@ impl Hash for Counter {
 impl PartialEq for Counter {
     fn eq(&self, other: &Self) -> bool {
         self.limit == other.limit && self.set_variables == other.set_variables
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::counter::Counter;
+    use crate::limit::Limit;
+    use std::collections::HashMap;
+
+    #[test]
+    fn resolves_variables() {
+        let limit = Limit::new(
+            "",
+            10,
+            60,
+            Vec::default(),
+            ["int(x) * 3".try_into().expect("failed parsing!")],
+        );
+        let key = "x".to_string();
+        let counter = Counter::new(limit, HashMap::from([(key.clone(), "14".to_string())]))
+            .expect("failed creating counter");
+        assert_eq!(
+            counter.set_variables.get(&key),
+            Some("42".to_string()).as_ref()
+        );
     }
 }

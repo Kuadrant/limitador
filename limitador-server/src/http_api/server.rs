@@ -554,7 +554,7 @@ mod tests {
             max,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         match &limiter {
