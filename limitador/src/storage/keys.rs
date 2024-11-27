@@ -120,7 +120,7 @@ mod tests {
             10,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
         assert_eq!(
             "namespace:{example.com},counters_of_limit:{\"namespace\":\"example.com\",\"seconds\":60,\"conditions\":[\"req_method == 'GET'\"],\"variables\":[\"app_id\"]}".as_bytes(),
@@ -135,7 +135,7 @@ mod tests {
             10,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
         assert_eq!(
             "\u{2}\u{7}test_id".as_bytes(),
@@ -151,9 +151,13 @@ mod tests {
             1,
             1,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
-        let counter = Counter::new(limit.clone(), HashMap::default());
+        let counter = Counter::new(
+            limit.clone(),
+            HashMap::from([("app_id".to_string(), "foo".to_string())]),
+        )
+        .expect("counter creation failed!");
         let raw = key_for_counter(&counter);
         assert_eq!(counter, partial_counter_from_counter_key(&raw));
     }
@@ -166,9 +170,13 @@ mod tests {
             1,
             1,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
-        let counter = Counter::new(limit.clone(), HashMap::default());
+        let counter = Counter::new(
+            limit.clone(),
+            HashMap::from([("app_id".to_string(), "foo".to_string())]),
+        )
+        .expect("counter creation failed!");
         let mut other = counter.clone();
         other.set_remaining(123);
         other.set_expires_in(Duration::from_millis(456));
@@ -286,11 +294,11 @@ pub mod bin {
                     seconds,
                     conditions
                         .into_iter()
-                        .map(|p| p.try_into().expect("condition corrupted!"))
-                        .collect::<Vec<Predicate>>(),
-                    map.keys(),
+                        .map(|p| p.try_into().expect("condition corrupted!")),
+                    map.keys()
+                        .map(|var| var.as_str().try_into().expect("variable corrupted!")),
                 );
-                Counter::new(limit, map)
+                Counter::resolved_vars(limit, map).expect("counter creation failed!")
             }
             2u8 => {
                 let IdCounterKey { id, variables } = postcard::from_bytes(key).unwrap();
@@ -300,9 +308,16 @@ pub mod bin {
                     .collect();
 
                 // we are not able to rebuild the full limit since we only have the id and variables.
-                let limit =
-                    Limit::with_id::<&str, &str>(id, "", u64::default(), 0, vec![], map.keys());
-                Counter::new(limit, map)
+                let limit = Limit::with_id::<&str, &str>(
+                    id,
+                    "",
+                    u64::default(),
+                    0,
+                    vec![],
+                    map.keys()
+                        .map(|var| var.as_str().try_into().expect("variable corrupted!")),
+                );
+                Counter::resolved_vars(limit, map).expect("counter creation failed!")
             }
             _ => panic!("Unknown version: {}", version),
         }
@@ -338,9 +353,10 @@ pub mod bin {
                 .into_iter()
                 .map(|p| p.try_into().expect("condition corrupted!"))
                 .collect::<Vec<Predicate>>(),
-            map.keys(),
+            map.keys()
+                .map(|p| p.as_str().try_into().expect("variable corrupted!")),
         );
-        Counter::new(limit, map)
+        Counter::resolved_vars(limit, map).unwrap()
     }
 
     #[cfg(test)]
@@ -361,13 +377,17 @@ pub mod bin {
                 1,
                 2,
                 vec!["foo == 'bar'".try_into().expect("failed parsing!")],
-                vec!["app_id", "role", "wat"],
+                vec![
+                    "app_id".try_into().expect("failed parsing!"),
+                    "role".try_into().expect("failed parsing!"),
+                    "wat".try_into().expect("failed parsing!"),
+                ],
             );
             let mut vars = HashMap::default();
             vars.insert("role".to_string(), "admin".to_string());
             vars.insert("app_id".to_string(), "123".to_string());
             vars.insert("wat".to_string(), "dunno".to_string());
-            let counter = Counter::new(limit.clone(), vars);
+            let counter = Counter::new(limit.clone(), vars).expect("counter creation failed!");
 
             let raw = key_for_counter(&counter);
             let key_back: CounterKey =
@@ -384,11 +404,11 @@ pub mod bin {
                 1,
                 1,
                 vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-                vec!["app_id"],
+                vec!["app_id".try_into().expect("failed parsing!")],
             );
             let mut variables = HashMap::default();
             variables.insert("app_id".to_string(), "123".to_string());
-            let counter = Counter::new(limit.clone(), variables);
+            let counter = Counter::new(limit.clone(), variables).expect("counter creation failed!");
             let raw = key_for_counter(&counter);
             assert_eq!(counter, partial_counter_from_counter_key(&raw));
         }
@@ -401,9 +421,13 @@ pub mod bin {
                 1,
                 1,
                 vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-                vec!["app_id"],
+                vec!["app_id".try_into().expect("failed parsing!")],
             );
-            let counter = Counter::new(limit, HashMap::default());
+            let counter = Counter::new(
+                limit,
+                HashMap::from([("app_id".to_string(), "foo".to_string())]),
+            )
+            .expect("counter creation failed!");
             let serialized_counter = key_for_counter(&counter);
 
             let prefix = prefix_for_namespace(namespace);
@@ -418,7 +442,7 @@ pub mod bin {
                 1,
                 1,
                 vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-                vec!["app_id"],
+                vec!["app_id".try_into().expect("failed parsing!")],
             );
             let limit_with_id = Limit::with_id(
                 "id200",
@@ -426,27 +450,35 @@ pub mod bin {
                 1,
                 1,
                 vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-                vec!["app_id"],
+                vec!["app_id".try_into().expect("failed parsing!")],
             );
 
-            let counter_with_id = Counter::new(limit_with_id, HashMap::default());
+            let counter_with_id = Counter::new(
+                limit_with_id,
+                HashMap::from([("app_id".to_string(), "foo".to_string())]),
+            )
+            .expect("counter creation failed!");
             let serialized_with_id_counter = key_for_counter(&counter_with_id);
 
-            let counter_without_id = Counter::new(limit_without_id, HashMap::default());
+            let counter_without_id = Counter::new(
+                limit_without_id,
+                HashMap::from([("app_id".to_string(), "foo".to_string())]),
+            )
+            .expect("counter creation failed!");
             let serialized_without_id_counter = key_for_counter(&counter_without_id);
 
             // the original key_for_counter continues to encode kinda big
-            assert_eq!(serialized_without_id_counter.len(), 35);
-            assert_eq!(serialized_with_id_counter.len(), 35);
+            assert_eq!(serialized_without_id_counter.len(), 46);
+            assert_eq!(serialized_with_id_counter.len(), 46);
 
             // serialized_counter_v2 will only encode the id.... so it will be smaller for
             // counters with an id.
             let serialized_counter_with_id_v2 = key_for_counter_v2(&counter_with_id);
-            assert_eq!(serialized_counter_with_id_v2.clone().len(), 8);
+            assert_eq!(serialized_counter_with_id_v2.clone().len(), 19);
 
             // but continues to be large for counters without an id.
             let serialized_counter_without_id_v2 = key_for_counter_v2(&counter_without_id);
-            assert_eq!(serialized_counter_without_id_v2.clone().len(), 36);
+            assert_eq!(serialized_counter_without_id_v2.clone().len(), 47);
         }
     }
 }

@@ -149,6 +149,19 @@ impl Expression {
     pub fn resolve(&self, ctx: &Context) -> Result<Value, ExecutionError> {
         Value::resolve(&self.expression, &ctx.ctx)
     }
+
+    pub fn source(&self) -> &str {
+        self.source.as_str()
+    }
+
+    pub fn variables(&self) -> Vec<String> {
+        self.expression
+            .references()
+            .variables()
+            .into_iter()
+            .map(String::from)
+            .collect()
+    }
 }
 
 fn err_on_value(val: Value) -> EvaluationError {
@@ -178,6 +191,14 @@ impl TryFrom<String> for Expression {
     }
 }
 
+impl TryFrom<&str> for Predicate {
+    type Error = ParseError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::parse(value)
+    }
+}
+
 impl From<Expression> for String {
     fn from(value: Expression) -> Self {
         value.source
@@ -191,6 +212,12 @@ impl PartialEq<Self> for Expression {
 }
 
 impl Eq for Expression {}
+
+impl Hash for Expression {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.source.hash(state);
+    }
+}
 
 impl PartialOrd<Self> for Expression {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -276,7 +303,7 @@ impl TryFrom<String> for Predicate {
     }
 }
 
-impl TryFrom<&str> for Predicate {
+impl TryFrom<&str> for Expression {
     type Error = ParseError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {

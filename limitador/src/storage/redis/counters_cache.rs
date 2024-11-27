@@ -681,9 +681,10 @@ mod tests {
                 max_val,
                 60,
                 vec!["req_method == 'POST'".try_into().expect("failed parsing!")],
-                vec!["app_id"],
+                vec!["app_id".try_into().expect("failed parsing!")],
             ),
             values,
         )
+        .expect("failed creating counter")
     }
 }

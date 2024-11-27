@@ -211,7 +211,8 @@ impl InMemoryStorage {
         for (limit, counter) in self.simple_limits.read().unwrap().iter() {
             if limit.namespace() == namespace {
                 res.insert(
-                    Counter::new(limit.clone(), HashMap::default()),
+                    // todo fixme
+                    Counter::new(limit.clone(), HashMap::default()).unwrap(),
                     counter.clone(),
                 );
             }
@@ -257,17 +258,25 @@ mod tests {
             1,
             1,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
         let limit_2 = Limit::new(
             namespace,
             1,
             10,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
-        let counter_1 = Counter::new(limit_1, HashMap::default());
-        let counter_2 = Counter::new(limit_2, HashMap::default());
+        let counter_1 = Counter::new(
+            limit_1,
+            HashMap::from([("app_id".to_string(), "foo".to_string())]),
+        )
+        .expect("counter creation failed!");
+        let counter_2 = Counter::new(
+            limit_2,
+            HashMap::from([("app_id".to_string(), "foo".to_string())]),
+        )
+        .expect("counter creation failed!");
         storage.update_counter(&counter_1, 1).unwrap();
         storage.update_counter(&counter_2, 1).unwrap();
 

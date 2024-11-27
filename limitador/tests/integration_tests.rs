@@ -221,14 +221,14 @@ mod test {
                 10,
                 60,
                 vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-                vec!["app_id"],
+                vec!["app_id".try_into().expect("failed parsing!")],
             ),
             Limit::new(
                 "second_namespace",
                 20,
                 60,
                 vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-                vec!["app_id"],
+                vec!["app_id".try_into().expect("failed parsing!")],
             ),
         ];
 
@@ -253,7 +253,7 @@ mod test {
             10,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         let lim2 = Limit::new(
@@ -261,7 +261,7 @@ mod test {
             20,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         for limit in [&lim1, &lim2] {
@@ -285,7 +285,7 @@ mod test {
             10,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -305,7 +305,7 @@ mod test {
             10,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            Vec::<String>::new(),
+            Vec::default(),
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -327,7 +327,7 @@ mod test {
             10,
             60,
             vec!["req_method == 'POST'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         let limit_2 = Limit::new(
@@ -335,7 +335,7 @@ mod test {
             5,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit_1).await;
@@ -354,7 +354,7 @@ mod test {
             10,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -371,7 +371,7 @@ mod test {
             10,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -406,14 +406,14 @@ mod test {
                 10,
                 60,
                 vec!["req_method == 'POST'".try_into().expect("failed parsing!")],
-                vec!["app_id"],
+                vec!["app_id".try_into().expect("failed parsing!")],
             ),
             Limit::new(
                 namespace,
                 5,
                 60,
                 vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-                vec!["app_id"],
+                vec!["app_id".try_into().expect("failed parsing!")],
             ),
         ];
 
@@ -438,7 +438,7 @@ mod test {
                 10,
                 60,
                 vec!["x == '10'".try_into().expect("failed parsing!")],
-                vec!["z"],
+                vec!["z".try_into().expect("failed parsing!")],
             ))
             .await;
         rate_limiter
@@ -447,7 +447,7 @@ mod test {
                 5,
                 60,
                 vec!["x == '10'".try_into().expect("failed parsing!")],
-                vec!["z"],
+                vec!["z".try_into().expect("failed parsing!")],
             ))
             .await;
 
@@ -464,7 +464,7 @@ mod test {
             5,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -498,7 +498,7 @@ mod test {
             max_hits,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -535,7 +535,7 @@ mod test {
             max_hits,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -572,14 +572,14 @@ mod test {
                 max_hits,
                 60,
                 vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-                vec!["app_id"],
+                vec!["app_id".try_into().expect("failed parsing!")],
             ),
             Limit::new(
                 namespace,
                 max_hits + 1,
                 60,
                 vec!["req_method == 'POST'".try_into().expect("failed parsing!")],
-                vec!["app_id"],
+                vec!["app_id".try_into().expect("failed parsing!")],
             ),
         ];
 
@@ -640,7 +640,7 @@ mod test {
             10,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -675,7 +675,7 @@ mod test {
             max,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -698,7 +698,7 @@ mod test {
             max_hits,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -752,7 +752,7 @@ mod test {
             0, // So reporting 1 more would not be allowed
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -776,7 +776,7 @@ mod test {
             0, // So reporting 1 more would not be allowed
             60,
             Vec::default(), // unconditional
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -799,7 +799,7 @@ mod test {
             max_hits,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -836,7 +836,7 @@ mod test {
             max_hits,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -886,7 +886,7 @@ mod test {
             10,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -915,7 +915,7 @@ mod test {
             0, // So reporting 1 more would not be allowed
             60,
             Vec::default(), // unconditional
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -943,7 +943,7 @@ mod test {
             max_hits,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -1000,7 +1000,7 @@ mod test {
             10,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -1021,7 +1021,7 @@ mod test {
             10,
             limit_time,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -1046,7 +1046,7 @@ mod test {
             10,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         let second_limit = Limit::new(
@@ -1054,7 +1054,7 @@ mod test {
             20,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter
@@ -1085,7 +1085,7 @@ mod test {
             max_value,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit).await;
@@ -1124,7 +1124,7 @@ mod test {
             10,
             1,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         let limit_to_be_deleted = Limit::new(
@@ -1132,7 +1132,7 @@ mod test {
             20,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         for limit in [&limit_to_be_kept, &limit_to_be_deleted].iter() {
@@ -1158,7 +1158,7 @@ mod test {
             10,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         let limit_update = Limit::new(
@@ -1166,7 +1166,7 @@ mod test {
             20,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         rate_limiter.add_limit(&limit_orig).await;
@@ -1190,7 +1190,7 @@ mod test {
             10,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         let limit_2 = Limit::new(
@@ -1198,7 +1198,7 @@ mod test {
             20,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         let mut limit_3 = Limit::new(
@@ -1206,7 +1206,7 @@ mod test {
             20,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
         limit_3.set_name("Name is irrelevant too".to_owned());
 
@@ -1235,7 +1235,7 @@ mod test {
             max_hits,
             60,
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id"],
+            vec!["app_id".try_into().expect("failed parsing!")],
         );
 
         for rate_limiter in rate_limiters.iter() {

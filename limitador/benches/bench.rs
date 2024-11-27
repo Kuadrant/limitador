@@ -540,7 +540,7 @@ fn generate_test_limits(scenario: &TestScenario) -> (Vec<Limit>, Vec<TestCallPar
     let mut variables = vec![];
     for idx_var in 0..scenario.n_vars_per_limit {
         let var_name = format!("var_{idx_var}");
-        variables.push(var_name.clone());
+        variables.push(var_name.clone().try_into().expect("failed parsing!"));
         test_values.insert(var_name, "1".into());
     }
 
