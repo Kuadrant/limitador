@@ -687,8 +687,7 @@ fn classify_limits_by_namespace(
 
 #[cfg(test)]
 mod test {
-    use crate::limit::{Expression, Limit};
-    use crate::RateLimiter;
+    use crate::{Limit, RateLimiter};
     use std::collections::HashMap;
 
     #[test]
@@ -696,7 +695,7 @@ mod test {
         let rl = RateLimiter::new(100);
         let namespace = "foo";
 
-        let l = Limit::new(namespace, 42, 100, vec![], Vec::<Expression>::default());
+        let l = Limit::new(namespace, 42, 100, vec![], vec![]);
         rl.add_limit(l.clone());
         let limits = rl.get_limits(&namespace.into());
         assert_eq!(limits.len(), 1);

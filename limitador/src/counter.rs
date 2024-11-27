@@ -17,7 +17,7 @@ pub struct Counter {
 }
 
 impl Counter {
-    pub fn new<L: Into<Arc<Limit>>>(
+    pub(crate) fn new<L: Into<Arc<Limit>>>(
         limit: L,
         set_variables: HashMap<String, String>,
     ) -> LimitadorResult<Self> {
