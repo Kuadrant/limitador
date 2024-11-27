@@ -1,6 +1,8 @@
 use crate::limit::cel::errors::EvaluationError;
 use cel_interpreter::{ExecutionError, Value};
 pub use errors::ParseError;
+use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 
 pub(super) mod errors {
     use cel_interpreter::ExecutionError;
@@ -69,15 +71,19 @@ pub(super) mod errors {
 
 pub struct Context {}
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct Expression {
+    source: String,
     expression: cel_parser::Expression,
 }
 
 impl Expression {
-    pub fn parse(source: &str) -> Result<Self, ParseError> {
-        match cel_parser::parse(source) {
-            Ok(expression) => Ok(Self { expression }),
-            Err(err) => Err(ParseError::from(err, source.to_string())),
+    pub fn parse<T: ToString>(source: T) -> Result<Self, ParseError> {
+        let source = source.to_string();
+        match cel_parser::parse(&source) {
+            Ok(expression) => Ok(Self { source, expression }),
+            Err(err) => Err(ParseError::from(err, source)),
         }
     }
 
@@ -118,10 +124,45 @@ fn err_on_value(val: Value) -> EvaluationError {
     }
 }
 
+impl TryFrom<String> for Expression {
+    type Error = ParseError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::parse(value)
+    }
+}
+
+impl From<Expression> for String {
+    fn from(value: Expression) -> Self {
+        value.source
+    }
+}
+
+impl PartialEq<Self> for Expression {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Eq for Expression {}
+
+impl PartialOrd<Self> for Expression {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Expression {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.source.cmp(&other.source)
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct Predicate(Expression);
 
 impl Predicate {
-    pub fn parse(source: &str) -> Result<Self, ParseError> {
+    pub fn parse<T: ToString>(source: T) -> Result<Self, ParseError> {
         Expression::parse(source).map(Self)
     }
 
@@ -133,6 +174,26 @@ impl Predicate {
     }
 }
 
+impl Eq for Predicate {}
+
+impl PartialEq<Self> for Predicate {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.source == other.0.source
+    }
+}
+
+impl PartialOrd<Self> for Predicate {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Predicate {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Context, Expression, Predicate};
@@ -141,6 +202,15 @@ mod tests {
     fn expression() {
         let exp = Expression::parse("100").expect("failed to parse");
         assert_eq!(exp.eval(&Context {}), Ok(String::from("100")));
+    }
+
+    #[test]
+    fn expression_serialization() {
+        let exp = Expression::parse("100").expect("failed to parse");
+        let serialized = serde_json::to_string(&exp).expect("failed to serialize");
+        let deserialized: Expression =
+            serde_json::from_str(&serialized).expect("failed to deserialize");
+        assert_eq!(exp.eval(&Context {}), deserialized.eval(&Context {}));
     }
 
     #[test]
