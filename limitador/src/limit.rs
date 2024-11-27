@@ -1,8 +1,14 @@
+use cel::Context;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
+
+mod cel;
+
+pub use cel::{EvaluationError, ParseError};
+pub use cel::{Expression, Predicate};
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Namespace(String);
@@ -38,7 +44,7 @@ pub struct Limit {
 
     // Need to sort to generate the same object when using the JSON as a key or
     // value in Redis.
-    conditions: BTreeSet<cel::Predicate>,
+    conditions: BTreeSet<Predicate>,
     variables: BTreeSet<String>,
 }
 
@@ -202,13 +208,6 @@ impl PartialEq for Limit {
     }
 }
 
-use crate::limit::cel::{Context, Predicate};
-pub use cel::Expression as CelExpression;
-pub use cel::ParseError;
-pub use cel::Predicate as CelPredicate;
-
-pub(super) mod cel;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -351,5 +350,43 @@ mod tests {
 
         assert_eq!(limit1.partial_cmp(&limit2), Some(Equal));
         assert_eq!(limit1, limit2);
+    }
+
+    #[test]
+    fn conditions_have_limit_info() {
+        let mut limit = Limit::new(
+            "ns",
+            42,
+            10,
+            vec!["limit.name == 'named_limit'"],
+            Vec::<String>::default(),
+        )
+        .expect("failed to create");
+        assert!(!limit.applies(&HashMap::default()));
+
+        limit.set_name("named_limit".to_string());
+        assert!(limit.applies(&HashMap::default()));
+
+        let limit = Limit::with_id(
+            "my_id",
+            "ns",
+            42,
+            10,
+            vec!["limit.id == 'my_id'", "limit.name == null"],
+            Vec::<String>::default(),
+        )
+        .expect("failed to create");
+        assert!(limit.applies(&HashMap::default()));
+
+        let limit = Limit::with_id(
+            "my_id",
+            "ns",
+            42,
+            10,
+            vec!["limit.id == 'other_id'"],
+            Vec::<String>::default(),
+        )
+        .expect("failed to create");
+        assert!(!limit.applies(&HashMap::default()));
     }
 }

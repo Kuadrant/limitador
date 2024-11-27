@@ -1,4 +1,4 @@
-use crate::limit::cel::EvaluationError;
+use crate::limit::EvaluationError;
 use crate::limit::ParseError;
 use crate::storage::StorageErr;
 use std::convert::Infallible;
