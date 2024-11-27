@@ -384,7 +384,7 @@ mod tests {
 
         // Prepare values to check
         let mut values = HashMap::new();
-        values.insert("req.method".into(), "GET".into());
+        values.insert("req_method".into(), "GET".into());
         values.insert("app_id".into(), "1".into());
         let info = CheckAndReportInfo {
             namespace: namespace.into(),
@@ -435,7 +435,7 @@ mod tests {
 
         // Prepare values to check
         let mut values = HashMap::new();
-        values.insert("req.method".into(), "GET".into());
+        values.insert("req_method".into(), "GET".into());
         values.insert("app_id".into(), "1".into());
         let info = CheckAndReportInfo {
             namespace: namespace.into(),
@@ -510,7 +510,7 @@ mod tests {
 
         // Prepare values to check
         let mut values = HashMap::new();
-        values.insert("req.method".into(), "GET".into());
+        values.insert("req_method".into(), "GET".into());
         values.insert("app_id".into(), "1".into());
         let info = CheckAndReportInfo {
             namespace: namespace.into(),
@@ -553,7 +553,7 @@ mod tests {
             namespace,
             max,
             60,
-            vec!["req.method == 'GET'"],
+            vec!["req_method == 'GET'"],
             vec!["app_id"],
         )
         .expect("This must be a valid limit!");

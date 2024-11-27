@@ -94,7 +94,7 @@ Here is an example of such a limit definition:
   max_value: 10
   seconds: 60
   conditions:
-    - "req.method == 'GET'"
+    - "req_method == 'GET'"
   variables:
     - user_id
 ```

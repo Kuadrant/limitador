@@ -119,12 +119,12 @@ mod tests {
             "example.com",
             10,
             60,
-            vec!["req.method == 'GET'"],
+            vec!["req_method == 'GET'"],
             vec!["app_id"],
         )
         .expect("This must be a valid limit!");
         assert_eq!(
-            "namespace:{example.com},counters_of_limit:{\"namespace\":\"example.com\",\"seconds\":60,\"conditions\":[\"req.method == \\\"GET\\\"\"],\"variables\":[\"app_id\"]}".as_bytes(),
+            "namespace:{example.com},counters_of_limit:{\"namespace\":\"example.com\",\"seconds\":60,\"conditions\":[\"req_method == \\\"GET\\\"\"],\"variables\":[\"app_id\"]}".as_bytes(),
             key_for_counters_of_limit(&limit))
     }
 
@@ -135,7 +135,7 @@ mod tests {
             "example.com",
             10,
             60,
-            vec!["req.method == 'GET'"],
+            vec!["req_method == 'GET'"],
             vec!["app_id"],
         )
         .expect("This must be a valid limit!");
@@ -148,7 +148,7 @@ mod tests {
     #[test]
     fn counter_key_and_counter_are_symmetric() {
         let namespace = "ns_counter:";
-        let limit = Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"])
+        let limit = Limit::new(namespace, 1, 1, vec!["req_method == 'GET'"], vec!["app_id"])
             .expect("This must be a valid limit!");
         let counter = Counter::new(limit.clone(), HashMap::default());
         let raw = key_for_counter(&counter);
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn counter_key_does_not_include_transient_state() {
         let namespace = "ns_counter:";
-        let limit = Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"])
+        let limit = Limit::new(namespace, 1, 1, vec!["req_method == 'GET'"], vec!["app_id"])
             .expect("This must be a valid limit!");
         let counter = Counter::new(limit.clone(), HashMap::default());
         let mut other = counter.clone();
@@ -362,7 +362,7 @@ pub mod bin {
         #[test]
         fn counter_key_and_counter_are_symmetric() {
             let namespace = "ns_counter:";
-            let limit = Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"])
+            let limit = Limit::new(namespace, 1, 1, vec!["req_method == 'GET'"], vec!["app_id"])
                 .expect("This must be a valid limit!");
             let mut variables = HashMap::default();
             variables.insert("app_id".to_string(), "123".to_string());
@@ -374,7 +374,7 @@ pub mod bin {
         #[test]
         fn counter_key_starts_with_namespace_prefix() {
             let namespace = "ns_counter:";
-            let limit = Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"])
+            let limit = Limit::new(namespace, 1, 1, vec!["req_method == 'GET'"], vec!["app_id"])
                 .expect("This must be a valid limit!");
             let counter = Counter::new(limit, HashMap::default());
             let serialized_counter = key_for_counter(&counter);
@@ -387,14 +387,14 @@ pub mod bin {
         fn counters_with_id() {
             let namespace = "ns_counter:";
             let limit_without_id =
-                Limit::new(namespace, 1, 1, vec!["req.method == 'GET'"], vec!["app_id"])
+                Limit::new(namespace, 1, 1, vec!["req_method == 'GET'"], vec!["app_id"])
                     .expect("This must be a valid limit!");
             let limit_with_id = Limit::with_id(
                 "id200",
                 namespace,
                 1,
                 1,
-                vec!["req.method == 'GET'"],
+                vec!["req_method == 'GET'"],
                 vec!["app_id"],
             )
             .expect("This must be a valid limit!");

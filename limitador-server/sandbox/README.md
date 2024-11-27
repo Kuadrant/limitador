@@ -99,11 +99,11 @@ bin/grpcurl -plaintext -d @ 127.0.0.1:18081 envoy.service.ratelimit.v3.RateLimit
         {
             "entries": [
                 {
-                    "key": "req.method",
+                    "key": "req_method",
                     "value": "POST"
                 },
                 {
-                    "key": "req.path",
+                    "key": "req_path",
                     "value": "/"
                 }
             ]
@@ -125,11 +125,11 @@ while :; do bin/grpcurl -plaintext -d @ 127.0.0.1:18081 envoy.service.ratelimit.
         {
             "entries": [
                 {
-                    "key": "req.method",
+                    "key": "req_method",
                     "value": "POST"
                 },
                 {
-                    "key": "req.path",
+                    "key": "req_path",
                     "value": "/"
                 }
             ]
