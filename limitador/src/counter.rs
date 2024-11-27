@@ -148,19 +148,22 @@ mod tests {
 
     #[test]
     fn resolves_variables() {
+        let var = "timestamp(ts).getHours()";
         let limit = Limit::new(
             "",
             10,
             60,
             Vec::default(),
-            ["int(x) * 3".try_into().expect("failed parsing!")],
+            [var.try_into().expect("failed parsing!")],
         );
-        let key = "x".to_string();
-        let counter = Counter::new(limit, HashMap::from([(key.clone(), "14".to_string())]))
-            .expect("failed creating counter");
+        let counter = Counter::new(
+            limit,
+            HashMap::from([("ts".to_string(), "2019-10-12T13:20:50.52Z".to_string())]),
+        )
+        .expect("failed creating counter");
         assert_eq!(
-            counter.set_variables.get(&key),
-            Some("42".to_string()).as_ref()
+            counter.set_variables.get(var),
+            Some("13".to_string()).as_ref()
         );
     }
 }

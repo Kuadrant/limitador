@@ -53,8 +53,8 @@ tonic = { version = "0.12.3", optional = true }
 tonic-reflection = { version = "0.12.3", optional = true }
 prost = { version = "0.13.3", optional = true }
 prost-types = { version = "0.13.3", optional = true }
-cel-parser = "0.8.0"
-cel-interpreter = { version = "0.9.0", features = ["chrono", "regex"] }
+cel-interpreter = { git = "https://github.com/clarkmcc/cel-rust", rev = "5b02b08", features = ["json", "regex", "chrono"] }
+cel-parser = { git = "https://github.com/clarkmcc/cel-rust", rev = "5b02b08" }
 
 [dev-dependencies]
 serial_test = "3.0"
