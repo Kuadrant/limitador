@@ -138,7 +138,7 @@ impl Limit {
         let ctx = Context::new(self, String::default(), &vars);
         let mut map = BTreeMap::new();
         for variable in &self.variables {
-            let name = variable.variables().concat().to_string();
+            let name = variable.source().into();
             let value = variable.eval(&ctx)?;
             map.insert(name, value);
         }

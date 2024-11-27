@@ -622,23 +622,23 @@ dependencies = [
 [[package]]
 name = "cel-interpreter"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5675bdc8ece076b0a4f5ac6c20724e7373919ed698e00dbf33825682a7b3a679"
+source = "git+https://github.com/clarkmcc/cel-rust?rev=5b02b08#5b02b0817ced05c7cfc1c72bab03bc97bbfa2dea"
 dependencies = [
+ "base64 0.22.1",
  "cel-parser",
  "chrono",
  "nom",
  "paste",
  "regex",
  "serde",
+ "serde_json",
  "thiserror 1.0.69",
 ]
 
 [[package]]
 name = "cel-parser"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e1df6c220727ff1f7b52a41699d8c71ec52e8ae58d01a9768469a916e1f22eb"
+source = "git+https://github.com/clarkmcc/cel-rust?rev=5b02b08#5b02b0817ced05c7cfc1c72bab03bc97bbfa2dea"
 dependencies = [
  "lalrpop",
  "lalrpop-util",
