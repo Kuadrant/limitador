@@ -136,8 +136,11 @@ impl Storage {
         delta: u64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
-        self.counters
-            .check_and_update(counters, delta, load_counters)
+        if load_counters {
+            self.counters.check_and_update_loading(counters, delta)
+        } else {
+            self.counters.check_and_update(counters, delta)
+        }
     }
 
     pub fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
@@ -282,9 +285,13 @@ pub trait CounterStorage: Sync + Send {
     fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr>;
     fn check_and_update(
         &self,
+        counters: &[Counter],
+        delta: u64,
+    ) -> Result<Authorization, StorageErr>;
+    fn check_and_update_loading(
+        &self,
         counters: &mut Vec<Counter>,
         delta: u64,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr>;
     fn get_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<HashSet<Counter>, StorageErr>; // todo revise typing here?
     fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr>; // todo revise typing here?

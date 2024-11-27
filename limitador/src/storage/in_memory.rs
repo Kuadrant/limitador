@@ -71,9 +71,70 @@ impl CounterStorage for InMemoryStorage {
     #[tracing::instrument(skip_all)]
     fn check_and_update(
         &self,
+        counters: &[Counter],
+        delta: u64,
+    ) -> Result<Authorization, StorageErr> {
+        let limits_by_namespace = self.simple_limits.read().unwrap();
+        let mut counter_values_to_update: Vec<(&AtomicExpiringValue, Duration)> = Vec::new();
+        let mut qualified_counter_values_to_updated: Vec<(Arc<AtomicExpiringValue>, Duration)> =
+            Vec::new();
+        let now = SystemTime::now();
+
+        let process_counter =
+            |counter: &Counter, value: u64, delta: u64| -> Option<Authorization> {
+                if !Self::counter_is_within_limits(counter, Some(&value), delta) {
+                    return Some(Authorization::Limited(
+                        counter.limit().name().map(|n| n.to_owned()),
+                    ));
+                }
+                None
+            };
+
+        // Process simple counters
+        for counter in counters.iter().filter(|c| !c.is_qualified()) {
+            let atomic_expiring_value: &AtomicExpiringValue =
+                limits_by_namespace.get(counter.limit()).unwrap();
+
+            if let Some(limited) = process_counter(counter, atomic_expiring_value.value(), delta) {
+                return Ok(limited);
+            }
+            counter_values_to_update.push((atomic_expiring_value, counter.window()));
+        }
+
+        // Process qualified counters
+        for counter in counters.iter().filter(|c| c.is_qualified()) {
+            let value = match self.qualified_counters.get(counter) {
+                None => self.qualified_counters.get_with_by_ref(counter, || {
+                    Arc::new(AtomicExpiringValue::new(0, now + counter.window()))
+                }),
+                Some(counter) => counter,
+            };
+
+            if let Some(limited) = process_counter(counter, value.value(), delta) {
+                return Ok(limited);
+            }
+
+            qualified_counter_values_to_updated.push((value, counter.window()));
+        }
+
+        // Update counters
+        counter_values_to_update.iter().for_each(|(v, ttl)| {
+            v.update(delta, *ttl, now);
+        });
+        qualified_counter_values_to_updated
+            .iter()
+            .for_each(|(v, ttl)| {
+                v.update(delta, *ttl, now);
+            });
+
+        Ok(Authorization::Ok)
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn check_and_update_loading(
+        &self,
         counters: &mut Vec<Counter>,
         delta: u64,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let limits_by_namespace = self.simple_limits.read().unwrap();
         let mut first_limited = None;
@@ -84,14 +145,12 @@ impl CounterStorage for InMemoryStorage {
 
         let mut process_counter =
             |counter: &mut Counter, value: u64, delta: u64| -> Option<Authorization> {
-                if load_counters {
-                    let remaining = counter.max_value().checked_sub(value + delta);
-                    counter.set_remaining(remaining.unwrap_or_default());
-                    if first_limited.is_none() && remaining.is_none() {
-                        first_limited = Some(Authorization::Limited(
-                            counter.limit().name().map(|n| n.to_owned()),
-                        ));
-                    }
+                let remaining = counter.max_value().checked_sub(value + delta);
+                counter.set_remaining(remaining.unwrap_or_default());
+                if first_limited.is_none() && remaining.is_none() {
+                    first_limited = Some(Authorization::Limited(
+                        counter.limit().name().map(|n| n.to_owned()),
+                    ));
                 }
                 if !Self::counter_is_within_limits(counter, Some(&value), delta) {
                     return Some(Authorization::Limited(
@@ -106,11 +165,7 @@ impl CounterStorage for InMemoryStorage {
             let atomic_expiring_value: &AtomicExpiringValue =
                 limits_by_namespace.get(counter.limit()).unwrap();
 
-            if let Some(limited) = process_counter(counter, atomic_expiring_value.value(), delta) {
-                if !load_counters {
-                    return Ok(limited);
-                }
-            }
+            let _ = process_counter(counter, atomic_expiring_value.value(), delta);
             counter_values_to_update.push((atomic_expiring_value, counter.window()));
         }
 
@@ -123,12 +178,7 @@ impl CounterStorage for InMemoryStorage {
                 Some(counter) => counter,
             };
 
-            if let Some(limited) = process_counter(counter, value.value(), delta) {
-                if !load_counters {
-                    return Ok(limited);
-                }
-            }
-
+            let _ = process_counter(counter, value.value(), delta);
             qualified_counter_values_to_updated.push((value, counter.window()));
         }
 
