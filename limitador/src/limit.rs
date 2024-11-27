@@ -64,7 +64,7 @@ pub struct Limit {
 
     // Need to sort to generate the same object when using the JSON as a key or
     // value in Redis.
-    conditions: BTreeSet<Condition>,
+    conditions: BTreeSet<cel::Predicate>,
     variables: BTreeSet<String>,
 }
 
@@ -273,6 +273,7 @@ pub enum Predicate {
     NotEqual,
 }
 
+#[allow(dead_code)]
 impl Predicate {
     fn test(&self, lhs: &str, rhs: &str) -> bool {
         match self {
@@ -305,8 +306,11 @@ impl Limit {
         LimitadorError: From<<T as TryInto<Condition>>::Error>,
     {
         // the above where-clause is needed in order to call unwrap().
-        let conditions: Result<BTreeSet<_>, _> =
-            conditions.into_iter().map(|cond| cond.try_into()).collect();
+        let conditions: Result<BTreeSet<_>, _> = conditions
+            .into_iter()
+            .map(|cond| cond.try_into())
+            .map(|r| r.map(|c| cel::Predicate::parse::<String>(c.into()).unwrap()))
+            .collect();
         match conditions {
             Ok(conditions) => Ok(Self {
                 id: None,
@@ -332,7 +336,12 @@ impl Limit {
     where
         LimitadorError: From<<T as TryInto<Condition>>::Error>,
     {
-        match conditions.into_iter().map(|cond| cond.try_into()).collect() {
+        match conditions
+            .into_iter()
+            .map(|cond| cond.try_into())
+            .map(|r| r.map(|c| cel::Predicate::parse::<String>(c.into()).unwrap()))
+            .collect()
+        {
             Ok(conditions) => Ok(Self {
                 id: Some(id.into()),
                 namespace: namespace.into(),
@@ -400,24 +409,15 @@ impl Limit {
     }
 
     pub fn applies(&self, values: &HashMap<String, String>) -> bool {
+        let ctx = Context::new(self, String::default(), values);
         let all_conditions_apply = self
             .conditions
             .iter()
-            .all(|cond| Self::condition_applies(cond, values));
+            .all(|predicate| predicate.test(&ctx).unwrap());
 
         let all_vars_are_set = self.variables.iter().all(|var| values.contains_key(var));
 
         all_conditions_apply && all_vars_are_set
-    }
-
-    fn condition_applies(condition: &Condition, values: &HashMap<String, String>) -> bool {
-        let left_operand = condition.var_name.as_str();
-        let right_operand = condition.operand.as_str();
-
-        match values.get(left_operand) {
-            Some(val) => condition.predicate.test(val, right_operand),
-            None => false,
-        }
     }
 }
 
@@ -855,6 +855,7 @@ mod conditions {
     }
 }
 
+use crate::limit::cel::Context;
 pub use cel::Expression as CelExpression;
 pub use cel::ParseError;
 pub use cel::Predicate as CelPredicate;
@@ -1086,7 +1087,7 @@ mod tests {
             limit1.namespace.clone(),
             limit1.max_value + 10,
             limit1.seconds,
-            limit1.conditions.clone(),
+            vec!["req.method == 'GET'"],
             limit1.variables.clone(),
         )
         .expect("This must be a valid limit!");
