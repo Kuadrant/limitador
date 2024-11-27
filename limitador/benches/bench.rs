@@ -529,7 +529,11 @@ fn generate_test_limits(scenario: &TestScenario) -> (Vec<Limit>, Vec<TestCallPar
     let mut conditions = vec![];
     for idx_cond in 0..scenario.n_conds_per_limit {
         let cond_name = format!("cond_{idx_cond}");
-        conditions.push(format!("{cond_name} == '1'"));
+        conditions.push(
+            format!("{cond_name} == '1'")
+                .try_into()
+                .expect("failed parsing!"),
+        );
         test_values.insert(cond_name, "1".into());
     }
 
@@ -547,16 +551,13 @@ fn generate_test_limits(scenario: &TestScenario) -> (Vec<Limit>, Vec<TestCallPar
         let namespace = idx_namespace.to_string();
 
         for limit_idx in 0..scenario.n_limits_per_ns {
-            test_limits.push(
-                Limit::new(
-                    namespace.clone(),
-                    u64::MAX,
-                    ((limit_idx * 60) + 10) as u64,
-                    conditions.clone(),
-                    variables.clone(),
-                )
-                .expect("This must be a valid limit!"),
-            )
+            test_limits.push(Limit::new(
+                namespace.clone(),
+                u64::MAX,
+                ((limit_idx * 60) + 10) as u64,
+                conditions.clone(),
+                variables.clone(),
+            ))
         }
 
         call_params.push(TestCallParams {

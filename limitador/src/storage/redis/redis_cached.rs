@@ -444,10 +444,9 @@ mod tests {
                 "test_namespace",
                 10,
                 60,
-                vec!["req_method == 'GET'"],
+                vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
                 vec!["app_id"],
-            )
-            .expect("This must be a valid limit!"),
+            ),
             Default::default(),
         );
 
@@ -507,10 +506,9 @@ mod tests {
                 "test_namespace",
                 10,
                 60,
-                vec!["req_method == 'POST'"],
+                vec!["req_method == 'POST'".try_into().expect("failed parsing!")],
                 vec!["app_id"],
-            )
-            .expect("This must be a valid limit!"),
+            ),
             Default::default(),
         );
 
@@ -567,10 +565,9 @@ mod tests {
                 "test_namespace",
                 10,
                 60,
-                vec!["req_method == 'POST'"],
+                vec!["req_method == 'POST'".try_into().expect("failed parsing!")],
                 vec!["app_id"],
-            )
-            .expect("This must be a valid limit!"),
+            ),
             Default::default(),
         );
 

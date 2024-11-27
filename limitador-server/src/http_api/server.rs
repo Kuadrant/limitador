@@ -553,10 +553,9 @@ mod tests {
             namespace,
             max,
             60,
-            vec!["req_method == 'GET'"],
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
             vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+        );
 
         match &limiter {
             Limiter::Blocking(limiter) => limiter.add_limit(limit.clone()),
