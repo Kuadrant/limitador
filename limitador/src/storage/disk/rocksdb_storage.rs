@@ -43,9 +43,49 @@ impl CounterStorage for RocksDbStorage {
     #[tracing::instrument(skip_all)]
     fn check_and_update(
         &self,
+        counters: &[Counter],
+        delta: u64,
+    ) -> Result<Authorization, StorageErr> {
+        let mut keys: Vec<Vec<u8>> = Vec::with_capacity(counters.len());
+
+        for counter in counters {
+            let key = key_for_counter(counter);
+            let slice: &[u8] = key.as_ref();
+            let entry = {
+                let span = debug_span!("datastore");
+                let _entered = span.enter();
+                self.db.get(slice)?
+            };
+            let (val, _) = match entry {
+                None => (0, Duration::from_secs(counter.limit().seconds())),
+                Some(raw) => {
+                    let slice: &[u8] = raw.as_ref();
+                    let value: ExpiringValue = slice.try_into()?;
+                    (value.value(), value.ttl())
+                }
+            };
+
+            if counter.max_value() < val + delta {
+                return Ok(Authorization::Limited(
+                    counter.limit().name().map(|n| n.to_string()),
+                ));
+            }
+
+            keys.push(key);
+        }
+
+        for (idx, counter) in counters.iter().enumerate() {
+            self.insert_or_update(&keys[idx], counter, delta)?;
+        }
+
+        Ok(Authorization::Ok)
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn check_and_update_loading(
+        &self,
         counters: &mut Vec<Counter>,
         delta: u64,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let mut keys: Vec<Vec<u8>> = Vec::with_capacity(counters.len());
 
@@ -66,15 +106,13 @@ impl CounterStorage for RocksDbStorage {
                 }
             };
 
-            if load_counters {
-                counter.set_expires_in(ttl);
-                counter.set_remaining(
-                    counter
-                        .max_value()
-                        .checked_sub(val + delta)
-                        .unwrap_or_default(),
-                );
-            }
+            counter.set_expires_in(ttl);
+            counter.set_remaining(
+                counter
+                    .max_value()
+                    .checked_sub(val + delta)
+                    .unwrap_or_default(),
+            );
 
             if counter.max_value() < val + delta {
                 return Ok(Authorization::Limited(
