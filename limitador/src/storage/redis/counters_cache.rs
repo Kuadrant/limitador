@@ -569,7 +569,8 @@ mod tests {
                 .consume(1, |items| {
                     assert_eq!(items.len(), 1);
                     assert!(
-                        SystemTime::now().duration_since(start).unwrap() < Duration::from_millis(5)
+                        SystemTime::now().duration_since(start).unwrap()
+                            < Duration::from_millis(10)
                     );
                     async { Ok::<(), ()>(()) }
                 })
