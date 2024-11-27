@@ -103,7 +103,7 @@
 //!     "my_namespace",
 //!      2,
 //!      60,
-//!      vec!["req.method == 'GET'"],
+//!      vec!["req_method == 'GET'"],
 //!      vec!["user_id"],
 //! ).unwrap();
 //! rate_limiter.add_limit(limit);
@@ -111,7 +111,7 @@
 //! // We've defined a limit of 2. So we can report 2 times before being
 //! // rate-limited
 //! let mut values_to_report: HashMap<String, String> = HashMap::new();
-//! values_to_report.insert("req.method".to_string(), "GET".to_string());
+//! values_to_report.insert("req_method".to_string(), "GET".to_string());
 //! values_to_report.insert("user_id".to_string(), "1".to_string());
 //!
 //! // Check if we can report
@@ -167,7 +167,7 @@
 //!      "my_namespace",
 //!      10,
 //!      60,
-//!      vec!["req.method == 'GET'"],
+//!      vec!["req_method == 'GET'"],
 //!      vec!["user_id"],
 //! ).unwrap();
 //!

@@ -1,8 +1,12 @@
 use crate::limit::cel::errors::EvaluationError;
+use crate::limit::Limit;
 use cel_interpreter::{ExecutionError, Value};
 pub use errors::ParseError;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 pub(super) mod errors {
     use cel_interpreter::ExecutionError;
@@ -69,7 +73,40 @@ pub(super) mod errors {
     }
 }
 
-pub struct Context {}
+pub struct Context<'a> {
+    variables: HashSet<String>,
+    ctx: cel_interpreter::Context<'a>,
+}
+
+impl Context<'_> {
+    pub(crate) fn new(limit: &Limit, root: String, values: &HashMap<String, String>) -> Self {
+        let mut ctx = cel_interpreter::Context::default();
+
+        if root.is_empty() {
+            for (binding, value) in values {
+                ctx.add_variable_from_value(binding, value.clone())
+            }
+        } else {
+            let map = cel_interpreter::objects::Map::from(values.clone());
+            ctx.add_variable_from_value(root, Value::Map(map));
+        }
+
+        let limit_data = cel_interpreter::objects::Map::from(HashMap::from([(
+            "name",
+            limit
+                .name
+                .as_ref()
+                .map(|n| Value::String(Arc::new(n.to_string())))
+                .unwrap_or(Value::Null),
+        )]));
+        ctx.add_variable_from_value("limit", Value::Map(limit_data));
+
+        Self {
+            variables: values.keys().cloned().collect(),
+            ctx,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
@@ -99,9 +136,8 @@ impl Expression {
         }
     }
 
-    pub fn resolve(&self, _ctx: &Context) -> Result<Value, ExecutionError> {
-        let ctx = cel_interpreter::Context::default();
-        Value::resolve(&self.expression, &ctx)
+    pub fn resolve(&self, ctx: &Context) -> Result<Value, ExecutionError> {
+        Value::resolve(&self.expression, &ctx.ctx)
     }
 }
 
@@ -158,16 +194,33 @@ impl Ord for Expression {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
-pub struct Predicate(Expression);
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct Predicate {
+    #[serde(skip_serializing, default)]
+    variables: HashSet<String>,
+    expression: Expression,
+}
 
 impl Predicate {
     pub fn parse<T: ToString>(source: T) -> Result<Self, ParseError> {
-        Expression::parse(source).map(Self)
+        Expression::parse(source).map(|e| Self {
+            variables: e
+                .expression
+                .references()
+                .variables()
+                .into_iter()
+                .map(String::from)
+                .collect(),
+            expression: e,
+        })
     }
 
     pub fn test(&self, ctx: &Context) -> Result<bool, EvaluationError> {
-        match self.0.resolve(ctx)? {
+        if !self.variables.iter().all(|v| ctx.variables.contains(v)) {
+            return Ok(false);
+        }
+        match self.expression.resolve(ctx)? {
             Value::Bool(b) => Ok(b),
             v => Err(err_on_value(v)),
         }
@@ -178,7 +231,7 @@ impl Eq for Predicate {}
 
 impl PartialEq<Self> for Predicate {
     fn eq(&self, other: &Self) -> bool {
-        self.0.source == other.0.source
+        self.expression.source == other.expression.source
     }
 }
 
@@ -190,18 +243,39 @@ impl PartialOrd<Self> for Predicate {
 
 impl Ord for Predicate {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.0.cmp(&other.0)
+        self.expression.cmp(&other.expression)
+    }
+}
+
+impl Hash for Predicate {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.expression.source.hash(state);
+    }
+}
+
+impl TryFrom<String> for Predicate {
+    type Error = ParseError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::parse(value)
+    }
+}
+
+impl From<Predicate> for String {
+    fn from(value: Predicate) -> Self {
+        value.expression.source
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{Context, Expression, Predicate};
+    use std::collections::HashSet;
 
     #[test]
     fn expression() {
         let exp = Expression::parse("100").expect("failed to parse");
-        assert_eq!(exp.eval(&Context {}), Ok(String::from("100")));
+        assert_eq!(exp.eval(&ctx()), Ok(String::from("100")));
     }
 
     #[test]
@@ -210,14 +284,14 @@ mod tests {
         let serialized = serde_json::to_string(&exp).expect("failed to serialize");
         let deserialized: Expression =
             serde_json::from_str(&serialized).expect("failed to deserialize");
-        assert_eq!(exp.eval(&Context {}), deserialized.eval(&Context {}));
+        assert_eq!(exp.eval(&ctx()), deserialized.eval(&ctx()));
     }
 
     #[test]
     fn unexpected_value_type_expression() {
         let exp = Expression::parse("['100']").expect("failed to parse");
         assert_eq!(
-            exp.eval(&Context {}).map_err(|e| format!("{e}")),
+            exp.eval(&ctx()).map_err(|e| format!("{e}")),
             Err("unexpected value of type list: `[String(\"100\")]`".to_string())
         );
     }
@@ -225,15 +299,22 @@ mod tests {
     #[test]
     fn predicate() {
         let pred = Predicate::parse("42 == uint('42')").expect("failed to parse");
-        assert_eq!(pred.test(&Context {}), Ok(true));
+        assert_eq!(pred.test(&ctx()), Ok(true));
     }
 
     #[test]
     fn unexpected_value_predicate() {
         let pred = Predicate::parse("42").expect("failed to parse");
         assert_eq!(
-            pred.test(&Context {}).map_err(|e| format!("{e}")),
+            pred.test(&ctx()).map_err(|e| format!("{e}")),
             Err("unexpected value of type integer: `42`".to_string())
         );
+    }
+
+    fn ctx<'a>() -> Context<'a> {
+        Context {
+            variables: HashSet::default(),
+            ctx: cel_interpreter::Context::default(),
+        }
     }
 }
