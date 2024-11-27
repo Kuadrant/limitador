@@ -1267,7 +1267,7 @@ mod test {
             namespace,
             max_hits,
             60,
-            vec!["req_method == 'GET'"],
+            vec!["req_method == 'GET'".to_string()],
             vec!["app_id"],
         )
         .expect("This must be a valid limit!");

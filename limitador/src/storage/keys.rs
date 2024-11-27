@@ -124,7 +124,7 @@ mod tests {
         )
         .expect("This must be a valid limit!");
         assert_eq!(
-            "namespace:{example.com},counters_of_limit:{\"namespace\":\"example.com\",\"seconds\":60,\"conditions\":[\"req_method == \\\"GET\\\"\"],\"variables\":[\"app_id\"]}".as_bytes(),
+            "namespace:{example.com},counters_of_limit:{\"namespace\":\"example.com\",\"seconds\":60,\"conditions\":[\"req_method == 'GET'\"],\"variables\":[\"app_id\"]}".as_bytes(),
             key_for_counters_of_limit(&limit))
     }
 

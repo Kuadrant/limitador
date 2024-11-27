@@ -1,4 +1,3 @@
-use crate::limit::cel::errors::EvaluationError;
 use crate::limit::Limit;
 use cel_interpreter::{ExecutionError, Value};
 pub use errors::ParseError;
@@ -72,6 +71,8 @@ pub(super) mod errors {
         }
     }
 }
+
+pub use errors::EvaluationError;
 
 pub struct Context<'a> {
     variables: HashSet<String>,
@@ -257,6 +258,14 @@ impl TryFrom<String> for Predicate {
     type Error = ParseError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::parse(value)
+    }
+}
+
+impl TryFrom<&str> for Predicate {
+    type Error = ParseError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
         Self::parse(value)
     }
 }
