@@ -680,10 +680,9 @@ mod tests {
                 "test_namespace",
                 max_val,
                 60,
-                vec!["req_method == 'POST'"],
+                vec!["req_method == 'POST'".try_into().expect("failed parsing!")],
                 vec!["app_id"],
-            )
-            .expect("This must be a valid limit!"),
+            ),
             values,
         )
     }

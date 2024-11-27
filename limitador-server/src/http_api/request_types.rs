@@ -1,5 +1,5 @@
 use limitador::counter::Counter as LimitadorCounter;
-use limitador::limit::{Limit as LimitadorLimit, ParseError};
+use limitador::limit::{Limit as LimitadorLimit, ParseError, Predicate};
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -44,23 +44,26 @@ impl TryFrom<Limit> for LimitadorLimit {
     type Error = ParseError;
 
     fn try_from(limit: Limit) -> Result<Self, Self::Error> {
+        let conditions: Result<Vec<Predicate>, ParseError> =
+            limit.conditions.into_iter().map(|p| p.try_into()).collect();
+
         let mut limitador_limit = if let Some(id) = limit.id {
             Self::with_id(
                 id,
                 limit.namespace,
                 limit.max_value,
                 limit.seconds,
-                limit.conditions,
+                conditions?,
                 limit.variables,
-            )?
+            )
         } else {
             Self::new(
                 limit.namespace,
                 limit.max_value,
                 limit.seconds,
-                limit.conditions,
+                conditions?,
                 limit.variables,
-            )?
+            )
         };
 
         if let Some(name) = limit.name {

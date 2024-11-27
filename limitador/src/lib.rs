@@ -54,7 +54,7 @@
 //!     "my_namespace",
 //!      10,
 //!      60,
-//!      vec!["req_method == 'GET'"],
+//!      vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
 //!      vec!["user_id"],
 //! );
 //! ```
@@ -71,9 +71,9 @@
 //!     "my_namespace",
 //!      10,
 //!      60,
-//!      vec!["req_method == 'GET'"],
+//!      vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
 //!      vec!["user_id"],
-//! ).unwrap();
+//! );
 //! let mut rate_limiter = RateLimiter::new(1000);
 //!
 //! // Add a limit
@@ -103,9 +103,9 @@
 //!     "my_namespace",
 //!      2,
 //!      60,
-//!      vec!["req_method == 'GET'"],
+//!      vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
 //!      vec!["user_id"],
-//! ).unwrap();
+//! );
 //! rate_limiter.add_limit(limit);
 //!
 //! // We've defined a limit of 2. So we can report 2 times before being
@@ -167,9 +167,9 @@
 //!      "my_namespace",
 //!      10,
 //!      60,
-//!      vec!["req_method == 'GET'"],
+//!      vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
 //!      vec!["user_id"],
-//! ).unwrap();
+//! );
 //!
 //! async {
 //!     let rate_limiter = AsyncRateLimiter::new_with_storage(
@@ -702,14 +702,7 @@ mod test {
         let rl = RateLimiter::new(100);
         let namespace = "foo";
 
-        let l = Limit::new::<_, String>(
-            namespace,
-            42,
-            100,
-            Vec::<String>::default(),
-            Vec::<String>::default(),
-        )
-        .expect("This must be a valid limit!");
+        let l = Limit::new(namespace, 42, 100, vec![], Vec::<String>::default());
         rl.add_limit(l.clone());
         let limits = rl.get_limits(&namespace.into());
         assert_eq!(limits.len(), 1);

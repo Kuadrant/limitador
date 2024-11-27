@@ -49,57 +49,43 @@ pub struct Limit {
 }
 
 impl Limit {
-    pub fn new<N: Into<Namespace>, T: TryInto<Predicate>>(
+    pub fn new<N: Into<Namespace>>(
         namespace: N,
         max_value: u64,
         seconds: u64,
-        conditions: impl IntoIterator<Item = T>,
+        conditions: impl IntoIterator<Item = Predicate>,
         variables: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<Self, ParseError>
+    ) -> Self
     where
-        <N as TryInto<Namespace>>::Error: core::fmt::Debug,
-        <T as TryInto<Predicate>>::Error: core::fmt::Debug,
-        ParseError: From<<T as TryInto<Predicate>>::Error>,
+        <N as TryInto<Namespace>>::Error: Debug,
     {
-        // the above where-clause is needed in order to call unwrap().
-        let conditions: Result<BTreeSet<_>, _> =
-            conditions.into_iter().map(|cond| cond.try_into()).collect();
-        match conditions {
-            Ok(conditions) => Ok(Self {
-                id: None,
-                namespace: namespace.into(),
-                max_value,
-                seconds,
-                name: None,
-                conditions,
-                variables: variables.into_iter().map(|var| var.into()).collect(),
-            }),
-            Err(err) => Err(err.into()),
+        Self {
+            id: None,
+            namespace: namespace.into(),
+            max_value,
+            seconds,
+            name: None,
+            conditions: conditions.into_iter().collect(),
+            variables: variables.into_iter().map(|var| var.into()).collect(),
         }
     }
 
-    pub fn with_id<S: Into<String>, N: Into<Namespace>, T: TryInto<Predicate>>(
+    pub fn with_id<S: Into<String>, N: Into<Namespace>>(
         id: S,
         namespace: N,
         max_value: u64,
         seconds: u64,
-        conditions: impl IntoIterator<Item = T>,
+        conditions: impl IntoIterator<Item = Predicate>,
         variables: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<Self, ParseError>
-    where
-        ParseError: From<<T as TryInto<Predicate>>::Error>,
-    {
-        match conditions.into_iter().map(|cond| cond.try_into()).collect() {
-            Ok(conditions) => Ok(Self {
-                id: Some(id.into()),
-                namespace: namespace.into(),
-                max_value,
-                seconds,
-                name: None,
-                conditions,
-                variables: variables.into_iter().map(|var| var.into()).collect(),
-            }),
-            Err(err) => Err(err.into()),
+    ) -> Self {
+        Self {
+            id: Some(id.into()),
+            namespace: namespace.into(),
+            max_value,
+            seconds,
+            name: None,
+            conditions: conditions.into_iter().collect(),
+            variables: variables.into_iter().map(|var| var.into()).collect(),
         }
     }
 
@@ -215,8 +201,13 @@ mod tests {
 
     #[test]
     fn limit_can_have_an_optional_name() {
-        let mut limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"])
-            .expect("This must be a valid limit!");
+        let mut limit = Limit::new(
+            "test_namespace",
+            10,
+            60,
+            vec!["x == \"5\"".try_into().expect("failed parsing!")],
+            vec!["y"],
+        );
         assert!(limit.name.is_none());
 
         let name = "Test Limit";
@@ -226,8 +217,13 @@ mod tests {
 
     #[test]
     fn limit_applies() {
-        let limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"])
-            .expect("This must be a valid limit!");
+        let limit = Limit::new(
+            "test_namespace",
+            10,
+            60,
+            vec!["x == \"5\"".try_into().expect("failed parsing!")],
+            vec!["y"],
+        );
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "5".into());
@@ -238,8 +234,13 @@ mod tests {
 
     #[test]
     fn limit_does_not_apply_when_cond_is_false() {
-        let limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"])
-            .expect("This must be a valid limit!");
+        let limit = Limit::new(
+            "test_namespace",
+            10,
+            60,
+            vec!["x == \"5\"".try_into().expect("failed parsing!")],
+            vec!["y"],
+        );
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "1".into());
@@ -250,8 +251,13 @@ mod tests {
 
     #[test]
     fn limit_does_not_apply_when_cond_var_is_not_set() {
-        let limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"])
-            .expect("This must be a valid limit!");
+        let limit = Limit::new(
+            "test_namespace",
+            10,
+            60,
+            vec!["x == \"5\"".try_into().expect("failed parsing!")],
+            vec!["y"],
+        );
 
         // Notice that "x" is not set
         let mut values: HashMap<String, String> = HashMap::new();
@@ -263,8 +269,13 @@ mod tests {
 
     #[test]
     fn limit_does_not_apply_when_var_not_set() {
-        let limit = Limit::new("test_namespace", 10, 60, vec!["x == \"5\""], vec!["y"])
-            .expect("This must be a valid limit!");
+        let limit = Limit::new(
+            "test_namespace",
+            10,
+            60,
+            vec!["x == \"5\"".try_into().expect("failed parsing!")],
+            vec!["y"],
+        );
 
         // Notice that "y" is not set
         let mut values: HashMap<String, String> = HashMap::new();
@@ -279,10 +290,12 @@ mod tests {
             "test_namespace",
             10,
             60,
-            vec!["x == \"5\"", "y == \"2\""],
+            vec![
+                "x == \"5\"".try_into().expect("failed parsing!"),
+                "y == \"2\"".try_into().expect("failed parsing!"),
+            ],
             vec!["z"],
-        )
-        .expect("This must be a valid limit!");
+        );
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "5".into());
@@ -298,10 +311,12 @@ mod tests {
             "test_namespace",
             10,
             60,
-            vec!["x == \"5\"", "y == \"2\""],
+            vec![
+                "x == \"5\"".try_into().expect("failed parsing!"),
+                "y == \"2\"".try_into().expect("failed parsing!"),
+            ],
             vec!["z"],
-        )
-        .expect("This must be a valid limit!");
+        );
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "3".into());
@@ -318,10 +333,9 @@ mod tests {
             "test_namespace",
             10,
             60,
-            vec!["req_method == 'GET'"],
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
             vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+        );
 
         assert_eq!(limit.id(), Some("test_id"))
     }
@@ -333,19 +347,17 @@ mod tests {
             "test_namespace",
             42,
             60,
-            vec!["req_method == 'GET'"],
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
             vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+        );
 
         let mut limit2 = Limit::new(
             limit1.namespace.clone(),
             limit1.max_value + 10,
             limit1.seconds,
-            vec!["req_method == 'GET'"],
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
             limit1.variables.clone(),
-        )
-        .expect("This must be a valid limit!");
+        );
         limit2.set_name("Who cares?".to_string());
 
         assert_eq!(limit1.partial_cmp(&limit2), Some(Equal));
@@ -358,10 +370,11 @@ mod tests {
             "ns",
             42,
             10,
-            vec!["limit.name == 'named_limit'"],
+            vec!["limit.name == 'named_limit'"
+                .try_into()
+                .expect("failed parsing!")],
             Vec::<String>::default(),
-        )
-        .expect("failed to create");
+        );
         assert!(!limit.applies(&HashMap::default()));
 
         limit.set_name("named_limit".to_string());
@@ -372,10 +385,12 @@ mod tests {
             "ns",
             42,
             10,
-            vec!["limit.id == 'my_id'", "limit.name == null"],
+            vec![
+                "limit.id == 'my_id'".try_into().expect("failed parsing!"),
+                "limit.name == null".try_into().expect("failed parsing!"),
+            ],
             Vec::<String>::default(),
-        )
-        .expect("failed to create");
+        );
         assert!(limit.applies(&HashMap::default()));
 
         let limit = Limit::with_id(
@@ -383,10 +398,11 @@ mod tests {
             "ns",
             42,
             10,
-            vec!["limit.id == 'other_id'"],
+            vec!["limit.id == 'other_id'"
+                .try_into()
+                .expect("failed parsing!")],
             Vec::<String>::default(),
-        )
-        .expect("failed to create");
+        );
         assert!(!limit.applies(&HashMap::default()));
     }
 }
