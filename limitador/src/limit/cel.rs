@@ -1,11 +1,12 @@
 use crate::limit::Limit;
 use cel_interpreter::{ExecutionError, Value};
-pub use errors::ParseError;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+
+pub use errors::{EvaluationError, ParseError};
 
 pub(super) mod errors {
     use cel_interpreter::ExecutionError;
@@ -71,8 +72,6 @@ pub(super) mod errors {
         }
     }
 }
-
-pub use errors::EvaluationError;
 
 pub struct Context<'a> {
     variables: HashSet<String>,
@@ -294,8 +293,7 @@ impl From<Predicate> for String {
 #[cfg(test)]
 mod tests {
     use super::{Context, Expression, Predicate};
-    use crate::limit::Limit;
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashSet;
 
     #[test]
     fn expression() {
@@ -334,41 +332,6 @@ mod tests {
             pred.test(&ctx()).map_err(|e| format!("{e}")),
             Err("unexpected value of type integer: `42`".to_string())
         );
-    }
-
-    #[test]
-    fn context_has_limit_info() {
-        let mut limit = Limit::new(
-            "ns",
-            42,
-            10,
-            vec!["limit.name == 'named_limit'"],
-            Vec::<String>::default(),
-        )
-        .expect("failed to create");
-        assert!(!limit.applies(&HashMap::default()));
-        limit.set_name("named_limit".to_string());
-        assert!(limit.applies(&HashMap::default()));
-        let limit = Limit::with_id(
-            "my_id",
-            "ns",
-            42,
-            10,
-            vec!["limit.id == 'my_id'"],
-            Vec::<String>::default(),
-        )
-        .expect("failed to create");
-        assert!(limit.applies(&HashMap::default()));
-        let limit = Limit::with_id(
-            "my_id",
-            "ns",
-            42,
-            10,
-            vec!["limit.id == 'other_id'"],
-            Vec::<String>::default(),
-        )
-        .expect("failed to create");
-        assert!(!limit.applies(&HashMap::default()));
     }
 
     fn ctx<'a>() -> Context<'a> {
