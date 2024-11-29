@@ -752,7 +752,7 @@ fn guess_cache_size() -> Option<u64> {
 }
 
 fn leak<D: Display>(s: D) -> &'static str {
-    return Box::leak(format!("{}", s).into_boxed_str());
+    Box::leak(format!("{}", s).into_boxed_str())
 }
 
 fn configure_tracing_subscriber(config: &Configuration) {

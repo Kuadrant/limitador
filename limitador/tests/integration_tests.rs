@@ -84,7 +84,7 @@ async fn distributed_storage_factory(
     let addresses = (0..count)
         .map(|i| format!("127.0.0.1:{}", 5200 + i))
         .collect::<Vec<String>>();
-    return (0..count)
+    (0..count)
         .map(|i| {
             let node = format!("n{}", i);
             let listen_address = addresses.get(i).unwrap().to_owned();
@@ -97,7 +97,7 @@ async fn distributed_storage_factory(
                 CrInMemoryStorage::new(node, 10_000, listen_address, peer_urls),
             )))
         })
-        .collect::<Vec<TestsLimiter>>();
+        .collect::<Vec<TestsLimiter>>()
 }
 
 macro_rules! test_with_distributed_storage_impls {

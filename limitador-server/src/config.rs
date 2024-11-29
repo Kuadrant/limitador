@@ -20,7 +20,7 @@ use tracing::level_filters::LevelFilter;
 use url::Url;
 
 pub fn redacted_url(url: String) -> String {
-    return match Url::parse(url.as_str()) {
+    match Url::parse(url.as_str()) {
         Ok(url_object) => {
             if url_object.password().is_some() {
                 let mut owned_url = url_object.clone();
@@ -34,7 +34,7 @@ pub fn redacted_url(url: String) -> String {
             }
         }
         Err(_) => url.clone(),
-    };
+    }
 }
 
 #[derive(Debug)]
