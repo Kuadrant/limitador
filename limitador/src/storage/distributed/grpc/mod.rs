@@ -414,7 +414,7 @@ enum MessagePermit<'a> {
     Server(Permit<'a, Result<Packet, Status>>),
     Client(Permit<'a, Packet>),
 }
-impl<'a> MessagePermit<'a> {
+impl MessagePermit<'_> {
     fn send(self, message: Result<Message, Status>) -> Result<(), Status> {
         match self {
             MessagePermit::Server(sender) => {
