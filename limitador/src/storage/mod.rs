@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 use metrics::counter;
 use prost::bytes::BufMut;
 
@@ -374,9 +375,11 @@ impl From<&Limit> for CounterKey {
 }
 
 pub trait CounterStorage: Sync + Send {
-    fn is_within_limits(&self, key: &CounterKey, delta: u64) -> Result<bool, StorageErr>;
-    fn add_counter(&self, limit: &Limit) -> Result<(), StorageErr>;
-    fn update_counter(&self, key: &CounterKey, delta: u64) -> Result<(), StorageErr>;
+    fn add_counters(&self, keys: &[CounterKey]) -> Result<(), StorageErr>;
+    fn get_counters(&self, keys: &[CounterKey]) -> Result<Vec<(u64, Duration)>, StorageErr>;
+    fn update_counters(&self, key: &[CounterKey], delta: u64) -> Result<u64, StorageErr>;
+    fn delete_counters(&self, keys: &[CounterKey]) -> Result<(), StorageErr>;
+
     fn check_and_update(
         &self,
         counters: &[CounterKey],
@@ -387,8 +390,6 @@ pub trait CounterStorage: Sync + Send {
         counters: &[CounterKey],
         delta: u64,
     ) -> Result<(Authorization, Vec<Counter>), StorageErr>;
-    fn get_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<HashSet<Counter>, StorageErr>; // todo revise typing here?
-    fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr>; // todo revise typing here?
     fn clear(&self) -> Result<(), StorageErr>;
 }
 
