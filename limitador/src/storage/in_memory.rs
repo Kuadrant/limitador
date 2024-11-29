@@ -10,31 +10,14 @@ use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 use metrics::counter;
+use prost::bytes::BufMut;
 
 pub struct InMemoryStorage {
-    simple_limits: RwLock<BTreeMap<Limit, AtomicExpiringValue>>,
-    qualified_counters: Cache<Counter, Arc<AtomicExpiringValue>>,
+    simple_limits: RwLock<BTreeMap<CounterKey, AtomicExpiringValue>>,
+    qualified_counters: Cache<CounterKey, Arc<AtomicExpiringValue>>,
 }
 
 impl CounterStorage for InMemoryStorage {
-    #[tracing::instrument(skip_all)]
-    fn is_within_limits(&self, key: &CounterKey, delta: u64) -> Result<bool, StorageErr> {
-        let value = if key.is_qualified() {
-            self.qualified_counters
-                .get(counter)
-                .map(|c| c.value())
-                .unwrap_or_default()
-        } else {
-            let limits_by_namespace = self.simple_limits.read().unwrap();
-            limits_by_namespace
-                .get(counter.limit())
-                .map(|c| c.value())
-                .unwrap_or_default()
-        };
-
-        Ok(counter.max_value() >= value + delta)
-    }
-
     #[tracing::instrument(skip_all)]
     fn add_counter(&self, limit: &Limit) -> Result<(), StorageErr> {
         if limit.variables().is_empty() {
@@ -243,6 +226,14 @@ impl CounterStorage for InMemoryStorage {
     fn clear(&self) -> Result<(), StorageErr> {
         self.simple_limits.write().unwrap().clear();
         Ok(())
+    }
+
+    fn add_counters(&self, keys: &[CounterKey]) -> Result<(), StorageErr> {
+        todo!()
+    }
+
+    fn update_counters(&self, key: &[CounterKey], delta: u64) -> Result<u64, StorageErr> {
+        todo!()
     }
 }
 
