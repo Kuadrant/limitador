@@ -1,7 +1,7 @@
 use crate::counter::Counter;
 use crate::limit::{Context, Limit, Namespace};
 use crate::storage::atomic_expiring_value::AtomicExpiringValue;
-use crate::storage::{Authorization, CounterStorage, StorageErr};
+use crate::storage::{Authorization, CounterKey, CounterStorage, StorageErr};
 use moka::sync::{Cache, CacheBuilder};
 use moka::PredicateError;
 use std::collections::btree_map::Entry;
@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
+use metrics::counter;
 
 pub struct InMemoryStorage {
     simple_limits: RwLock<BTreeMap<Limit, AtomicExpiringValue>>,
@@ -17,8 +18,8 @@ pub struct InMemoryStorage {
 
 impl CounterStorage for InMemoryStorage {
     #[tracing::instrument(skip_all)]
-    fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr> {
-        let value = if counter.is_qualified() {
+    fn is_within_limits(&self, key: &CounterKey, delta: u64) -> Result<bool, StorageErr> {
+        let value = if key.is_qualified() {
             self.qualified_counters
                 .get(counter)
                 .map(|c| c.value())
@@ -133,7 +134,7 @@ impl CounterStorage for InMemoryStorage {
     #[tracing::instrument(skip_all)]
     fn check_and_update_loading(
         &self,
-        counters: &mut Vec<Counter>,
+        counters: &[Counter],
         delta: u64,
     ) -> Result<Authorization, StorageErr> {
         let limits_by_namespace = self.simple_limits.read().unwrap();
