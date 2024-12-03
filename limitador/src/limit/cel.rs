@@ -126,8 +126,8 @@ impl<'a> Context<'a> {
         }
     }
 
-    pub(crate) fn has_variable(&self, name: &str) -> bool {
-        self.variables.contains(name)
+    pub(crate) fn has_variables(&self, names: &[&str]) -> bool {
+        names.iter().all(|name| self.variables.contains(*name))
     }
 }
 

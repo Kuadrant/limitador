@@ -169,10 +169,14 @@ impl Limit {
             .iter()
             .all(|predicate| predicate.test(&ctx.for_limit(self)).unwrap());
 
-        let all_vars_are_set = self
-            .variables
-            .iter()
-            .all(|var| ctx.has_variable(var.source()));
+        let all_vars_are_set = self.variables.iter().all(|var| {
+            ctx.has_variables(
+                &var.variables()
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<&str>>(),
+            )
+        });
 
         all_conditions_apply && all_vars_are_set
     }
@@ -220,6 +224,7 @@ impl PartialEq for Limit {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::counter::Counter;
     use std::cmp::Ordering::Equal;
 
     #[test]
@@ -439,5 +444,29 @@ mod tests {
             Vec::default(),
         );
         assert!(!limit.applies(&Context::default()));
+    }
+
+    #[test]
+    fn cel_limit_applies() {
+        let limit = Limit::new(
+            "ns",
+            42,
+            10,
+            vec!["foo.contains('bar')".try_into().expect("failed parsing!")],
+            vec!["bar.endsWith('baz')".try_into().expect("failed parsing!")],
+        );
+        let map = HashMap::from([
+            ("foo".to_string(), "nice bar!".to_string()),
+            ("bar".to_string(), "foo,baz".to_string()),
+        ]);
+        let ctx = Context::new(String::default(), &map);
+        assert!(limit.applies(&ctx));
+        assert_eq!(
+            Counter::new(limit, map)
+                .expect("failed")
+                .set_variables()
+                .get("bar.endsWith('baz')"),
+            Some(&"true".to_string())
+        );
     }
 }
