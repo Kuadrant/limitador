@@ -96,6 +96,19 @@ impl<'a> Context<'a> {
         }
     }
 
+    pub fn list_binding(&mut self, name: String, value: Vec<HashMap<String, String>>) {
+        let v = value
+            .iter()
+            .map(|values| {
+                let map = cel_interpreter::objects::Map::from(values.clone());
+                Value::Map(map)
+            })
+            .collect::<Vec<_>>();
+        self.variables.insert(name.clone());
+        self.ctx
+            .add_variable_from_value(name, Value::List(v.into()));
+    }
+
     pub(crate) fn for_limit<'b>(&'b self, limit: &Limit) -> Self
     where
         'b: 'a,
@@ -410,6 +423,21 @@ mod tests {
             pred.test(&ctx()).map_err(|e| format!("{e}")),
             Err("unexpected value of type integer: `42`".to_string())
         );
+    }
+
+    #[test]
+    fn supports_list_bindings() {
+        let pred = Predicate::parse("root[0].key == '1' && root[1]['key'] == '2'")
+            .expect("failed to parse");
+        let mut ctx = Context::default();
+        ctx.list_binding(
+            "root".to_string(),
+            vec![
+                HashMap::from([("key".to_string(), "1".to_string())]),
+                HashMap::from([("key".to_string(), "2".to_string())]),
+            ],
+        );
+        assert_eq!(pred.test(&ctx).map_err(|e| format!("{e}")), Ok(true));
     }
 
     fn ctx<'a>() -> Context<'a> {
