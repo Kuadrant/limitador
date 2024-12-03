@@ -7,7 +7,7 @@ use criterion::{black_box, criterion_group, criterion_main, Bencher, BenchmarkId
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 
-use limitador::limit::Limit;
+use limitador::limit::{Context, Limit};
 #[cfg(feature = "disk_storage")]
 use limitador::storage::disk::{DiskStorage, OptimizeFor};
 #[cfg(feature = "distributed_storage")]
@@ -89,9 +89,9 @@ const TEST_SCENARIOS: &[&TestScenario] = &[
     },
 ];
 
-struct TestCallParams {
+struct TestCallParams<'a> {
     namespace: String,
-    values: HashMap<String, String>,
+    ctx: Context<'a>,
     delta: u64,
 }
 
@@ -329,7 +329,7 @@ fn bench_is_rate_limited(
             rate_limiter
                 .is_rate_limited(
                     &params.namespace.to_owned().into(),
-                    &(&params.values).into(),
+                    &params.ctx,
                     params.delta,
                 )
                 .unwrap(),
@@ -357,7 +357,7 @@ fn async_bench_is_rate_limited<F>(
                 rate_limiter
                     .is_rate_limited(
                         &params.namespace.to_owned().into(),
-                        &(&params.values).into(),
+                        &params.ctx,
                         params.delta,
                     )
                     .await
@@ -383,7 +383,7 @@ fn bench_update_counters(
         rate_limiter
             .update_counters(
                 &params.namespace.to_owned().into(),
-                &(&params.values).into(),
+                &params.ctx,
                 params.delta,
             )
             .unwrap();
@@ -410,7 +410,7 @@ fn async_bench_update_counters<F>(
                 rate_limiter
                     .update_counters(
                         &params.namespace.to_owned().into(),
-                        &(&params.values).into(),
+                        &params.ctx,
                         params.delta,
                     )
                     .await
@@ -437,7 +437,7 @@ fn bench_check_rate_limited_and_update(
             rate_limiter
                 .check_rate_limited_and_update(
                     &params.namespace.to_owned().into(),
-                    &(&params.values).into(),
+                    &params.ctx,
                     params.delta,
                     false,
                 )
@@ -467,7 +467,7 @@ fn async_bench_check_rate_limited_and_update<F>(
                 rate_limiter
                     .check_rate_limited_and_update(
                         &params.namespace.to_owned().into(),
-                        &(&params.values).into(),
+                        &params.ctx,
                         params.delta,
                         false,
                     )
@@ -562,7 +562,7 @@ fn generate_test_limits(scenario: &TestScenario) -> (Vec<Limit>, Vec<TestCallPar
 
         call_params.push(TestCallParams {
             namespace,
-            values: test_values.clone(),
+            ctx: test_values.clone().into(),
             delta: 1,
         });
     }

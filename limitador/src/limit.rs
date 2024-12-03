@@ -260,7 +260,7 @@ mod tests {
         values.insert("x".into(), "5".into());
         values.insert("y".into(), "1".into());
 
-        assert!(limit.applies(&(&values).into()))
+        assert!(limit.applies(&values.into()))
     }
 
     #[test]
@@ -277,7 +277,7 @@ mod tests {
         values.insert("x".into(), "1".into());
         values.insert("y".into(), "1".into());
 
-        assert!(!limit.applies(&(&values).into()))
+        assert!(!limit.applies(&values.into()))
     }
 
     #[test]
@@ -295,7 +295,7 @@ mod tests {
         values.insert("a".into(), "1".into());
         values.insert("y".into(), "1".into());
 
-        assert!(!limit.applies(&(&values).into()))
+        assert!(!limit.applies(&values.into()))
     }
 
     #[test]
@@ -312,7 +312,7 @@ mod tests {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "5".into());
 
-        assert!(!limit.applies(&(&values).into()))
+        assert!(!limit.applies(&values.into()))
     }
 
     #[test]
@@ -333,7 +333,7 @@ mod tests {
         values.insert("y".into(), "2".into());
         values.insert("z".into(), "1".into());
 
-        assert!(limit.applies(&(&values).into()))
+        assert!(limit.applies(&values.into()))
     }
 
     #[test]
@@ -354,7 +354,7 @@ mod tests {
         values.insert("y".into(), "2".into());
         values.insert("z".into(), "1".into());
 
-        assert!(!limit.applies(&(&values).into()))
+        assert!(!limit.applies(&values.into()))
     }
 
     #[test]
@@ -434,7 +434,7 @@ mod tests {
             ],
             Vec::default(),
         );
-        assert!(limit.applies(&(&HashMap::default()).into()));
+        assert!(limit.applies(&Context::default()));
 
         let limit = Limit::with_id(
             "my_id",
@@ -462,7 +462,7 @@ mod tests {
             ("foo".to_string(), "nice bar!".to_string()),
             ("bar".to_string(), "foo,baz".to_string()),
         ]);
-        let ctx = Context::new(String::default(), &map);
+        let ctx = map.into();
         assert!(limit.applies(&ctx));
         assert_eq!(
             Counter::new(limit, &ctx)

@@ -250,7 +250,7 @@ mod tests {
             vec!["app_id".try_into().expect("failed parsing!")],
         );
         let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
-        let ctx = (&map).into();
+        let ctx = map.into();
         let counter = Counter::new(limit, &ctx)
             .unwrap()
             .expect("must have a counter");

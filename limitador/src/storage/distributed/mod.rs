@@ -341,7 +341,7 @@ fn encode_limit_to_key(limit: &Limit) -> Vec<u8> {
         .into_iter()
         .map(|k| (k, "".to_string()))
         .collect();
-    let ctx = (&vars).into();
+    let ctx = vars.into();
     let counter = Counter::new(limit.clone(), &ctx)
         .expect("counter creation can't fail! faked vars!")
         .expect("must have a counter");

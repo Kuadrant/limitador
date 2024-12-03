@@ -109,7 +109,7 @@ impl RateLimitService for MyRateLimiter {
             req.hits_addend
         };
 
-        let ctx = (&values).into();
+        let ctx = values.into();
 
         let rate_limited_resp = match &*self.limiter {
             Limiter::Blocking(limiter) => limiter.check_rate_limited_and_update(

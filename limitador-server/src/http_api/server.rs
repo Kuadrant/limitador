@@ -122,7 +122,7 @@ async fn check(
         response_headers: _,
     } = request.into_inner();
     let namespace = namespace.into();
-    let ctx = (&values).into();
+    let ctx = values.into();
     let is_rate_limited_result = match state.get_ref().limiter() {
         Limiter::Blocking(limiter) => limiter.is_rate_limited(&namespace, &ctx, delta),
         Limiter::Async(limiter) => limiter.is_rate_limited(&namespace, &ctx, delta).await,
@@ -153,7 +153,7 @@ async fn report(
         response_headers: _,
     } = request.into_inner();
     let namespace = namespace.into();
-    let ctx = (&values).into();
+    let ctx = values.into();
     let update_counters_result = match data.get_ref().limiter() {
         Limiter::Blocking(limiter) => limiter.update_counters(&namespace, &ctx, delta),
         Limiter::Async(limiter) => limiter.update_counters(&namespace, &ctx, delta).await,
@@ -178,7 +178,7 @@ async fn check_and_report(
         response_headers,
     } = request.into_inner();
     let namespace = namespace.into();
-    let ctx = (&values).into();
+    let ctx = values.into();
     let rate_limit_data = data.get_ref();
     let rate_limited_and_update_result = match rate_limit_data.limiter() {
         Limiter::Blocking(limiter) => limiter.check_rate_limited_and_update(

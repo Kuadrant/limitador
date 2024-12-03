@@ -440,7 +440,7 @@ mod tests {
 
         let mut counters_and_deltas = HashMap::new();
         let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
-        let ctx = (&map).into();
+        let ctx = map.into();
         let counter = Counter::new(
             Limit::new(
                 "test_namespace",
@@ -506,7 +506,7 @@ mod tests {
     #[tokio::test]
     async fn flush_batcher_and_update_counters_test() {
         let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
-        let ctx = (&map).into();
+        let ctx = map.into();
         let counter = Counter::new(
             Limit::new(
                 "test_namespace",
@@ -569,7 +569,7 @@ mod tests {
     #[tokio::test]
     async fn flush_batcher_reverts_on_err() {
         let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
-        let ctx = (&map).into();
+        let ctx = map.into();
         let counter = Counter::new(
             Limit::new(
                 "test_namespace",

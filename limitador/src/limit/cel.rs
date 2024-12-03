@@ -78,22 +78,21 @@ pub struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
-    pub(crate) fn new(root: String, values: &HashMap<String, String>) -> Self {
+    pub(crate) fn new(root: String, values: HashMap<String, String>) -> Self {
         let mut ctx = cel_interpreter::Context::default();
+        let mut variables = HashSet::new();
 
         if root.is_empty() {
             for (binding, value) in values {
-                ctx.add_variable_from_value(binding, value.clone())
+                ctx.add_variable_from_value(binding.clone(), value.clone());
+                variables.insert(binding);
             }
         } else {
             let map = cel_interpreter::objects::Map::from(values.clone());
             ctx.add_variable_from_value(root, Value::Map(map));
         }
 
-        Self {
-            variables: values.keys().cloned().collect(),
-            ctx,
-        }
+        Self { variables, ctx }
     }
 
     pub fn list_binding(&mut self, name: String, value: Vec<HashMap<String, String>>) {
@@ -146,12 +145,12 @@ impl<'a> Context<'a> {
 
 impl Default for Context<'_> {
     fn default() -> Self {
-        Self::new(String::default(), &HashMap::default())
+        Self::new(String::default(), HashMap::default())
     }
 }
 
-impl From<&HashMap<String, String>> for Context<'_> {
-    fn from(value: &HashMap<String, String>) -> Self {
+impl From<HashMap<String, String>> for Context<'_> {
+    fn from(value: HashMap<String, String>) -> Self {
         Self::new(String::default(), value)
     }
 }
@@ -411,7 +410,7 @@ mod tests {
     fn predicate_no_key() {
         let pred = Predicate::parse("there.not == 42").expect("failed to parse");
         assert_eq!(
-            pred.test(&(&HashMap::from([("there".to_string(), String::default())])).into()),
+            pred.test(&HashMap::from([("there".to_string(), String::default())]).into()),
             Ok(false)
         );
     }

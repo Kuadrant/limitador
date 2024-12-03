@@ -154,7 +154,7 @@ mod tests {
             [var.try_into().expect("failed parsing!")],
         );
         let map = HashMap::from([("ts".to_string(), "2019-10-12T13:20:50.52Z".to_string())]);
-        let ctx = (&map).into();
+        let ctx = map.into();
         let counter = Counter::new(limit, &ctx).expect("failed creating counter");
         assert_eq!(
             counter.unwrap().set_variables.get(var),

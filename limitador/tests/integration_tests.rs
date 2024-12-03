@@ -380,7 +380,7 @@ mod test {
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "1".to_string());
         rate_limiter
-            .update_counters(namespace, &(&values).into(), 1)
+            .update_counters(namespace, &values.into(), 1)
             .await
             .unwrap();
 
@@ -473,7 +473,7 @@ mod test {
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "1".to_string());
         rate_limiter
-            .update_counters(namespace, &(&values).into(), 1)
+            .update_counters(namespace, &values.into(), 1)
             .await
             .unwrap();
 
@@ -506,7 +506,7 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
-        let ctx = (&values).into();
+        let ctx = values.into();
 
         for i in 0..max_hits {
             assert!(
@@ -544,7 +544,7 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
-        let ctx = (&values).into();
+        let ctx = values.into();
 
         for i in 0..max_hits {
             assert!(
@@ -592,12 +592,12 @@ mod test {
         let mut get_values: HashMap<String, String> = HashMap::new();
         get_values.insert("req_method".to_string(), "GET".to_string());
         get_values.insert("app_id".to_string(), "test_app_id".to_string());
-        let get_ctx = (&get_values).into();
+        let get_ctx = get_values.into();
 
         let mut post_values: HashMap<String, String> = HashMap::new();
         post_values.insert("req_method".to_string(), "POST".to_string());
         post_values.insert("app_id".to_string(), "test_app_id".to_string());
-        let post_ctx = (&post_values).into();
+        let post_ctx = post_values.into();
 
         for i in 0..max_hits {
             assert!(
@@ -652,7 +652,7 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
-        let ctx = (&values).into();
+        let ctx = values.into();
 
         // Report 5 hits twice. The limit is 10, so the first limited call should be
         // the third one.
@@ -688,7 +688,7 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
-        let ctx = (&values).into();
+        let ctx = values.into();
 
         assert!(rate_limiter
             .is_rate_limited(namespace, &ctx, max + 1)
@@ -712,12 +712,13 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
-        let ctx = (&values).into();
 
         for i in 0..max_hits {
             // Add an extra value that does not apply to the limit on each
             // iteration. It should not affect.
+            let mut values = values.clone();
             values.insert("does_not_apply".to_string(), i.to_string());
+            let ctx = values.into();
 
             assert!(
                 !rate_limiter
@@ -731,6 +732,7 @@ mod test {
                 .await
                 .unwrap();
         }
+        let ctx = values.into();
         assert!(rate_limiter
             .is_rate_limited(namespace, &ctx, 1)
             .await
@@ -742,7 +744,7 @@ mod test {
     ) {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
-        let ctx = (&values).into();
+        let ctx = values.into();
 
         assert!(!rate_limiter
             .is_rate_limited("test_namespace", &ctx, 1)
@@ -769,7 +771,7 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "POST".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
-        let ctx = (&values).into();
+        let ctx = values.into();
 
         assert!(!rate_limiter
             .is_rate_limited(namespace, &ctx, 1)
@@ -792,7 +794,7 @@ mod test {
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("app_id".to_string(), "test_app_id".to_string());
-        let ctx = (&values).into();
+        let ctx = values.into();
 
         assert!(rate_limiter
             .is_rate_limited(namespace, &ctx, 1)
@@ -817,7 +819,7 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
-        let ctx = (&values).into();
+        let ctx = values.into();
 
         for _ in 0..max_hits {
             assert!(
@@ -855,7 +857,7 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
-        let ctx = (&values).into();
+        let ctx = values.into();
 
         for hit in 0..max_hits {
             let result = rate_limiter
@@ -907,7 +909,7 @@ mod test {
         values.insert("app_id".to_string(), "test_app_id".to_string());
         // Does not match the limit defined
         values.insert("req_method".to_string(), "POST".to_string());
-        let ctx = (&values).into();
+        let ctx = values.into();
 
         assert!(
             !rate_limiter
@@ -935,7 +937,7 @@ mod test {
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("app_id".to_string(), "test_app_id".to_string());
-        let ctx = (&values).into();
+        let ctx = values.into();
 
         assert!(
             rate_limiter
@@ -965,13 +967,16 @@ mod test {
         let mut values = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "1".to_string());
-        let ctx = (&values).into();
+        let ctx = values.into();
         rate_limiter
             .update_counters(namespace, &ctx, hits_app_1)
             .await
             .unwrap();
 
+        let mut values = HashMap::new();
+        values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "2".to_string());
+        let ctx = values.into();
         rate_limiter
             .update_counters(namespace, &ctx, hits_app_2)
             .await
@@ -1044,7 +1049,7 @@ mod test {
         let mut values = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "1".to_string());
-        let ctx = (&values).into();
+        let ctx = values.into();
         rate_limiter
             .update_counters(namespace, &ctx, 1)
             .await
@@ -1109,7 +1114,7 @@ mod test {
         let mut values = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "1".to_string());
-        let ctx = (&values).into();
+        let ctx = values.into();
         rate_limiter
             .update_counters(namespace, &ctx, hits_to_report)
             .await
@@ -1262,7 +1267,7 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
-        let ctx = (&values).into();
+        let ctx = values.into();
 
         for i in 0..max_hits {
             // Alternate between the two rate limiters

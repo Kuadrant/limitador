@@ -154,7 +154,7 @@ mod tests {
             vec!["app_id".try_into().expect("failed parsing!")],
         );
         let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
-        let ctx = (&map).into();
+        let ctx = map.into();
         let counter = Counter::new(limit.clone(), &ctx)
             .expect("counter creation failed!")
             .expect("must have a counter");
@@ -173,7 +173,7 @@ mod tests {
             vec!["app_id".try_into().expect("failed parsing!")],
         );
         let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
-        let ctx = (&map).into();
+        let ctx = map.into();
         let counter = Counter::new(limit.clone(), &ctx)
             .expect("counter creation failed!")
             .expect("must have a counter");
@@ -387,7 +387,7 @@ pub mod bin {
             vars.insert("role".to_string(), "admin".to_string());
             vars.insert("app_id".to_string(), "123".to_string());
             vars.insert("wat".to_string(), "dunno".to_string());
-            let ctx = (&vars).into();
+            let ctx = vars.into();
             let counter = Counter::new(limit.clone(), &ctx)
                 .expect("counter creation failed!")
                 .expect("must have a counter");
@@ -411,7 +411,7 @@ pub mod bin {
             );
             let mut variables = HashMap::default();
             variables.insert("app_id".to_string(), "123".to_string());
-            let ctx = (&variables).into();
+            let ctx = variables.into();
             let counter = Counter::new(limit.clone(), &ctx)
                 .expect("counter creation failed!")
                 .expect("must have a counter");
@@ -430,7 +430,7 @@ pub mod bin {
                 vec!["app_id".try_into().expect("failed parsing!")],
             );
             let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
-            let ctx = (&map).into();
+            let ctx = map.into();
             let counter = Counter::new(limit, &ctx)
                 .expect("counter creation failed!")
                 .expect("must have a counter");
@@ -460,7 +460,7 @@ pub mod bin {
             );
 
             let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
-            let ctx = (&map).into();
+            let ctx = map.into();
             let counter_with_id = Counter::new(limit_with_id, &ctx)
                 .expect("counter creation failed!")
                 .expect("must have a counter");
