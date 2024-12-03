@@ -212,7 +212,9 @@ impl InMemoryStorage {
             if limit.namespace() == namespace {
                 res.insert(
                     // todo fixme
-                    Counter::new(limit.clone(), HashMap::default()).unwrap(),
+                    Counter::new(limit.clone(), HashMap::default())
+                        .unwrap()
+                        .unwrap(),
                     counter.clone(),
                 );
             }
@@ -271,12 +273,14 @@ mod tests {
             limit_1,
             HashMap::from([("app_id".to_string(), "foo".to_string())]),
         )
-        .expect("counter creation failed!");
+        .expect("counter creation failed!")
+        .expect("Should have a counter");
         let counter_2 = Counter::new(
             limit_2,
             HashMap::from([("app_id".to_string(), "foo".to_string())]),
         )
-        .expect("counter creation failed!");
+        .expect("counter creation failed!")
+        .expect("Should have a counter");
         storage.update_counter(&counter_1, 1).unwrap();
         storage.update_counter(&counter_2, 1).unwrap();
 

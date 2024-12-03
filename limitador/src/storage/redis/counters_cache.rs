@@ -687,5 +687,6 @@ mod tests {
             values,
         )
         .expect("failed creating counter")
+        .expect("Should have a counter")
     }
 }

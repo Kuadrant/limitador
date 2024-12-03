@@ -253,7 +253,8 @@ mod tests {
             limit,
             HashMap::from([("app_id".to_string(), "foo".to_string())]),
         )
-        .unwrap();
+        .unwrap()
+        .expect("must have a counter");
 
         let tmp = TempDir::new().expect("We should have a dir!");
         {

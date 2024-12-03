@@ -134,15 +134,19 @@ impl Limit {
     pub fn resolve_variables(
         &self,
         vars: HashMap<String, String>,
-    ) -> Result<BTreeMap<String, String>, EvaluationError> {
+    ) -> Result<Option<BTreeMap<String, String>>, EvaluationError> {
         let ctx = Context::new(String::default(), &vars);
         let mut map = BTreeMap::new();
         for variable in &self.variables {
             let name = variable.source().into();
-            let value = variable.eval(&ctx)?;
-            map.insert(name, value);
+            match variable.eval(&ctx)? {
+                None => return Ok(None),
+                Some(value) => {
+                    map.insert(name, value);
+                }
+            }
         }
-        Ok(map)
+        Ok(Some(map))
     }
 
     #[cfg(feature = "disk_storage")]
@@ -464,6 +468,7 @@ mod tests {
         assert_eq!(
             Counter::new(limit, map)
                 .expect("failed")
+                .unwrap()
                 .set_variables()
                 .get("bar.endsWith('baz')"),
             Some(&"true".to_string())

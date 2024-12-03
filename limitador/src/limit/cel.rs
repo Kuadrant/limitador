@@ -159,19 +159,25 @@ impl Expression {
         }
     }
 
-    pub fn eval(&self, ctx: &Context) -> Result<String, EvaluationError> {
-        match self.resolve(ctx)? {
-            Value::Int(i) => Ok(i.to_string()),
-            Value::UInt(i) => Ok(i.to_string()),
-            Value::Float(f) => Ok(f.to_string()),
-            Value::String(s) => Ok(s.to_string()),
-            Value::Null => Ok("null".to_owned()),
-            Value::Bool(b) => Ok(b.to_string()),
-            val => Err(err_on_value(val)),
+    pub fn eval(&self, ctx: &Context) -> Result<Option<String>, EvaluationError> {
+        let result = self.resolve(ctx);
+        match result {
+            Ok(value) => match value {
+                Value::Int(i) => Ok(i.to_string()),
+                Value::UInt(i) => Ok(i.to_string()),
+                Value::Float(f) => Ok(f.to_string()),
+                Value::String(s) => Ok(s.to_string()),
+                Value::Null => Ok("null".to_owned()),
+                Value::Bool(b) => Ok(b.to_string()),
+                val => Err(err_on_value(val)),
+            }
+            .map(Some),
+            Err(ExecutionError::NoSuchKey(_)) => Ok(None),
+            Err(err) => Err(err.into()),
         }
     }
 
-    pub fn resolve(&self, ctx: &Context) -> Result<Value, ExecutionError> {
+    pub(super) fn resolve(&self, ctx: &Context) -> Result<Value, ExecutionError> {
         Value::resolve(&self.expression, &ctx.ctx)
     }
 
@@ -287,9 +293,14 @@ impl Predicate {
         {
             return Ok(false);
         }
-        match self.expression.resolve(ctx)? {
-            Value::Bool(b) => Ok(b),
-            v => Err(err_on_value(v)),
+
+        match self.expression.resolve(ctx) {
+            Ok(value) => match value {
+                Value::Bool(b) => Ok(b),
+                v => Err(err_on_value(v)),
+            },
+            Err(ExecutionError::NoSuchKey(_)) => Ok(false),
+            Err(err) => Err(err.into()),
         }
     }
 }
@@ -345,12 +356,12 @@ impl From<Predicate> for String {
 #[cfg(test)]
 mod tests {
     use super::{Context, Expression, Predicate};
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
     #[test]
     fn expression() {
         let exp = Expression::parse("100").expect("failed to parse");
-        assert_eq!(exp.eval(&ctx()), Ok(String::from("100")));
+        assert_eq!(exp.eval(&ctx()), Ok(Some(String::from("100"))));
     }
 
     #[test]
@@ -375,6 +386,21 @@ mod tests {
     fn predicate() {
         let pred = Predicate::parse("42 == uint('42')").expect("failed to parse");
         assert_eq!(pred.test(&ctx()), Ok(true));
+    }
+
+    #[test]
+    fn predicate_no_var() {
+        let pred = Predicate::parse("not_there == 42").expect("failed to parse");
+        assert_eq!(pred.test(&ctx()), Ok(false));
+    }
+
+    #[test]
+    fn predicate_no_key() {
+        let pred = Predicate::parse("there.not == 42").expect("failed to parse");
+        assert_eq!(
+            pred.test(&(&HashMap::from([("there".to_string(), String::default())])).into()),
+            Ok(false)
+        );
     }
 
     #[test]

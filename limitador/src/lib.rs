@@ -483,7 +483,11 @@ impl RateLimiter {
         limits
             .iter()
             .filter(|lim| lim.applies(&ctx))
-            .map(|lim| Counter::new(Arc::clone(lim), values.clone()))
+            .filter_map(|lim| match Counter::new(Arc::clone(lim), values.clone()) {
+                Ok(None) => None,
+                Ok(Some(c)) => Some(Ok(c)),
+                Err(e) => Some(Err(e)),
+            })
             .collect()
     }
 }
@@ -660,7 +664,11 @@ impl AsyncRateLimiter {
         limits
             .iter()
             .filter(|lim| lim.applies(&ctx))
-            .map(|lim| Counter::new(Arc::clone(lim), values.clone()))
+            .filter_map(|lim| match Counter::new(Arc::clone(lim), values.clone()) {
+                Ok(None) => None,
+                Ok(Some(c)) => Some(Ok(c)),
+                Err(e) => Some(Err(e)),
+            })
             .collect()
     }
 }

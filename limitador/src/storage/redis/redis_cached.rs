@@ -449,7 +449,8 @@ mod tests {
             ),
             HashMap::from([("app_id".to_string(), "foo".to_string())]),
         )
-        .expect("counter creation failed!");
+        .expect("counter creation failed!")
+        .expect("must have a counter");
 
         let arc = Arc::new(CachedCounterValue::from_authority(
             &counter,
@@ -512,7 +513,8 @@ mod tests {
             ),
             HashMap::from([("app_id".to_string(), "foo".to_string())]),
         )
-        .expect("counter creation failed!");
+        .expect("counter creation failed!")
+        .expect("must have a counter");
 
         let mock_response = Value::Array(vec![
             Value::Int(8),
@@ -572,7 +574,8 @@ mod tests {
             ),
             HashMap::from([("app_id".to_string(), "foo".to_string())]),
         )
-        .expect("counter creation failed!");
+        .expect("counter creation failed!")
+        .expect("must have a counter");
 
         let error: RedisError = io::Error::new(io::ErrorKind::TimedOut, "That was long!").into();
         assert!(error.is_timeout());

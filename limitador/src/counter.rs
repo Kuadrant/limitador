@@ -20,18 +20,21 @@ impl Counter {
     pub fn new<L: Into<Arc<Limit>>>(
         limit: L,
         set_variables: HashMap<String, String>,
-    ) -> LimitadorResult<Self> {
+    ) -> LimitadorResult<Option<Self>> {
         let limit = limit.into();
         let mut vars = set_variables;
         vars.retain(|var, _| limit.has_variable(var));
 
         let variables = limit.resolve_variables(vars)?;
-        Ok(Self {
-            limit,
-            set_variables: variables,
-            remaining: None,
-            expires_in: None,
-        })
+        match variables {
+            None => Ok(None),
+            Some(variables) => Ok(Some(Self {
+                limit,
+                set_variables: variables,
+                remaining: None,
+                expires_in: None,
+            })),
+        }
     }
 
     pub(super) fn resolved_vars<L: Into<Arc<Limit>>>(
@@ -162,7 +165,7 @@ mod tests {
         )
         .expect("failed creating counter");
         assert_eq!(
-            counter.set_variables.get(var),
+            counter.unwrap().set_variables.get(var),
             Some("13".to_string()).as_ref()
         );
     }

@@ -48,7 +48,8 @@ impl CounterStorage for CrInMemoryStorage {
             limits.entry(key.clone()).or_insert(Arc::new(CounterEntry {
                 key,
                 counter: Counter::new(limit.clone(), HashMap::default())
-                    .expect("counter creation can't fail! no vars to resolve!"),
+                    .expect("counter creation can't fail! no vars to resolve!")
+                    .expect("must have a counter"),
                 value: CrCounterValue::new(
                     self.identifier.clone(),
                     limit.max_value(),
@@ -343,6 +344,7 @@ fn encode_limit_to_key(limit: &Limit) -> Vec<u8> {
             .map(|k| (k, "".to_string()))
             .collect(),
     )
-    .expect("counter creation can't fail! faked vars!");
+    .expect("counter creation can't fail! faked vars!")
+    .expect("must have a counter");
     key_for_counter_v2(&counter)
 }
