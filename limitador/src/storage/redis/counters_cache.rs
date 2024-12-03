@@ -676,6 +676,7 @@ mod tests {
         if let Some(overrides) = other_values {
             values.extend(overrides);
         }
+        let ctx = (&values).into();
         Counter::new(
             Limit::new(
                 "test_namespace",
@@ -684,7 +685,7 @@ mod tests {
                 vec!["req_method == 'POST'".try_into().expect("failed parsing!")],
                 vec!["app_id".try_into().expect("failed parsing!")],
             ),
-            values,
+            &ctx,
         )
         .expect("failed creating counter")
         .expect("Should have a counter")

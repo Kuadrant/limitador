@@ -1,5 +1,5 @@
 use crate::counter::Counter;
-use crate::limit::{Limit, Namespace};
+use crate::limit::{Context, Limit, Namespace};
 use crate::storage::atomic_expiring_value::AtomicExpiringValue;
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 use moka::sync::Cache;
@@ -212,7 +212,7 @@ impl InMemoryStorage {
             if limit.namespace() == namespace {
                 res.insert(
                     // todo fixme
-                    Counter::new(limit.clone(), HashMap::default())
+                    Counter::new(limit.clone(), &Context::default())
                         .unwrap()
                         .unwrap(),
                     counter.clone(),
@@ -269,18 +269,14 @@ mod tests {
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
             vec!["app_id".try_into().expect("failed parsing!")],
         );
-        let counter_1 = Counter::new(
-            limit_1,
-            HashMap::from([("app_id".to_string(), "foo".to_string())]),
-        )
-        .expect("counter creation failed!")
-        .expect("Should have a counter");
-        let counter_2 = Counter::new(
-            limit_2,
-            HashMap::from([("app_id".to_string(), "foo".to_string())]),
-        )
-        .expect("counter creation failed!")
-        .expect("Should have a counter");
+        let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
+        let ctx = (&map).into();
+        let counter_1 = Counter::new(limit_1, &ctx)
+            .expect("counter creation failed!")
+            .expect("Should have a counter");
+        let counter_2 = Counter::new(limit_2, &ctx)
+            .expect("counter creation failed!")
+            .expect("Should have a counter");
         storage.update_counter(&counter_1, 1).unwrap();
         storage.update_counter(&counter_2, 1).unwrap();
 

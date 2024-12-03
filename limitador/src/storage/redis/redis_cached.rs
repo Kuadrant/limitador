@@ -439,6 +439,8 @@ mod tests {
         const LOCAL_INCREMENTS: u64 = 2;
 
         let mut counters_and_deltas = HashMap::new();
+        let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
+        let ctx = (&map).into();
         let counter = Counter::new(
             Limit::new(
                 "test_namespace",
@@ -447,7 +449,7 @@ mod tests {
                 vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
                 vec!["app_id".try_into().expect("failed parsing!")],
             ),
-            HashMap::from([("app_id".to_string(), "foo".to_string())]),
+            &ctx,
         )
         .expect("counter creation failed!")
         .expect("must have a counter");
@@ -503,6 +505,8 @@ mod tests {
 
     #[tokio::test]
     async fn flush_batcher_and_update_counters_test() {
+        let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
+        let ctx = (&map).into();
         let counter = Counter::new(
             Limit::new(
                 "test_namespace",
@@ -511,7 +515,7 @@ mod tests {
                 vec!["req_method == 'POST'".try_into().expect("failed parsing!")],
                 vec!["app_id".try_into().expect("failed parsing!")],
             ),
-            HashMap::from([("app_id".to_string(), "foo".to_string())]),
+            &ctx,
         )
         .expect("counter creation failed!")
         .expect("must have a counter");
@@ -564,6 +568,8 @@ mod tests {
 
     #[tokio::test]
     async fn flush_batcher_reverts_on_err() {
+        let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
+        let ctx = (&map).into();
         let counter = Counter::new(
             Limit::new(
                 "test_namespace",
@@ -572,7 +578,7 @@ mod tests {
                 vec!["req_method == 'POST'".try_into().expect("failed parsing!")],
                 vec!["app_id".try_into().expect("failed parsing!")],
             ),
-            HashMap::from([("app_id".to_string(), "foo".to_string())]),
+            &ctx,
         )
         .expect("counter creation failed!")
         .expect("must have a counter");

@@ -1,14 +1,13 @@
-use cel::Context;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 
 mod cel;
 
+pub use cel::{Context, Expression, Predicate};
 pub use cel::{EvaluationError, ParseError};
-pub use cel::{Expression, Predicate};
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Namespace(String);
@@ -133,13 +132,12 @@ impl Limit {
 
     pub fn resolve_variables(
         &self,
-        vars: HashMap<String, String>,
+        ctx: &Context,
     ) -> Result<Option<BTreeMap<String, String>>, EvaluationError> {
-        let ctx = Context::new(String::default(), &vars);
         let mut map = BTreeMap::new();
         for variable in &self.variables {
             let name = variable.source().into();
-            match variable.eval(&ctx)? {
+            match variable.eval(ctx)? {
                 None => return Ok(None),
                 Some(value) => {
                     map.insert(name, value);
@@ -230,6 +228,7 @@ mod tests {
     use super::*;
     use crate::counter::Counter;
     use std::cmp::Ordering::Equal;
+    use std::collections::HashMap;
 
     #[test]
     fn limit_can_have_an_optional_name() {
@@ -466,7 +465,7 @@ mod tests {
         let ctx = Context::new(String::default(), &map);
         assert!(limit.applies(&ctx));
         assert_eq!(
-            Counter::new(limit, map)
+            Counter::new(limit, &ctx)
                 .expect("failed")
                 .unwrap()
                 .set_variables()

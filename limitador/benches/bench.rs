@@ -329,7 +329,7 @@ fn bench_is_rate_limited(
             rate_limiter
                 .is_rate_limited(
                     &params.namespace.to_owned().into(),
-                    &params.values,
+                    &(&params.values).into(),
                     params.delta,
                 )
                 .unwrap(),
@@ -357,7 +357,7 @@ fn async_bench_is_rate_limited<F>(
                 rate_limiter
                     .is_rate_limited(
                         &params.namespace.to_owned().into(),
-                        &params.values,
+                        &(&params.values).into(),
                         params.delta,
                     )
                     .await
@@ -383,7 +383,7 @@ fn bench_update_counters(
         rate_limiter
             .update_counters(
                 &params.namespace.to_owned().into(),
-                &params.values,
+                &(&params.values).into(),
                 params.delta,
             )
             .unwrap();
@@ -410,7 +410,7 @@ fn async_bench_update_counters<F>(
                 rate_limiter
                     .update_counters(
                         &params.namespace.to_owned().into(),
-                        &params.values,
+                        &(&params.values).into(),
                         params.delta,
                     )
                     .await
@@ -437,7 +437,7 @@ fn bench_check_rate_limited_and_update(
             rate_limiter
                 .check_rate_limited_and_update(
                     &params.namespace.to_owned().into(),
-                    &params.values,
+                    &(&params.values).into(),
                     params.delta,
                     false,
                 )
@@ -467,7 +467,7 @@ fn async_bench_check_rate_limited_and_update<F>(
                 rate_limiter
                     .check_rate_limited_and_update(
                         &params.namespace.to_owned().into(),
-                        &params.values,
+                        &(&params.values).into(),
                         params.delta,
                         false,
                     )

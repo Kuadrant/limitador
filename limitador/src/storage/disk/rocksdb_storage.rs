@@ -249,12 +249,11 @@ mod tests {
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
             vec!["app_id".try_into().expect("failed parsing!")],
         );
-        let counter = Counter::new(
-            limit,
-            HashMap::from([("app_id".to_string(), "foo".to_string())]),
-        )
-        .unwrap()
-        .expect("must have a counter");
+        let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
+        let ctx = (&map).into();
+        let counter = Counter::new(limit, &ctx)
+            .unwrap()
+            .expect("must have a counter");
 
         let tmp = TempDir::new().expect("We should have a dir!");
         {

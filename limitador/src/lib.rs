@@ -94,7 +94,7 @@
 //!
 //! ```
 //! use limitador::RateLimiter;
-//! use limitador::limit::Limit;
+//! use limitador::limit::{Limit, Context};
 //! use std::collections::HashMap;
 //!
 //! let mut rate_limiter = RateLimiter::new(1000);
@@ -116,22 +116,23 @@
 //!
 //! // Check if we can report
 //! let namespace = "my_namespace".into();
-//! assert!(!rate_limiter.is_rate_limited(&namespace, &values_to_report, 1).unwrap());
+//! let ctx = &values_to_report.into();
+//! assert!(!rate_limiter.is_rate_limited(&namespace, &ctx, 1).unwrap());
 //!
 //! // Report
-//! rate_limiter.update_counters(&namespace, &values_to_report, 1).unwrap();
+//! rate_limiter.update_counters(&namespace, &ctx, 1).unwrap();
 //!
 //! // Check and report again
-//! assert!(!rate_limiter.is_rate_limited(&namespace, &values_to_report, 1).unwrap());
-//! rate_limiter.update_counters(&namespace, &values_to_report, 1).unwrap();
+//! assert!(!rate_limiter.is_rate_limited(&namespace, &ctx, 1).unwrap());
+//! rate_limiter.update_counters(&namespace, &ctx, 1).unwrap();
 //!
 //! // We've already reported 2, so reporting another one should not be allowed
-//! assert!(rate_limiter.is_rate_limited(&namespace, &values_to_report, 1).unwrap());
+//! assert!(rate_limiter.is_rate_limited(&namespace, &ctx, 1).unwrap());
 //!
 //! // You can also check and report if not limited in a single call. It's useful
 //! // for example, when calling Limitador from a proxy. Instead of doing 2
 //! // separate calls, we can issue just one:
-//! rate_limiter.check_rate_limited_and_update(&namespace, &values_to_report, 1, false).unwrap();
+//! rate_limiter.check_rate_limited_and_update(&namespace, &ctx, 1, false).unwrap();
 //! ```
 //!
 //! # Async
@@ -194,7 +195,7 @@
 
 use crate::counter::Counter;
 use crate::errors::LimitadorError;
-use crate::limit::{Limit, Namespace};
+use crate::limit::{Context, Limit, Namespace};
 use crate::storage::in_memory::InMemoryStorage;
 use crate::storage::{AsyncCounterStorage, AsyncStorage, Authorization, CounterStorage, Storage};
 use std::collections::{HashMap, HashSet};
@@ -358,7 +359,7 @@ impl RateLimiter {
     pub fn is_rate_limited(
         &self,
         namespace: &Namespace,
-        values: &HashMap<String, String>,
+        values: &Context,
         delta: u64,
     ) -> LimitadorResult<bool> {
         let counters = self.counters_that_apply(namespace, values)?;
@@ -380,10 +381,10 @@ impl RateLimiter {
     pub fn update_counters(
         &self,
         namespace: &Namespace,
-        values: &HashMap<String, String>,
+        ctx: &Context,
         delta: u64,
     ) -> LimitadorResult<()> {
-        let counters = self.counters_that_apply(namespace, values)?;
+        let counters = self.counters_that_apply(namespace, ctx)?;
 
         counters
             .iter()
@@ -394,11 +395,11 @@ impl RateLimiter {
     pub fn check_rate_limited_and_update(
         &self,
         namespace: &Namespace,
-        values: &HashMap<String, String>,
+        ctx: &Context,
         delta: u64,
         load_counters: bool,
     ) -> LimitadorResult<CheckResult> {
-        let mut counters = self.counters_that_apply(namespace, values)?;
+        let mut counters = self.counters_that_apply(namespace, ctx)?;
 
         if counters.is_empty() {
             return Ok(CheckResult {
@@ -476,14 +477,13 @@ impl RateLimiter {
     fn counters_that_apply(
         &self,
         namespace: &Namespace,
-        values: &HashMap<String, String>,
+        ctx: &Context,
     ) -> LimitadorResult<Vec<Counter>> {
         let limits = self.storage.get_limits(namespace);
-        let ctx = values.into();
         limits
             .iter()
-            .filter(|lim| lim.applies(&ctx))
-            .filter_map(|lim| match Counter::new(Arc::clone(lim), values.clone()) {
+            .filter(|lim| lim.applies(ctx))
+            .filter_map(|lim| match Counter::new(Arc::clone(lim), ctx) {
                 Ok(None) => None,
                 Ok(Some(c)) => Some(Ok(c)),
                 Err(e) => Some(Err(e)),
@@ -533,10 +533,10 @@ impl AsyncRateLimiter {
     pub async fn is_rate_limited(
         &self,
         namespace: &Namespace,
-        values: &HashMap<String, String>,
+        ctx: &Context<'_>,
         delta: u64,
     ) -> LimitadorResult<bool> {
-        let counters = self.counters_that_apply(namespace, values).await?;
+        let counters = self.counters_that_apply(namespace, ctx).await?;
 
         for counter in counters {
             match self.storage.is_within_limits(&counter, delta).await {
@@ -554,10 +554,10 @@ impl AsyncRateLimiter {
     pub async fn update_counters(
         &self,
         namespace: &Namespace,
-        values: &HashMap<String, String>,
+        ctx: &Context<'_>,
         delta: u64,
     ) -> LimitadorResult<()> {
-        let counters = self.counters_that_apply(namespace, values).await?;
+        let counters = self.counters_that_apply(namespace, ctx).await?;
 
         for counter in counters {
             self.storage.update_counter(&counter, delta).await?
@@ -569,12 +569,12 @@ impl AsyncRateLimiter {
     pub async fn check_rate_limited_and_update(
         &self,
         namespace: &Namespace,
-        values: &HashMap<String, String>,
+        ctx: &Context<'_>,
         delta: u64,
         load_counters: bool,
     ) -> LimitadorResult<CheckResult> {
         // the above where-clause is needed in order to call unwrap().
-        let mut counters = self.counters_that_apply(namespace, values).await?;
+        let mut counters = self.counters_that_apply(namespace, ctx).await?;
 
         if counters.is_empty() {
             return Ok(CheckResult {
@@ -657,14 +657,13 @@ impl AsyncRateLimiter {
     async fn counters_that_apply(
         &self,
         namespace: &Namespace,
-        values: &HashMap<String, String>,
+        ctx: &Context<'_>,
     ) -> LimitadorResult<Vec<Counter>> {
         let limits = self.storage.get_limits(namespace);
-        let ctx = values.into();
         limits
             .iter()
-            .filter(|lim| lim.applies(&ctx))
-            .filter_map(|lim| match Counter::new(Arc::clone(lim), values.clone()) {
+            .filter(|lim| lim.applies(ctx))
+            .filter_map(|lim| match Counter::new(Arc::clone(lim), ctx) {
                 Ok(None) => None,
                 Ok(Some(c)) => Some(Ok(c)),
                 Err(e) => Some(Err(e)),
@@ -696,9 +695,8 @@ fn classify_limits_by_namespace(
 
 #[cfg(test)]
 mod test {
-    use crate::limit::{Expression, Limit};
+    use crate::limit::{Context, Expression, Limit};
     use crate::RateLimiter;
-    use std::collections::HashMap;
 
     #[test]
     fn properly_updates_existing_limits() {
@@ -713,7 +711,7 @@ mod test {
         assert_eq!(limits.iter().next().unwrap().max_value(), 42);
 
         let r = rl
-            .check_rate_limited_and_update(&namespace.into(), &HashMap::default(), 1, true)
+            .check_rate_limited_and_update(&namespace.into(), &Context::default(), 1, true)
             .unwrap();
         assert_eq!(r.counters.first().unwrap().max_value(), 42);
 
@@ -727,7 +725,7 @@ mod test {
         assert_eq!(limits.iter().next().unwrap().max_value(), 50);
 
         let r = rl
-            .check_rate_limited_and_update(&namespace.into(), &HashMap::default(), 1, true)
+            .check_rate_limited_and_update(&namespace.into(), &Context::default(), 1, true)
             .unwrap();
         assert_eq!(r.counters.first().unwrap().max_value(), 50);
     }

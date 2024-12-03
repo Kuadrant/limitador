@@ -109,10 +109,12 @@ impl RateLimitService for MyRateLimiter {
             req.hits_addend
         };
 
+        let ctx = (&values).into();
+
         let rate_limited_resp = match &*self.limiter {
             Limiter::Blocking(limiter) => limiter.check_rate_limited_and_update(
                 &namespace,
-                &values,
+                &ctx,
                 u64::from(hits_addend),
                 self.rate_limit_headers != RateLimitHeaders::None,
             ),
@@ -120,7 +122,7 @@ impl RateLimitService for MyRateLimiter {
                 limiter
                     .check_rate_limited_and_update(
                         &namespace,
-                        &values,
+                        &ctx,
                         u64::from(hits_addend),
                         self.rate_limit_headers != RateLimitHeaders::None,
                     )

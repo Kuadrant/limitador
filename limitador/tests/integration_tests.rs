@@ -380,7 +380,7 @@ mod test {
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "1".to_string());
         rate_limiter
-            .update_counters(namespace, &values, 1)
+            .update_counters(namespace, &(&values).into(), 1)
             .await
             .unwrap();
 
@@ -473,7 +473,7 @@ mod test {
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "1".to_string());
         rate_limiter
-            .update_counters(namespace, &values, 1)
+            .update_counters(namespace, &(&values).into(), 1)
             .await
             .unwrap();
 
@@ -506,22 +506,23 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = (&values).into();
 
         for i in 0..max_hits {
             assert!(
                 !rate_limiter
-                    .is_rate_limited(namespace, &values, 1)
+                    .is_rate_limited(namespace, &ctx, 1)
                     .await
                     .unwrap(),
                 "Must not be limited after {i}"
             );
             rate_limiter
-                .update_counters(namespace, &values, 1)
+                .update_counters(namespace, &ctx, 1)
                 .await
                 .unwrap();
         }
         assert!(rate_limiter
-            .is_rate_limited(namespace, &values, 1)
+            .is_rate_limited(namespace, &ctx, 1)
             .await
             .unwrap());
     }
@@ -543,22 +544,23 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = (&values).into();
 
         for i in 0..max_hits {
             assert!(
                 !rate_limiter
-                    .is_rate_limited(namespace, &values, 1)
+                    .is_rate_limited(namespace, &ctx, 1)
                     .await
                     .unwrap(),
                 "Must not be limited after {i}"
             );
             rate_limiter
-                .update_counters(namespace, &values, 1)
+                .update_counters(namespace, &ctx, 1)
                 .await
                 .unwrap();
         }
         assert!(rate_limiter
-            .is_rate_limited(namespace, &values, 1)
+            .is_rate_limited(namespace, &ctx, 1)
             .await
             .unwrap());
     }
@@ -590,32 +592,34 @@ mod test {
         let mut get_values: HashMap<String, String> = HashMap::new();
         get_values.insert("req_method".to_string(), "GET".to_string());
         get_values.insert("app_id".to_string(), "test_app_id".to_string());
+        let get_ctx = (&get_values).into();
 
         let mut post_values: HashMap<String, String> = HashMap::new();
         post_values.insert("req_method".to_string(), "POST".to_string());
         post_values.insert("app_id".to_string(), "test_app_id".to_string());
+        let post_ctx = (&post_values).into();
 
         for i in 0..max_hits {
             assert!(
                 !rate_limiter
-                    .is_rate_limited(namespace, &get_values, 1)
+                    .is_rate_limited(namespace, &get_ctx, 1)
                     .await
                     .unwrap(),
                 "Must not be limited after {i}"
             );
             assert!(
                 !rate_limiter
-                    .is_rate_limited(namespace, &post_values, 1)
+                    .is_rate_limited(namespace, &post_ctx, 1)
                     .await
                     .unwrap(),
                 "Must not be limited after {i}"
             );
             rate_limiter
-                .check_rate_limited_and_update(namespace, &get_values, 1, false)
+                .check_rate_limited_and_update(namespace, &get_ctx, 1, false)
                 .await
                 .unwrap();
             rate_limiter
-                .check_rate_limited_and_update(namespace, &post_values, 1, false)
+                .check_rate_limited_and_update(namespace, &post_ctx, 1, false)
                 .await
                 .unwrap();
         }
@@ -624,11 +628,11 @@ mod test {
         tokio::time::sleep(Duration::from_millis(40)).await;
 
         assert!(rate_limiter
-            .is_rate_limited(namespace, &get_values, 1)
+            .is_rate_limited(namespace, &get_ctx, 1)
             .await
             .unwrap());
         assert!(!rate_limiter
-            .is_rate_limited(namespace, &post_values, 1)
+            .is_rate_limited(namespace, &post_ctx, 1)
             .await
             .unwrap());
     }
@@ -648,21 +652,22 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = (&values).into();
 
         // Report 5 hits twice. The limit is 10, so the first limited call should be
         // the third one.
         for _ in 0..2 {
             assert!(!rate_limiter
-                .is_rate_limited(namespace, &values, 5)
+                .is_rate_limited(namespace, &ctx, 5)
                 .await
                 .unwrap());
             rate_limiter
-                .update_counters(namespace, &values, 5)
+                .update_counters(namespace, &ctx, 5)
                 .await
                 .unwrap();
         }
         assert!(rate_limiter
-            .is_rate_limited(namespace, &values, 1)
+            .is_rate_limited(namespace, &ctx, 1)
             .await
             .unwrap());
     }
@@ -683,9 +688,10 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = (&values).into();
 
         assert!(rate_limiter
-            .is_rate_limited(namespace, &values, max + 1)
+            .is_rate_limited(namespace, &ctx, max + 1)
             .await
             .unwrap())
     }
@@ -706,6 +712,7 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = (&values).into();
 
         for i in 0..max_hits {
             // Add an extra value that does not apply to the limit on each
@@ -714,18 +721,18 @@ mod test {
 
             assert!(
                 !rate_limiter
-                    .is_rate_limited(namespace, &values, 1)
+                    .is_rate_limited(namespace, &ctx, 1)
                     .await
                     .unwrap(),
                 "Must not be limited after {i}"
             );
             rate_limiter
-                .update_counters(namespace, &values, 1)
+                .update_counters(namespace, &ctx, 1)
                 .await
                 .unwrap();
         }
         assert!(rate_limiter
-            .is_rate_limited(namespace, &values, 1)
+            .is_rate_limited(namespace, &ctx, 1)
             .await
             .unwrap());
     }
@@ -735,9 +742,10 @@ mod test {
     ) {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
+        let ctx = (&values).into();
 
         assert!(!rate_limiter
-            .is_rate_limited("test_namespace", &values, 1)
+            .is_rate_limited("test_namespace", &ctx, 1)
             .await
             .unwrap());
     }
@@ -761,9 +769,10 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "POST".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = (&values).into();
 
         assert!(!rate_limiter
-            .is_rate_limited(namespace, &values, 1)
+            .is_rate_limited(namespace, &ctx, 1)
             .await
             .unwrap());
     }
@@ -783,9 +792,10 @@ mod test {
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = (&values).into();
 
         assert!(rate_limiter
-            .is_rate_limited(namespace, &values, 1)
+            .is_rate_limited(namespace, &ctx, 1)
             .await
             .unwrap());
     }
@@ -807,11 +817,12 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = (&values).into();
 
         for _ in 0..max_hits {
             assert!(
                 !rate_limiter
-                    .check_rate_limited_and_update(namespace, &values, 1, false)
+                    .check_rate_limited_and_update(namespace, &ctx, 1, false)
                     .await
                     .unwrap()
                     .limited
@@ -820,7 +831,7 @@ mod test {
 
         assert!(
             rate_limiter
-                .check_rate_limited_and_update(namespace, &values, 1, false)
+                .check_rate_limited_and_update(namespace, &ctx, 1, false)
                 .await
                 .unwrap()
                 .limited
@@ -844,10 +855,11 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = (&values).into();
 
         for hit in 0..max_hits {
             let result = rate_limiter
-                .check_rate_limited_and_update(namespace, &values, 1, true)
+                .check_rate_limited_and_update(namespace, &ctx, 1, true)
                 .await
                 .unwrap();
             assert!(!result.limited);
@@ -862,7 +874,7 @@ mod test {
         }
 
         let result = rate_limiter
-            .check_rate_limited_and_update(namespace, &values, 1, true)
+            .check_rate_limited_and_update(namespace, &ctx, 1, true)
             .await
             .unwrap();
         assert!(result.limited);
@@ -895,10 +907,11 @@ mod test {
         values.insert("app_id".to_string(), "test_app_id".to_string());
         // Does not match the limit defined
         values.insert("req_method".to_string(), "POST".to_string());
+        let ctx = (&values).into();
 
         assert!(
             !rate_limiter
-                .check_rate_limited_and_update(namespace, &values, 1, false)
+                .check_rate_limited_and_update(namespace, &ctx, 1, false)
                 .await
                 .unwrap()
                 .limited
@@ -922,10 +935,11 @@ mod test {
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = (&values).into();
 
         assert!(
             rate_limiter
-                .check_rate_limited_and_update(namespace, &values, 1, false)
+                .check_rate_limited_and_update(namespace, &ctx, 1, false)
                 .await
                 .unwrap()
                 .limited
@@ -951,14 +965,15 @@ mod test {
         let mut values = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "1".to_string());
+        let ctx = (&values).into();
         rate_limiter
-            .update_counters(namespace, &values, hits_app_1)
+            .update_counters(namespace, &ctx, hits_app_1)
             .await
             .unwrap();
 
         values.insert("app_id".to_string(), "2".to_string());
         rate_limiter
-            .update_counters(namespace, &values, hits_app_2)
+            .update_counters(namespace, &ctx, hits_app_2)
             .await
             .unwrap();
 
@@ -1029,8 +1044,9 @@ mod test {
         let mut values = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "1".to_string());
+        let ctx = (&values).into();
         rate_limiter
-            .update_counters(namespace, &values, 1)
+            .update_counters(namespace, &ctx, 1)
             .await
             .unwrap();
 
@@ -1093,8 +1109,9 @@ mod test {
         let mut values = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "1".to_string());
+        let ctx = (&values).into();
         rate_limiter
-            .update_counters(namespace, &values, hits_to_report)
+            .update_counters(namespace, &ctx, hits_to_report)
             .await
             .unwrap();
 
@@ -1245,19 +1262,20 @@ mod test {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = (&values).into();
 
         for i in 0..max_hits {
             // Alternate between the two rate limiters
             let rate_limiter = rate_limiters.get((i % 2) as usize).unwrap();
             assert!(
                 !rate_limiter
-                    .is_rate_limited(namespace, &values, 1)
+                    .is_rate_limited(namespace, &ctx, 1)
                     .await
                     .unwrap(),
                 "Must not be limited after {i}"
             );
             rate_limiter
-                .update_counters(namespace, &values, 1)
+                .update_counters(namespace, &ctx, 1)
                 .await
                 .unwrap();
         }
@@ -1269,7 +1287,7 @@ mod test {
             || async {
                 let rate_limiter = rate_limiters.first().unwrap();
                 rate_limiter
-                    .is_rate_limited(namespace, &values, 1)
+                    .is_rate_limited(namespace, &ctx, 1)
                     .await
                     .unwrap()
             }

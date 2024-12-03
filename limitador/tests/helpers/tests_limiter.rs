@@ -1,8 +1,8 @@
 use limitador::counter::Counter;
 use limitador::errors::LimitadorError;
-use limitador::limit::{Limit, Namespace};
+use limitador::limit::{Context, Limit, Namespace};
 use limitador::{AsyncRateLimiter, CheckResult, RateLimiter};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 // This exposes a struct that wraps both implementations of the rate limiter,
 // the blocking and the async one. This allows us to avoid duplications in the
@@ -70,17 +70,15 @@ impl TestsLimiter {
     pub async fn is_rate_limited(
         &self,
         namespace: &str,
-        values: &HashMap<String, String>,
+        ctx: &Context<'_>,
         delta: u64,
     ) -> Result<bool, LimitadorError> {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => {
-                limiter.is_rate_limited(&namespace.into(), values, delta)
+                limiter.is_rate_limited(&namespace.into(), ctx, delta)
             }
             LimiterImpl::Async(limiter) => {
-                limiter
-                    .is_rate_limited(&namespace.into(), values, delta)
-                    .await
+                limiter.is_rate_limited(&namespace.into(), ctx, delta).await
             }
         }
     }
@@ -88,17 +86,15 @@ impl TestsLimiter {
     pub async fn update_counters(
         &self,
         namespace: &str,
-        values: &HashMap<String, String>,
+        ctx: &Context<'_>,
         delta: u64,
     ) -> Result<(), LimitadorError> {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => {
-                limiter.update_counters(&namespace.into(), values, delta)
+                limiter.update_counters(&namespace.into(), ctx, delta)
             }
             LimiterImpl::Async(limiter) => {
-                limiter
-                    .update_counters(&namespace.into(), values, delta)
-                    .await
+                limiter.update_counters(&namespace.into(), ctx, delta).await
             }
         }
     }
@@ -106,20 +102,17 @@ impl TestsLimiter {
     pub async fn check_rate_limited_and_update(
         &self,
         namespace: &str,
-        values: &HashMap<String, String>,
+        ctx: &Context<'_>,
         delta: u64,
         load_counters: bool,
     ) -> Result<CheckResult, LimitadorError> {
         match &self.limiter_impl {
-            LimiterImpl::Blocking(limiter) => limiter.check_rate_limited_and_update(
-                &namespace.into(),
-                values,
-                delta,
-                load_counters,
-            ),
+            LimiterImpl::Blocking(limiter) => {
+                limiter.check_rate_limited_and_update(&namespace.into(), ctx, delta, load_counters)
+            }
             LimiterImpl::Async(limiter) => {
                 limiter
-                    .check_rate_limited_and_update(&namespace.into(), values, delta, load_counters)
+                    .check_rate_limited_and_update(&namespace.into(), ctx, delta, load_counters)
                     .await
             }
         }

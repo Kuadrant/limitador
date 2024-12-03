@@ -153,12 +153,11 @@ mod tests {
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
             vec!["app_id".try_into().expect("failed parsing!")],
         );
-        let counter = Counter::new(
-            limit.clone(),
-            HashMap::from([("app_id".to_string(), "foo".to_string())]),
-        )
-        .expect("counter creation failed!")
-        .expect("must have a counter");
+        let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
+        let ctx = (&map).into();
+        let counter = Counter::new(limit.clone(), &ctx)
+            .expect("counter creation failed!")
+            .expect("must have a counter");
         let raw = key_for_counter(&counter);
         assert_eq!(counter, partial_counter_from_counter_key(&raw));
     }
@@ -173,12 +172,11 @@ mod tests {
             vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
             vec!["app_id".try_into().expect("failed parsing!")],
         );
-        let counter = Counter::new(
-            limit.clone(),
-            HashMap::from([("app_id".to_string(), "foo".to_string())]),
-        )
-        .expect("counter creation failed!")
-        .expect("must have a counter");
+        let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
+        let ctx = (&map).into();
+        let counter = Counter::new(limit.clone(), &ctx)
+            .expect("counter creation failed!")
+            .expect("must have a counter");
         let mut other = counter.clone();
         other.set_remaining(123);
         other.set_expires_in(Duration::from_millis(456));
@@ -389,7 +387,8 @@ pub mod bin {
             vars.insert("role".to_string(), "admin".to_string());
             vars.insert("app_id".to_string(), "123".to_string());
             vars.insert("wat".to_string(), "dunno".to_string());
-            let counter = Counter::new(limit.clone(), vars)
+            let ctx = (&vars).into();
+            let counter = Counter::new(limit.clone(), &ctx)
                 .expect("counter creation failed!")
                 .expect("must have a counter");
 
@@ -412,7 +411,8 @@ pub mod bin {
             );
             let mut variables = HashMap::default();
             variables.insert("app_id".to_string(), "123".to_string());
-            let counter = Counter::new(limit.clone(), variables)
+            let ctx = (&variables).into();
+            let counter = Counter::new(limit.clone(), &ctx)
                 .expect("counter creation failed!")
                 .expect("must have a counter");
             let raw = key_for_counter(&counter);
@@ -429,12 +429,11 @@ pub mod bin {
                 vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
                 vec!["app_id".try_into().expect("failed parsing!")],
             );
-            let counter = Counter::new(
-                limit,
-                HashMap::from([("app_id".to_string(), "foo".to_string())]),
-            )
-            .expect("counter creation failed!")
-            .expect("must have a counter");
+            let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
+            let ctx = (&map).into();
+            let counter = Counter::new(limit, &ctx)
+                .expect("counter creation failed!")
+                .expect("must have a counter");
             let serialized_counter = key_for_counter(&counter);
 
             let prefix = prefix_for_namespace(namespace);
@@ -460,20 +459,16 @@ pub mod bin {
                 vec!["app_id".try_into().expect("failed parsing!")],
             );
 
-            let counter_with_id = Counter::new(
-                limit_with_id,
-                HashMap::from([("app_id".to_string(), "foo".to_string())]),
-            )
-            .expect("counter creation failed!")
-            .expect("must have a counter");
+            let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
+            let ctx = (&map).into();
+            let counter_with_id = Counter::new(limit_with_id, &ctx)
+                .expect("counter creation failed!")
+                .expect("must have a counter");
             let serialized_with_id_counter = key_for_counter(&counter_with_id);
 
-            let counter_without_id = Counter::new(
-                limit_without_id,
-                HashMap::from([("app_id".to_string(), "foo".to_string())]),
-            )
-            .expect("counter creation failed!")
-            .expect("must have a counter");
+            let counter_without_id = Counter::new(limit_without_id, &ctx)
+                .expect("counter creation failed!")
+                .expect("must have a counter");
             let serialized_without_id_counter = key_for_counter(&counter_without_id);
 
             // the original key_for_counter continues to encode kinda big

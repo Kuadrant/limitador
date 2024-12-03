@@ -1,4 +1,4 @@
-use crate::limit::{Limit, Namespace};
+use crate::limit::{Context, Limit, Namespace};
 use crate::LimitadorResult;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -17,15 +17,9 @@ pub struct Counter {
 }
 
 impl Counter {
-    pub fn new<L: Into<Arc<Limit>>>(
-        limit: L,
-        set_variables: HashMap<String, String>,
-    ) -> LimitadorResult<Option<Self>> {
+    pub fn new<L: Into<Arc<Limit>>>(limit: L, ctx: &Context) -> LimitadorResult<Option<Self>> {
         let limit = limit.into();
-        let mut vars = set_variables;
-        vars.retain(|var, _| limit.has_variable(var));
-
-        let variables = limit.resolve_variables(vars)?;
+        let variables = limit.resolve_variables(ctx)?;
         match variables {
             None => Ok(None),
             Some(variables) => Ok(Some(Self {
@@ -159,11 +153,9 @@ mod tests {
             Vec::default(),
             [var.try_into().expect("failed parsing!")],
         );
-        let counter = Counter::new(
-            limit,
-            HashMap::from([("ts".to_string(), "2019-10-12T13:20:50.52Z".to_string())]),
-        )
-        .expect("failed creating counter");
+        let map = HashMap::from([("ts".to_string(), "2019-10-12T13:20:50.52Z".to_string())]);
+        let ctx = (&map).into();
+        let counter = Counter::new(limit, &ctx).expect("failed creating counter");
         assert_eq!(
             counter.unwrap().set_variables.get(var),
             Some("13".to_string()).as_ref()

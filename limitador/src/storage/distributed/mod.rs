@@ -9,7 +9,7 @@ use tokio::sync::mpsc::Sender;
 use tracing::debug;
 
 use crate::counter::Counter;
-use crate::limit::Limit;
+use crate::limit::{Context, Limit};
 use crate::storage::distributed::cr_counter_value::CrCounterValue;
 use crate::storage::distributed::grpc::v1::CounterUpdate;
 use crate::storage::distributed::grpc::{Broker, CounterEntry};
@@ -47,7 +47,7 @@ impl CounterStorage for CrInMemoryStorage {
             let key = encode_limit_to_key(limit);
             limits.entry(key.clone()).or_insert(Arc::new(CounterEntry {
                 key,
-                counter: Counter::new(limit.clone(), HashMap::default())
+                counter: Counter::new(limit.clone(), &Context::default())
                     .expect("counter creation can't fail! no vars to resolve!")
                     .expect("must have a counter"),
                 value: CrCounterValue::new(
@@ -336,15 +336,14 @@ fn encode_counter_to_key(counter: &Counter) -> Vec<u8> {
 
 fn encode_limit_to_key(limit: &Limit) -> Vec<u8> {
     // fixme this is broken!
-    let counter = Counter::new(
-        limit.clone(),
-        limit
-            .variables()
-            .into_iter()
-            .map(|k| (k, "".to_string()))
-            .collect(),
-    )
-    .expect("counter creation can't fail! faked vars!")
-    .expect("must have a counter");
+    let vars: HashMap<String, String> = limit
+        .variables()
+        .into_iter()
+        .map(|k| (k, "".to_string()))
+        .collect();
+    let ctx = (&vars).into();
+    let counter = Counter::new(limit.clone(), &ctx)
+        .expect("counter creation can't fail! faked vars!")
+        .expect("must have a counter");
     key_for_counter_v2(&counter)
 }
