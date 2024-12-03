@@ -3,12 +3,6 @@ use opentelemetry::propagation::Extractor;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use limitador::CheckResult;
-use tonic::codegen::http::HeaderMap;
-use tonic::{transport, transport::Server, Request, Response, Status};
-use tracing::Span;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
-
 use crate::envoy_rls::server::envoy::config::core::v3::HeaderValue;
 use crate::envoy_rls::server::envoy::service::ratelimit::v3::rate_limit_response::Code;
 use crate::envoy_rls::server::envoy::service::ratelimit::v3::rate_limit_service_server::{
@@ -19,6 +13,12 @@ use crate::envoy_rls::server::envoy::service::ratelimit::v3::{
 };
 use crate::prometheus_metrics::PrometheusMetrics;
 use crate::Limiter;
+use limitador::limit::Context;
+use limitador::CheckResult;
+use tonic::codegen::http::HeaderMap;
+use tonic::{transport, transport::Server, Request, Response, Status};
+use tracing::Span;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 include!("envoy_types.rs");
 
@@ -72,7 +72,7 @@ impl RateLimitService for MyRateLimiter {
     ) -> Result<Response<RateLimitResponse>, Status> {
         debug!("Request received: {:?}", request);
 
-        let mut values: HashMap<String, String> = HashMap::new();
+        let mut values: Vec<HashMap<String, String>> = Vec::default();
         let (metadata, _ext, req) = request.into_parts();
         let namespace = req.domain;
         let rl_headers = RateLimitRequestHeaders::new(metadata.into_headers());
@@ -96,9 +96,11 @@ impl RateLimitService for MyRateLimiter {
         let namespace = namespace.into();
 
         for descriptor in &req.descriptors {
+            let mut map = HashMap::default();
             for entry in &descriptor.entries {
-                values.insert(entry.key.clone(), entry.value.clone());
+                map.insert(entry.key.clone(), entry.value.clone());
             }
+            values.push(map);
         }
 
         // "hits_addend" is optional according to the spec, and should default
@@ -109,7 +111,8 @@ impl RateLimitService for MyRateLimiter {
             req.hits_addend
         };
 
-        let ctx = values.into();
+        let mut ctx = Context::default();
+        ctx.list_binding("descriptors".to_string(), values);
 
         let rate_limited_resp = match &*self.limiter {
             Limiter::Blocking(limiter) => limiter.check_rate_limited_and_update(
@@ -255,8 +258,12 @@ mod tests {
             namespace,
             1,
             60,
-            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
-            vec!["app_id".try_into().expect("failed parsing!")],
+            vec!["descriptors[0]['req.method'] == 'GET'"
+                .try_into()
+                .expect("failed parsing!")],
+            vec!["descriptors[0]['app.id']"
+                .try_into()
+                .expect("failed parsing!")],
         );
 
         let limiter = RateLimiter::new(10_000);
@@ -276,11 +283,11 @@ mod tests {
             descriptors: vec![RateLimitDescriptor {
                 entries: vec![
                     Entry {
-                        key: "req_method".to_string(),
+                        key: "req.method".to_string(),
                         value: "GET".to_string(),
                     },
                     Entry {
-                        key: "app_id".to_string(),
+                        key: "app.id".to_string(),
                         value: "1".to_string(),
                     },
                 ],
@@ -337,7 +344,7 @@ mod tests {
             domain: "test_namespace".to_string(),
             descriptors: vec![RateLimitDescriptor {
                 entries: vec![Entry {
-                    key: "req_method".to_string(),
+                    key: "req.method".to_string(),
                     value: "GET".to_string(),
                 }],
                 limit: None,
@@ -371,7 +378,7 @@ mod tests {
             domain: "".to_string(),
             descriptors: vec![RateLimitDescriptor {
                 entries: vec![Entry {
-                    key: "req_method".to_string(),
+                    key: "req.method".to_string(),
                     value: "GET".to_string(),
                 }],
                 limit: None,
@@ -400,18 +407,24 @@ mod tests {
                 namespace,
                 10,
                 60,
-                vec!["x == '1'".try_into().expect("failed parsing!")],
-                vec!["z".try_into().expect("failed parsing!")],
+                vec!["descriptors[0].x == '1'"
+                    .try_into()
+                    .expect("failed parsing!")],
+                vec!["descriptors[0].z".try_into().expect("failed parsing!")],
             ),
             Limit::new(
                 namespace,
                 0,
                 60,
                 vec![
-                    "x == '1'".try_into().expect("failed parsing!"),
-                    "y == '2'".try_into().expect("failed parsing!"),
+                    "descriptors[0].x == '1'"
+                        .try_into()
+                        .expect("failed parsing!"),
+                    "descriptors[1].y == '2'"
+                        .try_into()
+                        .expect("failed parsing!"),
                 ],
-                vec!["z".try_into().expect("failed parsing!")],
+                vec!["descriptors[0].z".try_into().expect("failed parsing!")],
             ),
         ]
         .into_iter()
@@ -480,8 +493,10 @@ mod tests {
             namespace,
             10,
             60,
-            vec!["x == '1'".try_into().expect("failed parsing!")],
-            vec!["y".try_into().expect("failed parsing!")],
+            vec!["descriptors[0].x == '1'"
+                .try_into()
+                .expect("failed parsing!")],
+            vec!["descriptors[0].y".try_into().expect("failed parsing!")],
         );
 
         let limiter = RateLimiter::new(10_000);
@@ -555,8 +570,10 @@ mod tests {
             namespace,
             1,
             60,
-            vec!["x == '1'".try_into().expect("failed parsing!")],
-            vec!["y".try_into().expect("failed parsing!")],
+            vec!["descriptors[0].x == '1'"
+                .try_into()
+                .expect("failed parsing!")],
+            vec!["descriptors[0].y".try_into().expect("failed parsing!")],
         );
 
         let limiter = RateLimiter::new(10_000);

@@ -24,7 +24,7 @@ bin/grpcurl -plaintext -d @ 127.0.0.1:18081 envoy.service.ratelimit.v3.RateLimit
         {
             "entries": [
                 {
-                    "key": "req_method",
+                    "key": "req.method",
                     "value": "POST"
                 }
             ]
