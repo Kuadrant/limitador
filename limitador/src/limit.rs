@@ -135,7 +135,7 @@ impl Limit {
         &self,
         vars: HashMap<String, String>,
     ) -> Result<BTreeMap<String, String>, EvaluationError> {
-        let ctx = Context::new(self, String::default(), &vars);
+        let ctx = Context::new(String::default(), &vars);
         let mut map = BTreeMap::new();
         for variable in &self.variables {
             let name = variable.source().into();
@@ -162,17 +162,17 @@ impl Limit {
             .any(|v| v.as_str() == var)
     }
 
-    pub fn applies(&self, values: &HashMap<String, String>) -> bool {
-        let ctx = Context::new(self, String::default(), values);
+    pub fn applies(&self, ctx: &Context) -> bool {
+        let ctx = ctx.for_limit(self);
         let all_conditions_apply = self
             .conditions
             .iter()
-            .all(|predicate| predicate.test(&ctx).unwrap());
+            .all(|predicate| predicate.test(&ctx.for_limit(self)).unwrap());
 
         let all_vars_are_set = self
             .variables
             .iter()
-            .all(|var| values.contains_key(var.source()));
+            .all(|var| ctx.has_variable(var.source()));
 
         all_conditions_apply && all_vars_are_set
     }
@@ -252,7 +252,7 @@ mod tests {
         values.insert("x".into(), "5".into());
         values.insert("y".into(), "1".into());
 
-        assert!(limit.applies(&values))
+        assert!(limit.applies(&(&values).into()))
     }
 
     #[test]
@@ -269,7 +269,7 @@ mod tests {
         values.insert("x".into(), "1".into());
         values.insert("y".into(), "1".into());
 
-        assert!(!limit.applies(&values))
+        assert!(!limit.applies(&(&values).into()))
     }
 
     #[test]
@@ -287,7 +287,7 @@ mod tests {
         values.insert("a".into(), "1".into());
         values.insert("y".into(), "1".into());
 
-        assert!(!limit.applies(&values))
+        assert!(!limit.applies(&(&values).into()))
     }
 
     #[test]
@@ -304,7 +304,7 @@ mod tests {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "5".into());
 
-        assert!(!limit.applies(&values))
+        assert!(!limit.applies(&(&values).into()))
     }
 
     #[test]
@@ -325,7 +325,7 @@ mod tests {
         values.insert("y".into(), "2".into());
         values.insert("z".into(), "1".into());
 
-        assert!(limit.applies(&values))
+        assert!(limit.applies(&(&values).into()))
     }
 
     #[test]
@@ -346,7 +346,7 @@ mod tests {
         values.insert("y".into(), "2".into());
         values.insert("z".into(), "1".into());
 
-        assert!(!limit.applies(&values))
+        assert!(!limit.applies(&(&values).into()))
     }
 
     #[test]
@@ -410,10 +410,10 @@ mod tests {
                 .expect("failed parsing!")],
             Vec::default(),
         );
-        assert!(!limit.applies(&HashMap::default()));
+        assert!(!limit.applies(&Context::default()));
 
         limit.set_name("named_limit".to_string());
-        assert!(limit.applies(&HashMap::default()));
+        assert!(limit.applies(&Context::default()));
 
         let limit = Limit::with_id(
             "my_id",
@@ -426,7 +426,7 @@ mod tests {
             ],
             Vec::default(),
         );
-        assert!(limit.applies(&HashMap::default()));
+        assert!(limit.applies(&(&HashMap::default()).into()));
 
         let limit = Limit::with_id(
             "my_id",
@@ -438,6 +438,6 @@ mod tests {
                 .expect("failed parsing!")],
             Vec::default(),
         );
-        assert!(!limit.applies(&HashMap::default()));
+        assert!(!limit.applies(&Context::default()));
     }
 }

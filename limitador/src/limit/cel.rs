@@ -1,12 +1,11 @@
 use crate::limit::Limit;
 use cel_interpreter::{ExecutionError, Value};
+pub use errors::{EvaluationError, ParseError};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-
-pub use errors::{EvaluationError, ParseError};
 
 pub(super) mod errors {
     use cel_interpreter::ExecutionError;
@@ -78,8 +77,8 @@ pub struct Context<'a> {
     ctx: cel_interpreter::Context<'a>,
 }
 
-impl Context<'_> {
-    pub(crate) fn new(limit: &Limit, root: String, values: &HashMap<String, String>) -> Self {
+impl<'a> Context<'a> {
+    pub(crate) fn new(root: String, values: &HashMap<String, String>) -> Self {
         let mut ctx = cel_interpreter::Context::default();
 
         if root.is_empty() {
@@ -91,6 +90,17 @@ impl Context<'_> {
             ctx.add_variable_from_value(root, Value::Map(map));
         }
 
+        Self {
+            variables: values.keys().cloned().collect(),
+            ctx,
+        }
+    }
+
+    pub(crate) fn for_limit<'b>(&'b self, limit: &Limit) -> Self
+    where
+        'b: 'a,
+    {
+        let mut inner = self.ctx.new_inner_scope();
         let limit_data = cel_interpreter::objects::Map::from(HashMap::from([
             (
                 "name",
@@ -109,12 +119,27 @@ impl Context<'_> {
                     .unwrap_or(Value::Null),
             ),
         ]));
-        ctx.add_variable_from_value("limit", Value::Map(limit_data));
-
+        inner.add_variable_from_value("limit", Value::Map(limit_data));
         Self {
-            variables: values.keys().cloned().collect(),
-            ctx,
+            variables: self.variables.clone(),
+            ctx: inner,
         }
+    }
+
+    pub(crate) fn has_variable(&self, name: &str) -> bool {
+        self.variables.contains(name)
+    }
+}
+
+impl Default for Context<'_> {
+    fn default() -> Self {
+        Self::new(String::default(), &HashMap::default())
+    }
+}
+
+impl From<&HashMap<String, String>> for Context<'_> {
+    fn from(value: &HashMap<String, String>) -> Self {
+        Self::new(String::default(), value)
     }
 }
 

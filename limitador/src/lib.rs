@@ -192,14 +192,13 @@
 // TODO this needs review to reduce the bloat pulled in by dependencies
 #![allow(clippy::multiple_crate_versions)]
 
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-
 use crate::counter::Counter;
 use crate::errors::LimitadorError;
 use crate::limit::{Limit, Namespace};
 use crate::storage::in_memory::InMemoryStorage;
 use crate::storage::{AsyncCounterStorage, AsyncStorage, Authorization, CounterStorage, Storage};
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 #[macro_use]
 extern crate core;
@@ -480,10 +479,10 @@ impl RateLimiter {
         values: &HashMap<String, String>,
     ) -> LimitadorResult<Vec<Counter>> {
         let limits = self.storage.get_limits(namespace);
-
+        let ctx = values.into();
         limits
             .iter()
-            .filter(|lim| lim.applies(values))
+            .filter(|lim| lim.applies(&ctx))
             .map(|lim| Counter::new(Arc::clone(lim), values.clone()))
             .collect()
     }
@@ -657,10 +656,10 @@ impl AsyncRateLimiter {
         values: &HashMap<String, String>,
     ) -> LimitadorResult<Vec<Counter>> {
         let limits = self.storage.get_limits(namespace);
-
+        let ctx = values.into();
         limits
             .iter()
-            .filter(|lim| lim.applies(values))
+            .filter(|lim| lim.applies(&ctx))
             .map(|lim| Counter::new(Arc::clone(lim), values.clone()))
             .collect()
     }
