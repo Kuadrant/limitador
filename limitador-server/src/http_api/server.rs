@@ -3,6 +3,7 @@ use crate::prometheus_metrics::PrometheusMetrics;
 use crate::Limiter;
 use actix_web::{http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError};
 use actix_web::{App, HttpServer};
+use limitador::limit::Context;
 use limitador::CheckResult;
 use paperclip::actix::{
     api_v2_errors,
@@ -122,9 +123,11 @@ async fn check(
         response_headers: _,
     } = request.into_inner();
     let namespace = namespace.into();
+    let mut ctx = Context::default();
+    ctx.list_binding("descriptors".to_string(), vec![values]);
     let is_rate_limited_result = match state.get_ref().limiter() {
-        Limiter::Blocking(limiter) => limiter.is_rate_limited(&namespace, &values, delta),
-        Limiter::Async(limiter) => limiter.is_rate_limited(&namespace, &values, delta).await,
+        Limiter::Blocking(limiter) => limiter.is_rate_limited(&namespace, &ctx, delta),
+        Limiter::Async(limiter) => limiter.is_rate_limited(&namespace, &ctx, delta).await,
     };
 
     match is_rate_limited_result {
@@ -152,9 +155,11 @@ async fn report(
         response_headers: _,
     } = request.into_inner();
     let namespace = namespace.into();
+    let mut ctx = Context::default();
+    ctx.list_binding("descriptors".to_string(), vec![values]);
     let update_counters_result = match data.get_ref().limiter() {
-        Limiter::Blocking(limiter) => limiter.update_counters(&namespace, &values, delta),
-        Limiter::Async(limiter) => limiter.update_counters(&namespace, &values, delta).await,
+        Limiter::Blocking(limiter) => limiter.update_counters(&namespace, &ctx, delta),
+        Limiter::Async(limiter) => limiter.update_counters(&namespace, &ctx, delta).await,
     };
 
     match update_counters_result {
@@ -176,22 +181,19 @@ async fn check_and_report(
         response_headers,
     } = request.into_inner();
     let namespace = namespace.into();
+    let mut ctx = Context::default();
+    ctx.list_binding("descriptors".to_string(), vec![values]);
     let rate_limit_data = data.get_ref();
     let rate_limited_and_update_result = match rate_limit_data.limiter() {
         Limiter::Blocking(limiter) => limiter.check_rate_limited_and_update(
             &namespace,
-            &values,
+            &ctx,
             delta,
             response_headers.is_some(),
         ),
         Limiter::Async(limiter) => {
             limiter
-                .check_rate_limited_and_update(
-                    &namespace,
-                    &values,
-                    delta,
-                    response_headers.is_some(),
-                )
+                .check_rate_limited_and_update(&namespace, &ctx, delta, response_headers.is_some())
                 .await
         }
     };
@@ -385,7 +387,7 @@ mod tests {
         // Prepare values to check
         let mut values = HashMap::new();
         values.insert("req.method".into(), "GET".into());
-        values.insert("app_id".into(), "1".into());
+        values.insert("req.id".into(), "1".into());
         let info = CheckAndReportInfo {
             namespace: namespace.into(),
             values,
@@ -436,7 +438,7 @@ mod tests {
         // Prepare values to check
         let mut values = HashMap::new();
         values.insert("req.method".into(), "GET".into());
-        values.insert("app_id".into(), "1".into());
+        values.insert("app.id".into(), "1".into());
         let info = CheckAndReportInfo {
             namespace: namespace.into(),
             values,
@@ -511,7 +513,7 @@ mod tests {
         // Prepare values to check
         let mut values = HashMap::new();
         values.insert("req.method".into(), "GET".into());
-        values.insert("app_id".into(), "1".into());
+        values.insert("app.id".into(), "1".into());
         let info = CheckAndReportInfo {
             namespace: namespace.into(),
             values,
@@ -553,10 +555,13 @@ mod tests {
             namespace,
             max,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["descriptors[0]['req.method'] == 'GET'"
+                .try_into()
+                .expect("failed parsing!")],
+            vec!["descriptors[0]['app.id']"
+                .try_into()
+                .expect("failed parsing!")],
+        );
 
         match &limiter {
             Limiter::Blocking(limiter) => limiter.add_limit(limit.clone()),

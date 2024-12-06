@@ -242,9 +242,18 @@ mod tests {
     #[test]
     fn opens_db_on_disk() {
         let namespace = "test_namespace";
-        let limit = Limit::new(namespace, 1, 2, vec!["req.method == 'GET'"], vec!["app_id"])
-            .expect("This must be a valid limit!");
-        let counter = Counter::new(limit, HashMap::default());
+        let limit = Limit::new(
+            namespace,
+            1,
+            2,
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
+        let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
+        let ctx = map.into();
+        let counter = Counter::new(limit, &ctx)
+            .unwrap()
+            .expect("must have a counter");
 
         let tmp = TempDir::new().expect("We should have a dir!");
         {

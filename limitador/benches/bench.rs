@@ -7,7 +7,7 @@ use criterion::{black_box, criterion_group, criterion_main, Bencher, BenchmarkId
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 
-use limitador::limit::Limit;
+use limitador::limit::{Context, Limit};
 #[cfg(feature = "disk_storage")]
 use limitador::storage::disk::{DiskStorage, OptimizeFor};
 #[cfg(feature = "distributed_storage")]
@@ -89,9 +89,9 @@ const TEST_SCENARIOS: &[&TestScenario] = &[
     },
 ];
 
-struct TestCallParams {
+struct TestCallParams<'a> {
     namespace: String,
-    values: HashMap<String, String>,
+    ctx: Context<'a>,
     delta: u64,
 }
 
@@ -329,7 +329,7 @@ fn bench_is_rate_limited(
             rate_limiter
                 .is_rate_limited(
                     &params.namespace.to_owned().into(),
-                    &params.values,
+                    &params.ctx,
                     params.delta,
                 )
                 .unwrap(),
@@ -357,7 +357,7 @@ fn async_bench_is_rate_limited<F>(
                 rate_limiter
                     .is_rate_limited(
                         &params.namespace.to_owned().into(),
-                        &params.values,
+                        &params.ctx,
                         params.delta,
                     )
                     .await
@@ -383,7 +383,7 @@ fn bench_update_counters(
         rate_limiter
             .update_counters(
                 &params.namespace.to_owned().into(),
-                &params.values,
+                &params.ctx,
                 params.delta,
             )
             .unwrap();
@@ -410,7 +410,7 @@ fn async_bench_update_counters<F>(
                 rate_limiter
                     .update_counters(
                         &params.namespace.to_owned().into(),
-                        &params.values,
+                        &params.ctx,
                         params.delta,
                     )
                     .await
@@ -437,7 +437,7 @@ fn bench_check_rate_limited_and_update(
             rate_limiter
                 .check_rate_limited_and_update(
                     &params.namespace.to_owned().into(),
-                    &params.values,
+                    &params.ctx,
                     params.delta,
                     false,
                 )
@@ -467,7 +467,7 @@ fn async_bench_check_rate_limited_and_update<F>(
                 rate_limiter
                     .check_rate_limited_and_update(
                         &params.namespace.to_owned().into(),
-                        &params.values,
+                        &params.ctx,
                         params.delta,
                         false,
                     )
@@ -529,14 +529,18 @@ fn generate_test_limits(scenario: &TestScenario) -> (Vec<Limit>, Vec<TestCallPar
     let mut conditions = vec![];
     for idx_cond in 0..scenario.n_conds_per_limit {
         let cond_name = format!("cond_{idx_cond}");
-        conditions.push(format!("{cond_name} == '1'"));
+        conditions.push(
+            format!("{cond_name} == '1'")
+                .try_into()
+                .expect("failed parsing!"),
+        );
         test_values.insert(cond_name, "1".into());
     }
 
     let mut variables = vec![];
     for idx_var in 0..scenario.n_vars_per_limit {
         let var_name = format!("var_{idx_var}");
-        variables.push(var_name.clone());
+        variables.push(var_name.clone().try_into().expect("failed parsing!"));
         test_values.insert(var_name, "1".into());
     }
 
@@ -547,21 +551,18 @@ fn generate_test_limits(scenario: &TestScenario) -> (Vec<Limit>, Vec<TestCallPar
         let namespace = idx_namespace.to_string();
 
         for limit_idx in 0..scenario.n_limits_per_ns {
-            test_limits.push(
-                Limit::new(
-                    namespace.clone(),
-                    u64::MAX,
-                    ((limit_idx * 60) + 10) as u64,
-                    conditions.clone(),
-                    variables.clone(),
-                )
-                .expect("This must be a valid limit!"),
-            )
+            test_limits.push(Limit::new(
+                namespace.clone(),
+                u64::MAX,
+                ((limit_idx * 60) + 10) as u64,
+                conditions.clone(),
+                variables.clone(),
+            ))
         }
 
         call_params.push(TestCallParams {
             namespace,
-            values: test_values.clone(),
+            ctx: test_values.clone().into(),
             delta: 1,
         });
     }

@@ -28,8 +28,8 @@ static_resources:
                   rate_limits:
                     - stage: 0
                       actions:
-                        - {request_headers: {header_name: "userid", descriptor_key: "user_id"}}
-                        - {request_headers: {header_name: ":method", descriptor_key: "req.method"}}
+                        - { request_headers: { header_name: "userid", descriptor_key: "user_id" } }
+                        - { request_headers: { header_name: ":method", descriptor_key: "descriptors[0]['method']" } }
           http_filters:
           - name: envoy.filters.http.ratelimit
             typed_config:

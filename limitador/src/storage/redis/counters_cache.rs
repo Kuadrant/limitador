@@ -569,7 +569,8 @@ mod tests {
                 .consume(1, |items| {
                     assert_eq!(items.len(), 1);
                     assert!(
-                        SystemTime::now().duration_since(start).unwrap() < Duration::from_millis(5)
+                        SystemTime::now().duration_since(start).unwrap()
+                            < Duration::from_millis(10)
                     );
                     async { Ok::<(), ()>(()) }
                 })
@@ -680,11 +681,12 @@ mod tests {
                 "test_namespace",
                 max_val,
                 60,
-                vec!["req.method == 'POST'"],
-                vec!["app_id"],
-            )
-            .expect("This must be a valid limit!"),
-            values,
+                vec!["req_method == 'POST'".try_into().expect("failed parsing!")],
+                vec!["app_id".try_into().expect("failed parsing!")],
+            ),
+            &values.into(),
         )
+        .expect("failed creating counter")
+        .expect("Should have a counter")
     }
 }

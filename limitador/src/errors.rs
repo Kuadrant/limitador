@@ -1,4 +1,5 @@
-use crate::limit::ConditionParsingError;
+use crate::limit::EvaluationError;
+use crate::limit::ParseError;
 use crate::storage::StorageErr;
 use std::convert::Infallible;
 use std::error::Error;
@@ -7,7 +8,7 @@ use std::fmt::{Display, Formatter};
 #[derive(Debug)]
 pub enum LimitadorError {
     StorageError(StorageErr),
-    InterpreterError(ConditionParsingError),
+    InterpreterError(EvaluationError),
 }
 
 impl Display for LimitadorError {
@@ -38,13 +39,13 @@ impl From<StorageErr> for LimitadorError {
     }
 }
 
-impl From<ConditionParsingError> for LimitadorError {
-    fn from(err: ConditionParsingError) -> Self {
+impl From<EvaluationError> for LimitadorError {
+    fn from(err: EvaluationError) -> Self {
         LimitadorError::InterpreterError(err)
     }
 }
 
-impl From<Infallible> for LimitadorError {
+impl From<Infallible> for ParseError {
     fn from(value: Infallible) -> Self {
         unreachable!("unexpected infallible value: {:?}", value)
     }

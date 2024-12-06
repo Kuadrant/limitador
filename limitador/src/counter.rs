@@ -1,4 +1,5 @@
-use crate::limit::{Limit, Namespace};
+use crate::limit::{Context, Limit, Namespace};
+use crate::LimitadorResult;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
@@ -16,19 +17,34 @@ pub struct Counter {
 }
 
 impl Counter {
-    pub fn new<L: Into<Arc<Limit>>>(limit: L, set_variables: HashMap<String, String>) -> Self {
-        // TODO: check that all the variables defined in the limit are set.
+    pub fn new<L: Into<Arc<Limit>>>(limit: L, ctx: &Context) -> LimitadorResult<Option<Self>> {
+        let limit = limit.into();
+        let variables = limit.resolve_variables(ctx)?;
+        match variables {
+            None => Ok(None),
+            Some(variables) => Ok(Some(Self {
+                limit,
+                set_variables: variables,
+                remaining: None,
+                expires_in: None,
+            })),
+        }
+    }
 
+    pub(super) fn resolved_vars<L: Into<Arc<Limit>>>(
+        limit: L,
+        set_variables: HashMap<String, String>,
+    ) -> LimitadorResult<Self> {
         let limit = limit.into();
         let mut vars = set_variables;
         vars.retain(|var, _| limit.has_variable(var));
 
-        Self {
+        Ok(Self {
             limit,
             set_variables: vars.into_iter().collect(),
             remaining: None,
             expires_in: None,
-        }
+        })
     }
 
     #[cfg(any(feature = "redis_storage", feature = "disk_storage"))]
@@ -118,5 +134,31 @@ impl Hash for Counter {
 impl PartialEq for Counter {
     fn eq(&self, other: &Self) -> bool {
         self.limit == other.limit && self.set_variables == other.set_variables
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::counter::Counter;
+    use crate::limit::Limit;
+    use std::collections::HashMap;
+
+    #[test]
+    fn resolves_variables() {
+        let var = "timestamp(ts).getHours()";
+        let limit = Limit::new(
+            "",
+            10,
+            60,
+            Vec::default(),
+            [var.try_into().expect("failed parsing!")],
+        );
+        let map = HashMap::from([("ts".to_string(), "2019-10-12T13:20:50.52Z".to_string())]);
+        let ctx = map.into();
+        let counter = Counter::new(limit, &ctx).expect("failed creating counter");
+        assert_eq!(
+            counter.unwrap().set_variables.get(var),
+            Some("13".to_string()).as_ref()
+        );
     }
 }

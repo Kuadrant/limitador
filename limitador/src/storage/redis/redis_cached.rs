@@ -439,17 +439,20 @@ mod tests {
         const LOCAL_INCREMENTS: u64 = 2;
 
         let mut counters_and_deltas = HashMap::new();
+        let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
+        let ctx = map.into();
         let counter = Counter::new(
             Limit::new(
                 "test_namespace",
                 10,
                 60,
-                vec!["req.method == 'GET'"],
-                vec!["app_id"],
-            )
-            .expect("This must be a valid limit!"),
-            Default::default(),
-        );
+                vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+                vec!["app_id".try_into().expect("failed parsing!")],
+            ),
+            &ctx,
+        )
+        .expect("counter creation failed!")
+        .expect("must have a counter");
 
         let arc = Arc::new(CachedCounterValue::from_authority(
             &counter,
@@ -502,17 +505,20 @@ mod tests {
 
     #[tokio::test]
     async fn flush_batcher_and_update_counters_test() {
+        let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
+        let ctx = map.into();
         let counter = Counter::new(
             Limit::new(
                 "test_namespace",
                 10,
                 60,
-                vec!["req.method == 'POST'"],
-                vec!["app_id"],
-            )
-            .expect("This must be a valid limit!"),
-            Default::default(),
-        );
+                vec!["req_method == 'POST'".try_into().expect("failed parsing!")],
+                vec!["app_id".try_into().expect("failed parsing!")],
+            ),
+            &ctx,
+        )
+        .expect("counter creation failed!")
+        .expect("must have a counter");
 
         let mock_response = Value::Array(vec![
             Value::Int(8),
@@ -562,17 +568,20 @@ mod tests {
 
     #[tokio::test]
     async fn flush_batcher_reverts_on_err() {
+        let map = HashMap::from([("app_id".to_string(), "foo".to_string())]);
+        let ctx = map.into();
         let counter = Counter::new(
             Limit::new(
                 "test_namespace",
                 10,
                 60,
-                vec!["req.method == 'POST'"],
-                vec!["app_id"],
-            )
-            .expect("This must be a valid limit!"),
-            Default::default(),
-        );
+                vec!["req_method == 'POST'".try_into().expect("failed parsing!")],
+                vec!["app_id".try_into().expect("failed parsing!")],
+            ),
+            &ctx,
+        )
+        .expect("counter creation failed!")
+        .expect("must have a counter");
 
         let error: RedisError = io::Error::new(io::ErrorKind::TimedOut, "That was long!").into();
         assert!(error.is_timeout());

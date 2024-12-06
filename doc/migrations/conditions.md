@@ -23,22 +23,3 @@ case `foo` was the identifier of the variable, while `bar` was the value to eval
 after the operator `==` would be equally important. SO that `foo  ==  bar` would test for a `foo ` variable being equal
 to ` bar` where the trailing whitespace after the identifier, and the one prefixing the value, would have been
 evaluated.
-
-## Server binary users
-
-The server still allows for the deprecated syntax, but warns about its usage. You can easily migrate your limits file, 
-using the following command:
-
-```commandline
-limitador-server --validate old_limits.yaml > updated_limits.yaml
-```
-
-Which should output `Deprecated syntax for conditions corrected!` to `stderr` while `stdout` would be the limits using 
-the new syntax. It is recommended you manually verify the resulting `LIMITS_FILE`.
-
-
-## Crate users
-
-A feature `lenient_conditions` has been added, which lets you use the syntax used in previous version of the crate.
-The function `limitador::limit::check_deprecated_syntax_usages_and_reset()` lets you verify if the deprecated syntax 
-has been used as `limit::Limit`s are created with their condition strings using the deprecated syntax.

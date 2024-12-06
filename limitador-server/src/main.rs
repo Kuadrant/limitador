@@ -194,9 +194,6 @@ impl Limiter {
                             Self::Blocking(limiter) => limiter.configure_with(limits)?,
                             Self::Async(limiter) => limiter.configure_with(limits).await?,
                         }
-                        if limitador::limit::check_deprecated_syntax_usages_and_reset() {
-                            error!("You are using deprecated syntax for your conditions! See the migration guide https://docs.kuadrant.io/limitador/doc/migrations/conditions/")
-                        }
                         Ok(())
                     }
                     Err(e) => Err(LimitadorServerError::ConfigFile(format!(
@@ -597,10 +594,6 @@ fn create_config() -> (Configuration, &'static str) {
                 let parsed_limits: Result<Vec<Limit>, _> = serde_yaml::from_reader(f);
                 match parsed_limits {
                     Ok(limits) => {
-                        if limitador::limit::check_deprecated_syntax_usages_and_reset() {
-                            eprintln!("Deprecated syntax for conditions corrected!\n")
-                        }
-
                         let output: Vec<http_api::LimitVO> =
                             limits.iter().map(|l| l.into()).collect();
                         match serde_yaml::to_string(&output) {

@@ -11,5 +11,4 @@ For the complete documentation of the crate's API, please refer to [docs.rs](htt
 
 * `redis_storage`: support for using Redis as the data storage backend.
 * `disk_storage`: support for using RocksDB as a local disk storage backend.
-* `lenient_conditions`: support for the deprecated syntax of `Condition`s
 * `default`: `redis_storage`.

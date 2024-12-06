@@ -220,18 +220,16 @@ mod test {
                 "first_namespace",
                 10,
                 60,
-                vec!["req.method == 'GET'"],
-                vec!["app_id"],
-            )
-            .expect("This must be a valid limit!"),
+                vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+                vec!["app_id".try_into().expect("failed parsing!")],
+            ),
             Limit::new(
                 "second_namespace",
                 20,
                 60,
-                vec!["req.method == 'GET'"],
-                vec!["app_id"],
-            )
-            .expect("This must be a valid limit!"),
+                vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+                vec!["app_id".try_into().expect("failed parsing!")],
+            ),
         ];
 
         for limit in limits {
@@ -254,19 +252,17 @@ mod test {
             "first_namespace",
             10,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         let lim2 = Limit::new(
             "second_namespace",
             20,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         for limit in [&lim1, &lim2] {
             rate_limiter.add_limit(limit).await;
@@ -288,10 +284,9 @@ mod test {
             "test_namespace",
             10,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
@@ -309,10 +304,9 @@ mod test {
             "test_namespace",
             10,
             60,
-            vec!["req.method == 'GET'"],
-            Vec::<String>::new(),
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            Vec::default(),
+        );
 
         rate_limiter.add_limit(&limit).await;
 
@@ -332,19 +326,17 @@ mod test {
             namespace,
             10,
             60,
-            vec!["req.method == 'POST'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'POST'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         let limit_2 = Limit::new(
             namespace,
             5,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit_1).await;
         rate_limiter.add_limit(&limit_2).await;
@@ -361,10 +353,9 @@ mod test {
             "test_namespace",
             10,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
@@ -379,18 +370,17 @@ mod test {
             namespace,
             10,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
         let mut values = HashMap::new();
-        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "1".to_string());
         rate_limiter
-            .update_counters(namespace, &values, 1)
+            .update_counters(namespace, &values.into(), 1)
             .await
             .unwrap();
 
@@ -415,18 +405,16 @@ mod test {
                 namespace,
                 10,
                 60,
-                vec!["req.method == 'POST'"],
-                vec!["app_id"],
-            )
-            .expect("This must be a valid limit!"),
+                vec!["req_method == 'POST'".try_into().expect("failed parsing!")],
+                vec!["app_id".try_into().expect("failed parsing!")],
+            ),
             Limit::new(
                 namespace,
                 5,
                 60,
-                vec!["req.method == 'GET'"],
-                vec!["app_id"],
-            )
-            .expect("This must be a valid limit!"),
+                vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+                vec!["app_id".try_into().expect("failed parsing!")],
+            ),
         ];
 
         for limit in limits.iter() {
@@ -445,16 +433,22 @@ mod test {
         let namespace2 = "test_namespace_2";
 
         rate_limiter
-            .add_limit(
-                &Limit::new(namespace1, 10, 60, vec!["x == '10'"], vec!["z"])
-                    .expect("This must be a valid limit!"),
-            )
+            .add_limit(&Limit::new(
+                namespace1,
+                10,
+                60,
+                vec!["x == '10'".try_into().expect("failed parsing!")],
+                vec!["z".try_into().expect("failed parsing!")],
+            ))
             .await;
         rate_limiter
-            .add_limit(
-                &Limit::new(namespace2, 5, 60, vec!["x == '10'"], vec!["z"])
-                    .expect("This must be a valid limit!"),
-            )
+            .add_limit(&Limit::new(
+                namespace2,
+                5,
+                60,
+                vec!["x == '10'".try_into().expect("failed parsing!")],
+                vec!["z".try_into().expect("failed parsing!")],
+            ))
             .await;
 
         rate_limiter.delete_limits(namespace1).await.unwrap();
@@ -469,18 +463,17 @@ mod test {
             namespace,
             5,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
         let mut values = HashMap::new();
-        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "1".to_string());
         rate_limiter
-            .update_counters(namespace, &values, 1)
+            .update_counters(namespace, &values.into(), 1)
             .await
             .unwrap();
 
@@ -504,32 +497,32 @@ mod test {
             namespace,
             max_hits,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
         let mut values: HashMap<String, String> = HashMap::new();
-        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = values.into();
 
         for i in 0..max_hits {
             assert!(
                 !rate_limiter
-                    .is_rate_limited(namespace, &values, 1)
+                    .is_rate_limited(namespace, &ctx, 1)
                     .await
                     .unwrap(),
                 "Must not be limited after {i}"
             );
             rate_limiter
-                .update_counters(namespace, &values, 1)
+                .update_counters(namespace, &ctx, 1)
                 .await
                 .unwrap();
         }
         assert!(rate_limiter
-            .is_rate_limited(namespace, &values, 1)
+            .is_rate_limited(namespace, &ctx, 1)
             .await
             .unwrap());
     }
@@ -542,32 +535,32 @@ mod test {
             namespace,
             max_hits,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
         let mut values: HashMap<String, String> = HashMap::new();
-        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = values.into();
 
         for i in 0..max_hits {
             assert!(
                 !rate_limiter
-                    .is_rate_limited(namespace, &values, 1)
+                    .is_rate_limited(namespace, &ctx, 1)
                     .await
                     .unwrap(),
                 "Must not be limited after {i}"
             );
             rate_limiter
-                .update_counters(namespace, &values, 1)
+                .update_counters(namespace, &ctx, 1)
                 .await
                 .unwrap();
         }
         assert!(rate_limiter
-            .is_rate_limited(namespace, &values, 1)
+            .is_rate_limited(namespace, &ctx, 1)
             .await
             .unwrap());
     }
@@ -580,18 +573,16 @@ mod test {
                 namespace,
                 max_hits,
                 60,
-                vec!["req.method == 'GET'"],
-                vec!["app_id"],
-            )
-            .expect("This must be a valid limit!"),
+                vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+                vec!["app_id".try_into().expect("failed parsing!")],
+            ),
             Limit::new(
                 namespace,
                 max_hits + 1,
                 60,
-                vec!["req.method == 'POST'"],
-                vec!["app_id"],
-            )
-            .expect("This must be a valid limit!"),
+                vec!["req_method == 'POST'".try_into().expect("failed parsing!")],
+                vec!["app_id".try_into().expect("failed parsing!")],
+            ),
         ];
 
         for limit in limits {
@@ -599,34 +590,36 @@ mod test {
         }
 
         let mut get_values: HashMap<String, String> = HashMap::new();
-        get_values.insert("req.method".to_string(), "GET".to_string());
+        get_values.insert("req_method".to_string(), "GET".to_string());
         get_values.insert("app_id".to_string(), "test_app_id".to_string());
+        let get_ctx = get_values.into();
 
         let mut post_values: HashMap<String, String> = HashMap::new();
-        post_values.insert("req.method".to_string(), "POST".to_string());
+        post_values.insert("req_method".to_string(), "POST".to_string());
         post_values.insert("app_id".to_string(), "test_app_id".to_string());
+        let post_ctx = post_values.into();
 
         for i in 0..max_hits {
             assert!(
                 !rate_limiter
-                    .is_rate_limited(namespace, &get_values, 1)
+                    .is_rate_limited(namespace, &get_ctx, 1)
                     .await
                     .unwrap(),
                 "Must not be limited after {i}"
             );
             assert!(
                 !rate_limiter
-                    .is_rate_limited(namespace, &post_values, 1)
+                    .is_rate_limited(namespace, &post_ctx, 1)
                     .await
                     .unwrap(),
                 "Must not be limited after {i}"
             );
             rate_limiter
-                .check_rate_limited_and_update(namespace, &get_values, 1, false)
+                .check_rate_limited_and_update(namespace, &get_ctx, 1, false)
                 .await
                 .unwrap();
             rate_limiter
-                .check_rate_limited_and_update(namespace, &post_values, 1, false)
+                .check_rate_limited_and_update(namespace, &post_ctx, 1, false)
                 .await
                 .unwrap();
         }
@@ -635,11 +628,11 @@ mod test {
         tokio::time::sleep(Duration::from_millis(40)).await;
 
         assert!(rate_limiter
-            .is_rate_limited(namespace, &get_values, 1)
+            .is_rate_limited(namespace, &get_ctx, 1)
             .await
             .unwrap());
         assert!(!rate_limiter
-            .is_rate_limited(namespace, &post_values, 1)
+            .is_rate_limited(namespace, &post_ctx, 1)
             .await
             .unwrap());
     }
@@ -650,31 +643,31 @@ mod test {
             namespace,
             10,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
         let mut values: HashMap<String, String> = HashMap::new();
-        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = values.into();
 
         // Report 5 hits twice. The limit is 10, so the first limited call should be
         // the third one.
         for _ in 0..2 {
             assert!(!rate_limiter
-                .is_rate_limited(namespace, &values, 5)
+                .is_rate_limited(namespace, &ctx, 5)
                 .await
                 .unwrap());
             rate_limiter
-                .update_counters(namespace, &values, 5)
+                .update_counters(namespace, &ctx, 5)
                 .await
                 .unwrap();
         }
         assert!(rate_limiter
-            .is_rate_limited(namespace, &values, 1)
+            .is_rate_limited(namespace, &ctx, 1)
             .await
             .unwrap());
     }
@@ -686,19 +679,19 @@ mod test {
             namespace,
             max,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
         let mut values: HashMap<String, String> = HashMap::new();
-        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = values.into();
 
         assert!(rate_limiter
-            .is_rate_limited(namespace, &values, max + 1)
+            .is_rate_limited(namespace, &ctx, max + 1)
             .await
             .unwrap())
     }
@@ -710,36 +703,38 @@ mod test {
             namespace,
             max_hits,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
         let mut values: HashMap<String, String> = HashMap::new();
-        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
 
         for i in 0..max_hits {
             // Add an extra value that does not apply to the limit on each
             // iteration. It should not affect.
+            let mut values = values.clone();
             values.insert("does_not_apply".to_string(), i.to_string());
+            let ctx = values.into();
 
             assert!(
                 !rate_limiter
-                    .is_rate_limited(namespace, &values, 1)
+                    .is_rate_limited(namespace, &ctx, 1)
                     .await
                     .unwrap(),
                 "Must not be limited after {i}"
             );
             rate_limiter
-                .update_counters(namespace, &values, 1)
+                .update_counters(namespace, &ctx, 1)
                 .await
                 .unwrap();
         }
+        let ctx = values.into();
         assert!(rate_limiter
-            .is_rate_limited(namespace, &values, 1)
+            .is_rate_limited(namespace, &ctx, 1)
             .await
             .unwrap());
     }
@@ -748,10 +743,11 @@ mod test {
         rate_limiter: &mut TestsLimiter,
     ) {
         let mut values: HashMap<String, String> = HashMap::new();
-        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("req_method".to_string(), "GET".to_string());
+        let ctx = values.into();
 
         assert!(!rate_limiter
-            .is_rate_limited("test_namespace", &values, 1)
+            .is_rate_limited("test_namespace", &ctx, 1)
             .await
             .unwrap());
     }
@@ -765,20 +761,20 @@ mod test {
             namespace,
             0, // So reporting 1 more would not be allowed
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
         // Notice that does not match because the method is "POST".
         let mut values: HashMap<String, String> = HashMap::new();
-        values.insert("req.method".to_string(), "POST".to_string());
+        values.insert("req_method".to_string(), "POST".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = values.into();
 
         assert!(!rate_limiter
-            .is_rate_limited(namespace, &values, 1)
+            .is_rate_limited(namespace, &ctx, 1)
             .await
             .unwrap());
     }
@@ -790,18 +786,18 @@ mod test {
             namespace,
             0, // So reporting 1 more would not be allowed
             60,
-            Vec::<String>::new(), // unconditional
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            Vec::default(), // unconditional
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = values.into();
 
         assert!(rate_limiter
-            .is_rate_limited(namespace, &values, 1)
+            .is_rate_limited(namespace, &ctx, 1)
             .await
             .unwrap());
     }
@@ -814,21 +810,21 @@ mod test {
             namespace,
             max_hits,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
         let mut values: HashMap<String, String> = HashMap::new();
-        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = values.into();
 
         for _ in 0..max_hits {
             assert!(
                 !rate_limiter
-                    .check_rate_limited_and_update(namespace, &values, 1, false)
+                    .check_rate_limited_and_update(namespace, &ctx, 1, false)
                     .await
                     .unwrap()
                     .limited
@@ -837,7 +833,7 @@ mod test {
 
         assert!(
             rate_limiter
-                .check_rate_limited_and_update(namespace, &values, 1, false)
+                .check_rate_limited_and_update(namespace, &ctx, 1, false)
                 .await
                 .unwrap()
                 .limited
@@ -852,20 +848,20 @@ mod test {
             namespace,
             max_hits,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
         let mut values: HashMap<String, String> = HashMap::new();
-        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = values.into();
 
         for hit in 0..max_hits {
             let result = rate_limiter
-                .check_rate_limited_and_update(namespace, &values, 1, true)
+                .check_rate_limited_and_update(namespace, &ctx, 1, true)
                 .await
                 .unwrap();
             assert!(!result.limited);
@@ -880,7 +876,7 @@ mod test {
         }
 
         let result = rate_limiter
-            .check_rate_limited_and_update(namespace, &values, 1, true)
+            .check_rate_limited_and_update(namespace, &ctx, 1, true)
             .await
             .unwrap();
         assert!(result.limited);
@@ -903,21 +899,21 @@ mod test {
             namespace,
             10,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("app_id".to_string(), "test_app_id".to_string());
         // Does not match the limit defined
-        values.insert("req.method".to_string(), "POST".to_string());
+        values.insert("req_method".to_string(), "POST".to_string());
+        let ctx = values.into();
 
         assert!(
             !rate_limiter
-                .check_rate_limited_and_update(namespace, &values, 1, false)
+                .check_rate_limited_and_update(namespace, &ctx, 1, false)
                 .await
                 .unwrap()
                 .limited
@@ -933,19 +929,19 @@ mod test {
             namespace,
             0, // So reporting 1 more would not be allowed
             60,
-            Vec::<String>::new(), // unconditional
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            Vec::default(), // unconditional
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = values.into();
 
         assert!(
             rate_limiter
-                .check_rate_limited_and_update(namespace, &values, 1, false)
+                .check_rate_limited_and_update(namespace, &ctx, 1, false)
                 .await
                 .unwrap()
                 .limited
@@ -962,24 +958,27 @@ mod test {
             namespace,
             max_hits,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
         let mut values = HashMap::new();
-        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "1".to_string());
+        let ctx = values.into();
         rate_limiter
-            .update_counters(namespace, &values, hits_app_1)
+            .update_counters(namespace, &ctx, hits_app_1)
             .await
             .unwrap();
 
+        let mut values = HashMap::new();
+        values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "2".to_string());
+        let ctx = values.into();
         rate_limiter
-            .update_counters(namespace, &values, hits_app_2)
+            .update_counters(namespace, &ctx, hits_app_2)
             .await
             .unwrap();
 
@@ -1020,10 +1019,9 @@ mod test {
             "test_namespace",
             10,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
@@ -1042,18 +1040,18 @@ mod test {
             namespace,
             10,
             limit_time,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
         let mut values = HashMap::new();
-        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "1".to_string());
+        let ctx = values.into();
         rate_limiter
-            .update_counters(namespace, &values, 1)
+            .update_counters(namespace, &ctx, 1)
             .await
             .unwrap();
 
@@ -1068,19 +1066,17 @@ mod test {
             "first_namespace",
             10,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         let second_limit = Limit::new(
             "second_namespace",
             20,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter
             .configure_with(vec![first_limit.clone(), second_limit.clone()])
@@ -1109,18 +1105,18 @@ mod test {
             namespace,
             max_value,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit).await;
 
         let mut values = HashMap::new();
-        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "1".to_string());
+        let ctx = values.into();
         rate_limiter
-            .update_counters(namespace, &values, hits_to_report)
+            .update_counters(namespace, &ctx, hits_to_report)
             .await
             .unwrap();
 
@@ -1149,19 +1145,17 @@ mod test {
             namespace,
             10,
             1,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         let limit_to_be_deleted = Limit::new(
             namespace,
             20,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         for limit in [&limit_to_be_kept, &limit_to_be_deleted].iter() {
             rate_limiter.add_limit(limit).await;
@@ -1185,19 +1179,17 @@ mod test {
             namespace,
             10,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         let limit_update = Limit::new(
             namespace,
             20,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         rate_limiter.add_limit(&limit_orig).await;
 
@@ -1219,28 +1211,25 @@ mod test {
             namespace,
             10,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         let limit_2 = Limit::new(
             namespace,
             20,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         let mut limit_3 = Limit::new(
             namespace,
             20,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
         limit_3.set_name("Name is irrelevant too".to_owned());
 
         assert!(rate_limiter.add_limit(&limit_1).await);
@@ -1267,31 +1256,31 @@ mod test {
             namespace,
             max_hits,
             60,
-            vec!["req.method == 'GET'"],
-            vec!["app_id"],
-        )
-        .expect("This must be a valid limit!");
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
 
         for rate_limiter in rate_limiters.iter() {
             rate_limiter.add_limit(&limit).await;
         }
 
         let mut values: HashMap<String, String> = HashMap::new();
-        values.insert("req.method".to_string(), "GET".to_string());
+        values.insert("req_method".to_string(), "GET".to_string());
         values.insert("app_id".to_string(), "test_app_id".to_string());
+        let ctx = values.into();
 
         for i in 0..max_hits {
             // Alternate between the two rate limiters
             let rate_limiter = rate_limiters.get((i % 2) as usize).unwrap();
             assert!(
                 !rate_limiter
-                    .is_rate_limited(namespace, &values, 1)
+                    .is_rate_limited(namespace, &ctx, 1)
                     .await
                     .unwrap(),
                 "Must not be limited after {i}"
             );
             rate_limiter
-                .update_counters(namespace, &values, 1)
+                .update_counters(namespace, &ctx, 1)
                 .await
                 .unwrap();
         }
@@ -1303,7 +1292,7 @@ mod test {
             || async {
                 let rate_limiter = rate_limiters.first().unwrap();
                 rate_limiter
-                    .is_rate_limited(namespace, &values, 1)
+                    .is_rate_limited(namespace, &ctx, 1)
                     .await
                     .unwrap()
             }
