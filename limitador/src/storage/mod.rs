@@ -1,14 +1,13 @@
 use std::cmp::Ordering;
 use crate::counter::Counter;
-use crate::limit::{Limit, Namespace};
-use crate::{limit, InMemoryStorage};
+use crate::limit::{Context, Limit, Namespace};
+use crate::InMemoryStorage;
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
-use metrics::counter;
 use prost::bytes::BufMut;
 
 #[cfg(feature = "disk_storage")]
@@ -286,17 +285,23 @@ impl AsyncStorage {
 }
 
 pub enum CounterKey {
-    Identified((Namespace, String)),
     Simple((Namespace, SimpleCounterKey)),
-    Qualified((Namespace, SimpleCounterKey, Vec<String>)),
+    SimpleIdentified((Namespace, String)),
+    Qualified((Namespace, SimpleCounterKey, Vec<(String, String)>)),
+    QualifiedIdentified((Namespace, String, Vec<(String, String)>)),
 }
 
 impl CounterKey {
+    pub(super) fn new(limit: &Limit, ctx: &Context) -> Result<Self, ()> {
+        Err(())
+    }
+
     fn namespace(&self) -> &Namespace {
         match self {
-            CounterKey::Identified((ns, _)) => ns,
             CounterKey::Simple((ns, _)) => ns,
+            CounterKey::SimpleIdentified((ns, _)) => ns,
             CounterKey::Qualified((ns, _, _)) => ns,
+            CounterKey::QualifiedIdentified((ns, _, _)) => ns,
         }
     }
 }
@@ -320,25 +325,36 @@ impl Ord for CounterKey {
         match self.namespace().cmp(other.namespace()) {
             Ordering::Equal => {
                 match self {
-                    CounterKey::Identified((_, id)) => {
+                    CounterKey::Simple((_, key)) => {
                         match other {
-                            CounterKey::Identified((_, other)) => id.cmp(other),
+                            CounterKey::Simple((_, other)) => key.cmp(other),
                             _ => Ordering::Less,
                         }
                     }
-                    CounterKey::Simple((_, key)) => {
+                    CounterKey::SimpleIdentified((_, id)) => {
                         match other {
-                            CounterKey::Identified(_) => Ordering::Greater,
-                            CounterKey::Simple((_, other)) => key.cmp(other),
-                            CounterKey::Qualified(_) => Ordering::Less,
+                            CounterKey::Simple(_) => Ordering::Greater,
+                            CounterKey::SimpleIdentified((_, other)) => id.cmp(other),
+                            _ => Ordering::Less,
                         }
                     }
                     CounterKey::Qualified((_, key, qualifiers)) => {
                         match other {
-                            CounterKey::Identified(_) => Ordering::Greater,
-                            CounterKey::Simple(_) => Ordering::Greater,
+                            _ => Ordering::Greater,
                             CounterKey::Qualified((_, other_key, other_qualifiers)) => {
                                 match key.cmp(other_key) {
+                                    Ordering::Equal => qualifiers.cmp(other_qualifiers),
+                                    other => other,
+                                }
+                            }
+                            CounterKey::QualifiedIdentified(_) => Ordering::Less,
+                        }
+                    }
+                    CounterKey::QualifiedIdentified((_, id, qualifiers)) => {
+                        match other {
+                            _ => Ordering::Greater,
+                            CounterKey::QualifiedIdentified((_, other_id, other_qualifiers)) => {
+                                match id.cmp(other_id) {
                                     Ordering::Equal => qualifiers.cmp(other_qualifiers),
                                     other => other,
                                 }
@@ -356,22 +372,6 @@ impl Ord for CounterKey {
 pub struct SimpleCounterKey {
     seconds: u64,
     conditions: Vec<String>,
-}
-
-impl From<&Limit> for CounterKey {
-    fn from(limit: &Limit) -> Self {
-        let mut conditions = Vec::from(limit.conditions());
-        conditions.sort();
-        let mut variables = Vec::from(limit.variables());
-        variables.sort();
-
-        Self {
-            namespace: limit.namespace().clone(),
-            seconds: limit.seconds(),
-            conditions,
-            variables,
-        }
-    }
 }
 
 pub trait CounterStorage: Sync + Send {
