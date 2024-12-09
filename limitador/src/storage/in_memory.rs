@@ -230,7 +230,15 @@ impl InMemoryStorage {
     }
 
     fn delete_counters_of_limit(&self, limit: &Limit) {
-        self.simple_limits.write().unwrap().remove(limit);
+        if limit.variables().is_empty() {
+            self.simple_limits.write().unwrap().remove(limit);
+        } else {
+            for (c, _) in self.qualified_counters.iter() {
+                if c.limit() == limit {
+                    self.qualified_counters.invalidate(&c);
+                }
+            }
+        }
     }
 
     fn counter_is_within_limits(counter: &Counter, current_val: Option<&u64>, delta: u64) -> bool {
