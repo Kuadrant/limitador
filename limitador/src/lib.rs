@@ -697,6 +697,7 @@ fn classify_limits_by_namespace(
 mod test {
     use crate::limit::{Context, Expression, Limit};
     use crate::RateLimiter;
+    use std::collections::HashMap;
 
     #[test]
     fn properly_updates_existing_limits() {
@@ -728,5 +729,32 @@ mod test {
             .check_rate_limited_and_update(&namespace.into(), &Context::default(), 1, true)
             .unwrap();
         assert_eq!(r.counters.first().unwrap().max_value(), 50);
+    }
+
+    #[test]
+    fn deletes_qualified_counters() {
+        let rl = RateLimiter::new(100);
+        let namespace = "foo";
+
+        let l = Limit::new(
+            namespace,
+            42,
+            100,
+            vec![],
+            vec![Expression::parse("x").unwrap()],
+        );
+        let ctx = Context::from(HashMap::from([("x".to_string(), "a".to_string())]));
+        rl.add_limit(l.clone());
+        let r = rl
+            .check_rate_limited_and_update(&namespace.into(), &ctx, 1, true)
+            .unwrap();
+        assert_eq!(r.counters.first().unwrap().remaining(), Some(41));
+        rl.delete_limit(&l).unwrap();
+
+        rl.add_limit(l.clone());
+        let r = rl
+            .check_rate_limited_and_update(&namespace.into(), &ctx, 1, true)
+            .unwrap();
+        assert_eq!(r.counters.first().unwrap().remaining(), Some(41));
     }
 }
