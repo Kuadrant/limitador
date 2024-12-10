@@ -12,7 +12,7 @@ on:
 jobs:
   fossa-scan:
     name: Find license compliance and security issues
-    if: github.repository == 'Kuadrant/limitador'
+    if: {{github.repository == 'Kuadrant/limitador' && secrets.FOSSA_API_TOKEN != null}}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
