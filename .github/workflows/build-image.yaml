@@ -100,19 +100,23 @@ jobs:
             # set ref name tag for non-main branches
             type=raw,value=${{ github.ref_name }},enable=${{ github.ref_name != env.MAIN_BRANCH_NAME }}
       - name: Login to container registry
+        if: github.repository == 'Kuadrant/limitador'
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.IMG_REGISTRY_USERNAME }}
           password: ${{ secrets.IMG_REGISTRY_TOKEN }}
           registry: ${{ env.IMG_REGISTRY_HOST }}
       - name: Create manifest list and push
+        if: github.repository == 'Kuadrant/limitador'
         working-directory: /tmp/digests
         run: |
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.IMG_REGISTRY_HOST }}/${{ env.IMG_REGISTRY_ORG }}/limitador@sha256:%s ' $(find . -type f -exec basename {} \;))
       - name: Inspect image
+        if: github.repository == 'Kuadrant/limitador'
         run: |
           docker buildx imagetools inspect ${{ env.IMG_REGISTRY_HOST }}/${{ env.IMG_REGISTRY_ORG }}/limitador:${{ steps.meta.outputs.version }}
       - name: Smoke Test
+        if: github.repository == 'Kuadrant/limitador'
         run: |
           docker run --rm -t ${{ env.IMG_REGISTRY_HOST }}/${{ env.IMG_REGISTRY_ORG }}/limitador:${{ steps.meta.outputs.version }} limitador-server --help
