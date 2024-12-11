@@ -1,7 +1,11 @@
 [package]
 name = "limitador"
 version = "0.8.0-dev"
-authors = ["David Ortiz <z.david.ortiz@gmail.com>", "Eguzki Astiz Lezaun <eguzki@redhat.com>", "Alex Snaps <asnaps@redhat.com>"]
+authors = [
+    "David Ortiz <z.david.ortiz@gmail.com>",
+    "Eguzki Astiz Lezaun <eguzki@redhat.com>",
+    "Alex Snaps <asnaps@redhat.com>",
+]
 license = "Apache-2.0"
 keywords = ["rate-limiting", "rate", "limiter"]
 categories = ["web-programming"]
@@ -13,10 +17,30 @@ readme = "README.md"
 edition = "2021"
 
 [features]
-default = ["disk_storage", "redis_storage"]
+default = ["disk_storage", "redis_storage_nativetls"]
 disk_storage = ["rocksdb"]
-distributed_storage = ["tokio", "tokio-stream", "h2", "base64", "uuid", "tonic", "tonic-reflection", "prost", "prost-types"]
-redis_storage = ["redis", "r2d2", "tokio"]
+distributed_storage = [
+    "tokio",
+    "tokio-stream",
+    "h2",
+    "base64",
+    "uuid",
+    "tonic",
+    "tonic-reflection",
+    "prost",
+    "prost-types",
+]
+redis_storage = ["r2d2", "tokio", "redis"]
+redis_storage_nativetls = [
+    "redis_storage",
+    "redis/tls-native-tls",
+    "redis/tokio-native-tls-comp",
+]
+redis_storage_rustls = [
+    "redis_storage",
+    "redis/tls-rustls",
+    "redis/tokio-rustls-comp",
+]
 
 [dependencies]
 moka = { version = "0.12", features = ["sync"] }
@@ -30,12 +54,12 @@ tracing = "0.1.40"
 metrics = "0.24"
 
 # Optional dependencies
-rocksdb = { version = "0.22", optional = true, features = ["multi-threaded-cf"] }
+rocksdb = { version = "0.22", optional = true, features = [
+    "multi-threaded-cf",
+] }
 redis = { version = "0.27", optional = true, features = [
     "connection-manager",
     "tokio-comp",
-    "tls-native-tls",
-    "tokio-native-tls-comp",
     "script",
 ] }
 r2d2 = { version = "0.8", optional = true }
@@ -53,7 +77,11 @@ tonic = { version = "0.12.3", optional = true }
 tonic-reflection = { version = "0.12.3", optional = true }
 prost = { version = "0.13.3", optional = true }
 prost-types = { version = "0.13.3", optional = true }
-cel-interpreter = { git = "https://github.com/clarkmcc/cel-rust", rev = "5b02b08", features = ["json", "regex", "chrono"] }
+cel-interpreter = { git = "https://github.com/clarkmcc/cel-rust", rev = "5b02b08", features = [
+    "json",
+    "regex",
+    "chrono",
+] }
 cel-parser = { git = "https://github.com/clarkmcc/cel-rust", rev = "5b02b08" }
 
 [dev-dependencies]
@@ -69,11 +97,7 @@ redis = { version = "0.27", features = [
 paste = "1"
 rand = "0.8"
 tempfile = "3.5.0"
-tokio = { version = "1", features = [
-    "rt-multi-thread",
-    "macros",
-    "time",
-] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 
 [build-dependencies]
 tonic-build = "0.12"
