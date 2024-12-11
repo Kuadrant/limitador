@@ -12,7 +12,6 @@ on:
 jobs:
   publish:
     name: Publish Limitador crate to crates.io
-    if: github.repository == 'Kuadrant/limitador'
     runs-on: ubuntu-latest
     steps:
       - uses: abelfodil/protoc-action@v1
