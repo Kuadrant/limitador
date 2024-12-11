@@ -12,6 +12,14 @@ on:
     - cron: '5 4 * * *'
 
 jobs:
+  dump-github:
+    name: Dump Github context
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump GitHub context
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
+        run: echo "$GITHUB_CONTEXT"
   check:
     name: Check
     runs-on: ubuntu-latest
