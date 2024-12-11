@@ -10,6 +10,15 @@ on:
       - '*'
 
 jobs:
+  dump-github:
+    name: Dump Github context
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump GitHub context
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
+        run: echo "$GITHUB_CONTEXT"
+
   fossa-scan:
     name: Find license compliance and security issues
     if: github.repository == 'Kuadrant/limitador'
