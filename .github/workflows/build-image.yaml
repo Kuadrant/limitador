@@ -74,6 +74,14 @@ jobs:
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
+  dump-github:
+    name: Dump Github context
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump GitHub context
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
+        run: echo "$GITHUB_CONTEXT"
   merge:
     runs-on: ubuntu-latest
     needs:
