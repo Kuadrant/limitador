@@ -3,7 +3,9 @@
 With `limitador-server` version `1.0.0` (and the `limitador` crate version `0.3.0`), the syntax for `condition`s within 
 `limit` definitions has changed.
 
-## Changes
+# Note! This synthax has been deprecated as of version `2.0.0`
+
+## Changes when working with Limitador Server versions `1.x`
 
 ### The new syntax
 

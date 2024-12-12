@@ -94,9 +94,9 @@ Here is an example of such a limit definition:
   max_value: 10
   seconds: 60
   conditions:
-    - "req_method == 'GET'"
+    - "descriptors[0].req_method == 'GET'"
   variables:
-    - user_id
+    - descriptors[0].user_id
 ```
 
  - `namespace` namespaces the limit, will generally be the domain, [see here](../how-it-works.md)
@@ -112,13 +112,11 @@ Here is an example of such a limit definition:
 Each `condition` is an expression producing a boolean value (`true` or `false`). All `conditions` _must_ evaluate to
 `true` for the `limit` to be applied on a request.
 
-Expressions follow the following syntax: `$IDENTIFIER $OP $STRING_LITERAL`, where:
-
- - `$IDENTIFIER` will be used to resolve the value at evaluation time, e.g. `role`
- - `$OP` is an operator, either `==` or `!=`
- - `$STRING_LITERAL` is a literal string value, `"` or `'` demarcated, e.g. `"admin"`
-
-So that `role != "admin"` would apply the limit on request from all users, but `admin`'s.
+These predicates are [CEL](https://cel.dev/) Expressions that operate on the context provided by the `Limit` itself
+(it's `id` and `name`fields), along with the `descriptors` from Envoy's
+[
+`service.ratelimit.v3.RateLimitRequest`](https://www.envoyproxy.io/docs/envoy/latest/api-v3/service/ratelimit/v3/rls.proto#service-ratelimit-v3-ratelimitrequest),
+each of which being exposed a `List` of `Map` with both keys and values as `String`.
 
 ### Counter storages
 
