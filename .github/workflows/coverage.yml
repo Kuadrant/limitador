@@ -9,7 +9,6 @@ on:
 jobs:
   check:
     name: Check
-    if: github.repository == 'Kuadrant/limitador'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +23,6 @@ jobs:
 
   test:
     name: Test Suite
-    if: github.repository == 'Kuadrant/limitador'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
