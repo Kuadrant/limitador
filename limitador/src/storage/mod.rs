@@ -251,7 +251,7 @@ impl AsyncStorage {
         self.counters.update_counter(counter, delta).await
     }
 
-    pub async fn check_and_update<'a>(
+    pub async fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,

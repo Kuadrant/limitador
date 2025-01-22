@@ -313,7 +313,7 @@ impl ReplicationState {
 }
 
 fn match_for_io_error(err_status: &Status) -> Option<&std::io::Error> {
-    let mut err: &(dyn Error + 'static) = err_status;
+    let err: &(dyn Error + 'static) = err_status;
 
     loop {
         if let Some(io_err) = err.downcast_ref::<std::io::Error>() {
@@ -328,10 +328,7 @@ fn match_for_io_error(err_status: &Status) -> Option<&std::io::Error> {
             }
         }
 
-        err = match err.source() {
-            Some(err) => err,
-            None => return None,
-        };
+        err.source()?;
     }
 }
 
