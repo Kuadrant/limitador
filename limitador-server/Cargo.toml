@@ -38,7 +38,7 @@ opentelemetry-otlp = "0.15"
 url = "2"
 actix-web = "4.1"
 actix-rt = "2"
-paperclip = { version = "0.9", features = ["actix4"] }
+paperclip = { version = "0.9", features = ["actix4", "chrono"] }
 serde = { version = "1", features = ["derive"] }
 notify = "7"
 const_format = "0.2.31"
@@ -48,6 +48,7 @@ sysinfo = "0.32"
 openssl = { version = "0.10.66", features = ["vendored"] }
 metrics = "0.22.3"
 metrics-exporter-prometheus = "0.14.0"
+chrono = { version = "0.4", features = ["serde"] }
 
 
 [build-dependencies]

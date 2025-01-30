@@ -1,6 +1,6 @@
 use crate::http_api::request_types::{CheckAndReportInfo, Counter, Limit};
 use crate::prometheus_metrics::PrometheusMetrics;
-use crate::Limiter;
+use crate::{Limiter, Status};
 use actix_web::{http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError};
 use actix_web::{App, HttpServer};
 use limitador::limit::Context;
@@ -14,16 +14,25 @@ use paperclip::actix::{
     OpenApiExt,
 };
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 struct RateLimitData {
     limiter: Arc<Limiter>,
     metrics: Arc<PrometheusMetrics>,
+    status: Arc<RwLock<Status>>,
 }
 
 impl RateLimitData {
-    fn new(limiter: Arc<Limiter>, metrics: Arc<PrometheusMetrics>) -> Self {
-        Self { limiter, metrics }
+    fn new(
+        limiter: Arc<Limiter>,
+        metrics: Arc<PrometheusMetrics>,
+        status: Arc<RwLock<Status>>,
+    ) -> Self {
+        Self {
+            limiter,
+            metrics,
+            status,
+        }
     }
     fn limiter(&self) -> &Limiter {
         self.limiter.as_ref()
@@ -31,6 +40,10 @@ impl RateLimitData {
 
     fn metrics(&self) -> &PrometheusMetrics {
         self.metrics.as_ref()
+    }
+
+    fn status(&self) -> Status {
+        *self.status.read().unwrap()
     }
 }
 
@@ -61,8 +74,8 @@ impl ResponseError for ErrorResponse {
 
 // Used for health checks
 #[api_v2_operation]
-async fn status() -> web::Json<()> {
-    Json(())
+async fn status(data: web::Data<RateLimitData>) -> web::Json<Status> {
+    Json(data.get_ref().status())
 }
 
 #[tracing::instrument(skip(data))]
@@ -262,8 +275,13 @@ pub async fn run_http_server(
     address: &str,
     rate_limiter: Arc<Limiter>,
     prometheus_metrics: Arc<PrometheusMetrics>,
+    status_reader: Arc<RwLock<Status>>,
 ) -> std::io::Result<()> {
-    let data = web::Data::new(RateLimitData::new(rate_limiter, prometheus_metrics));
+    let data = web::Data::new(RateLimitData::new(
+        rate_limiter,
+        prometheus_metrics,
+        status_reader,
+    ));
 
     // This uses the paperclip crate to generate an OpenAPI spec.
     // Ref: https://paperclip.waffles.space/actix-plugin.html
@@ -305,7 +323,22 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_status() {
-        let app = test::init_service(App::new().route("/status", web::get().to(status))).await;
+        let limiter = Limiter::new(Configuration::default()).await.unwrap();
+        let rate_limiter: Arc<Limiter> = Arc::new(limiter);
+        let prometheus_metrics: Arc<PrometheusMetrics> = Arc::new(
+            PrometheusMetrics::new_with_handle(false, TEST_PROMETHEUS_HANDLE.clone()),
+        );
+        let data = web::Data::new(RateLimitData::new(
+            rate_limiter,
+            prometheus_metrics,
+            Default::default(),
+        ));
+        let app = test::init_service(
+            App::new()
+                .app_data(data)
+                .route("/status", web::get().to(status)),
+        )
+        .await;
 
         let req = test::TestRequest::with_uri("/status").to_request();
         let resp = test::call_service(&app, req).await;
@@ -320,7 +353,11 @@ mod tests {
         let prometheus_metrics: Arc<PrometheusMetrics> = Arc::new(
             PrometheusMetrics::new_with_handle(false, TEST_PROMETHEUS_HANDLE.clone()),
         );
-        let data = web::Data::new(RateLimitData::new(rate_limiter, prometheus_metrics));
+        let data = web::Data::new(RateLimitData::new(
+            rate_limiter,
+            prometheus_metrics,
+            Default::default(),
+        ));
         let app = test::init_service(
             App::new()
                 .app_data(data.clone())
@@ -347,7 +384,11 @@ mod tests {
         let prometheus_metrics: Arc<PrometheusMetrics> = Arc::new(
             PrometheusMetrics::new_with_handle(false, TEST_PROMETHEUS_HANDLE.clone()),
         );
-        let data = web::Data::new(RateLimitData::new(rate_limiter, prometheus_metrics));
+        let data = web::Data::new(RateLimitData::new(
+            rate_limiter,
+            prometheus_metrics,
+            Default::default(),
+        ));
         let app = test::init_service(
             App::new()
                 .app_data(data.clone())
@@ -376,7 +417,11 @@ mod tests {
         let prometheus_metrics: Arc<PrometheusMetrics> = Arc::new(
             PrometheusMetrics::new_with_handle(false, TEST_PROMETHEUS_HANDLE.clone()),
         );
-        let data = web::Data::new(RateLimitData::new(rate_limiter, prometheus_metrics));
+        let data = web::Data::new(RateLimitData::new(
+            rate_limiter,
+            prometheus_metrics,
+            Default::default(),
+        ));
         let app = test::init_service(
             App::new()
                 .app_data(data.clone())
@@ -427,7 +472,11 @@ mod tests {
         let prometheus_metrics: Arc<PrometheusMetrics> = Arc::new(
             PrometheusMetrics::new_with_handle(false, TEST_PROMETHEUS_HANDLE.clone()),
         );
-        let data = web::Data::new(RateLimitData::new(rate_limiter, prometheus_metrics));
+        let data = web::Data::new(RateLimitData::new(
+            rate_limiter,
+            prometheus_metrics,
+            Default::default(),
+        ));
         let app = test::init_service(
             App::new()
                 .app_data(data.clone())
@@ -501,7 +550,11 @@ mod tests {
         let prometheus_metrics: Arc<PrometheusMetrics> = Arc::new(
             PrometheusMetrics::new_with_handle(false, TEST_PROMETHEUS_HANDLE.clone()),
         );
-        let data = web::Data::new(RateLimitData::new(rate_limiter, prometheus_metrics));
+        let data = web::Data::new(RateLimitData::new(
+            rate_limiter,
+            prometheus_metrics,
+            Default::default(),
+        ));
         let app = test::init_service(
             App::new()
                 .app_data(data.clone())

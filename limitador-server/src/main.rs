@@ -14,6 +14,9 @@ use crate::config::{
 use crate::envoy_rls::server::{run_envoy_rls_server, RateLimitHeaders};
 use crate::http_api::server::run_http_server;
 use crate::metrics::MetricsLayer;
+use chrono::{NaiveDateTime, Utc};
+#[cfg(feature = "distributed_storage")]
+use clap::parser::ValuesRef;
 use clap::{value_parser, Arg, ArgAction, Command};
 use const_format::formatcp;
 use limitador::counter::Counter;
@@ -36,17 +39,15 @@ use opentelemetry::{global, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::{trace, Resource};
+use paperclip::actix::Apiv2Schema;
 use prometheus_metrics::PrometheusMetrics;
+use serde::Serialize;
 use std::fmt::Display;
 use std::fs;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use std::{env, process};
-
-#[cfg(feature = "distributed_storage")]
-use clap::parser::ValuesRef;
-
 use sysinfo::{MemoryRefreshKind, RefreshKind, System};
 use thiserror::Error;
 use tokio::runtime::Handle;
@@ -210,6 +211,38 @@ impl Limiter {
     }
 }
 
+#[derive(Copy, Clone, Debug, Serialize, Apiv2Schema)]
+pub struct Status {
+    pub started_at: NaiveDateTime,
+    pub config_applied_at: NaiveDateTime,
+    pub config_version: u64,
+    pub config_err_since: u64,
+}
+
+impl Status {
+    pub fn config_success(&mut self) {
+        self.config_applied_at = Utc::now().naive_utc();
+        self.config_version += 1;
+        self.config_err_since = 0;
+    }
+
+    pub fn config_failure(&mut self) {
+        self.config_err_since += 1;
+    }
+}
+
+impl Default for Status {
+    fn default() -> Self {
+        let now = Utc::now().naive_utc();
+        Self {
+            started_at: now,
+            config_applied_at: now,
+            config_version: 0,
+            config_err_since: 0,
+        }
+    }
+}
+
 #[actix_rt::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = {
@@ -258,6 +291,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // structure needed to keep state of the last known canonical limits file path
     let mut last_known_canonical_path = fs::canonicalize(&limit_file).unwrap();
 
+    let status: Arc<RwLock<Status>> = Arc::default();
+    let status_updater = Arc::clone(&status);
+
     let mut watcher = RecommendedWatcher::new(
         move |result: Result<Event, Error>| match result {
             Ok(ref event) => {
@@ -276,10 +312,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // only reload when the limits file content changed
                         if location == last_known_canonical_path {
                             let limiter = limiter.clone();
+                            let status_updater = Arc::clone(&status_updater);
+
                             handle.spawn(async move {
                                 match limiter.load_limits_from_file(&location).await {
-                                    Ok(_) => info!("data modified; reloaded limit file"),
-                                    Err(e) => error!("Failed reloading limit file: {}", e),
+                                    Ok(_) => {
+                                        status_updater.write().unwrap().config_success();
+                                        info!("data modified; reloaded limit file")
+                                    }
+                                    Err(e) => {
+                                        status_updater.write().unwrap().config_failure();
+                                        error!("Failed reloading limit file: {}", e)
+                                    }
                                 }
                             });
                         }
@@ -296,10 +340,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if canonical_limit_file != last_known_canonical_path {
                             last_known_canonical_path.clone_from(&canonical_limit_file);
                             let limiter = limiter.clone();
+                            let status_updater = Arc::clone(&status_updater);
+
                             handle.spawn(async move {
                                 match limiter.load_limits_from_file(&canonical_limit_file).await {
-                                    Ok(_) => info!("file moved; reloaded limit file"),
-                                    Err(e) => error!("Failed reloading limit file: {}", e),
+                                    Ok(_) => {
+                                        status_updater.write().unwrap().config_success();
+                                        info!("file moved; reloaded limit file")
+                                    }
+                                    Err(e) => {
+                                        status_updater.write().unwrap().config_failure();
+                                        error!("Failed reloading limit file: {}", e)
+                                    }
                                 }
                             });
                         }
@@ -325,7 +377,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
 
     info!("HTTP server starting on {}", http_api_address);
-    run_http_server(&http_api_address, rate_limiter.clone(), prometheus_metrics).await?;
+    run_http_server(
+        &http_api_address,
+        rate_limiter.clone(),
+        prometheus_metrics,
+        status,
+    )
+    .await?;
 
     Ok(())
 }
