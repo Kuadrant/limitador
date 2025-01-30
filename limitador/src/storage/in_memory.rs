@@ -237,16 +237,13 @@ impl InMemoryStorage {
             self.simple_limits.write().unwrap().remove(limit);
         } else {
             let l = limit.clone();
-            match self
+            if let Err(PredicateError::InvalidationClosuresDisabled) = self
                 .qualified_counters
                 .invalidate_entries_if(move |c, _| c.limit() == &l)
             {
-                Ok(_) => {}
-                Err(PredicateError::InvalidationClosuresDisabled) => {
-                    for (c, _) in self.qualified_counters.iter() {
-                        if c.limit() == limit {
-                            self.qualified_counters.invalidate(&c);
-                        }
+                for (c, _) in self.qualified_counters.iter() {
+                    if c.limit() == limit {
+                        self.qualified_counters.invalidate(&c);
                     }
                 }
             }
