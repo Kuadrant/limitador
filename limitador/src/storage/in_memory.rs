@@ -2,7 +2,8 @@ use crate::counter::Counter;
 use crate::limit::{Context, Limit, Namespace};
 use crate::storage::atomic_expiring_value::AtomicExpiringValue;
 use crate::storage::{Authorization, CounterStorage, StorageErr};
-use moka::sync::Cache;
+use moka::sync::{Cache, CacheBuilder};
+use moka::PredicateError;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Deref;
@@ -198,7 +199,9 @@ impl InMemoryStorage {
     pub fn new(cache_size: u64) -> Self {
         Self {
             simple_limits: RwLock::new(BTreeMap::new()),
-            qualified_counters: Cache::new(cache_size),
+            qualified_counters: CacheBuilder::new(cache_size)
+                .support_invalidation_closures()
+                .build(),
         }
     }
 
@@ -230,7 +233,21 @@ impl InMemoryStorage {
     }
 
     fn delete_counters_of_limit(&self, limit: &Limit) {
-        self.simple_limits.write().unwrap().remove(limit);
+        if limit.variables().is_empty() {
+            self.simple_limits.write().unwrap().remove(limit);
+        } else {
+            let l = limit.clone();
+            if let Err(PredicateError::InvalidationClosuresDisabled) = self
+                .qualified_counters
+                .invalidate_entries_if(move |c, _| c.limit() == &l)
+            {
+                for (c, _) in self.qualified_counters.iter() {
+                    if c.limit() == limit {
+                        self.qualified_counters.invalidate(&c);
+                    }
+                }
+            }
+        }
     }
 
     fn counter_is_within_limits(counter: &Counter, current_val: Option<&u64>, delta: u64) -> bool {
