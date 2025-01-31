@@ -3,11 +3,12 @@ name: Limitador
 
 on:
   push:
-    branches:
-      - 'main'
+    branches: ['main']
   pull_request:
-    branches:
-      - '*'
+    branches: ['*']
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
   schedule:
     - cron: '5 4 * * *'
 
@@ -78,3 +79,14 @@ jobs:
           ips=$(kubectl get nodes -lkubernetes.io/hostname!=kind-control-plane -ojsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}')
           port=$(kubectl -n default get service kuard -ojsonpath='{.spec.ports[?(@.name=="envoy-http")].nodePort}')
           curl "http://${ips[0]}:${port}"
+  required-checks:
+    name: Limitador Required Checks
+    # This check adds a list of checks to one job to simplify adding settings to the repo.
+    # If a new check is added in this file, and it should be retested on entry to the merge queue,
+    # it needs to be added to the list below aka needs: [ existing check 1, existing check 2, new check ].
+    needs: [ check, test, fmt, clippy ]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo '${{ toJSON(needs) }}' | jq -e 'all(.[]; .result == "success" or .result == "skipped")'
