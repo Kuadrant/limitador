@@ -72,15 +72,30 @@ git push origin crate-v0.5.0
  - Create PR
  - Merge to `main`
 
- ```diff
-diff --git a/limitador-server/Cargo.toml b/limitador-server/Cargo.toml
-index dd2f311..011a2cd 100644
+```diff
+ diff --git a/limitador-server/Cargo.toml b/limitador-server/Cargo.toml
+index d2bcd36..3724132 100644
 --- a/limitador-server/Cargo.toml
 +++ b/limitador-server/Cargo.toml
 @@ -1,6 +1,6 @@
  [package]
  name = "limitador-server"
--version = "1.3.0-dev"
-+version = "1.4.0-dev"
- ```
+-version = "2.0.0-dev"
++version = "2.1.0-dev"
+ authors = ["Alex Snaps <asnaps@redhat.com>", "Eguzki Astiz Lezaun <eguzki@redhat.com>", "David Ortiz <z.david.ortiz@gmail.com>"]
+ license = "Apache-2.0"
+ keywords = ["rate-limiting", "rate", "limiter", "envoy", "rls"]
+diff --git a/limitador/Cargo.toml b/limitador/Cargo.toml
+index ed822b1..baf50c7 100644
+--- a/limitador/Cargo.toml
++++ b/limitador/Cargo.toml
+@@ -1,6 +1,6 @@
+ [package]
+ name = "limitador"
+-version = "0.8.0-dev"
++version = "0.9.0-dev"
+ authors = ["David Ortiz <z.david.ortiz@gmail.com>", "Eguzki Astiz Lezaun <eguzki@redhat.com>", "Alex Snaps <asnaps@redhat.com>"]
+ license = "Apache-2.0"
+ keywords = ["rate-limiting", "rate", "limiter"]
+```
 
