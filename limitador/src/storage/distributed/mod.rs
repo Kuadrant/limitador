@@ -17,6 +17,7 @@ use crate::storage::keys::bin::key_for_counter_v2;
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 
 mod cr_counter_value;
+#[allow(clippy::result_large_err)]
 mod grpc;
 
 pub type LimitsMap = HashMap<Vec<u8>, Arc<CounterEntry>>;
