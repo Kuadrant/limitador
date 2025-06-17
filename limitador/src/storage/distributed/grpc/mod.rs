@@ -389,6 +389,7 @@ impl MessageSender {
             },
         }
     }
+
     fn try_reserve(&self) -> Result<MessagePermit<'_>, Status> {
         match self {
             MessageSender::Client(sender) => {
