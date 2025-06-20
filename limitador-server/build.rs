@@ -23,6 +23,19 @@ fn generate_protobuf() -> Result<(), Box<dyn Error>> {
                 "vendor/protobufs/xds",
             ],
         )?;
+
+    tonic_build::configure()
+        .build_server(true)
+        .file_descriptor_set_path(original_out_dir.join("kuadrantrls.bin"))
+        .compile_protos(
+            &["kuadrantrls.proto"],
+            &[
+                "proto",
+                "vendor/protobufs/data-plane-api",
+                "vendor/protobufs/protoc-gen-validate",
+                "vendor/protobufs/xds",
+            ],
+        )?;
     Ok(())
 }
 

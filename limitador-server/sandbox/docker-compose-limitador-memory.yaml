@@ -17,6 +17,8 @@ services:
       - "8080"
       - -vvv
       - --grpc-reflection-service
+      - --rate-limit-headers
+      - DRAFT_VERSION_03
       - /opt/kuadrant/limits/limits.yaml
       - memory
     expose:

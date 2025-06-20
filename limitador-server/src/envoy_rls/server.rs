@@ -3,6 +3,7 @@ use opentelemetry::propagation::Extractor;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use super::kuadrant_service::KuadrantService;
 use crate::envoy_rls::server::envoy::config::core::v3::HeaderValue;
 use crate::envoy_rls::server::envoy::service::ratelimit::v3::rate_limit_response::Code;
 use crate::envoy_rls::server::envoy::service::ratelimit::v3::rate_limit_service_server::{
@@ -21,6 +22,16 @@ use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 include!("envoy_types.rs");
+
+pub mod custom {
+    pub mod service {
+        pub mod ratelimit {
+            pub mod v1 {
+                tonic::include_proto!("kuadrant.service.ratelimit.v1");
+            }
+        }
+    }
+}
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum RateLimitHeaders {
@@ -70,7 +81,7 @@ impl RateLimitService for MyRateLimiter {
         &self,
         request: Request<RateLimitRequest>,
     ) -> Result<Response<RateLimitResponse>, Status> {
-        debug!("Request received: {:?}", request);
+        debug!("ShouldRateLimit Request received: {:?}", request);
 
         let mut values: Vec<HashMap<String, String>> = Vec::default();
         let (metadata, _ext, req) = request.into_parts();
@@ -194,6 +205,8 @@ impl Extractor for RateLimitRequestHeaders {
 
 mod rls_proto {
     pub(crate) const RLS_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("rls");
+    pub(crate) const KUADRANT_RLS_DESCRIPTOR_SET: &[u8] =
+        tonic::include_file_descriptor_set!("kuadrantrls");
 }
 
 pub async fn run_envoy_rls_server(
@@ -203,21 +216,29 @@ pub async fn run_envoy_rls_server(
     metrics: Arc<PrometheusMetrics>,
     grpc_reflection_service: bool,
 ) -> Result<(), transport::Error> {
-    let rate_limiter = MyRateLimiter::new(limiter, rate_limit_headers, metrics);
-    let svc = RateLimitServiceServer::new(rate_limiter);
+    let rate_limiter = MyRateLimiter::new(limiter.clone(), rate_limit_headers, metrics);
+    let envoy_server = RateLimitServiceServer::new(rate_limiter);
+
+    let kuadrant_svc = KuadrantService::new(limiter);
+    let kuadrant_server =
+        custom::service::ratelimit::v1::rate_limit_service_server::RateLimitServiceServer::new(
+            kuadrant_svc,
+        );
 
     let reflection_service = match grpc_reflection_service {
         false => None,
         true => Some(
             tonic_reflection::server::Builder::configure()
                 .register_encoded_file_descriptor_set(rls_proto::RLS_DESCRIPTOR_SET)
+                .register_encoded_file_descriptor_set(rls_proto::KUADRANT_RLS_DESCRIPTOR_SET)
                 .build_v1()
                 .unwrap(),
         ),
     };
 
     Server::builder()
-        .add_service(svc)
+        .add_service(envoy_server)
+        .add_service(kuadrant_server)
         .add_optional_service(reflection_service)
         .serve(address.parse().unwrap())
         .await

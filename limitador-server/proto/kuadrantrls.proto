@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package kuadrant.service.ratelimit.v1;
+
+import "envoy/service/ratelimit/v3/rls.proto";
+
+service RateLimitService {
+  // Determine whether a request should be allowed or denied based on rate limiting rules.
+  rpc CheckRateLimit(envoy.service.ratelimit.v3.RateLimitRequest) returns (envoy.service.ratelimit.v3.RateLimitResponse); 
+}
