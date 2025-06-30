@@ -86,11 +86,11 @@ async fn distributed_storage_factory(
         .collect::<Vec<String>>();
     (0..count)
         .map(|i| {
-            let node = format!("n{}", i);
+            let node = format!("n{i}");
             let listen_address = addresses.get(i).unwrap().to_owned();
             let peer_urls = addresses
                 .iter()
-                .map(|x| format!("http://{}", x))
+                .map(|x| format!("http://{x}"))
                 .collect::<Vec<String>>();
 
             TestsLimiter::new_from_blocking_impl(RateLimiter::new_with_storage(Box::new(

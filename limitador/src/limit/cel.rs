@@ -22,7 +22,7 @@ pub(super) mod errors {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             match self {
                 EvaluationError::UnexpectedValueType(value) => {
-                    write!(f, "unexpected value of type {}", value)
+                    write!(f, "unexpected value of type {value}")
                 }
                 EvaluationError::ExecutionError(error) => error.fmt(f),
             }
