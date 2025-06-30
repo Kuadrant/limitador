@@ -240,7 +240,7 @@ impl CheckResult {
         });
 
         let mut all_limits_text = String::with_capacity(20 * self.counters.len());
-        self.counters.iter_mut().for_each(|counter| {
+        self.counters.iter().for_each(|counter| {
             all_limits_text.push_str(
                 format!(", {};w={}", counter.max_value(), counter.window().as_secs()).as_str(),
             );
