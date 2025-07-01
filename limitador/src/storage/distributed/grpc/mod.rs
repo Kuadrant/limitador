@@ -265,8 +265,7 @@ impl Session {
             _ => {
                 debug!("peer: '{}': unsupported packet: {:?}", self.peer_id, packet);
                 return Err(Status::invalid_argument(format!(
-                    "unsupported packet {:?}",
-                    packet
+                    "unsupported packet {packet:?}"
                 )));
             }
         }

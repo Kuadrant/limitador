@@ -240,7 +240,7 @@ impl CheckResult {
         });
 
         let mut all_limits_text = String::with_capacity(20 * self.counters.len());
-        self.counters.iter_mut().for_each(|counter| {
+        self.counters.iter().for_each(|counter| {
             all_limits_text.push_str(
                 format!(", {};w={}", counter.max_value(), counter.window().as_secs()).as_str(),
             );
@@ -252,14 +252,11 @@ impl CheckResult {
         if let Some(counter) = self.counters.first() {
             headers.insert(
                 "X-RateLimit-Limit".to_string(),
-                format!("{}{}", counter.max_value(), all_limits_text),
+                format!("{}{all_limits_text}", counter.max_value()),
             );
 
             let remaining = counter.remaining().unwrap_or(counter.max_value());
-            headers.insert(
-                "X-RateLimit-Remaining".to_string(),
-                format!("{}", remaining),
-            );
+            headers.insert("X-RateLimit-Remaining".to_string(), format!("{remaining}"));
 
             if let Some(duration) = counter.expires_in() {
                 headers.insert(
