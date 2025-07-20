@@ -7,4 +7,7 @@ import "envoy/service/ratelimit/v3/rls.proto";
 service RateLimitService {
   // Determine whether a request should be allowed or denied based on rate limiting rules.
   rpc CheckRateLimit(envoy.service.ratelimit.v3.RateLimitRequest) returns (envoy.service.ratelimit.v3.RateLimitResponse); 
+
+  // The report method modifies specific counters associated with the descriptors, incrementing each one by the amount specified in $hits_addend$
+  rpc Report(envoy.service.ratelimit.v3.RateLimitRequest) returns (envoy.service.ratelimit.v3.RateLimitResponse); 
 }
