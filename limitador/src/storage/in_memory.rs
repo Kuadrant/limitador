@@ -4,6 +4,7 @@ use crate::storage::atomic_expiring_value::AtomicExpiringValue;
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 use moka::sync::{Cache, CacheBuilder};
 use moka::PredicateError;
+use std::cmp;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Deref;
@@ -54,14 +55,25 @@ impl CounterStorage for InMemoryStorage {
                 }),
                 Some(counter) => counter,
             };
-            value.update(delta, counter.window(), now);
+
+            // Ensures the value does not exceed a counter's max_value.
+            let effective_delta = cmp::min(delta, counter.max_value() - value.value());
+            value.update(effective_delta, counter.window(), now);
         } else {
             match counters.entry(counter.limit().clone()) {
                 Entry::Vacant(v) => {
-                    v.insert(AtomicExpiringValue::new(delta, now + counter.window()));
+                    // Ensures the value does not exceed a counter's max_value.
+                    let effective_delta = cmp::min(delta, counter.max_value());
+                    v.insert(AtomicExpiringValue::new(
+                        effective_delta,
+                        now + counter.window(),
+                    ));
                 }
                 Entry::Occupied(o) => {
-                    o.get().update(delta, counter.window(), now);
+                    let value = o.get();
+                    // Ensures the value does not exceed a counter's max_value.
+                    let effective_delta = cmp::min(delta, counter.max_value() - value.value());
+                    value.update(effective_delta, counter.window(), now);
                 }
             }
         }
@@ -77,9 +89,12 @@ impl CounterStorage for InMemoryStorage {
     ) -> Result<Authorization, StorageErr> {
         let limits_by_namespace = self.simple_limits.read().unwrap();
         let mut first_limited = None;
-        let mut counter_values_to_update: Vec<(&AtomicExpiringValue, Duration)> = Vec::new();
-        let mut qualified_counter_values_to_updated: Vec<(Arc<AtomicExpiringValue>, Duration)> =
-            Vec::new();
+        let mut counter_values_to_update: Vec<(&AtomicExpiringValue, Duration, u64)> = Vec::new();
+        let mut qualified_counter_values_to_updated: Vec<(
+            Arc<AtomicExpiringValue>,
+            Duration,
+            u64,
+        )> = Vec::new();
         let now = SystemTime::now();
 
         let mut process_counter =
@@ -111,7 +126,11 @@ impl CounterStorage for InMemoryStorage {
                     return Ok(limited);
                 }
             }
-            counter_values_to_update.push((atomic_expiring_value, counter.window()));
+            counter_values_to_update.push((
+                atomic_expiring_value,
+                counter.window(),
+                counter.max_value(),
+            ));
         }
 
         // Process qualified counters
@@ -129,7 +148,11 @@ impl CounterStorage for InMemoryStorage {
                 }
             }
 
-            qualified_counter_values_to_updated.push((value, counter.window()));
+            qualified_counter_values_to_updated.push((
+                value,
+                counter.window(),
+                counter.max_value(),
+            ));
         }
 
         if let Some(limited) = first_limited {
@@ -137,13 +160,19 @@ impl CounterStorage for InMemoryStorage {
         }
 
         // Update counters
-        counter_values_to_update.iter().for_each(|(v, ttl)| {
-            v.update(delta, *ttl, now);
-        });
+        counter_values_to_update
+            .iter()
+            .for_each(|(v, ttl, max_value)| {
+                // Ensures the value does not exceed a counter's max_value.
+                let effective_delta = cmp::min(delta, max_value - v.value());
+                v.update(effective_delta, *ttl, now);
+            });
         qualified_counter_values_to_updated
             .iter()
-            .for_each(|(v, ttl)| {
-                v.update(delta, *ttl, now);
+            .for_each(|(v, ttl, max_value)| {
+                // Ensures the value does not exceed a counter's max_value.
+                let effective_delta = cmp::min(delta, max_value - v.value());
+                v.update(effective_delta, *ttl, now);
             });
 
         Ok(Authorization::Ok)
