@@ -214,9 +214,11 @@ async fn check_and_report(
     match rate_limited_and_update_result {
         Ok(mut is_rate_limited) => {
             if is_rate_limited.limited {
-                rate_limit_data
-                    .metrics()
-                    .incr_limited_calls(&namespace, is_rate_limited.limit_name.as_deref());
+                rate_limit_data.metrics().incr_limited_calls(
+                    &namespace,
+                    is_rate_limited.limit_name.as_deref(),
+                    &ctx,
+                );
 
                 match response_headers {
                     None => HttpResponse::TooManyRequests().json(()),
@@ -231,7 +233,9 @@ async fn check_and_report(
                     }
                 }
             } else {
-                rate_limit_data.metrics().incr_authorized_calls(&namespace);
+                rate_limit_data
+                    .metrics()
+                    .incr_authorized_calls(&namespace, &ctx);
 
                 match response_headers {
                     None => HttpResponse::Ok().json(()),
