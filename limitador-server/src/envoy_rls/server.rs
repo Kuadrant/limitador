@@ -160,11 +160,14 @@ impl RateLimitService for MyRateLimiter {
 
         let mut rate_limited_resp = rate_limited_resp.unwrap();
         let resp_code = if rate_limited_resp.limited {
-            self.metrics
-                .incr_limited_calls(&namespace, rate_limited_resp.limit_name.as_deref());
+            self.metrics.incr_limited_calls(
+                &namespace,
+                rate_limited_resp.limit_name.as_deref(),
+                &ctx,
+            );
             Code::OverLimit
         } else {
-            self.metrics.incr_authorized_calls(&namespace);
+            self.metrics.incr_authorized_calls(&namespace, &ctx);
             Code::Ok
         };
 

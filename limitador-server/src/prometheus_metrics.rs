@@ -1,5 +1,6 @@
 use metrics::{counter, describe_counter, describe_gauge, describe_histogram, gauge, histogram};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+use std::string::ToString;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -69,21 +70,32 @@ impl PrometheusMetrics {
             .expect("failed to create prometheus metrics exporter")
     }
 
-    pub fn incr_authorized_calls(&self, namespace: &Namespace) {
-        counter!("authorized_calls", NAMESPACE_LABEL => namespace.as_ref().to_string()).increment(1)
+    pub fn incr_authorized_calls(
+        &self,
+        namespace: &Namespace,
+        _cel_ctx: &limitador::limit::Context,
+    ) {
+        let mut labels: Vec<(String, String)> = Vec::new();
+        labels.push((NAMESPACE_LABEL.to_string(), namespace.as_ref().to_string()));
+        counter!("authorized_calls", &labels).increment(1)
     }
 
-    pub fn incr_limited_calls<'a, LN>(&self, namespace: &Namespace, limit_name: LN)
-    where
+    pub fn incr_limited_calls<'a, LN>(
+        &self,
+        namespace: &Namespace,
+        limit_name: LN,
+        _cel_ctx: &limitador::limit::Context,
+    ) where
         LN: Into<Option<&'a str>>,
     {
-        let mut labels = vec![(NAMESPACE_LABEL, namespace.as_ref().to_string())];
+        let mut labels: Vec<(String, String)> = Vec::default();
+        labels.push((NAMESPACE_LABEL.to_string(), namespace.as_ref().to_string()));
 
         if self.use_limit_name_label {
             // If we have configured the metric to accept 2 labels we need to
             // set values for them.
             labels.push((
-                LIMIT_NAME_LABEL,
+                LIMIT_NAME_LABEL.to_string(),
                 limit_name.into().unwrap_or("").to_string(),
             ));
         }
@@ -103,6 +115,7 @@ impl PrometheusMetrics {
 pub mod tests {
     use super::*;
     use lazy_static::lazy_static;
+    use limitador::limit::Context;
     use metrics_exporter_prometheus::PrometheusHandle;
 
     // Setting recorder once for all test cases
@@ -125,7 +138,7 @@ pub mod tests {
             .iter()
             .for_each(|(namespace, auth_count)| {
                 for _ in 0..*auth_count {
-                    prometheus_metrics.incr_authorized_calls(namespace)
+                    prometheus_metrics.incr_authorized_calls(namespace, &Context::default());
                 }
             });
 
@@ -156,7 +169,7 @@ pub mod tests {
             .iter()
             .for_each(|(namespace, limited_count)| {
                 for _ in 0..*limited_count {
-                    prometheus_metrics.incr_limited_calls(namespace, None)
+                    prometheus_metrics.incr_limited_calls(namespace, None, &Context::default())
                 }
             });
 
@@ -187,7 +200,11 @@ pub mod tests {
             .iter()
             .for_each(|(namespace, limit_name, limited_count)| {
                 for _ in 0..*limited_count {
-                    prometheus_metrics.incr_limited_calls(namespace, *limit_name)
+                    prometheus_metrics.incr_limited_calls(
+                        namespace,
+                        *limit_name,
+                        &Context::default(),
+                    )
                 }
             });
 
@@ -212,7 +229,7 @@ pub mod tests {
         let prometheus_metrics =
             PrometheusMetrics::new_with_handle(true, TEST_PROMETHEUS_HANDLE.clone());
         let namespace = "limited_calls_empty_name".into();
-        prometheus_metrics.incr_limited_calls(&namespace, None);
+        prometheus_metrics.incr_limited_calls(&namespace, None, &Context::default());
 
         let metrics_output = prometheus_metrics.gather_metrics();
 
