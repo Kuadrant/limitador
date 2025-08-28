@@ -120,7 +120,7 @@ impl RateLimitService for MyRateLimiter {
             1
         } else {
             req.hits_addend
-        };
+        } as u64;
 
         let mut ctx = Context::default();
         ctx.list_binding("descriptors".to_string(), values);
@@ -129,7 +129,7 @@ impl RateLimitService for MyRateLimiter {
             Limiter::Blocking(limiter) => limiter.check_rate_limited_and_update(
                 &namespace,
                 &ctx,
-                u64::from(hits_addend),
+                hits_addend,
                 self.rate_limit_headers != RateLimitHeaders::None,
             ),
             Limiter::Async(limiter) => {
@@ -137,7 +137,7 @@ impl RateLimitService for MyRateLimiter {
                     .check_rate_limited_and_update(
                         &namespace,
                         &ctx,
-                        u64::from(hits_addend),
+                        hits_addend,
                         self.rate_limit_headers != RateLimitHeaders::None,
                     )
                     .await
@@ -167,7 +167,8 @@ impl RateLimitService for MyRateLimiter {
             );
             Code::OverLimit
         } else {
-            self.metrics.incr_authorized_calls(&namespace, &ctx);
+            self.metrics
+                .incr_authorized_calls(&namespace, &ctx, hits_addend);
             Code::Ok
         };
 

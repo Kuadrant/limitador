@@ -235,7 +235,7 @@ async fn check_and_report(
             } else {
                 rate_limit_data
                     .metrics()
-                    .incr_authorized_calls(&namespace, &ctx);
+                    .incr_authorized_calls(&namespace, &ctx, delta);
 
                 match response_headers {
                     None => HttpResponse::Ok().json(()),
