@@ -33,7 +33,7 @@ use limitador::storage::{AsyncCounterStorage, AsyncStorage, Storage};
 use limitador::{
     storage, AsyncRateLimiter, AsyncRateLimiterBuilder, RateLimiter, RateLimiterBuilder,
 };
-use notify::event::{CreateKind, ModifyKind};
+use notify::event::{CreateKind, ModifyKind, RenameMode};
 use notify::{Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use opentelemetry::{global, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
@@ -298,6 +298,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(ref event) => {
                 match event.kind {
                     EventKind::Modify(ModifyKind::Data(_))
+                    | EventKind::Modify(ModifyKind::Name(RenameMode::Both))
                     | EventKind::Create(CreateKind::Other) => {
                         if let Some(location) = event.paths.first() {
                             if let Ok(actual_location) = std::fs::canonicalize(&limit_cfg) {
