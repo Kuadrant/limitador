@@ -296,47 +296,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         move |result: Result<Event, Error>| match result {
             Ok(ref event) => {
                 match event.kind {
-                    EventKind::Modify(ModifyKind::Data(_)) => {
-                        // Content has been changed
-                        // Usually happens in local or dockerized envs
+                    EventKind::Modify(ModifyKind::Data(_))
+                    | EventKind::Create(CreateKind::Other) => {
                         let location = event.paths.first().unwrap().clone();
-
-                        // Sometimes this event happens in k8s envs when
-                        // content source is a configmap and it is replaced
-                        // As the move event always occurs,
-                        // skip reloading limit file in this event.
-
-                        // the parent dir is being watched
-                        // only reload when the limits file content changed
-                        if location == limit_cfg {
+                        if location == limit_cfg || location.ends_with("data") {
                             let limiter = limiter.clone();
                             let status_updater = Arc::clone(&status_updater);
+                            let limit_cfg = limit_cfg.clone();
 
                             handle.spawn(async move {
-                                match limiter.load_limits_from_file(&location).await {
+                                match limiter.load_limits_from_file(&limit_cfg).await {
                                     Ok(_) => {
                                         status_updater.write().unwrap().config_success();
                                         info!("data modified; reloaded limit file")
-                                    }
-                                    Err(e) => {
-                                        status_updater.write().unwrap().config_failure();
-                                        error!("Failed reloading limit file: {}", e)
-                                    }
-                                }
-                            });
-                        }
-                    }
-                    EventKind::Create(CreateKind::Other) => {
-                        let location = event.paths.first().unwrap().clone();
-                        if location == limit_cfg {
-                            let limiter = limiter.clone();
-                            let status_updater = Arc::clone(&status_updater);
-
-                            handle.spawn(async move {
-                                match limiter.load_limits_from_file(&location).await {
-                                    Ok(_) => {
-                                        status_updater.write().unwrap().config_success();
-                                        info!("symlink updated; reloaded limit file")
                                     }
                                     Err(e) => {
                                         status_updater.write().unwrap().config_failure();
