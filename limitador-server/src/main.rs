@@ -33,7 +33,7 @@ use limitador::storage::{AsyncCounterStorage, AsyncStorage, Storage};
 use limitador::{
     storage, AsyncRateLimiter, AsyncRateLimiterBuilder, RateLimiter, RateLimiterBuilder,
 };
-use notify::event::{ModifyKind, RenameMode};
+use notify::event::{CreateKind, ModifyKind};
 use notify::{Error, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use opentelemetry::{global, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
@@ -43,7 +43,6 @@ use paperclip::actix::Apiv2Schema;
 use prometheus_metrics::PrometheusMetrics;
 use serde::Serialize;
 use std::fmt::Display;
-use std::fs;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -287,9 +286,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if limits_file_dir.as_os_str().is_empty() {
         limits_file_dir = Path::new(".");
     }
-    let limits_file_path_cloned = limit_file.to_owned();
     // structure needed to keep state of the last known canonical limits file path
-    let mut last_known_canonical_path = fs::canonicalize(&limit_file).unwrap();
+    let limit_cfg = std::path::absolute(&limit_file).unwrap();
 
     let status: Arc<RwLock<Status>> = Arc::default();
     let status_updater = Arc::clone(&status);
@@ -310,7 +308,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         // the parent dir is being watched
                         // only reload when the limits file content changed
-                        if location == last_known_canonical_path {
+                        if location == limit_cfg {
                             let limiter = limiter.clone();
                             let status_updater = Arc::clone(&status_updater);
 
@@ -328,25 +326,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             });
                         }
                     }
-                    EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
-                        // Move operation occurred
-                        // Usually happens in k8s envs when content source is a configmap
-
-                        // symbolic links resolved.
-                        let canonical_limit_file =
-                            fs::canonicalize(&limits_file_path_cloned).unwrap();
-                        // check if the real path to the config file changed
-                        // (eg: k8s ConfigMap replacement)
-                        if canonical_limit_file != last_known_canonical_path {
-                            last_known_canonical_path.clone_from(&canonical_limit_file);
+                    EventKind::Create(CreateKind::Other) => {
+                        let location = event.paths.first().unwrap().clone();
+                        if location == limit_cfg {
                             let limiter = limiter.clone();
                             let status_updater = Arc::clone(&status_updater);
 
                             handle.spawn(async move {
-                                match limiter.load_limits_from_file(&canonical_limit_file).await {
+                                match limiter.load_limits_from_file(&location).await {
                                     Ok(_) => {
                                         status_updater.write().unwrap().config_success();
-                                        info!("file moved; reloaded limit file")
+                                        info!("symlink updated; reloaded limit file")
                                     }
                                     Err(e) => {
                                         status_updater.write().unwrap().config_failure();
