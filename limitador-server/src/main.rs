@@ -288,6 +288,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // structure needed to keep state of the last known canonical limits file path
     let limit_cfg = std::path::absolute(&limit_file).unwrap();
+    let mut canonical_cfg = std::fs::canonicalize(&limit_cfg).unwrap();
 
     let status: Arc<RwLock<Status>> = Arc::default();
     let status_updater = Arc::clone(&status);
@@ -299,7 +300,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     EventKind::Modify(ModifyKind::Data(_))
                     | EventKind::Create(CreateKind::Other) => {
                         let location = event.paths.first().unwrap().clone();
-                        if location == limit_cfg || location.ends_with("data") {
+                        let actual_location = std::fs::canonicalize(&limit_cfg).unwrap();
+                        if location == limit_cfg || canonical_cfg != actual_location {
+                            canonical_cfg = actual_location;
                             let limiter = limiter.clone();
                             let status_updater = Arc::clone(&status_updater);
                             let limit_cfg = limit_cfg.clone();
