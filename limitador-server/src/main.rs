@@ -299,26 +299,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match event.kind {
                     EventKind::Modify(ModifyKind::Data(_))
                     | EventKind::Create(CreateKind::Other) => {
-                        let location = event.paths.first().unwrap().clone();
-                        let actual_location = std::fs::canonicalize(&limit_cfg).unwrap();
-                        if location == limit_cfg || canonical_cfg != actual_location {
-                            canonical_cfg = actual_location;
-                            let limiter = limiter.clone();
-                            let status_updater = Arc::clone(&status_updater);
-                            let limit_cfg = limit_cfg.clone();
+                        if let Some(location) = event.paths.first() {
+                            if let Ok(actual_location) = std::fs::canonicalize(&limit_cfg) {
+                                if location == &limit_cfg || canonical_cfg != actual_location {
+                                    canonical_cfg = actual_location;
+                                    let limiter = limiter.clone();
+                                    let status_updater = Arc::clone(&status_updater);
+                                    let limit_cfg = limit_cfg.clone();
 
-                            handle.spawn(async move {
-                                match limiter.load_limits_from_file(&limit_cfg).await {
-                                    Ok(_) => {
-                                        status_updater.write().unwrap().config_success();
-                                        info!("data modified; reloaded limit file")
-                                    }
-                                    Err(e) => {
-                                        status_updater.write().unwrap().config_failure();
-                                        error!("Failed reloading limit file: {}", e)
-                                    }
+                                    handle.spawn(async move {
+                                        match limiter.load_limits_from_file(&limit_cfg).await {
+                                            Ok(_) => {
+                                                status_updater.write().unwrap().config_success();
+                                                info!("data modified; reloaded limit file")
+                                            }
+                                            Err(e) => {
+                                                status_updater.write().unwrap().config_failure();
+                                                error!("Failed reloading limit file: {}", e)
+                                            }
+                                        }
+                                    });
                                 }
-                            });
+                            }
                         }
                     }
                     _ => (), // /dev/null
