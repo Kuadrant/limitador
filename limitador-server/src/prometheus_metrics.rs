@@ -1,10 +1,11 @@
+use crate::metrics::Timings;
+use limitador::limit::{Context, Expression, Namespace};
 use metrics::{counter, describe_counter, describe_gauge, describe_histogram, gauge, histogram};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::string::ToString;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
-
-use crate::metrics::Timings;
-use limitador::limit::Namespace;
 
 const NAMESPACE_LABEL: &str = "limitador_namespace";
 const LIMIT_NAME_LABEL: &str = "limit_name";
@@ -12,6 +13,7 @@ const LIMIT_NAME_LABEL: &str = "limit_name";
 pub struct PrometheusMetrics {
     prometheus_handle: Arc<PrometheusHandle>,
     use_limit_name_label: bool,
+    custom_labels: RwLock<HashMap<String, Expression>>,
 }
 
 impl Default for PrometheusMetrics {
@@ -57,6 +59,7 @@ impl PrometheusMetrics {
         Self {
             use_limit_name_label,
             prometheus_handle,
+            custom_labels: RwLock::default(),
         }
     }
 
@@ -69,21 +72,34 @@ impl PrometheusMetrics {
             .expect("failed to create prometheus metrics exporter")
     }
 
-    pub fn incr_authorized_calls(&self, namespace: &Namespace) {
-        counter!("authorized_calls", NAMESPACE_LABEL => namespace.as_ref().to_string()).increment(1)
+    pub fn incr_authorized_calls(
+        &self,
+        namespace: &Namespace,
+        cel_ctx: &Context,
+        hits_addend: u64,
+    ) {
+        let mut labels: Vec<(String, String)> = self.labels(cel_ctx);
+        labels.push((NAMESPACE_LABEL.to_string(), namespace.as_ref().to_string()));
+        counter!("authorized_calls", &labels).increment(1);
+        counter!("authorized_hits", &labels).increment(hits_addend);
     }
 
-    pub fn incr_limited_calls<'a, LN>(&self, namespace: &Namespace, limit_name: LN)
-    where
+    pub fn incr_limited_calls<'a, LN>(
+        &self,
+        namespace: &Namespace,
+        limit_name: LN,
+        cel_ctx: &Context,
+    ) where
         LN: Into<Option<&'a str>>,
     {
-        let mut labels = vec![(NAMESPACE_LABEL, namespace.as_ref().to_string())];
+        let mut labels: Vec<(String, String)> = self.labels(cel_ctx);
+        labels.push((NAMESPACE_LABEL.to_string(), namespace.as_ref().to_string()));
 
         if self.use_limit_name_label {
             // If we have configured the metric to accept 2 labels we need to
             // set values for them.
             labels.push((
-                LIMIT_NAME_LABEL,
+                LIMIT_NAME_LABEL.to_string(),
                 limit_name.into().unwrap_or("").to_string(),
             ));
         }
@@ -97,12 +113,39 @@ impl PrometheusMetrics {
     pub fn record_datastore_latency(timings: Timings) {
         histogram!("datastore_latency").record(Duration::from(timings).as_secs_f64())
     }
+
+    pub fn set_custom_labels(&self, new_labels: HashMap<String, Expression>) -> Result<(), String> {
+        match self.custom_labels.write() {
+            Ok(mut custom_labels) => {
+                *custom_labels = new_labels;
+                Ok(())
+            }
+            Err(err) => Err(err.to_string()),
+        }
+    }
+
+    fn labels(&self, ctx: &Context) -> Vec<(String, String)> {
+        if let Ok(custom_labels) = self.custom_labels.read() {
+            custom_labels
+                .iter()
+                .filter_map(|(label, exp)| {
+                    if let Ok(Some(val)) = exp.eval(ctx) {
+                        return Some((label.to_string(), val));
+                    }
+                    None
+                })
+                .collect()
+        } else {
+            Vec::default()
+        }
+    }
 }
 
 #[cfg(test)]
 pub mod tests {
     use super::*;
     use lazy_static::lazy_static;
+    use limitador::limit::Context;
     use metrics_exporter_prometheus::PrometheusHandle;
 
     // Setting recorder once for all test cases
@@ -112,7 +155,7 @@ pub mod tests {
     }
 
     #[test]
-    fn shows_authorized_calls_by_namespace() {
+    fn shows_authorized_calls_and_hits_by_namespace() {
         let prometheus_metrics =
             PrometheusMetrics::new_with_handle(false, TEST_PROMETHEUS_HANDLE.clone());
 
@@ -125,7 +168,7 @@ pub mod tests {
             .iter()
             .for_each(|(namespace, auth_count)| {
                 for _ in 0..*auth_count {
-                    prometheus_metrics.incr_authorized_calls(namespace)
+                    prometheus_metrics.incr_authorized_calls(namespace, &Context::default(), 3u64);
                 }
             });
 
@@ -137,6 +180,15 @@ pub mod tests {
                 assert!(metrics_output.contains(&formatted_counter_with_namespace(
                     "authorized_calls",
                     *auth_count,
+                    namespace
+                )));
+            });
+        namespaces_with_auth_counts
+            .iter()
+            .for_each(|(namespace, auth_count)| {
+                assert!(metrics_output.contains(&formatted_counter_with_namespace(
+                    "authorized_hits",
+                    *auth_count * 3,
                     namespace
                 )));
             });
@@ -156,7 +208,7 @@ pub mod tests {
             .iter()
             .for_each(|(namespace, limited_count)| {
                 for _ in 0..*limited_count {
-                    prometheus_metrics.incr_limited_calls(namespace, None)
+                    prometheus_metrics.incr_limited_calls(namespace, None, &Context::default())
                 }
             });
 
@@ -187,7 +239,11 @@ pub mod tests {
             .iter()
             .for_each(|(namespace, limit_name, limited_count)| {
                 for _ in 0..*limited_count {
-                    prometheus_metrics.incr_limited_calls(namespace, *limit_name)
+                    prometheus_metrics.incr_limited_calls(
+                        namespace,
+                        *limit_name,
+                        &Context::default(),
+                    )
                 }
             });
 
@@ -212,7 +268,7 @@ pub mod tests {
         let prometheus_metrics =
             PrometheusMetrics::new_with_handle(true, TEST_PROMETHEUS_HANDLE.clone());
         let namespace = "limited_calls_empty_name".into();
-        prometheus_metrics.incr_limited_calls(&namespace, None);
+        prometheus_metrics.incr_limited_calls(&namespace, None, &Context::default());
 
         let metrics_output = prometheus_metrics.gather_metrics();
 
@@ -224,6 +280,27 @@ pub mod tests {
                 "",
             ))
         );
+    }
+
+    #[test]
+    fn incr_limited_calls_uses_custom_labels() {
+        let prometheus_metrics =
+            PrometheusMetrics::new_with_handle(true, TEST_PROMETHEUS_HANDLE.clone());
+        prometheus_metrics
+            .set_custom_labels(HashMap::from([(
+                "myLabel".to_string(),
+                Expression::parse("'user ' + descriptors[1].foobar").expect("Invalid expression!"),
+            )]))
+            .expect("Failed to set custom labels");
+        let namespace = "limited_calls_empty_name".into();
+        let mut ctx = Context::default();
+        let values = HashMap::from([("foobar".to_string(), "1".to_string())]);
+        ctx.list_binding("descriptors".to_string(), vec![HashMap::default(), values]);
+        prometheus_metrics.incr_limited_calls(&namespace, None, &ctx);
+
+        let metrics_output = prometheus_metrics.gather_metrics();
+
+        assert!(metrics_output.contains("myLabel=\"user 1\""));
     }
 
     #[test]

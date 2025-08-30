@@ -490,7 +490,7 @@ fn async_bench_check_rate_limited_and_update<F>(
 fn generate_test_data(
     scenario: &TestScenario,
     storage: Box<dyn CounterStorage>,
-) -> (RateLimiter, Vec<TestCallParams>) {
+) -> (RateLimiter, Vec<TestCallParams<'_>>) {
     let rate_limiter = RateLimiter::new_with_storage(storage);
 
     let (test_limits, call_params) = generate_test_limits(scenario);
@@ -512,7 +512,7 @@ fn generate_test_data(
 fn generate_async_test_data(
     scenario: &TestScenario,
     storage: Box<dyn AsyncCounterStorage>,
-) -> (AsyncRateLimiter, Vec<TestCallParams>) {
+) -> (AsyncRateLimiter, Vec<TestCallParams<'_>>) {
     let rate_limiter = AsyncRateLimiter::new_with_storage(storage);
 
     let (test_limits, call_params) = generate_test_limits(scenario);
@@ -523,7 +523,7 @@ fn generate_async_test_data(
     (rate_limiter, call_params)
 }
 
-fn generate_test_limits(scenario: &TestScenario) -> (Vec<Limit>, Vec<TestCallParams>) {
+fn generate_test_limits(scenario: &TestScenario) -> (Vec<Limit>, Vec<TestCallParams<'_>>) {
     let mut test_values: HashMap<String, String> = HashMap::new();
 
     let mut conditions = vec![];
