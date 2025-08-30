@@ -404,7 +404,7 @@ fn create_config() -> (Configuration, &'static str) {
                 .default_value(
                     config::env::ENVOY_RLS_HOST.unwrap_or(Configuration::DEFAULT_IP_BIND),
                 )
-                .display_order(1)
+                .display_order(10)
                 .help("The IP to listen on for RLS"),
         )
         .arg(
@@ -415,7 +415,7 @@ fn create_config() -> (Configuration, &'static str) {
                     config::env::ENVOY_RLS_PORT.unwrap_or(Configuration::DEFAULT_RLS_PORT),
                 )
                 .value_parser(value_parser!(u16))
-                .display_order(2)
+                .display_order(20)
                 .help("The port to listen on for RLS"),
         )
         .arg(
@@ -423,7 +423,7 @@ fn create_config() -> (Configuration, &'static str) {
                 .short('B')
                 .long("http-ip")
                 .default_value(config::env::HTTP_API_HOST.unwrap_or(Configuration::DEFAULT_IP_BIND))
-                .display_order(3)
+                .display_order(30)
                 .help("The IP to listen on for HTTP"),
         )
         .arg(
@@ -434,7 +434,7 @@ fn create_config() -> (Configuration, &'static str) {
                     config::env::HTTP_API_PORT.unwrap_or(Configuration::DEFAULT_HTTP_PORT),
                 )
                 .value_parser(value_parser!(u16))
-                .display_order(4)
+                .display_order(40)
                 .help("The port to listen on for HTTP"),
         )
         .arg(
@@ -442,14 +442,14 @@ fn create_config() -> (Configuration, &'static str) {
                 .short('l')
                 .long("limit-name-in-labels")
                 .action(ArgAction::SetTrue)
-                .display_order(5)
+                .display_order(50)
                 .help("Include the Limit Name in prometheus label"),
         )
         .arg(
             Arg::new("tracing_endpoint")
                 .long("tracing-endpoint")
                 .default_value(config::env::TRACING_ENDPOINT.unwrap_or(""))
-                .display_order(6)
+                .display_order(60)
                 .help("The host for the tracing service"),
         )
         .arg(
@@ -457,21 +457,21 @@ fn create_config() -> (Configuration, &'static str) {
                 .short('v')
                 .action(ArgAction::Count)
                 .value_parser(value_parser!(u8).range(..5))
-                .display_order(7)
+                .display_order(70)
                 .help("Sets the level of verbosity"),
         )
         .arg(
             Arg::new("validate")
                 .long("validate")
                 .action(ArgAction::SetTrue)
-                .display_order(8)
+                .display_order(80)
                 .help("Validates the LIMITS_FILE and exits"),
         )
         .arg(
             Arg::new("rate_limit_headers")
                 .long("rate-limit-headers")
                 .short('H')
-                .display_order(9)
+                .display_order(90)
                 .default_value(config::env::RATE_LIMIT_HEADERS.unwrap_or("NONE"))
                 .value_parser(clap::builder::PossibleValuesParser::new([
                     "NONE",
@@ -483,12 +483,12 @@ fn create_config() -> (Configuration, &'static str) {
             Arg::new("grpc_reflection_service")
                 .long("grpc-reflection-service")
                 .action(ArgAction::SetTrue)
-                .display_order(10)
+                .display_order(100)
                 .help("Enables gRPC server reflection service"),
         )
         .subcommand(
             Command::new("memory")
-                .display_order(1)
+                .display_order(10)
                 .about("Counters are held in Limitador (ephemeral)")
                 .arg(
                     Arg::new("CACHE_SIZE")
@@ -502,7 +502,7 @@ fn create_config() -> (Configuration, &'static str) {
         )
         .subcommand(
             Command::new("disk")
-                .display_order(2)
+                .display_order(20)
                 .about("Counters are held on disk (persistent)")
                 .arg(disk_path_arg)
                 .arg(
@@ -520,14 +520,14 @@ fn create_config() -> (Configuration, &'static str) {
         )
         .subcommand(
             Command::new("redis")
-                .display_order(3)
+                .display_order(30)
                 .about("Uses Redis to store counters")
                 .arg(redis_url_arg.clone()),
         )
         .subcommand(
             Command::new("redis_cached")
                 .about("Uses Redis to store counters, with an in-memory cache")
-                .display_order(4)
+                .display_order(40)
                 .arg(redis_url_arg)
                 .arg(
                     Arg::new("batch")
@@ -538,7 +538,7 @@ fn create_config() -> (Configuration, &'static str) {
                             config::env::REDIS_LOCAL_CACHE_BATCH_SIZE
                                 .unwrap_or(leak(DEFAULT_BATCH_SIZE)),
                         )
-                        .display_order(3)
+                        .display_order(30)
                         .help("Size of entries to flush in as single flush"),
                 )
                 .arg(
@@ -550,7 +550,7 @@ fn create_config() -> (Configuration, &'static str) {
                             config::env::REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS
                                 .unwrap_or(leak(DEFAULT_FLUSHING_PERIOD_SEC * 1000)),
                         )
-                        .display_order(4)
+                        .display_order(40)
                         .help("Flushing period for counters in milliseconds"),
                 )
                 .arg(
@@ -559,7 +559,7 @@ fn create_config() -> (Configuration, &'static str) {
                         .action(ArgAction::Set)
                         .value_parser(clap::value_parser!(usize))
                         .default_value(leak(DEFAULT_MAX_CACHED_COUNTERS))
-                        .display_order(5)
+                        .display_order(50)
                         .help("Maximum amount of counters cached"),
                 )
                 .arg(
@@ -568,7 +568,7 @@ fn create_config() -> (Configuration, &'static str) {
                         .action(ArgAction::Set)
                         .value_parser(clap::value_parser!(u64))
                         .default_value(leak(DEFAULT_RESPONSE_TIMEOUT_MS))
-                        .display_order(6)
+                        .display_order(60)
                         .help("Timeout for Redis commands in milliseconds"),
                 ),
         );
