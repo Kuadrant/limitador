@@ -398,7 +398,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     watcher.watch(limits_file_dir, RecursiveMode::Recursive)?;
     if let Some(labels_file_dir) = labels_file_dir {
-        watcher.watch(&labels_file_dir, RecursiveMode::Recursive)?;
+        if labels_file_dir.as_path() != limits_file_dir {
+            watcher.watch(&labels_file_dir, RecursiveMode::Recursive)?;
+        }
     }
 
     info!("Envoy RLS server starting on {}", envoy_rls_address);
