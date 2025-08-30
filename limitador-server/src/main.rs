@@ -21,7 +21,7 @@ use clap::{value_parser, Arg, ArgAction, Command};
 use const_format::formatcp;
 use limitador::counter::Counter;
 use limitador::errors::LimitadorError;
-use limitador::limit::Limit;
+use limitador::limit::{Expression, Limit};
 use limitador::storage::disk::DiskStorage;
 use limitador::storage::redis::{
     AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder, DEFAULT_BATCH_SIZE,
@@ -42,8 +42,9 @@ use opentelemetry_sdk::{trace, Resource};
 use paperclip::actix::Apiv2Schema;
 use prometheus_metrics::PrometheusMetrics;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fmt::Display;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use std::{env, process};
@@ -260,6 +261,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
 
     let limit_file = config.limits_file.clone();
+    let labels_file = config.metric_labels_file.clone();
     let envoy_rls_address = config.rlp_address();
     let http_api_address = config.http_address();
     let rate_limit_headers = config.rate_limit_headers.clone();
@@ -279,6 +281,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         process::exit(1)
     }
 
+    if let Some(labels_file) = &labels_file {
+        match parse_custom_labels_file(Path::new(labels_file)).await {
+            Ok(labels) => {
+                if let Err(e) = prometheus_metrics.set_custom_labels(labels) {
+                    eprintln!("Failed to load labels file: {e}");
+                    process::exit(1)
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to load labels file: {e}");
+                process::exit(1)
+            }
+        }
+    }
+
     let limiter = Arc::clone(&rate_limiter);
     let handle = Handle::current();
     // it should not fail because the limits file has already been read
@@ -290,8 +307,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let limit_cfg = std::path::absolute(&limit_file).unwrap();
     let mut canonical_cfg = std::fs::canonicalize(&limit_cfg).unwrap();
 
+    let labels_cfg = labels_file.map(std::path::absolute).map(Result::unwrap);
+    let mut labels_canonical_cfg = labels_cfg
+        .clone()
+        .map(std::fs::canonicalize)
+        .map(Result::unwrap);
+    let labels_file_dir = labels_cfg.clone().map(|f| {
+        let mut labels_file_dir: PathBuf = f.parent().unwrap().into();
+        if labels_file_dir.as_os_str().is_empty() {
+            labels_file_dir = Path::new(".").into();
+        }
+        labels_file_dir
+    });
+
     let status: Arc<RwLock<Status>> = Arc::default();
     let status_updater = Arc::clone(&status);
+    let metrics = prometheus_metrics.clone();
 
     let mut watcher = RecommendedWatcher::new(
         move |result: Result<Event, Error>| match result {
@@ -322,6 +353,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     });
                                 }
                             }
+                            if let Some(labels_cfg) = &labels_cfg {
+                                if let Some(location) = event.paths.first() {
+                                    if let Ok(actual_location) = std::fs::canonicalize(labels_cfg) {
+                                        if location == labels_cfg
+                                            || labels_canonical_cfg.as_ref().unwrap()
+                                                != &actual_location
+                                        {
+                                            labels_canonical_cfg = Some(actual_location);
+                                            let metrics = metrics.clone();
+                                            let labels_cfg = labels_cfg.clone();
+
+                                            handle.spawn(async move {
+                                                match parse_custom_labels_file(&labels_cfg).await {
+                                                    Ok(labels) => {
+                                                        match metrics.set_custom_labels(labels) {
+                                                            Ok(_) => {
+                                                                info!("custom labels reloaded")
+                                                            }
+                                                            Err(e) => error!(
+                                                                "Failed to set custom labels: {e}"
+                                                            ),
+                                                        }
+                                                    }
+                                                    Err(e) => error!(
+                                                        "Failed to reload custom labels: {e}"
+                                                    ),
+                                                }
+                                            });
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     _ => (), // /dev/null
@@ -334,6 +397,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         notify::Config::default(),
     )?;
     watcher.watch(limits_file_dir, RecursiveMode::Recursive)?;
+    if let Some(labels_file_dir) = labels_file_dir {
+        watcher.watch(&labels_file_dir, RecursiveMode::Recursive)?;
+    }
 
     info!("Envoy RLS server starting on {}", envoy_rls_address);
     tokio::spawn(run_envoy_rls_server(
@@ -354,6 +420,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
 
     Ok(())
+}
+
+async fn parse_custom_labels_file(path: &Path) -> Result<HashMap<String, Expression>, String> {
+    match std::fs::File::open(path) {
+        Ok(f) => {
+            let parsed_labels: Result<HashMap<String, String>, _> = serde_yaml::from_reader(f);
+            match parsed_labels {
+                Ok(labels) => Ok(labels
+                    .into_iter()
+                    .filter_map(|(k, v)| match Expression::parse(&v) {
+                        Ok(expr) => Some((k, expr)),
+                        Err(e) => {
+                            error!("Failed to parse custom label `{k}` `{v}`: {e}");
+                            None
+                        }
+                    })
+                    .collect()),
+                Err(e) => Err(format!("Couldn't parse: {e}")),
+            }
+        }
+        Err(e) => Err(format!("Couldn't read file '{}': {e}", path.display())),
+    }
 }
 
 fn create_config() -> (Configuration, &'static str) {
@@ -444,6 +532,15 @@ fn create_config() -> (Configuration, &'static str) {
                 .action(ArgAction::SetTrue)
                 .display_order(50)
                 .help("Include the Limit Name in prometheus label"),
+        )
+        .arg(
+            Arg::new("custom_metric_labels")
+                .short('L')
+                .long("custom-metric-labels")
+                .action(ArgAction::Set)
+                .value_parser(value_parser!(String))
+                .display_order(55)
+                .help("File with custom labels for prometheus metrics"),
         )
         .arg(
             Arg::new("tracing_endpoint")
@@ -706,6 +803,7 @@ fn create_config() -> (Configuration, &'static str) {
         matches.get_one::<String>("http_ip").unwrap().into(),
         *matches.get_one::<u16>("http_port").unwrap(),
         matches.get_flag("limit_name_in_labels") || *config::env::LIMIT_NAME_IN_PROMETHEUS_LABELS,
+        matches.get_one::<String>("custom_metric_labels").cloned(),
         matches
             .get_one::<String>("tracing_endpoint")
             .unwrap()
