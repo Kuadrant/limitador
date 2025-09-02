@@ -249,7 +249,9 @@ pub async fn run_envoy_rls_server(
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
+    use lazy_static::lazy_static;
+    use metrics_exporter_prometheus::PrometheusHandle;
     use tonic::IntoRequest;
 
     use limitador::limit::Limit;
@@ -257,8 +259,13 @@ mod tests {
 
     use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::rate_limit_descriptor::Entry;
     use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::RateLimitDescriptor;
-    use crate::prometheus_metrics::tests::TEST_PROMETHEUS_HANDLE;
     use crate::Configuration;
+
+    // Setting recorder once for all test cases
+    lazy_static! {
+        pub static ref TEST_PROMETHEUS_HANDLE: Arc<PrometheusHandle> =
+            Arc::new(PrometheusMetrics::init_handle());
+    }
 
     use super::*;
 

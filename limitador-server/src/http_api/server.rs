@@ -312,7 +312,7 @@ pub async fn run_http_server(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prometheus_metrics::tests::TEST_PROMETHEUS_HANDLE;
+    use crate::envoy_rls::server::tests::TEST_PROMETHEUS_HANDLE;
     use crate::Configuration;
     use actix_web::{test, web};
     use limitador::limit::Limit as LimitadorLimit;
