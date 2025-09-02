@@ -286,20 +286,25 @@ pub mod tests {
     fn incr_limited_calls_uses_custom_labels() {
         let prometheus_metrics =
             PrometheusMetrics::new_with_handle(true, TEST_PROMETHEUS_HANDLE.clone());
-        prometheus_metrics
-            .set_custom_labels(HashMap::from([(
-                "myLabel".to_string(),
-                Expression::parse("'user ' + descriptors[1].foobar").expect("Invalid expression!"),
-            )]))
-            .expect("Failed to set custom labels");
         let namespace = "limited_calls_empty_name".into();
         let mut ctx = Context::default();
         let values = HashMap::from([("foobar".to_string(), "1".to_string())]);
         ctx.list_binding("descriptors".to_string(), vec![HashMap::default(), values]);
         prometheus_metrics.incr_limited_calls(&namespace, None, &ctx);
 
+        prometheus_metrics
+            .set_custom_labels(HashMap::default())
+            .expect("Failed to set custom labels");
         let metrics_output = prometheus_metrics.gather_metrics();
-
+        assert!(!metrics_output.contains("myLabel=\"user 1\""));
+        prometheus_metrics
+            .set_custom_labels(HashMap::from([(
+                "myLabel".to_string(),
+                Expression::parse("'user ' + descriptors[1].foobar").expect("Invalid expression!"),
+            )]))
+            .expect("Failed to set custom labels");
+        prometheus_metrics.incr_limited_calls(&namespace, None, &ctx);
+        let metrics_output = prometheus_metrics.gather_metrics();
         assert!(metrics_output.contains("myLabel=\"user 1\""));
     }
 
