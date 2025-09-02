@@ -14,6 +14,7 @@ pub struct PrometheusMetrics {
     prometheus_handle: Arc<PrometheusHandle>,
     use_limit_name_label: bool,
     custom_labels: RwLock<HashMap<String, Expression>>,
+    default_labels: Option<Expression>,
 }
 
 impl Default for PrometheusMetrics {
@@ -24,7 +25,7 @@ impl Default for PrometheusMetrics {
 
 impl PrometheusMetrics {
     pub fn new() -> Self {
-        Self::new_with_options(false)
+        Self::new_with_options(false, None)
     }
 
     // Note: This is optional because for a small number of limits it should be
@@ -32,16 +33,32 @@ impl PrometheusMetrics {
     // caution note in the Prometheus docs:
     // https://prometheus.io/docs/practices/naming/#labels
     pub fn new_with_counters_by_limit_name() -> Self {
-        Self::new_with_options(true)
+        Self::new_with_options(true, None)
     }
 
-    pub fn new_with_options(use_limit_name_label: bool) -> Self {
-        Self::new_with_handle(use_limit_name_label, Arc::new(Self::init_handle()))
+    pub fn new_with_options(
+        use_limit_name_label: bool,
+        default_labels: Option<Expression>,
+    ) -> Self {
+        Self::new_with_handle_and_default_labels(
+            use_limit_name_label,
+            Arc::new(Self::init_handle()),
+            default_labels,
+        )
     }
 
+    #[cfg(test)]
     pub(crate) fn new_with_handle(
         use_limit_name_label: bool,
         prometheus_handle: Arc<PrometheusHandle>,
+    ) -> Self {
+        Self::new_with_handle_and_default_labels(use_limit_name_label, prometheus_handle, None)
+    }
+
+    pub(crate) fn new_with_handle_and_default_labels(
+        use_limit_name_label: bool,
+        prometheus_handle: Arc<PrometheusHandle>,
+        default_labels: Option<Expression>,
     ) -> Self {
         describe_histogram!(
             "datastore_latency",
@@ -60,6 +77,7 @@ impl PrometheusMetrics {
             use_limit_name_label,
             prometheus_handle,
             custom_labels: RwLock::default(),
+            default_labels,
         }
     }
 
@@ -125,7 +143,7 @@ impl PrometheusMetrics {
     }
 
     fn labels(&self, ctx: &Context) -> Vec<(String, String)> {
-        if let Ok(custom_labels) = self.custom_labels.read() {
+        let mut labels = if let Ok(custom_labels) = self.custom_labels.read() {
             custom_labels
                 .iter()
                 .filter_map(|(label, exp)| {
@@ -137,7 +155,15 @@ impl PrometheusMetrics {
                 .collect()
         } else {
             Vec::default()
+        };
+        if let Some(default) = &self.default_labels {
+            if let Ok(value) = default.eval_map(ctx) {
+                let mut default_labels: Vec<(String, String)> = value.into_iter().collect();
+                default_labels.append(&mut labels);
+                return default_labels;
+            }
         }
+        labels
     }
 }
 
@@ -306,6 +332,26 @@ pub mod tests {
         prometheus_metrics.incr_limited_calls(&namespace, None, &ctx);
         let metrics_output = prometheus_metrics.gather_metrics();
         assert!(metrics_output.contains("myLabel=\"user 1\""));
+    }
+
+    #[test]
+    fn incr_limited_calls_uses_default_labels() {
+        let prometheus_metrics = PrometheusMetrics::new_with_handle_and_default_labels(
+            true,
+            TEST_PROMETHEUS_HANDLE.clone(),
+            Some(Expression::parse("descriptors[0]").expect("Invalid expression!")),
+        );
+        let namespace = "limited_calls_empty_name".into();
+        let mut ctx = Context::default();
+        let values = HashMap::from([("foobar".to_string(), "1".to_string())]);
+        ctx.list_binding("descriptors".to_string(), vec![values]);
+        prometheus_metrics.incr_limited_calls(&namespace, None, &ctx);
+        let metrics_output = prometheus_metrics.gather_metrics();
+        assert!(
+            metrics_output.contains("foobar=\"1\""),
+            "{}",
+            metrics_output
+        );
     }
 
     #[test]

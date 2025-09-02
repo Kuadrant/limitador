@@ -1,4 +1,5 @@
 use crate::limit::Limit;
+use cel_interpreter::objects::Key;
 use cel_interpreter::{ExecutionError, Value};
 pub use errors::{EvaluationError, ParseError};
 use serde::{Deserialize, Serialize};
@@ -41,7 +42,7 @@ pub(super) mod errors {
     #[derive(Debug)]
     pub struct ParseError {
         input: String,
-        source: Box<dyn Error + 'static>,
+        source: Box<dyn Error + 'static + Send + Sync>,
     }
 
     impl ParseError {
@@ -186,6 +187,23 @@ impl Expression {
             .map(Some),
             Err(ExecutionError::NoSuchKey(_)) => Ok(None),
             Err(err) => Err(err.into()),
+        }
+    }
+
+    pub fn eval_map(&self, ctx: &Context) -> Result<HashMap<String, String>, EvaluationError> {
+        match self.resolve(ctx)? {
+            Value::Map(map) => Ok(map
+                .map
+                .iter()
+                .filter_map(|(k, v)| {
+                    if let (Key::String(k), Value::String(v)) = (k, v) {
+                        Some((k.to_string(), v.to_string()))
+                    } else {
+                        None
+                    }
+                })
+                .collect()),
+            _ => Ok(HashMap::default()),
         }
     }
 

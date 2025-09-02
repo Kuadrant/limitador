@@ -15,6 +15,7 @@ use crate::envoy_rls::server::{run_envoy_rls_server, RateLimitHeaders};
 use crate::http_api::server::run_http_server;
 use crate::metrics::MetricsLayer;
 use chrono::{NaiveDateTime, Utc};
+use clap::builder::ValueParser;
 #[cfg(feature = "distributed_storage")]
 use clap::parser::ValuesRef;
 use clap::{value_parser, Arg, ArgAction, Command};
@@ -258,6 +259,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let prometheus_metrics = Arc::new(PrometheusMetrics::new_with_options(
         config.limit_name_in_labels,
+        config.metric_labels_default.clone(),
     ));
 
     let limit_file = config.limits_file.clone();
@@ -545,6 +547,16 @@ fn create_config() -> (Configuration, &'static str) {
                 .help("File with custom labels for prometheus metrics"),
         )
         .arg(
+            Arg::new("metric_labels_default")
+                .long("metric-labels-default")
+                .action(ArgAction::Set)
+                .value_parser(ValueParser::new(|arg: &str| {
+                    Expression::parse(arg.to_owned())
+                }))
+                .display_order(56)
+                .help("A CEL expression resolving to a Map with labels & their values to use"),
+        )
+        .arg(
             Arg::new("tracing_endpoint")
                 .long("tracing-endpoint")
                 .default_value(config::env::TRACING_ENDPOINT.unwrap_or(""))
@@ -806,6 +818,9 @@ fn create_config() -> (Configuration, &'static str) {
         *matches.get_one::<u16>("http_port").unwrap(),
         matches.get_flag("limit_name_in_labels") || *config::env::LIMIT_NAME_IN_PROMETHEUS_LABELS,
         matches.get_one::<String>("custom_metric_labels").cloned(),
+        matches
+            .get_one::<Expression>("metric_labels_default")
+            .cloned(),
         matches
             .get_one::<String>("tracing_endpoint")
             .unwrap()
