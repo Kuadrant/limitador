@@ -120,7 +120,7 @@ impl RateLimitService for MyRateLimiter {
             1
         } else {
             req.hits_addend
-        };
+        } as u64;
 
         let mut ctx = Context::default();
         ctx.list_binding("descriptors".to_string(), values);
@@ -129,7 +129,7 @@ impl RateLimitService for MyRateLimiter {
             Limiter::Blocking(limiter) => limiter.check_rate_limited_and_update(
                 &namespace,
                 &ctx,
-                u64::from(hits_addend),
+                hits_addend,
                 self.rate_limit_headers != RateLimitHeaders::None,
             ),
             Limiter::Async(limiter) => {
@@ -137,7 +137,7 @@ impl RateLimitService for MyRateLimiter {
                     .check_rate_limited_and_update(
                         &namespace,
                         &ctx,
-                        u64::from(hits_addend),
+                        hits_addend,
                         self.rate_limit_headers != RateLimitHeaders::None,
                     )
                     .await
@@ -160,11 +160,15 @@ impl RateLimitService for MyRateLimiter {
 
         let mut rate_limited_resp = rate_limited_resp.unwrap();
         let resp_code = if rate_limited_resp.limited {
-            self.metrics
-                .incr_limited_calls(&namespace, rate_limited_resp.limit_name.as_deref());
+            self.metrics.incr_limited_calls(
+                &namespace,
+                rate_limited_resp.limit_name.as_deref(),
+                &ctx,
+            );
             Code::OverLimit
         } else {
-            self.metrics.incr_authorized_calls(&namespace);
+            self.metrics
+                .incr_authorized_calls(&namespace, &ctx, hits_addend);
             Code::Ok
         };
 
@@ -245,7 +249,9 @@ pub async fn run_envoy_rls_server(
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
+    use lazy_static::lazy_static;
+    use metrics_exporter_prometheus::PrometheusHandle;
     use tonic::IntoRequest;
 
     use limitador::limit::Limit;
@@ -253,8 +259,13 @@ mod tests {
 
     use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::rate_limit_descriptor::Entry;
     use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::RateLimitDescriptor;
-    use crate::prometheus_metrics::tests::TEST_PROMETHEUS_HANDLE;
     use crate::Configuration;
+
+    // Setting recorder once for all test cases
+    lazy_static! {
+        pub static ref TEST_PROMETHEUS_HANDLE: Arc<PrometheusHandle> =
+            Arc::new(PrometheusMetrics::init_handle());
+    }
 
     use super::*;
 

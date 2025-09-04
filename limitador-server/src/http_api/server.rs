@@ -214,9 +214,11 @@ async fn check_and_report(
     match rate_limited_and_update_result {
         Ok(mut is_rate_limited) => {
             if is_rate_limited.limited {
-                rate_limit_data
-                    .metrics()
-                    .incr_limited_calls(&namespace, is_rate_limited.limit_name.as_deref());
+                rate_limit_data.metrics().incr_limited_calls(
+                    &namespace,
+                    is_rate_limited.limit_name.as_deref(),
+                    &ctx,
+                );
 
                 match response_headers {
                     None => HttpResponse::TooManyRequests().json(()),
@@ -231,7 +233,9 @@ async fn check_and_report(
                     }
                 }
             } else {
-                rate_limit_data.metrics().incr_authorized_calls(&namespace);
+                rate_limit_data
+                    .metrics()
+                    .incr_authorized_calls(&namespace, &ctx, delta);
 
                 match response_headers {
                     None => HttpResponse::Ok().json(()),
@@ -308,7 +312,7 @@ pub async fn run_http_server(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prometheus_metrics::tests::TEST_PROMETHEUS_HANDLE;
+    use crate::envoy_rls::server::tests::TEST_PROMETHEUS_HANDLE;
     use crate::Configuration;
     use actix_web::{test, web};
     use limitador::limit::Limit as LimitadorLimit;

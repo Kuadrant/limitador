@@ -14,6 +14,7 @@
 // HTTP_API_PORT: port
 
 use crate::envoy_rls::server::RateLimitHeaders;
+use limitador::limit::Expression;
 use limitador::storage;
 use std::fmt;
 use tracing::level_filters::LevelFilter;
@@ -46,6 +47,8 @@ pub struct Configuration {
     http_host: String,
     http_port: u16,
     pub limit_name_in_labels: bool,
+    pub metric_labels_file: Option<String>,
+    pub metric_labels_default: Option<Expression>,
     pub tracing_endpoint: String,
     pub log_level: Option<LevelFilter>,
     pub rate_limit_headers: RateLimitHeaders,
@@ -106,6 +109,8 @@ impl Configuration {
         http_host: String,
         http_port: u16,
         limit_name_in_labels: bool,
+        metric_labels_file: Option<String>,
+        metric_labels_default: Option<Expression>,
         tracing_endpoint: String,
         rate_limit_headers: RateLimitHeaders,
         grpc_reflection_service: bool,
@@ -118,6 +123,8 @@ impl Configuration {
             http_host,
             http_port,
             limit_name_in_labels,
+            metric_labels_file,
+            metric_labels_default,
             tracing_endpoint,
             log_level: None,
             rate_limit_headers,
@@ -147,6 +154,8 @@ impl Default for Configuration {
             http_host: "".to_string(),
             http_port: 0,
             limit_name_in_labels: false,
+            metric_labels_file: None,
+            metric_labels_default: None,
             tracing_endpoint: "".to_string(),
             log_level: None,
             rate_limit_headers: RateLimitHeaders::None,

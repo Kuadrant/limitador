@@ -15,13 +15,14 @@ use crate::envoy_rls::server::{run_envoy_rls_server, RateLimitHeaders};
 use crate::http_api::server::run_http_server;
 use crate::metrics::MetricsLayer;
 use chrono::{NaiveDateTime, Utc};
+use clap::builder::ValueParser;
 #[cfg(feature = "distributed_storage")]
 use clap::parser::ValuesRef;
 use clap::{value_parser, Arg, ArgAction, Command};
 use const_format::formatcp;
 use limitador::counter::Counter;
 use limitador::errors::LimitadorError;
-use limitador::limit::Limit;
+use limitador::limit::{Expression, Limit};
 use limitador::storage::disk::DiskStorage;
 use limitador::storage::redis::{
     AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder, DEFAULT_BATCH_SIZE,
@@ -42,8 +43,9 @@ use opentelemetry_sdk::{trace, Resource};
 use paperclip::actix::Apiv2Schema;
 use prometheus_metrics::PrometheusMetrics;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fmt::Display;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use std::{env, process};
@@ -257,9 +259,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let prometheus_metrics = Arc::new(PrometheusMetrics::new_with_options(
         config.limit_name_in_labels,
+        config.metric_labels_default.clone(),
     ));
 
     let limit_file = config.limits_file.clone();
+    let labels_file = config.metric_labels_file.clone();
     let envoy_rls_address = config.rlp_address();
     let http_api_address = config.http_address();
     let rate_limit_headers = config.rate_limit_headers.clone();
@@ -279,6 +283,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         process::exit(1)
     }
 
+    if let Some(labels_file) = &labels_file {
+        match parse_custom_labels_file(Path::new(labels_file)).await {
+            Ok(labels) => {
+                if let Err(e) = prometheus_metrics.set_custom_labels(labels) {
+                    eprintln!("Failed to load labels file: {e}");
+                    process::exit(1)
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to load labels file: {e}");
+                process::exit(1)
+            }
+        }
+    }
+
     let limiter = Arc::clone(&rate_limiter);
     let handle = Handle::current();
     // it should not fail because the limits file has already been read
@@ -290,8 +309,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let limit_cfg = std::path::absolute(&limit_file).unwrap();
     let mut canonical_cfg = std::fs::canonicalize(&limit_cfg).unwrap();
 
+    let labels_cfg = labels_file.map(std::path::absolute).map(Result::unwrap);
+    let mut labels_canonical_cfg = labels_cfg
+        .clone()
+        .map(std::fs::canonicalize)
+        .map(Result::unwrap);
+    let labels_file_dir = labels_cfg.clone().map(|f| {
+        let mut labels_file_dir: PathBuf = f.parent().unwrap().into();
+        if labels_file_dir.as_os_str().is_empty() {
+            labels_file_dir = Path::new(".").into();
+        }
+        labels_file_dir
+    });
+
     let status: Arc<RwLock<Status>> = Arc::default();
     let status_updater = Arc::clone(&status);
+    let metrics = prometheus_metrics.clone();
 
     let mut watcher = RecommendedWatcher::new(
         move |result: Result<Event, Error>| match result {
@@ -322,6 +355,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     });
                                 }
                             }
+                            if let Some(labels_cfg) = &labels_cfg {
+                                if let Some(location) = event.paths.first() {
+                                    if let Ok(actual_location) = std::fs::canonicalize(labels_cfg) {
+                                        if location == labels_cfg
+                                            || labels_canonical_cfg.as_ref().unwrap()
+                                                != &actual_location
+                                        {
+                                            labels_canonical_cfg = Some(actual_location);
+                                            let metrics = metrics.clone();
+                                            let labels_cfg = labels_cfg.clone();
+
+                                            handle.spawn(async move {
+                                                match parse_custom_labels_file(&labels_cfg).await {
+                                                    Ok(labels) => {
+                                                        match metrics.set_custom_labels(labels) {
+                                                            Ok(_) => {
+                                                                info!("custom labels reloaded")
+                                                            }
+                                                            Err(e) => error!(
+                                                                "Failed to set custom labels: {e}"
+                                                            ),
+                                                        }
+                                                    }
+                                                    Err(e) => error!(
+                                                        "Failed to reload custom labels: {e}"
+                                                    ),
+                                                }
+                                            });
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     _ => (), // /dev/null
@@ -334,6 +399,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         notify::Config::default(),
     )?;
     watcher.watch(limits_file_dir, RecursiveMode::Recursive)?;
+    if let Some(labels_file_dir) = labels_file_dir {
+        if labels_file_dir.as_path() != limits_file_dir {
+            watcher.watch(&labels_file_dir, RecursiveMode::Recursive)?;
+        }
+    }
 
     info!("Envoy RLS server starting on {}", envoy_rls_address);
     tokio::spawn(run_envoy_rls_server(
@@ -354,6 +424,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
 
     Ok(())
+}
+
+async fn parse_custom_labels_file(path: &Path) -> Result<HashMap<String, Expression>, String> {
+    match std::fs::File::open(path) {
+        Ok(f) => {
+            let parsed_labels: Result<HashMap<String, String>, _> = serde_yaml::from_reader(f);
+            match parsed_labels {
+                Ok(labels) => Ok(labels
+                    .into_iter()
+                    .filter_map(|(k, v)| match Expression::parse(&v) {
+                        Ok(expr) => Some((k, expr)),
+                        Err(e) => {
+                            error!("Failed to parse custom label `{k}` `{v}`: {e}");
+                            None
+                        }
+                    })
+                    .collect()),
+                Err(e) => Err(format!("Couldn't parse: {e}")),
+            }
+        }
+        Err(e) => Err(format!("Couldn't read file '{}': {e}", path.display())),
+    }
 }
 
 fn create_config() -> (Configuration, &'static str) {
@@ -404,7 +496,7 @@ fn create_config() -> (Configuration, &'static str) {
                 .default_value(
                     config::env::ENVOY_RLS_HOST.unwrap_or(Configuration::DEFAULT_IP_BIND),
                 )
-                .display_order(1)
+                .display_order(10)
                 .help("The IP to listen on for RLS"),
         )
         .arg(
@@ -415,7 +507,7 @@ fn create_config() -> (Configuration, &'static str) {
                     config::env::ENVOY_RLS_PORT.unwrap_or(Configuration::DEFAULT_RLS_PORT),
                 )
                 .value_parser(value_parser!(u16))
-                .display_order(2)
+                .display_order(20)
                 .help("The port to listen on for RLS"),
         )
         .arg(
@@ -423,7 +515,7 @@ fn create_config() -> (Configuration, &'static str) {
                 .short('B')
                 .long("http-ip")
                 .default_value(config::env::HTTP_API_HOST.unwrap_or(Configuration::DEFAULT_IP_BIND))
-                .display_order(3)
+                .display_order(30)
                 .help("The IP to listen on for HTTP"),
         )
         .arg(
@@ -434,7 +526,7 @@ fn create_config() -> (Configuration, &'static str) {
                     config::env::HTTP_API_PORT.unwrap_or(Configuration::DEFAULT_HTTP_PORT),
                 )
                 .value_parser(value_parser!(u16))
-                .display_order(4)
+                .display_order(40)
                 .help("The port to listen on for HTTP"),
         )
         .arg(
@@ -442,14 +534,33 @@ fn create_config() -> (Configuration, &'static str) {
                 .short('l')
                 .long("limit-name-in-labels")
                 .action(ArgAction::SetTrue)
-                .display_order(5)
+                .display_order(50)
                 .help("Include the Limit Name in prometheus label"),
+        )
+        .arg(
+            Arg::new("custom_metric_labels")
+                .short('L')
+                .long("custom-metric-labels")
+                .action(ArgAction::Set)
+                .value_parser(value_parser!(String))
+                .display_order(55)
+                .help("File with custom labels for prometheus metrics"),
+        )
+        .arg(
+            Arg::new("metric_labels_default")
+                .long("metric-labels-default")
+                .action(ArgAction::Set)
+                .value_parser(ValueParser::new(|arg: &str| {
+                    Expression::parse(arg.to_owned())
+                }))
+                .display_order(56)
+                .help("A CEL expression resolving to a Map with labels & their values to use"),
         )
         .arg(
             Arg::new("tracing_endpoint")
                 .long("tracing-endpoint")
                 .default_value(config::env::TRACING_ENDPOINT.unwrap_or(""))
-                .display_order(6)
+                .display_order(60)
                 .help("The host for the tracing service"),
         )
         .arg(
@@ -457,21 +568,21 @@ fn create_config() -> (Configuration, &'static str) {
                 .short('v')
                 .action(ArgAction::Count)
                 .value_parser(value_parser!(u8).range(..5))
-                .display_order(7)
+                .display_order(70)
                 .help("Sets the level of verbosity"),
         )
         .arg(
             Arg::new("validate")
                 .long("validate")
                 .action(ArgAction::SetTrue)
-                .display_order(8)
+                .display_order(80)
                 .help("Validates the LIMITS_FILE and exits"),
         )
         .arg(
             Arg::new("rate_limit_headers")
                 .long("rate-limit-headers")
                 .short('H')
-                .display_order(9)
+                .display_order(90)
                 .default_value(config::env::RATE_LIMIT_HEADERS.unwrap_or("NONE"))
                 .value_parser(clap::builder::PossibleValuesParser::new([
                     "NONE",
@@ -483,12 +594,12 @@ fn create_config() -> (Configuration, &'static str) {
             Arg::new("grpc_reflection_service")
                 .long("grpc-reflection-service")
                 .action(ArgAction::SetTrue)
-                .display_order(10)
+                .display_order(100)
                 .help("Enables gRPC server reflection service"),
         )
         .subcommand(
             Command::new("memory")
-                .display_order(1)
+                .display_order(10)
                 .about("Counters are held in Limitador (ephemeral)")
                 .arg(
                     Arg::new("CACHE_SIZE")
@@ -502,7 +613,7 @@ fn create_config() -> (Configuration, &'static str) {
         )
         .subcommand(
             Command::new("disk")
-                .display_order(2)
+                .display_order(20)
                 .about("Counters are held on disk (persistent)")
                 .arg(disk_path_arg)
                 .arg(
@@ -520,14 +631,14 @@ fn create_config() -> (Configuration, &'static str) {
         )
         .subcommand(
             Command::new("redis")
-                .display_order(3)
+                .display_order(30)
                 .about("Uses Redis to store counters")
                 .arg(redis_url_arg.clone()),
         )
         .subcommand(
             Command::new("redis_cached")
                 .about("Uses Redis to store counters, with an in-memory cache")
-                .display_order(4)
+                .display_order(40)
                 .arg(redis_url_arg)
                 .arg(
                     Arg::new("batch")
@@ -538,7 +649,7 @@ fn create_config() -> (Configuration, &'static str) {
                             config::env::REDIS_LOCAL_CACHE_BATCH_SIZE
                                 .unwrap_or(leak(DEFAULT_BATCH_SIZE)),
                         )
-                        .display_order(3)
+                        .display_order(30)
                         .help("Size of entries to flush in as single flush"),
                 )
                 .arg(
@@ -550,7 +661,7 @@ fn create_config() -> (Configuration, &'static str) {
                             config::env::REDIS_LOCAL_CACHE_FLUSHING_PERIOD_MS
                                 .unwrap_or(leak(DEFAULT_FLUSHING_PERIOD_SEC * 1000)),
                         )
-                        .display_order(4)
+                        .display_order(40)
                         .help("Flushing period for counters in milliseconds"),
                 )
                 .arg(
@@ -559,7 +670,7 @@ fn create_config() -> (Configuration, &'static str) {
                         .action(ArgAction::Set)
                         .value_parser(clap::value_parser!(usize))
                         .default_value(leak(DEFAULT_MAX_CACHED_COUNTERS))
-                        .display_order(5)
+                        .display_order(50)
                         .help("Maximum amount of counters cached"),
                 )
                 .arg(
@@ -568,7 +679,7 @@ fn create_config() -> (Configuration, &'static str) {
                         .action(ArgAction::Set)
                         .value_parser(clap::value_parser!(u64))
                         .default_value(leak(DEFAULT_RESPONSE_TIMEOUT_MS))
-                        .display_order(6)
+                        .display_order(60)
                         .help("Timeout for Redis commands in milliseconds"),
                 ),
         );
@@ -706,6 +817,10 @@ fn create_config() -> (Configuration, &'static str) {
         matches.get_one::<String>("http_ip").unwrap().into(),
         *matches.get_one::<u16>("http_port").unwrap(),
         matches.get_flag("limit_name_in_labels") || *config::env::LIMIT_NAME_IN_PROMETHEUS_LABELS,
+        matches.get_one::<String>("custom_metric_labels").cloned(),
+        matches
+            .get_one::<Expression>("metric_labels_default")
+            .cloned(),
         matches
             .get_one::<String>("tracing_endpoint")
             .unwrap()
