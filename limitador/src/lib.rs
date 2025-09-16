@@ -364,7 +364,7 @@ impl RateLimiter {
         let counters = self.counters_that_apply(namespace, values)?;
 
         match self.find_first_limited_counter(&counters, delta) {
-            Err(e) => return Err(e.into()),
+            Err(e) => Err(e.into()),
             Ok(auth) => match auth {
                 Authorization::Ok => Ok(CheckResult {
                     limited: false,
@@ -382,7 +382,7 @@ impl RateLimiter {
 
     fn find_first_limited_counter(
         &self,
-        counters: &Vec<Counter>,
+        counters: &[Counter],
         delta: u64,
     ) -> Result<Authorization, StorageErr> {
         // Iterate over counters and
@@ -397,7 +397,7 @@ impl RateLimiter {
                         ));
                     }
                 }
-                Err(e) => return Err(e.into()),
+                Err(e) => return Err(e),
             }
         }
 
@@ -565,7 +565,7 @@ impl AsyncRateLimiter {
         let counters = self.counters_that_apply(namespace, ctx).await?;
 
         match self.find_first_limited_counter(&counters, delta).await {
-            Err(e) => return Err(e.into()),
+            Err(e) => Err(e.into()),
             Ok(auth) => match auth {
                 Authorization::Ok => Ok(CheckResult {
                     limited: false,
@@ -583,7 +583,7 @@ impl AsyncRateLimiter {
 
     async fn find_first_limited_counter(
         &self,
-        counters: &Vec<Counter>,
+        counters: &[Counter],
         delta: u64,
     ) -> Result<Authorization, StorageErr> {
         // Iterate over counters and
@@ -598,7 +598,7 @@ impl AsyncRateLimiter {
                         ));
                     }
                 }
-                Err(e) => return Err(e.into()),
+                Err(e) => return Err(e),
             }
         }
 
