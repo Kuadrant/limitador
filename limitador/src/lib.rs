@@ -197,7 +197,9 @@ use crate::counter::Counter;
 use crate::errors::LimitadorError;
 use crate::limit::{Context, Limit, Namespace};
 use crate::storage::in_memory::InMemoryStorage;
-use crate::storage::{AsyncCounterStorage, AsyncStorage, Authorization, CounterStorage, Storage};
+use crate::storage::{
+    AsyncCounterStorage, AsyncStorage, Authorization, CounterStorage, Storage, StorageErr,
+};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -358,21 +360,48 @@ impl RateLimiter {
         namespace: &Namespace,
         values: &Context,
         delta: u64,
-    ) -> LimitadorResult<bool> {
+    ) -> LimitadorResult<CheckResult> {
         let counters = self.counters_that_apply(namespace, values)?;
 
-        for counter in counters {
-            match self.storage.is_within_limits(&counter, delta) {
+        match self.find_first_limited_counter(&counters, delta) {
+            Err(e) => return Err(e.into()),
+            Ok(auth) => match auth {
+                Authorization::Ok => Ok(CheckResult {
+                    limited: false,
+                    counters: Vec::default(),
+                    limit_name: None,
+                }),
+                Authorization::Limited(name) => Ok(CheckResult {
+                    limited: true,
+                    counters: Vec::default(),
+                    limit_name: name,
+                }),
+            },
+        }
+    }
+
+    fn find_first_limited_counter(
+        &self,
+        counters: &Vec<Counter>,
+        delta: u64,
+    ) -> Result<Authorization, StorageErr> {
+        // Iterate over counters and
+        // stop on first errors
+        // stop on first counter not withing limits
+        for counter in counters.iter() {
+            match self.storage.is_within_limits(counter, delta) {
                 Ok(within_limits) => {
                     if !within_limits {
-                        return Ok(true);
+                        return Ok(Authorization::Limited(
+                            counter.limit().name().map(|n| n.to_owned()),
+                        ));
                     }
                 }
                 Err(e) => return Err(e.into()),
             }
         }
 
-        Ok(false)
+        Ok(Authorization::Ok)
     }
 
     pub fn update_counters(
@@ -532,20 +561,48 @@ impl AsyncRateLimiter {
         namespace: &Namespace,
         ctx: &Context<'_>,
         delta: u64,
-    ) -> LimitadorResult<bool> {
+    ) -> LimitadorResult<CheckResult> {
         let counters = self.counters_that_apply(namespace, ctx).await?;
 
-        for counter in counters {
-            match self.storage.is_within_limits(&counter, delta).await {
+        match self.find_first_limited_counter(&counters, delta).await {
+            Err(e) => return Err(e.into()),
+            Ok(auth) => match auth {
+                Authorization::Ok => Ok(CheckResult {
+                    limited: false,
+                    counters: Vec::default(),
+                    limit_name: None,
+                }),
+                Authorization::Limited(name) => Ok(CheckResult {
+                    limited: true,
+                    counters: Vec::default(),
+                    limit_name: name,
+                }),
+            },
+        }
+    }
+
+    async fn find_first_limited_counter(
+        &self,
+        counters: &Vec<Counter>,
+        delta: u64,
+    ) -> Result<Authorization, StorageErr> {
+        // Iterate over counters and
+        // stop on first errors
+        // stop on first counter not withing limits
+        for counter in counters.iter() {
+            match self.storage.is_within_limits(counter, delta).await {
                 Ok(within_limits) => {
                     if !within_limits {
-                        return Ok(true);
+                        return Ok(Authorization::Limited(
+                            counter.limit().name().map(|n| n.to_owned()),
+                        ));
                     }
                 }
                 Err(e) => return Err(e.into()),
             }
         }
-        Ok(false)
+
+        Ok(Authorization::Ok)
     }
 
     pub async fn update_counters(

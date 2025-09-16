@@ -145,7 +145,7 @@ async fn check(
 
     match is_rate_limited_result {
         Ok(rate_limited) => {
-            if rate_limited {
+            if rate_limited.limited {
                 Err(ErrorResponse::TooManyRequests)
             } else {
                 Ok(Json(()))
@@ -235,7 +235,10 @@ async fn check_and_report(
             } else {
                 rate_limit_data
                     .metrics()
-                    .incr_authorized_calls(&namespace, &ctx, delta);
+                    .incr_authorized_calls(&namespace, &ctx);
+                rate_limit_data
+                    .metrics()
+                    .incr_authorized_hits(&namespace, &ctx, delta);
 
                 match response_headers {
                     None => HttpResponse::Ok().json(()),

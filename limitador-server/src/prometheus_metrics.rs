@@ -90,15 +90,15 @@ impl PrometheusMetrics {
             .expect("failed to create prometheus metrics exporter")
     }
 
-    pub fn incr_authorized_calls(
-        &self,
-        namespace: &Namespace,
-        cel_ctx: &Context,
-        hits_addend: u64,
-    ) {
+    pub fn incr_authorized_calls(&self, namespace: &Namespace, cel_ctx: &Context) {
         let mut labels: Vec<(String, String)> = self.labels(cel_ctx);
         labels.push((NAMESPACE_LABEL.to_string(), namespace.as_ref().to_string()));
         counter!("authorized_calls", &labels).increment(1);
+    }
+
+    pub fn incr_authorized_hits(&self, namespace: &Namespace, cel_ctx: &Context, hits_addend: u64) {
+        let mut labels: Vec<(String, String)> = self.labels(cel_ctx);
+        labels.push((NAMESPACE_LABEL.to_string(), namespace.as_ref().to_string()));
         counter!("authorized_hits", &labels).increment(hits_addend);
     }
 
