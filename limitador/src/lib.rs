@@ -117,17 +117,17 @@
 //! // Check if we can report
 //! let namespace = "my_namespace".into();
 //! let ctx = &values_to_report.into();
-//! assert!(!rate_limiter.is_rate_limited(&namespace, &ctx, 1).unwrap());
+//! assert!(!rate_limiter.is_rate_limited(&namespace, &ctx, 1).unwrap().limited);
 //!
 //! // Report
 //! rate_limiter.update_counters(&namespace, &ctx, 1).unwrap();
 //!
 //! // Check and report again
-//! assert!(!rate_limiter.is_rate_limited(&namespace, &ctx, 1).unwrap());
+//! assert!(!rate_limiter.is_rate_limited(&namespace, &ctx, 1).unwrap().limited);
 //! rate_limiter.update_counters(&namespace, &ctx, 1).unwrap();
 //!
 //! // We've already reported 2, so reporting another one should not be allowed
-//! assert!(rate_limiter.is_rate_limited(&namespace, &ctx, 1).unwrap());
+//! assert!(rate_limiter.is_rate_limited(&namespace, &ctx, 1).unwrap().limited);
 //!
 //! // You can also check and report if not limited in a single call. It's useful
 //! // for example, when calling Limitador from a proxy. Instead of doing 2

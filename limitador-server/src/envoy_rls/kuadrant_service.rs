@@ -195,6 +195,7 @@ mod tests {
         use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::rate_limit_descriptor::Entry;
         use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::RateLimitDescriptor;
         use crate::envoy_rls::server::envoy::service::ratelimit::v3::RateLimitRequest;
+        use crate::envoy_rls::server::tests::TEST_PROMETHEUS_HANDLE;
 
         use super::super::*;
 
@@ -223,7 +224,13 @@ mod tests {
             let limiter = RateLimiter::new(10_000);
             limiter.add_limit(limit);
 
-            let rate_limiter = KuadrantService::new(Arc::new(Limiter::Blocking(limiter)));
+            let rate_limiter = KuadrantService::new(
+                Arc::new(Limiter::Blocking(limiter)),
+                Arc::new(PrometheusMetrics::new_with_handle(
+                    false,
+                    TEST_PROMETHEUS_HANDLE.clone(),
+                )),
+            );
 
             let req = RateLimitRequest {
                 domain: namespace.to_string(),
@@ -278,7 +285,13 @@ mod tests {
             let limiter = RateLimiter::new(10_000);
             limiter.add_limit(limit);
 
-            let rate_limiter = KuadrantService::new(Arc::new(Limiter::Blocking(limiter)));
+            let rate_limiter = KuadrantService::new(
+                Arc::new(Limiter::Blocking(limiter)),
+                Arc::new(PrometheusMetrics::new_with_handle(
+                    false,
+                    TEST_PROMETHEUS_HANDLE.clone(),
+                )),
+            );
 
             let req = RateLimitRequest {
                 domain: namespace.to_string(),
@@ -313,7 +326,13 @@ mod tests {
         async fn test_returns_ok_when_no_limits_apply() {
             // No limits saved
             let limiter = RateLimiter::new(10_000);
-            let rate_limiter = KuadrantService::new(Arc::new(Limiter::Blocking(limiter)));
+            let rate_limiter = KuadrantService::new(
+                Arc::new(Limiter::Blocking(limiter)),
+                Arc::new(PrometheusMetrics::new_with_handle(
+                    false,
+                    TEST_PROMETHEUS_HANDLE.clone(),
+                )),
+            );
 
             let req = RateLimitRequest {
                 domain: "test_namespace".to_string(),
@@ -340,7 +359,13 @@ mod tests {
         #[tokio::test]
         async fn test_returns_unknown_when_domain_is_empty() {
             let limiter = RateLimiter::new(10_000);
-            let rate_limiter = KuadrantService::new(Arc::new(Limiter::Blocking(limiter)));
+            let rate_limiter = KuadrantService::new(
+                Arc::new(Limiter::Blocking(limiter)),
+                Arc::new(PrometheusMetrics::new_with_handle(
+                    false,
+                    TEST_PROMETHEUS_HANDLE.clone(),
+                )),
+            );
 
             let req = RateLimitRequest {
                 domain: "".to_string(),
@@ -399,7 +424,13 @@ mod tests {
                 limiter.add_limit(limit);
             });
 
-            let rate_limiter = KuadrantService::new(Arc::new(Limiter::Blocking(limiter)));
+            let rate_limiter = KuadrantService::new(
+                Arc::new(Limiter::Blocking(limiter)),
+                Arc::new(PrometheusMetrics::new_with_handle(
+                    false,
+                    TEST_PROMETHEUS_HANDLE.clone(),
+                )),
+            );
 
             let req = RateLimitRequest {
                 domain: namespace.to_string(),
@@ -449,6 +480,7 @@ mod tests {
         use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::rate_limit_descriptor::Entry;
         use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::RateLimitDescriptor;
         use crate::envoy_rls::server::envoy::service::ratelimit::v3::RateLimitRequest;
+        use crate::envoy_rls::server::tests::TEST_PROMETHEUS_HANDLE;
 
         use super::super::*;
 
@@ -470,7 +502,13 @@ mod tests {
             let limiter = RateLimiter::new(10_000);
             limiter.add_limit(limit);
 
-            let rate_limiter = KuadrantService::new(Arc::new(Limiter::Blocking(limiter)));
+            let rate_limiter = KuadrantService::new(
+                Arc::new(Limiter::Blocking(limiter)),
+                Arc::new(PrometheusMetrics::new_with_handle(
+                    false,
+                    TEST_PROMETHEUS_HANDLE.clone(),
+                )),
+            );
 
             let req = RateLimitRequest {
                 domain: namespace.to_string(),
@@ -516,7 +554,13 @@ mod tests {
             let limiter = RateLimiter::new(10_000);
             limiter.add_limit(limit);
 
-            let rate_limiter = KuadrantService::new(Arc::new(Limiter::Blocking(limiter)));
+            let rate_limiter = KuadrantService::new(
+                Arc::new(Limiter::Blocking(limiter)),
+                Arc::new(PrometheusMetrics::new_with_handle(
+                    false,
+                    TEST_PROMETHEUS_HANDLE.clone(),
+                )),
+            );
 
             let req = RateLimitRequest {
                 domain: namespace.to_string(),
@@ -548,7 +592,13 @@ mod tests {
         async fn test_returns_ok_when_no_limits_apply() {
             // No limits saved
             let limiter = RateLimiter::new(10_000);
-            let rate_limiter = KuadrantService::new(Arc::new(Limiter::Blocking(limiter)));
+            let rate_limiter = KuadrantService::new(
+                Arc::new(Limiter::Blocking(limiter)),
+                Arc::new(PrometheusMetrics::new_with_handle(
+                    false,
+                    TEST_PROMETHEUS_HANDLE.clone(),
+                )),
+            );
 
             let req = RateLimitRequest {
                 domain: "test_namespace".to_string(),
@@ -571,7 +621,13 @@ mod tests {
         #[tokio::test]
         async fn test_returns_unknown_when_domain_is_empty() {
             let limiter = RateLimiter::new(10_000);
-            let rate_limiter = KuadrantService::new(Arc::new(Limiter::Blocking(limiter)));
+            let rate_limiter = KuadrantService::new(
+                Arc::new(Limiter::Blocking(limiter)),
+                Arc::new(PrometheusMetrics::new_with_handle(
+                    false,
+                    TEST_PROMETHEUS_HANDLE.clone(),
+                )),
+            );
 
             let req = RateLimitRequest {
                 domain: "".to_string(),
