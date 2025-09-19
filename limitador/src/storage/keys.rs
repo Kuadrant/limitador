@@ -233,32 +233,6 @@ pub mod bin {
         }
     }
 
-    #[derive(PartialEq, Debug, Serialize, Deserialize)]
-    struct LimitCountersKey<'a> {
-        ns: &'a str,
-        seconds: u64,
-        conditions: Vec<String>,
-        variables: Vec<&'a str>,
-    }
-
-    impl<'a> From<&'a Limit> for LimitCountersKey<'a> {
-        fn from(limit: &'a Limit) -> Self {
-            let set = limit.conditions();
-            let mut conditions = Vec::with_capacity(set.len());
-            for cond in &set {
-                conditions.push(cond.clone());
-            }
-            conditions.sort();
-
-            LimitCountersKey {
-                ns: limit.namespace().as_ref(),
-                seconds: limit.seconds(),
-                conditions,
-                variables: limit.variables_for_key(),
-            }
-        }
-    }
-
     pub fn key_for_counter_v2(counter: &Counter) -> Vec<u8> {
         let mut encoded_key = Vec::new();
         if counter.id().is_none() {
