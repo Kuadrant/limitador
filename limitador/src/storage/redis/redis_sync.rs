@@ -57,40 +57,60 @@ impl CounterStorage for RedisStorage {
     #[tracing::instrument(skip_all)]
     fn check_and_update(
         &self,
-        counters: &mut Vec<Counter>,
+        counters: &[Counter],
         delta: u64,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let mut con = self.conn_pool.get()?;
         let counter_keys: Vec<Vec<u8>> = counters.iter().map(key_for_counter).collect();
 
-        if load_counters {
-            let script = redis::Script::new(VALUES_AND_TTLS);
-            let mut script_invocation = script.prepare_invoke();
-            for counter_key in &counter_keys {
-                script_invocation.key(counter_key);
-            }
-            let script_res: Vec<Option<i64>> = script_invocation.invoke(&mut *con)?;
+        let counter_vals: Vec<Option<i64>> = redis::cmd("MGET")
+            .arg(counter_keys.clone())
+            .query(&mut *con)?;
 
-            if let Some(res) = is_limited(counters, delta, script_res) {
-                return Ok(res);
+        for (i, counter) in counters.iter().enumerate() {
+            // remaining  = max - (curr_val + delta)
+            let remaining = counter
+                .max_value()
+                .checked_sub(u64::try_from(counter_vals[i].unwrap_or(0)).unwrap_or(0) + delta);
+            if remaining.is_none() {
+                return Ok(Authorization::Limited(
+                    counter.limit().name().map(|n| n.to_owned()),
+                ));
             }
-        } else {
-            let counter_vals: Vec<Option<i64>> = redis::cmd("MGET")
-                .arg(counter_keys.clone())
-                .query(&mut *con)?;
+        }
 
-            for (i, counter) in counters.iter().enumerate() {
-                // remaining  = max - (curr_val + delta)
-                let remaining = counter
-                    .max_value()
-                    .checked_sub(u64::try_from(counter_vals[i].unwrap_or(0)).unwrap_or(0) + delta);
-                if remaining.is_none() {
-                    return Ok(Authorization::Limited(
-                        counter.limit().name().map(|n| n.to_owned()),
-                    ));
-                }
-            }
+        // TODO: this can be optimized by using pipelines with multiple updates
+        for (counter_idx, key) in counter_keys.into_iter().enumerate() {
+            let counter = &counters[counter_idx];
+            redis::Script::new(SCRIPT_UPDATE_COUNTER)
+                .key(key)
+                .key(key_for_counters_of_limit(counter.limit()))
+                .arg(counter.window().as_secs())
+                .arg(delta)
+                .invoke::<()>(&mut *con)?;
+        }
+
+        Ok(Authorization::Ok)
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn check_and_update_loading(
+        &self,
+        counters: &mut Vec<Counter>,
+        delta: u64,
+    ) -> Result<Authorization, StorageErr> {
+        let mut con = self.conn_pool.get()?;
+        let counter_keys: Vec<Vec<u8>> = counters.iter().map(key_for_counter).collect();
+
+        let script = redis::Script::new(VALUES_AND_TTLS);
+        let mut script_invocation = script.prepare_invoke();
+        for counter_key in &counter_keys {
+            script_invocation.key(counter_key);
+        }
+        let script_res: Vec<Option<i64>> = script_invocation.invoke(&mut *con)?;
+
+        if let Some(res) = is_limited(counters, delta, script_res) {
+            return Ok(res);
         }
 
         // TODO: this can be optimized by using pipelines with multiple updates

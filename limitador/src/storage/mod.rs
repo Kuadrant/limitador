@@ -1,11 +1,14 @@
+use std::cmp::Ordering;
 use crate::counter::Counter;
-use crate::limit::{Limit, Namespace};
+use crate::limit::{Context, Limit, Namespace};
 use crate::InMemoryStorage;
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
+use prost::bytes::BufMut;
 
 #[cfg(feature = "disk_storage")]
 pub mod disk;
@@ -122,22 +125,27 @@ impl Storage {
         Ok(())
     }
 
-    pub fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr> {
-        self.counters.is_within_limits(counter, delta)
+    pub fn is_within_limits(&self, key: &CounterKey, delta: u64) -> Result<bool, StorageErr> {
+        self.counters.is_within_limits(key, delta)
     }
 
-    pub fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr> {
-        self.counters.update_counter(counter, delta)
+    pub fn update_counter(&self, key: &CounterKey, delta: u64) -> Result<(), StorageErr> {
+        self.counters.update_counter(key, delta)
     }
 
     pub fn check_and_update(
         &self,
-        counters: &mut Vec<Counter>,
+        counters: &[CounterKey],
         delta: u64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
-        self.counters
-            .check_and_update(counters, delta, load_counters)
+        if load_counters {
+            let (auth, counters) = self.counters.check_and_update_loading(counters, delta)?;
+            // todo deal with these counters!
+            Ok(auth)
+        } else {
+            self.counters.check_and_update(counters.iter().map(|c| c.limit().into()).collect(), delta)
+        }
     }
 
     pub fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
@@ -276,18 +284,112 @@ impl AsyncStorage {
     }
 }
 
+pub enum CounterKey {
+    Simple((Namespace, SimpleCounterKey)),
+    SimpleIdentified((Namespace, String)),
+    Qualified((Namespace, SimpleCounterKey, Vec<(String, String)>)),
+    QualifiedIdentified((Namespace, String, Vec<(String, String)>)),
+}
+
+impl CounterKey {
+    pub(super) fn new(limit: &Limit, ctx: &Context) -> Result<Self, ()> {
+        Err(())
+    }
+
+    fn namespace(&self) -> &Namespace {
+        match self {
+            CounterKey::Simple((ns, _)) => ns,
+            CounterKey::SimpleIdentified((ns, _)) => ns,
+            CounterKey::Qualified((ns, _, _)) => ns,
+            CounterKey::QualifiedIdentified((ns, _, _)) => ns,
+        }
+    }
+}
+
+impl Eq for CounterKey {}
+
+impl PartialEq<Self> for CounterKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl PartialOrd<Self> for CounterKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CounterKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.namespace().cmp(other.namespace()) {
+            Ordering::Equal => {
+                match self {
+                    CounterKey::Simple((_, key)) => {
+                        match other {
+                            CounterKey::Simple((_, other)) => key.cmp(other),
+                            _ => Ordering::Less,
+                        }
+                    }
+                    CounterKey::SimpleIdentified((_, id)) => {
+                        match other {
+                            CounterKey::Simple(_) => Ordering::Greater,
+                            CounterKey::SimpleIdentified((_, other)) => id.cmp(other),
+                            _ => Ordering::Less,
+                        }
+                    }
+                    CounterKey::Qualified((_, key, qualifiers)) => {
+                        match other {
+                            _ => Ordering::Greater,
+                            CounterKey::Qualified((_, other_key, other_qualifiers)) => {
+                                match key.cmp(other_key) {
+                                    Ordering::Equal => qualifiers.cmp(other_qualifiers),
+                                    other => other,
+                                }
+                            }
+                            CounterKey::QualifiedIdentified(_) => Ordering::Less,
+                        }
+                    }
+                    CounterKey::QualifiedIdentified((_, id, qualifiers)) => {
+                        match other {
+                            _ => Ordering::Greater,
+                            CounterKey::QualifiedIdentified((_, other_id, other_qualifiers)) => {
+                                match id.cmp(other_id) {
+                                    Ordering::Equal => qualifiers.cmp(other_qualifiers),
+                                    other => other,
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            other => other,
+        }
+    }
+}
+
+#[derive(Eq, PartialEq, Ord, PartialOrd, Debug)]
+pub struct SimpleCounterKey {
+    seconds: u64,
+    conditions: Vec<String>,
+}
+
 pub trait CounterStorage: Sync + Send {
-    fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr>;
-    fn add_counter(&self, limit: &Limit) -> Result<(), StorageErr>;
-    fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr>;
+    fn add_counters(&self, keys: &[CounterKey]) -> Result<(), StorageErr>;
+    fn get_counters(&self, keys: &[CounterKey]) -> Result<Vec<(u64, Duration)>, StorageErr>;
+    fn update_counters(&self, key: &[CounterKey], delta: u64) -> Result<u64, StorageErr>;
+    fn delete_counters(&self, keys: &[CounterKey]) -> Result<(), StorageErr>;
+
     fn check_and_update(
         &self,
-        counters: &mut Vec<Counter>,
+        counters: &[CounterKey],
         delta: u64,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr>;
-    fn get_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<HashSet<Counter>, StorageErr>; // todo revise typing here?
-    fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr>; // todo revise typing here?
+    fn check_and_update_loading(
+        &self,
+        counters: &[CounterKey],
+        delta: u64,
+    ) -> Result<(Authorization, Vec<Counter>), StorageErr>;
     fn clear(&self) -> Result<(), StorageErr>;
 }
 

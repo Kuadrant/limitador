@@ -197,7 +197,7 @@ use crate::counter::Counter;
 use crate::errors::LimitadorError;
 use crate::limit::{Context, Limit, Namespace};
 use crate::storage::in_memory::InMemoryStorage;
-use crate::storage::{AsyncCounterStorage, AsyncStorage, Authorization, CounterStorage, Storage};
+use crate::storage::{AsyncCounterStorage, AsyncStorage, Authorization, CounterKey, CounterStorage, Storage};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -401,7 +401,7 @@ impl RateLimiter {
         if counters.is_empty() {
             return Ok(CheckResult {
                 limited: false,
-                counters,
+                counters: Vec::default(),
                 limit_name: None,
             });
         }
@@ -475,16 +475,12 @@ impl RateLimiter {
         &self,
         namespace: &Namespace,
         ctx: &Context,
-    ) -> LimitadorResult<Vec<Counter>> {
+    ) -> LimitadorResult<Vec<CounterKey>> {
         let limits = self.storage.get_limits(namespace);
         limits
             .iter()
             .filter(|lim| lim.applies(ctx))
-            .filter_map(|lim| match Counter::new(Arc::clone(lim), ctx) {
-                Ok(None) => None,
-                Ok(Some(c)) => Some(Ok(c)),
-                Err(e) => Some(Err(e)),
-            })
+            .map(|lim| lim.into())
             .collect()
     }
 }
