@@ -147,16 +147,6 @@ impl Limit {
         Ok(Some(map))
     }
 
-    #[cfg(feature = "disk_storage")]
-    pub(crate) fn variables_for_key(&self) -> Vec<&str> {
-        let mut variables = Vec::with_capacity(self.variables.len());
-        for var in &self.variables {
-            variables.push(var.source());
-        }
-        variables.sort();
-        variables
-    }
-
     pub fn has_variable(&self, var: &str) -> bool {
         self.variables
             .iter()
