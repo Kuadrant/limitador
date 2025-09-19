@@ -90,15 +90,15 @@ impl PrometheusMetrics {
             .expect("failed to create prometheus metrics exporter")
     }
 
-    pub fn incr_authorized_calls(
-        &self,
-        namespace: &Namespace,
-        cel_ctx: &Context,
-        hits_addend: u64,
-    ) {
+    pub fn incr_authorized_calls(&self, namespace: &Namespace, cel_ctx: &Context) {
         let mut labels: Vec<(String, String)> = self.labels(cel_ctx);
         labels.push((NAMESPACE_LABEL.to_string(), namespace.as_ref().to_string()));
         counter!("authorized_calls", &labels).increment(1);
+    }
+
+    pub fn incr_authorized_hits(&self, namespace: &Namespace, cel_ctx: &Context, hits_addend: u64) {
+        let mut labels: Vec<(String, String)> = self.labels(cel_ctx);
+        labels.push((NAMESPACE_LABEL.to_string(), namespace.as_ref().to_string()));
         counter!("authorized_hits", &labels).increment(hits_addend);
     }
 
@@ -175,7 +175,7 @@ mod tests {
     use metrics_exporter_prometheus::PrometheusHandle;
 
     #[test]
-    fn shows_authorized_calls_and_hits_by_namespace() {
+    fn shows_authorized_calls_by_namespace() {
         let recorder = PrometheusBuilder::new().build_recorder();
         let handle: Arc<PrometheusHandle> = recorder.handle().into();
 
@@ -190,11 +190,7 @@ mod tests {
                 .iter()
                 .for_each(|(namespace, auth_count)| {
                     for _ in 0..*auth_count {
-                        prometheus_metrics.incr_authorized_calls(
-                            namespace,
-                            &Context::default(),
-                            3u64,
-                        );
+                        prometheus_metrics.incr_authorized_calls(namespace, &Context::default());
                     }
                 });
 
@@ -209,12 +205,41 @@ mod tests {
                         namespace
                     )));
                 });
+        });
+    }
+
+    #[test]
+    fn shows_authorized_hits_by_namespace() {
+        let recorder = PrometheusBuilder::new().build_recorder();
+        let handle: Arc<PrometheusHandle> = recorder.handle().into();
+
+        with_local_recorder(&recorder, || {
+            let prometheus_metrics = PrometheusMetrics::new_with_handle(false, handle.clone());
+            let namespaces_with_auth_counts = [
+                ("auth_calls_by_namespace".into(), 2, 7u64),
+                ("auth_calls_by_namespace_two".into(), 3, 8u64),
+            ];
+
             namespaces_with_auth_counts
                 .iter()
-                .for_each(|(namespace, auth_count)| {
+                .for_each(|(namespace, auth_count, hits_addend)| {
+                    for _ in 0..*auth_count {
+                        prometheus_metrics.incr_authorized_hits(
+                            namespace,
+                            &Context::default(),
+                            *hits_addend,
+                        );
+                    }
+                });
+
+            let metrics_output = prometheus_metrics.gather_metrics();
+
+            namespaces_with_auth_counts
+                .iter()
+                .for_each(|(namespace, auth_count, hits_addend)| {
                     assert!(metrics_output.contains(&formatted_counter_with_namespace(
                         "authorized_hits",
-                        *auth_count * 3,
+                        (*auth_count) * (*hits_addend as i32),
                         namespace
                     )));
                 });

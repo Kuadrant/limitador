@@ -72,7 +72,7 @@ impl TestsLimiter {
         namespace: &str,
         ctx: &Context<'_>,
         delta: u64,
-    ) -> Result<bool, LimitadorError> {
+    ) -> Result<CheckResult, LimitadorError> {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => {
                 limiter.is_rate_limited(&namespace.into(), ctx, delta)

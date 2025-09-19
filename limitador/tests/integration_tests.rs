@@ -513,7 +513,8 @@ mod test {
                 !rate_limiter
                     .is_rate_limited(namespace, &ctx, 1)
                     .await
-                    .unwrap(),
+                    .unwrap()
+                    .limited,
                 "Must not be limited after {i}"
             );
             rate_limiter
@@ -521,10 +522,13 @@ mod test {
                 .await
                 .unwrap();
         }
-        assert!(rate_limiter
-            .is_rate_limited(namespace, &ctx, 1)
-            .await
-            .unwrap());
+        assert!(
+            rate_limiter
+                .is_rate_limited(namespace, &ctx, 1)
+                .await
+                .unwrap()
+                .limited
+        );
     }
 
     async fn rate_limited_id_counter(rate_limiter: &mut TestsLimiter) {
@@ -551,7 +555,8 @@ mod test {
                 !rate_limiter
                     .is_rate_limited(namespace, &ctx, 1)
                     .await
-                    .unwrap(),
+                    .unwrap()
+                    .limited,
                 "Must not be limited after {i}"
             );
             rate_limiter
@@ -559,10 +564,13 @@ mod test {
                 .await
                 .unwrap();
         }
-        assert!(rate_limiter
-            .is_rate_limited(namespace, &ctx, 1)
-            .await
-            .unwrap());
+        assert!(
+            rate_limiter
+                .is_rate_limited(namespace, &ctx, 1)
+                .await
+                .unwrap()
+                .limited
+        );
     }
 
     async fn multiple_limits_rate_limited(rate_limiter: &mut TestsLimiter) {
@@ -604,14 +612,16 @@ mod test {
                 !rate_limiter
                     .is_rate_limited(namespace, &get_ctx, 1)
                     .await
-                    .unwrap(),
+                    .unwrap()
+                    .limited,
                 "Must not be limited after {i}"
             );
             assert!(
                 !rate_limiter
                     .is_rate_limited(namespace, &post_ctx, 1)
                     .await
-                    .unwrap(),
+                    .unwrap()
+                    .limited,
                 "Must not be limited after {i}"
             );
             rate_limiter
@@ -627,14 +637,20 @@ mod test {
         // We wait for the flushing period to pass so the counters are flushed in the cached storage
         tokio::time::sleep(Duration::from_millis(40)).await;
 
-        assert!(rate_limiter
-            .is_rate_limited(namespace, &get_ctx, 1)
-            .await
-            .unwrap());
-        assert!(!rate_limiter
-            .is_rate_limited(namespace, &post_ctx, 1)
-            .await
-            .unwrap());
+        assert!(
+            rate_limiter
+                .is_rate_limited(namespace, &get_ctx, 1)
+                .await
+                .unwrap()
+                .limited
+        );
+        assert!(
+            !rate_limiter
+                .is_rate_limited(namespace, &post_ctx, 1)
+                .await
+                .unwrap()
+                .limited
+        );
     }
 
     async fn rate_limited_with_delta_higher_than_one(rate_limiter: &mut TestsLimiter) {
@@ -657,19 +673,25 @@ mod test {
         // Report 5 hits twice. The limit is 10, so the first limited call should be
         // the third one.
         for _ in 0..2 {
-            assert!(!rate_limiter
-                .is_rate_limited(namespace, &ctx, 5)
-                .await
-                .unwrap());
+            assert!(
+                !rate_limiter
+                    .is_rate_limited(namespace, &ctx, 5)
+                    .await
+                    .unwrap()
+                    .limited
+            );
             rate_limiter
                 .update_counters(namespace, &ctx, 5)
                 .await
                 .unwrap();
         }
-        assert!(rate_limiter
-            .is_rate_limited(namespace, &ctx, 1)
-            .await
-            .unwrap());
+        assert!(
+            rate_limiter
+                .is_rate_limited(namespace, &ctx, 1)
+                .await
+                .unwrap()
+                .limited
+        );
     }
 
     async fn rate_limited_with_delta_higher_than_max(rate_limiter: &mut TestsLimiter) {
@@ -690,10 +712,13 @@ mod test {
         values.insert("app_id".to_string(), "test_app_id".to_string());
         let ctx = values.into();
 
-        assert!(rate_limiter
-            .is_rate_limited(namespace, &ctx, max + 1)
-            .await
-            .unwrap())
+        assert!(
+            rate_limiter
+                .is_rate_limited(namespace, &ctx, max + 1)
+                .await
+                .unwrap()
+                .limited
+        )
     }
 
     async fn takes_into_account_only_vars_of_the_limits(rate_limiter: &mut TestsLimiter) {
@@ -724,7 +749,8 @@ mod test {
                 !rate_limiter
                     .is_rate_limited(namespace, &ctx, 1)
                     .await
-                    .unwrap(),
+                    .unwrap()
+                    .limited,
                 "Must not be limited after {i}"
             );
             rate_limiter
@@ -733,10 +759,13 @@ mod test {
                 .unwrap();
         }
         let ctx = values.into();
-        assert!(rate_limiter
-            .is_rate_limited(namespace, &ctx, 1)
-            .await
-            .unwrap());
+        assert!(
+            rate_limiter
+                .is_rate_limited(namespace, &ctx, 1)
+                .await
+                .unwrap()
+                .limited
+        );
     }
 
     async fn is_rate_limited_returns_false_when_no_limits_in_namespace(
@@ -746,10 +775,13 @@ mod test {
         values.insert("req_method".to_string(), "GET".to_string());
         let ctx = values.into();
 
-        assert!(!rate_limiter
-            .is_rate_limited("test_namespace", &ctx, 1)
-            .await
-            .unwrap());
+        assert!(
+            !rate_limiter
+                .is_rate_limited("test_namespace", &ctx, 1)
+                .await
+                .unwrap()
+                .limited
+        );
     }
 
     async fn is_rate_limited_returns_false_when_no_matching_limits(
@@ -773,10 +805,13 @@ mod test {
         values.insert("app_id".to_string(), "test_app_id".to_string());
         let ctx = values.into();
 
-        assert!(!rate_limiter
-            .is_rate_limited(namespace, &ctx, 1)
-            .await
-            .unwrap());
+        assert!(
+            !rate_limiter
+                .is_rate_limited(namespace, &ctx, 1)
+                .await
+                .unwrap()
+                .limited
+        );
     }
 
     async fn is_rate_limited_applies_limit_if_its_unconditional(rate_limiter: &mut TestsLimiter) {
@@ -796,10 +831,13 @@ mod test {
         values.insert("app_id".to_string(), "test_app_id".to_string());
         let ctx = values.into();
 
-        assert!(rate_limiter
-            .is_rate_limited(namespace, &ctx, 1)
-            .await
-            .unwrap());
+        assert!(
+            rate_limiter
+                .is_rate_limited(namespace, &ctx, 1)
+                .await
+                .unwrap()
+                .limited
+        );
     }
 
     async fn check_rate_limited_and_update(rate_limiter: &mut TestsLimiter) {
@@ -1276,7 +1314,8 @@ mod test {
                 !rate_limiter
                     .is_rate_limited(namespace, &ctx, 1)
                     .await
-                    .unwrap(),
+                    .unwrap()
+                    .limited,
                 "Must not be limited after {i}"
             );
             rate_limiter
@@ -1295,6 +1334,7 @@ mod test {
                     .is_rate_limited(namespace, &ctx, 1)
                     .await
                     .unwrap()
+                    .limited
             }
         )
         .await

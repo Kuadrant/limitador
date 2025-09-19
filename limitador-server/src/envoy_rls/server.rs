@@ -167,8 +167,9 @@ impl RateLimitService for MyRateLimiter {
             );
             Code::OverLimit
         } else {
+            self.metrics.incr_authorized_calls(&namespace, &ctx);
             self.metrics
-                .incr_authorized_calls(&namespace, &ctx, hits_addend);
+                .incr_authorized_hits(&namespace, &ctx, hits_addend);
             Code::Ok
         };
 
@@ -220,10 +221,10 @@ pub async fn run_envoy_rls_server(
     metrics: Arc<PrometheusMetrics>,
     grpc_reflection_service: bool,
 ) -> Result<(), transport::Error> {
-    let rate_limiter = MyRateLimiter::new(limiter.clone(), rate_limit_headers, metrics);
+    let rate_limiter = MyRateLimiter::new(limiter.clone(), rate_limit_headers, metrics.clone());
     let envoy_server = RateLimitServiceServer::new(rate_limiter);
 
-    let kuadrant_svc = KuadrantService::new(limiter);
+    let kuadrant_svc = KuadrantService::new(limiter, metrics);
     let kuadrant_server =
         custom::service::ratelimit::v1::rate_limit_service_server::RateLimitServiceServer::new(
             kuadrant_svc,
