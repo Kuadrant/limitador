@@ -79,12 +79,43 @@ jobs:
           ips=$(kubectl get nodes -lkubernetes.io/hostname!=kind-control-plane -ojsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}')
           port=$(kubectl -n default get service kuard -ojsonpath='{.spec.ports[?(@.name=="envoy-http")].nodePort}')
           curl "http://${ips[0]}:${port}"
+
+  image:
+    name: Build docker image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dockerfile: Dockerfile
+            platform: linux/amd64
+          - dockerfile: Dockerfile.aarch64
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v4
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      -
+        name: Build
+        uses: docker/build-push-action@v6
+        with:
+          push: false
+          tags: limitador:dev
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: |
+            ${{ matrix.platform }}
+          provenance: false
+          build-args: |
+            GITHUB_SHA=${{ github.sha }}
+
   required-checks:
     name: Limitador Required Checks
     # This check adds a list of checks to one job to simplify adding settings to the repo.
     # If a new check is added in this file, and it should be retested on entry to the merge queue,
     # it needs to be added to the list below aka needs: [ existing check 1, existing check 2, new check ].
-    needs: [ check, test, fmt, clippy ]
+    needs: [check, test, fmt, clippy, image]
     if: always()
     runs-on: ubuntu-latest
     steps:
