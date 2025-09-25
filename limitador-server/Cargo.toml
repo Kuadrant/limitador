@@ -47,7 +47,7 @@ clap = "4.3"
 sysinfo = "0.32"
 openssl = { version = "0.10.66", features = ["vendored"] }
 metrics = "0.24.2"
-metrics-exporter-prometheus = "0.17.2"
+metrics-exporter-prometheus = { version = "0.17.2", default-features = false, features = ["http-listener"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 
