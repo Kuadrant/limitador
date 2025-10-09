@@ -5,7 +5,7 @@ metadata:
   labels:
     app: kuard
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: kuard
@@ -16,7 +16,10 @@ spec:
     spec:
       containers:
         - name: kuard
-          image: gcr.io/kuar-demo/kuard-amd64:blue
+          image: quay.io/kuadrant/authorino-examples:talker-api
+          env:
+            - name: PORT
+              value: "8080"
           ports:
             - containerPort: 8080
               name: http
