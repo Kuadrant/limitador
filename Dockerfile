@@ -2,9 +2,7 @@
 # Build Stage
 # ------------------------------------------------------------------------------
 
-# Use bullseye as build image instead of Bookworm as ubi9 does not not have GLIBCXX_3.4.30
-# https://access.redhat.com/solutions/6969351
-FROM mirror.gcr.io/library/rust:1.84.1-bullseye as limitador-build
+FROM mirror.gcr.io/library/rust:1.84.1 AS limitador-build
 
 RUN apt update && apt upgrade -y \
     && apt install -y protobuf-compiler clang
@@ -35,7 +33,7 @@ RUN cargo build --release ${CARGO_ARGS}
 # Run Stage
 # ------------------------------------------------------------------------------
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.2
+FROM registry.access.redhat.com/ubi10-minimal:10.0
 
 # shadow-utils is required for `useradd`
 RUN PKGS="libgcc libstdc++ shadow-utils" \
