@@ -55,4 +55,4 @@ RUN chown -R limitador:root /home/limitador \
 
 USER limitador
 
-CMD ["limitador-server"]
+ENTRYPOINT ["limitador-server"]
