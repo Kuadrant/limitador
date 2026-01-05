@@ -1,6 +1,6 @@
 use crate::limit::Limit;
-use cel_interpreter::objects::Key;
-use cel_interpreter::{ExecutionError, Value};
+use cel::objects::Key;
+use cel::{ExecutionError, Value};
 pub use errors::{EvaluationError, ParseError};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -9,7 +9,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 pub(super) mod errors {
-    use cel_interpreter::ExecutionError;
+    use cel::ExecutionError;
     use std::error::Error;
     use std::fmt::{Display, Formatter};
 
@@ -46,7 +46,7 @@ pub(super) mod errors {
     }
 
     impl ParseError {
-        pub fn from(source: cel_parser::ParseError, input: String) -> Self {
+        pub fn from(source: cel::ParseErrors, input: String) -> Self {
             Self {
                 input,
                 source: Box::new(source),
@@ -75,12 +75,12 @@ pub(super) mod errors {
 
 pub struct Context<'a> {
     variables: HashSet<String>,
-    ctx: cel_interpreter::Context<'a>,
+    ctx: cel::Context<'a>,
 }
 
 impl<'a> Context<'a> {
     pub(crate) fn new(root: String, values: HashMap<String, String>) -> Self {
-        let mut ctx = cel_interpreter::Context::default();
+        let mut ctx = cel::Context::default();
         let mut variables = HashSet::new();
 
         if root.is_empty() {
@@ -89,7 +89,7 @@ impl<'a> Context<'a> {
                 variables.insert(binding);
             }
         } else {
-            let map = cel_interpreter::objects::Map::from(values.clone());
+            let map = cel::objects::Map::from(values.clone());
             ctx.add_variable_from_value(root, Value::Map(map));
         }
 
@@ -100,7 +100,7 @@ impl<'a> Context<'a> {
         let v = value
             .iter()
             .map(|values| {
-                let map = cel_interpreter::objects::Map::from(values.clone());
+                let map = cel::objects::Map::from(values.clone());
                 Value::Map(map)
             })
             .collect::<Vec<_>>();
@@ -114,7 +114,7 @@ impl<'a> Context<'a> {
         'b: 'a,
     {
         let mut inner = self.ctx.new_inner_scope();
-        let limit_data = cel_interpreter::objects::Map::from(HashMap::from([
+        let limit_data = cel::objects::Map::from(HashMap::from([
             (
                 "name",
                 limit
@@ -160,13 +160,14 @@ impl From<HashMap<String, String>> for Context<'_> {
 #[serde(try_from = "String", into = "String")]
 pub struct Expression {
     source: String,
-    expression: cel_parser::Expression,
+    expression: cel::IdedExpr,
 }
 
 impl Expression {
     pub fn parse<T: ToString>(source: T) -> Result<Self, ParseError> {
         let source = source.to_string();
-        match cel_parser::parse(&source) {
+        let parser = cel::parser::Parser::new();
+        match parser.parse(&source) {
             Ok(expression) => Ok(Self { source, expression }),
             Err(err) => Err(ParseError::from(err, source)),
         }
@@ -241,6 +242,9 @@ fn err_on_value(val: Value) -> EvaluationError {
         Value::String(s) => EvaluationError::UnexpectedValueType(format!("string: `{s}`")),
         Value::Bool(b) => EvaluationError::UnexpectedValueType(format!("bool: `{b}`")),
         Value::Null => EvaluationError::UnexpectedValueType("null".to_owned()),
+        Value::Opaque(o) => {
+            EvaluationError::UnexpectedValueType(format!("opaque: `{}`", o.runtime_type_name()))
+        }
     }
 }
 
@@ -460,7 +464,7 @@ mod tests {
     fn ctx<'a>() -> Context<'a> {
         Context {
             variables: HashSet::default(),
-            ctx: cel_interpreter::Context::default(),
+            ctx: cel::Context::default(),
         }
     }
 }
