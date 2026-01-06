@@ -4,13 +4,13 @@
 
 # Use bullseye as build image instead of Bookworm as ubi9 does not not have GLIBCXX_3.4.30
 # https://access.redhat.com/solutions/6969351
-FROM --platform=${BUILDPLATFORM} rust:1.84.1-bullseye as limitador-build
+FROM --platform=${BUILDPLATFORM} rust:1.88-bullseye as limitador-build
 
 RUN apt update && apt upgrade -y \
     && apt install -y protobuf-compiler clang g++-aarch64-linux-gnu libc6-dev-arm64-cross
 
 RUN rustup target add aarch64-unknown-linux-gnu \
-    && rustup toolchain install stable-aarch64-unknown-linux-gnu
+    && rustup toolchain install stable-aarch64-unknown-linux-gnu --force-non-host
 
 WORKDIR /usr/src/limitador
 

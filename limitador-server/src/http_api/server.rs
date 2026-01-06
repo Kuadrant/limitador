@@ -439,7 +439,7 @@ mod tests {
         // Prepare values to check
         let mut values = HashMap::new();
         values.insert("req.method".into(), "GET".into());
-        values.insert("req.id".into(), "1".into());
+        values.insert("app.id".into(), "1".into());
         let info = CheckAndReportInfo {
             namespace: namespace.into(),
             values,
