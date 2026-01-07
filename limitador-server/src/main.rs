@@ -248,7 +248,7 @@ impl Default for Status {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = {
         let (config, version) = create_config();
-        println!("{LIMITADOR_HEADER} {version}");
+        eprintln!("{LIMITADOR_HEADER} {version}");
 
         configure_tracing_subscriber(&config);
 
