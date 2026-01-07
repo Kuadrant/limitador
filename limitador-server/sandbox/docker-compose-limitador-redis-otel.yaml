@@ -10,7 +10,6 @@ services:
       - jaeger
       - redis
     command:
-      - limitador-server
       - --tracing-endpoint
       - "rpc://jaeger:4317"
       - --rls-ip

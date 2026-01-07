@@ -9,8 +9,8 @@ services:
       args:
         - CARGO_ARGS=--all-features
     command: |
-      limitador-server --rls-ip 0.0.0.0 --rls-port 8081 --http-ip 0.0.0.0 --http-port "8080" 
-      -vv --grpc-reflection-service /opt/kuadrant/limits/limits.yaml 
+      --rls-ip 0.0.0.0 --rls-port 8081 --http-ip 0.0.0.0 --http-port "8080"
+      -vv --grpc-reflection-service /opt/kuadrant/limits/limits.yaml
       distributed ${PEER_ID:-node1} 0.0.0.0:5001 ${PEER_URLS:-}
     expose:
       - "8080"

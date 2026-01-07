@@ -6,7 +6,6 @@ services:
       context: ../..
       dockerfile: Dockerfile
     command:
-      - limitador-server
       - --rls-ip
       - 0.0.0.0
       - --rls-port
