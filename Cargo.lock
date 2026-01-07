@@ -2047,7 +2047,6 @@ dependencies = [
  "const_format",
  "lazy_static",
  "limitador",
- "log",
  "metrics",
  "metrics-exporter-prometheus",
  "notify",

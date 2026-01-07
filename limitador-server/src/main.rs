@@ -2,7 +2,7 @@
 #![allow(clippy::multiple_crate_versions)]
 
 #[macro_use]
-extern crate log;
+extern crate tracing;
 extern crate clap;
 
 #[cfg(feature = "distributed_storage")]
