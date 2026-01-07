@@ -9,8 +9,8 @@ services:
       args:
         - CARGO_ARGS=--all-features
     command: |
-      limitador-server --rls-ip 0.0.0.0 --rls-port 8081 --http-ip 0.0.0.0 --http-port "8080" 
-      -vv --grpc-reflection-service /opt/kuadrant/limits/limits.yaml 
+      --rls-ip 0.0.0.0 --rls-port 8081 --http-ip 0.0.0.0 --http-port "8080"
+      -vv --grpc-reflection-service /opt/kuadrant/limits/limits.yaml
       distributed limitador 0.0.0.0:5001 http://limitador2:5001 http://limitador3:5001
     expose:
       - "8080"
@@ -30,8 +30,8 @@ services:
       args:
         - CARGO_ARGS=--all-features
     command: |
-      limitador-server --rls-ip 0.0.0.0 --rls-port 8081 --http-ip 0.0.0.0 --http-port "8080" 
-      -vv --grpc-reflection-service /opt/kuadrant/limits/limits.yaml 
+      --rls-ip 0.0.0.0 --rls-port 8081 --http-ip 0.0.0.0 --http-port "8080"
+      -vv --grpc-reflection-service /opt/kuadrant/limits/limits.yaml
       distributed limitador2 0.0.0.0:5001 http://limitador:5001 http://limitador3:5001
     expose:
       - "8080"
@@ -47,8 +47,8 @@ services:
       args:
         - CARGO_ARGS=--all-features
     command: |
-      limitador-server --rls-ip 0.0.0.0 --rls-port 8081 --http-ip 0.0.0.0 --http-port "8080" 
-      -vv --grpc-reflection-service /opt/kuadrant/limits/limits.yaml 
+      --rls-ip 0.0.0.0 --rls-port 8081 --http-ip 0.0.0.0 --http-port "8080"
+      -vv --grpc-reflection-service /opt/kuadrant/limits/limits.yaml
       distributed limitador3 0.0.0.0:5001 http://limitador:5001 http://limitador2:5001
     expose:
       - "8080"
