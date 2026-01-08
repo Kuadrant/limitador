@@ -298,12 +298,16 @@ pub async fn run_http_server(
         App::new()
             .wrap_fn(|req, srv| {
                 let span = if let Some(rid) = req.headers().get("X-Request-Id") {
-                    span!(
-                        Level::INFO,
-                        "http",
-                        "x-request-id" = rid.to_str().unwrap_or("invalid")
-                    )
+                    let rid = rid.to_str().unwrap_or("invalid");
+                    info!(
+                        "x-request-id" = rid,
+                        "Serving HTTP request {} {}",
+                        req.method(),
+                        req.path()
+                    );
+                    span!(Level::INFO, "http", "x-request-id" = rid)
                 } else {
+                    info!("Serving HTTP request {} {}", req.method(), req.path());
                     span!(Level::INFO, "http")
                 };
                 srv.call(req).instrument(span)
