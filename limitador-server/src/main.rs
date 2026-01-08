@@ -4,6 +4,7 @@
 #[macro_use]
 extern crate tracing;
 extern crate clap;
+extern crate tonic_middleware;
 
 #[cfg(feature = "distributed_storage")]
 use crate::config::DistributedStorageConfiguration;

@@ -1,7 +1,7 @@
 use crate::http_api::request_types::{CheckAndReportInfo, Counter, Limit};
 use crate::prometheus_metrics::PrometheusMetrics;
 use crate::{Limiter, Status};
-use actix_web::{http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError};
+use actix_web::{dev::Service, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError};
 use actix_web::{App, HttpServer};
 use limitador::limit::Context;
 use limitador::CheckResult;
@@ -15,6 +15,7 @@ use paperclip::actix::{
 };
 use std::fmt;
 use std::sync::{Arc, RwLock};
+use tracing::{Instrument, Level};
 
 struct RateLimitData {
     limiter: Arc<Limiter>,
@@ -295,6 +296,18 @@ pub async fn run_http_server(
 
     HttpServer::new(move || {
         App::new()
+            .wrap_fn(|req, srv| {
+                let span = if let Some(rid) = req.headers().get("X-Request-Id") {
+                    span!(
+                        Level::INFO,
+                        "http",
+                        "x-request-id" = rid.to_str().unwrap_or("invalid")
+                    )
+                } else {
+                    span!(Level::INFO, "http")
+                };
+                srv.call(req).instrument(span)
+            })
             .wrap_api()
             .with_json_spec_at("/api/spec")
             .app_data(data.clone())

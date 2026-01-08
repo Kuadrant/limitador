@@ -16,9 +16,11 @@ use crate::prometheus_metrics::PrometheusMetrics;
 use crate::Limiter;
 use limitador::limit::Context;
 use limitador::CheckResult;
+use tonic::body::Body;
 use tonic::codegen::http::HeaderMap;
-use tonic::{transport, transport::Server, Request, Response, Status};
-use tracing::Span;
+use tonic::{async_trait, transport, transport::Server, Request, Response, Status};
+use tonic_middleware::{Middleware, MiddlewareLayer, ServiceBound};
+use tracing::{Instrument, Level, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 include!("envoy_types.rs");
@@ -242,11 +244,40 @@ pub async fn run_envoy_rls_server(
     };
 
     Server::builder()
+        .layer(MiddlewareLayer::new(RequestIdMiddleware))
         .add_service(envoy_server)
         .add_service(kuadrant_server)
         .add_optional_service(reflection_service)
         .serve(address.parse().unwrap())
         .await
+}
+
+#[derive(Default, Clone)]
+pub struct RequestIdMiddleware;
+
+#[async_trait]
+impl<S> Middleware<S> for RequestIdMiddleware
+where
+    S: ServiceBound,
+    S::Future: Send,
+{
+    async fn call(
+        &self,
+        req: tonic::codegen::http::Request<Body>,
+        mut service: S,
+    ) -> Result<tonic::codegen::http::Response<Body>, S::Error> {
+        let span = if let Some(rid) = req.headers().get("X-Request-Id") {
+            span!(
+                Level::INFO,
+                "grpc",
+                "x-request-id" = rid.to_str().unwrap_or("invalid")
+            )
+        } else {
+            span!(Level::INFO, "grpc")
+        };
+        let result = service.call(req).instrument(span).await?;
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
