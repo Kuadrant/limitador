@@ -573,6 +573,13 @@ fn create_config() -> (Configuration, &'static str) {
                 .help("Sets the level of verbosity"),
         )
         .arg(
+            Arg::new("S")
+                .long("structured-logs")
+                .action(ArgAction::SetTrue)
+                .display_order(71)
+                .help("Enables structured JSON logging"),
+        )
+        .arg(
             Arg::new("validate")
                 .long("validate")
                 .action(ArgAction::SetTrue)
@@ -838,6 +845,7 @@ fn create_config() -> (Configuration, &'static str) {
         4 => Some(LevelFilter::TRACE),
         _ => unreachable!("Verbosity should at most be 4!"),
     };
+    config.structured_logs = matches.get_flag("S");
 
     (config, full_version)
 }
@@ -909,30 +917,42 @@ fn configure_tracing_subscriber(config: &Configuration) {
             vec!["datastore"],
         );
 
-    if !config.tracing_endpoint.is_empty() {
-        // Init tracing subscriber with telemetry
-        // If running in memory initialize without metrics
-        match config.storage {
-            StorageConfiguration::InMemory(_) => tracing_subscriber::registry()
-                .with(fmt_layer(level))
-                .with(telemetry_layer(&config.tracing_endpoint, level))
-                .init(),
-            _ => tracing_subscriber::registry()
-                .with(metrics_layer)
-                .with(fmt_layer(level))
-                .with(telemetry_layer(&config.tracing_endpoint, level))
-                .init(),
+    let registry = tracing_subscriber::registry();
+
+    if config.structured_logs {
+        let layer = registry.with(
+            tracing_subscriber::fmt::layer()
+                .json()
+                .flatten_event(false)
+                .with_current_span(false)
+                .with_span_list(true)
+                .with_filter(level),
+        );
+        if !config.tracing_endpoint.is_empty() {
+            let layer = layer.with(telemetry_layer(&config.tracing_endpoint, level));
+            if matches!(config.storage, StorageConfiguration::InMemory(_)) {
+                layer.init();
+            } else {
+                layer.with(metrics_layer).init();
+            }
+        } else if matches!(config.storage, StorageConfiguration::InMemory(_)) {
+            layer.init();
+        } else {
+            layer.with(metrics_layer).init();
         }
     } else {
-        // If running in memory initialize without metrics
-        match config.storage {
-            StorageConfiguration::InMemory(_) => {
-                tracing_subscriber::registry().with(fmt_layer(level)).init()
+        let layer = registry.with(fmt_layer(level));
+        if !config.tracing_endpoint.is_empty() {
+            let layer = layer.with(telemetry_layer(&config.tracing_endpoint, level));
+            if matches!(config.storage, StorageConfiguration::InMemory(_)) {
+                layer.init();
+            } else {
+                layer.with(metrics_layer).init();
             }
-            _ => tracing_subscriber::registry()
-                .with(metrics_layer)
-                .with(fmt_layer(level))
-                .init(),
+        } else if matches!(config.storage, StorageConfiguration::InMemory(_)) {
+            layer.init();
+        } else {
+            layer.with(metrics_layer).init();
         }
     }
 }
