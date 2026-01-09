@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn generate_protobuf() -> Result<(), Box<dyn Error>> {
     let original_out_dir = PathBuf::from(env::var("OUT_DIR")?);
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_server(true)
         .file_descriptor_set_path(original_out_dir.join("rls.bin"))
         .compile_protos(
@@ -25,7 +25,7 @@ fn generate_protobuf() -> Result<(), Box<dyn Error>> {
             ],
         )?;
 
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_server(true)
         .file_descriptor_set_path(original_out_dir.join("kuadrantrls.bin"))
         .compile_protos(

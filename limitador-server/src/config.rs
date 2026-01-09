@@ -51,6 +51,7 @@ pub struct Configuration {
     pub metric_labels_default: Option<Expression>,
     pub tracing_endpoint: String,
     pub log_level: Option<LevelFilter>,
+    pub structured_logs: bool,
     pub rate_limit_headers: RateLimitHeaders,
     pub grpc_reflection_service: bool,
 }
@@ -127,6 +128,7 @@ impl Configuration {
             metric_labels_default,
             tracing_endpoint,
             log_level: None,
+            structured_logs: false,
             rate_limit_headers,
             grpc_reflection_service,
         }
@@ -158,6 +160,7 @@ impl Default for Configuration {
             metric_labels_default: None,
             tracing_endpoint: "".to_string(),
             log_level: None,
+            structured_logs: false,
             rate_limit_headers: RateLimitHeaders::None,
             grpc_reflection_service: false,
         }
