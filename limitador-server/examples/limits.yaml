@@ -1,15 +1,13 @@
 ---
--
-  namespace: test_namespace
+- namespace: test_namespace
   max_value: 1000000
   seconds: 60
   conditions:
   variables:
--
-  namespace: test_namespace
+- namespace: test_namespace
   max_value: 5
   seconds: 60
   conditions:
     - "descriptors[0]['req.method'] == 'POST'"
   variables:
-    - user_id
+    - descriptors[0]['user_id']
