@@ -70,6 +70,7 @@ const LIMITADOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 const LIMITADOR_PROFILE: &str = env!("LIMITADOR_PROFILE");
 const LIMITADOR_FEATURES: &str = env!("LIMITADOR_FEATURES");
 const LIMITADOR_HEADER: &str = "Limitador Server";
+const MIN_CACHE_SIZE: u64 = 1_000;
 
 #[derive(Error, Debug)]
 pub enum LimitadorServerError {
@@ -884,13 +885,14 @@ fn guess_cache_size() -> Option<u64> {
     );
     let free_mem = sys.available_memory();
     let memory = free_mem as f64 * 0.7;
-    let size = (memory
+    let size = std::cmp::max(MIN_CACHE_SIZE,(memory
         / (std::mem::size_of::<Counter>() + 16/* size_of::<AtomicExpiringValue>() */) as f64)
-        as u64;
+        as u64);
     warn!(
-        "No cache size provided, aiming at 70% of {}MB, i.e. {size} entries",
+        "No cache size provided. Using {size} entries (70% of {}MB available memory with a {MIN_CACHE_SIZE} entry minimum).",
         free_mem / 1024 / 1024
     );
+
     Some(size)
 }
 
