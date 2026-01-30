@@ -166,7 +166,7 @@ impl Limiter {
 
     fn in_memory_limiter(cfg: InMemoryStorageConfiguration) -> Self {
         let rate_limiter_builder =
-            RateLimiterBuilder::new(cfg.cache_size.or_else(guess_cache_size).unwrap());
+            RateLimiterBuilder::new(validate_cache_size(cfg.cache_size));
 
         Self::Blocking(rate_limiter_builder.build())
     }
@@ -175,7 +175,7 @@ impl Limiter {
     fn distributed_limiter(cfg: DistributedStorageConfiguration) -> Self {
         let storage = DistributedInMemoryStorage::new(
             cfg.name,
-            cfg.cache_size.or_else(guess_cache_size).unwrap(),
+            validate_cache_size(cfg.cache_size),
             cfg.listen_address,
             cfg.peer_urls,
         );
@@ -879,21 +879,30 @@ fn storage_config_from_env() -> StorageConfiguration {
     }
 }
 
-fn guess_cache_size() -> Option<u64> {
+fn validate_cache_size(requested_size: Option<u64>) -> u64 {
     let sys = System::new_with_specifics(
         RefreshKind::new().with_memory(MemoryRefreshKind::everything().without_swap()),
     );
-    let free_mem = sys.available_memory();
-    let memory = free_mem as f64 * 0.7;
-    let size = std::cmp::max(MIN_CACHE_SIZE,(memory
-        / (std::mem::size_of::<Counter>() + 16/* size_of::<AtomicExpiringValue>() */) as f64)
-        as u64);
-    warn!(
-        "No cache size provided. Using {size} entries (70% of {}MB available memory with a {MIN_CACHE_SIZE} entry minimum).",
-        free_mem / 1024 / 1024
-    );
+    let free_mem = sys.free_memory();
+    let free_mem_mb = free_mem / 1024 / 1024;
 
-    Some(size)
+    let entry_size = (std::mem::size_of::<Counter>() + 16/* size_of::<AtomicExpiringValue>() */ ) as u64;
+    
+    let cache_size = match requested_size {
+        Some(size) => size,
+        None => {
+            let default_cache_size = std::cmp::max(MIN_CACHE_SIZE, ((free_mem as f64 * 0.7)/entry_size as f64) as u64);
+            warn!("No cache size provided. Using {default_cache_size} entries (70% of {free_mem_mb}MB available memory with a {MIN_CACHE_SIZE} entry minimum).");
+            default_cache_size
+        }
+    };
+
+    if free_mem < cache_size * entry_size {
+        error!("Insufficient memory available ({free_mem_mb}MB) for {cache_size} entry cache.");
+        process::exit(1)
+    }
+
+    cache_size
 }
 
 fn leak<D: Display>(s: D) -> &'static str {
