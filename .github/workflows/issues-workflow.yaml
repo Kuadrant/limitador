@@ -14,7 +14,9 @@ jobs:
     # Only run jobs if the feature branch is in your repo (not in a fork)
     # OR
     # it is an issue
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event.issue.number != ''
+    # AND
+    # it is not a Dependabot PR (secrets are not available to Dependabot)
+    if: (github.event.pull_request.head.repo.full_name == github.repository || github.event.issue.number != '') && (github.event_name == 'issues' || github.event.pull_request.user.login != 'dependabot[bot]')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/add-to-project@v0.5.0
