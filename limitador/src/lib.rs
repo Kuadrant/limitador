@@ -252,19 +252,26 @@ impl CheckResult {
         });
 
         if let Some(counter) = self.counters.first() {
+            let max_value = counter.max_value();
+            let remaining = counter.remaining().unwrap_or(counter.max_value());
+
             headers.insert(
                 "X-RateLimit-Limit".to_string(),
-                format!("{}{all_limits_text}", counter.max_value()),
+                format!("{}{all_limits_text}", max_value),
             );
-
-            let remaining = counter.remaining().unwrap_or(counter.max_value());
             headers.insert("X-RateLimit-Remaining".to_string(), format!("{remaining}"));
 
+            let span = tracing::Span::current();
+            span.record("ratelimit.most_restrictive.limit", max_value);
+            span.record("ratelimit.most_restrictive.remaining", remaining);
+
             if let Some(duration) = counter.expires_in() {
+                let reset_secs = duration.as_secs();
                 headers.insert(
                     "X-RateLimit-Reset".to_string(),
-                    format!("{}", duration.as_secs()),
+                    format!("{}", reset_secs),
                 );
+                span.record("ratelimit.most_restrictive.reset_secs", reset_secs);
             }
         }
         headers
