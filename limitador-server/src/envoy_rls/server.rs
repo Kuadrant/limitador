@@ -78,7 +78,16 @@ impl MyRateLimiter {
 
 #[tonic::async_trait]
 impl RateLimitService for MyRateLimiter {
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(skip_all, fields(
+        ratelimit.namespace,
+        ratelimit.hits_addend,
+        ratelimit.limited,
+        ratelimit.limit_name,
+        ratelimit.num_counters,
+        ratelimit.most_restrictive.limit,
+        ratelimit.most_restrictive.remaining,
+        ratelimit.most_restrictive.reset_secs
+    ))]
     async fn should_rate_limit(
         &self,
         request: Request<RateLimitRequest>,
@@ -106,6 +115,7 @@ impl RateLimitService for MyRateLimiter {
             }));
         }
 
+        span.record("ratelimit.namespace", namespace.as_str());
         let namespace = namespace.into();
 
         for descriptor in &req.descriptors {
@@ -123,6 +133,7 @@ impl RateLimitService for MyRateLimiter {
         } else {
             req.hits_addend
         } as u64;
+        span.record("ratelimit.hits_addend", hits_addend);
 
         let mut ctx = Context::default();
         ctx.list_binding("descriptors".to_string(), values);
@@ -161,6 +172,14 @@ impl RateLimitService for MyRateLimiter {
         }
 
         let mut rate_limited_resp = rate_limited_resp.unwrap();
+        span.record("ratelimit.limited", rate_limited_resp.limited);
+        if let Some(ref name) = rate_limited_resp.limit_name {
+            span.record("ratelimit.limit_name", name.as_str());
+        }
+        if self.rate_limit_headers != RateLimitHeaders::None {
+            span.record("ratelimit.num_counters", rate_limited_resp.counters.len());
+        }
+
         let resp_code = if rate_limited_resp.limited {
             self.metrics.incr_limited_calls(
                 &namespace,
