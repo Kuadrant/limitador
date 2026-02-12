@@ -30,7 +30,7 @@ prost-types = "0.14"
 serde_yaml = "0.9"
 tracing = "0.1.40"
 tracing-log = "0.2.0"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "json"] }
 tracing-opentelemetry = "0.23"
 opentelemetry = "0.22.0"
 opentelemetry_sdk = { version = "0.22.1", features = ["rt-tokio"] }
