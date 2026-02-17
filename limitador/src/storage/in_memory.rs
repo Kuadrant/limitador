@@ -133,6 +133,12 @@ impl CounterStorage for InMemoryStorage {
             }
         }
 
+        if check {
+            if let Some(limited) = first_limited {
+                return Ok(limited);
+            }
+        }
+
         if update {
             // Update counters
             counter_values_to_update.iter().for_each(|(v, ttl)| {
@@ -145,11 +151,6 @@ impl CounterStorage for InMemoryStorage {
             });
         }
 
-        if check {
-            if let Some(limited) = first_limited {
-                return Ok(limited);
-            }
-        }
         Ok(Authorization::Ok)
     }
 

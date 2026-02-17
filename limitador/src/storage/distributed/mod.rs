@@ -157,6 +157,12 @@ impl CounterStorage for CrInMemoryStorage {
             }
         }
 
+        if check {
+            if let Some(limited) = first_limited {
+                return Ok(limited);
+            }
+        }
+
         if update {
             // Update counters
             let limits = self.limits.read().unwrap();
@@ -164,12 +170,6 @@ impl CounterStorage for CrInMemoryStorage {
                 let store_value = limits.get(&key).unwrap();
                 self.increment_counter(store_value.clone(), delta, now);
             });
-        }
-
-        if check {
-            if let Some(limited) = first_limited {
-                return Ok(limited);
-            }
         }
         
         Ok(Authorization::Ok)
