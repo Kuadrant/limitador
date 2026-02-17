@@ -75,7 +75,7 @@ impl TestsLimiter {
     ) -> Result<CheckResult, LimitadorError> {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => {
-                limiter.is_rate_limited(&namespace.into(), ctx, delta, false) // TODO: test w/ true
+                limiter.is_rate_limited(&namespace.into(), ctx, delta, false)
             }
             LimiterImpl::Async(limiter) => {
                 limiter.is_rate_limited(&namespace.into(), ctx, delta, false).await
@@ -91,7 +91,7 @@ impl TestsLimiter {
     ) -> Result<CheckResult, LimitadorError> {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => {
-                limiter.update_counters(&namespace.into(), ctx, delta, false) // TODO: test w/true
+                limiter.update_counters(&namespace.into(), ctx, delta, false)
             }
             LimiterImpl::Async(limiter) => {
                 limiter.update_counters(&namespace.into(), ctx, delta, false).await
