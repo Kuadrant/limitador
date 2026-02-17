@@ -94,6 +94,8 @@ impl CounterStorage for CrInMemoryStorage {
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,
+        check: bool,
+        update: bool,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let mut first_limited = None;
@@ -101,22 +103,16 @@ impl CounterStorage for CrInMemoryStorage {
         let now = SystemTime::now();
 
         let mut process_counter =
-            |counter: &mut Counter, value: u64, delta: u64| -> Option<Authorization> {
+            |counter: &mut Counter, value: u64, delta: u64| -> () {
+                let remaining = counter.max_value().checked_sub(value + delta);
                 if load_counters {
-                    let remaining = counter.max_value().checked_sub(value + delta);
                     counter.set_remaining(remaining.unwrap_or(0));
-                    if first_limited.is_none() && remaining.is_none() {
-                        first_limited = Some(Authorization::Limited(
-                            counter.limit().name().map(|n| n.to_owned()),
-                        ));
-                    }
                 }
-                if !Self::counter_is_within_limits(counter, Some(&value), delta) {
-                    return Some(Authorization::Limited(
+                if first_limited.is_none() && remaining.is_none() {
+                    first_limited = Some(Authorization::Limited(
                         counter.limit().name().map(|n| n.to_owned()),
                     ));
                 }
-                None
             };
 
         // Process simple counters
@@ -131,14 +127,10 @@ impl CounterStorage for CrInMemoryStorage {
                 match limits.get(&key) {
                     None => false,
                     Some(store_value) => {
-                        if let Some(limited) =
-                            process_counter(counter, store_value.value.read(), delta)
-                        {
-                            if !load_counters {
-                                return Ok(limited);
-                            }
+                        process_counter(counter, store_value.value.read(), delta);
+                        if update {
+                            counter_values_to_update.push(key);
                         }
-                        counter_values_to_update.push(key);
                         true
                     }
                 }
@@ -158,26 +150,28 @@ impl CounterStorage for CrInMemoryStorage {
                     ),
                 }));
 
-                if let Some(limited) = process_counter(counter, store_value.value.read(), delta) {
-                    if !load_counters {
-                        return Ok(limited);
-                    }
+                process_counter(counter, store_value.value.read(), delta);
+                if update {
+                    counter_values_to_update.push(key);
                 }
-                counter_values_to_update.push(key);
             }
         }
 
-        if let Some(limited) = first_limited {
-            return Ok(limited);
+        if update {
+            // Update counters
+            let limits = self.limits.read().unwrap();
+            counter_values_to_update.into_iter().for_each(|key| {
+                let store_value = limits.get(&key).unwrap();
+                self.increment_counter(store_value.clone(), delta, now);
+            });
         }
 
-        // Update counters
-        let limits = self.limits.read().unwrap();
-        counter_values_to_update.into_iter().for_each(|key| {
-            let store_value = limits.get(&key).unwrap();
-            self.increment_counter(store_value.clone(), delta, now);
-        });
-
+        if check {
+            if let Some(limited) = first_limited {
+                return Ok(limited);
+            }
+        }
+        
         Ok(Authorization::Ok)
     }
 
@@ -274,13 +268,6 @@ impl CrInMemoryStorage {
     fn delete_counters_of_limit(&self, limit: &Limit) {
         let key = encode_limit_to_key(limit);
         self.limits.write().unwrap().remove(&key);
-    }
-
-    fn counter_is_within_limits(counter: &Counter, current_val: Option<&u64>, delta: u64) -> bool {
-        match current_val {
-            Some(current_val) => current_val + delta <= counter.max_value(),
-            None => counter.max_value() >= delta,
-        }
     }
 
     fn increment_counter(&self, counter_entry: Arc<CounterEntry>, delta: u64, when: SystemTime) {

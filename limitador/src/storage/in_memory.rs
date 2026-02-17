@@ -10,6 +10,7 @@ use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
+
 pub struct InMemoryStorage {
     simple_limits: RwLock<BTreeMap<Limit, AtomicExpiringValue>>,
     qualified_counters: Cache<Counter, Arc<AtomicExpiringValue>>,
@@ -73,45 +74,47 @@ impl CounterStorage for InMemoryStorage {
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,
+        check: bool,
+        update: bool,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let limits_by_namespace = self.simple_limits.read().unwrap();
         let mut first_limited = None;
         let mut counter_values_to_update: Vec<(&AtomicExpiringValue, Duration)> = Vec::new();
-        let mut qualified_counter_values_to_updated: Vec<(Arc<AtomicExpiringValue>, Duration)> =
+        let mut qualified_counter_values_to_update: Vec<(Arc<AtomicExpiringValue>, Duration)> =
             Vec::new();
         let now = SystemTime::now();
 
         let mut process_counter =
-            |counter: &mut Counter, value: u64, delta: u64| -> Option<Authorization> {
-                if load_counters {
-                    let remaining = counter.max_value().checked_sub(value + delta);
-                    counter.set_remaining(remaining.unwrap_or_default());
-                    if first_limited.is_none() && remaining.is_none() {
-                        first_limited = Some(Authorization::Limited(
-                            counter.limit().name().map(|n| n.to_owned()),
-                        ));
+            |counter: &mut Counter, value: u64, delta: u64| -> () {
+              
+                let current_remaining = counter.max_value().checked_sub(value);
+                let remaining = counter.max_value().checked_sub(value + delta);
+                if load_counters {   
+                    if update {
+                        counter.set_remaining(remaining.unwrap_or_default());
+                    } else {
+                        counter.set_remaining(current_remaining.unwrap_or_default());
                     }
                 }
-                if !Self::counter_is_within_limits(counter, Some(&value), delta) {
-                    return Some(Authorization::Limited(
+
+                if first_limited.is_none() && remaining.is_none() {
+                    first_limited = Some(Authorization::Limited(
                         counter.limit().name().map(|n| n.to_owned()),
                     ));
-                }
-                None
+                }                
             };
 
         // Process simple counters
         for counter in counters.iter_mut().filter(|c| !c.is_qualified()) {
             let atomic_expiring_value: &AtomicExpiringValue =
                 limits_by_namespace.get(counter.limit()).unwrap();
+            
+            process_counter( counter, atomic_expiring_value.value(), delta);
 
-            if let Some(limited) = process_counter(counter, atomic_expiring_value.value(), delta) {
-                if !load_counters {
-                    return Ok(limited);
-                }
+            if update {
+                counter_values_to_update.push((atomic_expiring_value, counter.window()));
             }
-            counter_values_to_update.push((atomic_expiring_value, counter.window()));
         }
 
         // Process qualified counters
@@ -123,29 +126,30 @@ impl CounterStorage for InMemoryStorage {
                 Some(counter) => counter,
             };
 
-            if let Some(limited) = process_counter(counter, value.value(), delta) {
-                if !load_counters {
-                    return Ok(limited);
-                }
+            process_counter(counter, value.value(), delta);
+
+            if update {
+                qualified_counter_values_to_update.push((value, counter.window()));
             }
-
-            qualified_counter_values_to_updated.push((value, counter.window()));
         }
 
-        if let Some(limited) = first_limited {
-            return Ok(limited);
-        }
-
-        // Update counters
-        counter_values_to_update.iter().for_each(|(v, ttl)| {
-            v.update(delta, *ttl, now);
-        });
-        qualified_counter_values_to_updated
-            .iter()
-            .for_each(|(v, ttl)| {
+        if update {
+            // Update counters
+            counter_values_to_update.iter().for_each(|(v, ttl)| {
                 v.update(delta, *ttl, now);
             });
+            qualified_counter_values_to_update
+                .iter()
+                .for_each(|(v, ttl)| {
+                    v.update(delta, *ttl, now);
+            });
+        }
 
+        if check {
+            if let Some(limited) = first_limited {
+                return Ok(limited);
+            }
+        }
         Ok(Authorization::Ok)
     }
 
@@ -247,13 +251,6 @@ impl InMemoryStorage {
                     }
                 }
             }
-        }
-    }
-
-    fn counter_is_within_limits(counter: &Counter, current_val: Option<&u64>, delta: u64) -> bool {
-        match current_val {
-            Some(current_val) => current_val + delta <= counter.max_value(),
-            None => counter.max_value() >= delta,
         }
     }
 }

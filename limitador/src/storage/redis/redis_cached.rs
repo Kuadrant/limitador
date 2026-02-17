@@ -70,6 +70,8 @@ impl AsyncCounterStorage for CachedRedisStorage {
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,
+        check: bool,
+        update: bool,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let mut not_cached: Vec<&mut Counter> = vec![];
@@ -80,19 +82,20 @@ impl AsyncCounterStorage for CachedRedisStorage {
             match self.cached_counters.get(counter) {
                 Some(val) => {
                     if first_limited.is_none() && val.is_limited(counter, delta) {
-                        let a =
-                            Authorization::Limited(counter.limit().name().map(|n| n.to_owned()));
-                        if !load_counters {
-                            return Ok(a);
-                        }
-                        first_limited = Some(a);
+                        first_limited = Some(Authorization::Limited(counter.limit().name().map(|n| n.to_owned())));
                     }
                     if load_counters {
-                        counter.set_remaining(
-                            val.remaining(counter)
-                                .checked_sub(delta)
-                                .unwrap_or_default(),
-                        );
+                        if update {
+                            counter.set_remaining(
+                                val.remaining(counter)
+                                    .checked_sub(delta)
+                                    .unwrap_or_default(),
+                            );
+                        } else {
+                            counter.set_remaining(
+                                val.remaining(counter)
+                            );
+                        }
                         counter.set_expires_in(val.ttl());
                     }
                 }
@@ -107,25 +110,33 @@ impl AsyncCounterStorage for CachedRedisStorage {
             for counter in not_cached.iter_mut() {
                 let fake = CachedCounterValue::load_from_authority_asap(counter, 0);
                 let remaining = fake.remaining(counter);
-                if first_limited.is_none() && remaining == 0 {
+                if first_limited.is_none() && remaining < delta {
                     first_limited = Some(Authorization::Limited(
                         counter.limit().name().map(|n| n.to_owned()),
                     ));
                 }
                 if load_counters {
-                    counter.set_remaining(remaining - delta);
+                    if update {
+                        counter.set_remaining(remaining - delta);
+                    } else {
+                        counter.set_remaining(remaining);
+                    }
                     counter.set_expires_in(fake.ttl()); // todo: this is a plain lie!
                 }
             }
         }
 
-        if let Some(l) = first_limited {
-            return Ok(l);
+        if check {
+            if let Some(l) = first_limited {
+                return Ok(l);
+            }
         }
 
-        // Update cached values
-        for counter in counters.iter() {
-            self.cached_counters.increase_by(counter, delta).await;
+        if update {
+            // Update cached values
+            for counter in counters.iter() {
+                self.cached_counters.increase_by(counter, delta).await;
+            }
         }
 
         Ok(Authorization::Ok)
@@ -136,6 +147,18 @@ impl AsyncCounterStorage for CachedRedisStorage {
         &self,
         limits: &HashSet<Arc<Limit>>,
     ) -> Result<HashSet<Counter>, StorageErr> {
+        // Flush pending updates to Redis before querying
+        // This ensures get_counters sees all updates made via update_counters
+        let conn = self.async_redis_storage.conn_manager().clone();
+        let partitioned = Arc::new(AtomicBool::new(false));
+                                                                                                                                                                                             
+        flush_batcher_and_update_counters(
+            conn,
+            self.cached_counters.clone(),
+            partitioned,
+            DEFAULT_BATCH_SIZE,                                                                                                                                    
+        )
+      .await;                                          
         self.async_redis_storage.get_counters(limits).await
     }
 
@@ -345,7 +368,7 @@ async fn update_counters<C: ConnectionLike>(
 
 #[allow(unknown_lints, clippy::manual_inspect)]
 #[tracing::instrument(skip_all)]
-async fn flush_batcher_and_update_counters<C: ConnectionLike>(
+pub(crate) async fn flush_batcher_and_update_counters<C: ConnectionLike>(
     mut redis_conn: C,
     cached_counters: Arc<CountersCache>,
     partitioned: Arc<AtomicBool>,

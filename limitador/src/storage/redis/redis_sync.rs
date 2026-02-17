@@ -59,6 +59,8 @@ impl CounterStorage for RedisStorage {
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,
+        check: bool,
+        update: bool,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let mut con = self.conn_pool.get()?;
@@ -72,8 +74,10 @@ impl CounterStorage for RedisStorage {
             }
             let script_res: Vec<Option<i64>> = script_invocation.invoke(&mut *con)?;
 
-            if let Some(res) = is_limited(counters, delta, script_res) {
-                return Ok(res);
+            if check {
+                if let Some(res) = is_limited(counters, delta, script_res, update) {
+                    return Ok(res);
+                }
             }
         } else {
             let counter_vals: Vec<Option<i64>> = redis::cmd("MGET")
@@ -85,7 +89,7 @@ impl CounterStorage for RedisStorage {
                 let remaining = counter
                     .max_value()
                     .checked_sub(u64::try_from(counter_vals[i].unwrap_or(0)).unwrap_or(0) + delta);
-                if remaining.is_none() {
+                if check && remaining.is_none() {
                     return Ok(Authorization::Limited(
                         counter.limit().name().map(|n| n.to_owned()),
                     ));
@@ -93,15 +97,17 @@ impl CounterStorage for RedisStorage {
             }
         }
 
-        // TODO: this can be optimized by using pipelines with multiple updates
-        for (counter_idx, key) in counter_keys.into_iter().enumerate() {
-            let counter = &counters[counter_idx];
-            redis::Script::new(SCRIPT_UPDATE_COUNTER)
-                .key(key)
-                .key(key_for_counters_of_limit(counter.limit()))
-                .arg(counter.window().as_secs())
-                .arg(delta)
-                .invoke::<()>(&mut *con)?;
+        if update {
+            // TODO: this can be optimized by using pipelines with multiple updates
+            for (counter_idx, key) in counter_keys.into_iter().enumerate() {
+                let counter = &counters[counter_idx];
+                redis::Script::new(SCRIPT_UPDATE_COUNTER)
+                    .key(key)
+                    .key(key_for_counters_of_limit(counter.limit()))
+                    .arg(counter.window().as_secs())
+                    .arg(delta)
+                    .invoke::<()>(&mut *con)?;
+            }
         }
 
         Ok(Authorization::Ok)

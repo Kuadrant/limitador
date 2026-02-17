@@ -331,6 +331,7 @@ fn bench_is_rate_limited(
                     &params.namespace.to_owned().into(),
                     &params.ctx,
                     params.delta,
+                    false, // FIXME: ??
                 )
                 .unwrap(),
         )

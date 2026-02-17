@@ -37,6 +37,7 @@ pub fn is_limited(
     counters: &mut [Counter],
     delta: u64,
     script_res: Vec<Option<i64>>,
+    update: bool,
 ) -> Option<Authorization> {
     let mut counter_vals: Vec<Option<i64>> = vec![];
     let mut counter_ttls_msecs: Vec<Option<i64>> = vec![];
@@ -49,10 +50,17 @@ pub fn is_limited(
     let mut first_limited = None;
     for (i, counter) in counters.iter_mut().enumerate() {
         // remaining  = max - (curr_val + delta)
+        let current_remaining = counter
+            .max_value()
+            .checked_sub(counter_vals[i].unwrap_or(0) as u64);
         let remaining = counter
             .max_value()
             .checked_sub((counter_vals[i].unwrap_or(0) as u64) + delta);
-        counter.set_remaining(remaining.unwrap_or_default());
+        if update {
+            counter.set_remaining(remaining.unwrap_or_default());
+        } else {
+            counter.set_remaining(current_remaining.unwrap_or_default());
+        }
         let expires_in = counter_ttls_msecs[i]
             .map(|x| {
                 if x >= 0 {

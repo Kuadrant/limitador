@@ -7,6 +7,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::sync::{Arc, RwLock};
 
+
 #[cfg(feature = "disk_storage")]
 pub mod disk;
 #[cfg(feature = "distributed_storage")]
@@ -134,10 +135,12 @@ impl Storage {
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,
+        check: bool,
+        update: bool,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         self.counters
-            .check_and_update(counters, delta, load_counters)
+            .check_and_update(counters, delta, check, update, load_counters)
     }
 
     pub fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
@@ -255,10 +258,12 @@ impl AsyncStorage {
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,
+        check: bool, 
+        update: bool,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         self.counters
-            .check_and_update(counters, delta, load_counters)
+            .check_and_update(counters, delta, check, update, load_counters)
             .await
     }
 
@@ -277,36 +282,57 @@ impl AsyncStorage {
 }
 
 pub trait CounterStorage: Sync + Send {
-    fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr>;
     fn add_counter(&self, limit: &Limit) -> Result<(), StorageErr>;
-    fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr>;
+    fn get_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<HashSet<Counter>, StorageErr>; // todo revise typing here?
+    fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr>; // todo revise typing here?
+    fn clear(&self) -> Result<(), StorageErr>;
+    fn is_within_limits(
+        &self, 
+        counter: &Counter, 
+        delta: u64, 
+    ) -> Result<bool, StorageErr>;   
+    fn update_counter(
+        &self, 
+        counter: &Counter, 
+        delta: u64, 
+    ) -> Result<(), StorageErr>;
     fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,
+        check: bool,
+        update: bool,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr>;
-    fn get_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<HashSet<Counter>, StorageErr>; // todo revise typing here?
-    fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr>; // todo revise typing here?
-    fn clear(&self) -> Result<(), StorageErr>;
 }
 
 #[async_trait]
 pub trait AsyncCounterStorage: Sync + Send {
-    async fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr>;
-    async fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr>;
-    async fn check_and_update<'a>(
-        &self,
-        counters: &mut Vec<Counter>,
-        delta: u64,
-        load_counters: bool,
-    ) -> Result<Authorization, StorageErr>;
     async fn get_counters(
         &self,
         limits: &HashSet<Arc<Limit>>,
     ) -> Result<HashSet<Counter>, StorageErr>;
     async fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr>;
     async fn clear(&self) -> Result<(), StorageErr>;
+    async fn is_within_limits(
+        &self, 
+        counter: &Counter, 
+        delta: u64, 
+    ) -> Result<bool, StorageErr>;
+    async fn update_counter(
+        &self, 
+        counter: &Counter, 
+        delta: u64,
+    ) -> Result<(), StorageErr>;
+    async fn check_and_update<'a>(
+        &self,
+        counters: &mut Vec<Counter>,
+        delta: u64,
+        check: bool,
+        update: bool,
+        load_counters: bool,
+    ) -> Result<Authorization, StorageErr>;
+
 }
 
 #[derive(Debug)]
