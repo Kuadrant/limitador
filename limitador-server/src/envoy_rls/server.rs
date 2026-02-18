@@ -369,13 +369,20 @@ pub mod tests {
             .unwrap()
             .into_inner();
         assert_eq!(response.overall_code, i32::from(Code::Ok));
-        assert_eq!(
-            response.response_headers_to_add,
-            vec![
-                header_value("X-RateLimit-Limit", "1, 1;w=60"),
-                header_value("X-RateLimit-Remaining", "0"),
-            ],
-        );
+        assert_eq!(response.response_headers_to_add.len(), 3);
+        assert!(response
+            .response_headers_to_add
+            .contains(&header_value("X-RateLimit-Limit", "1, 1;w=60")));
+        assert!(response
+            .response_headers_to_add
+            .contains(&header_value("X-RateLimit-Remaining", "0")));
+        let reset_header = response
+            .response_headers_to_add
+            .iter()
+            .find(|h| h.key == "X-RateLimit-Reset")
+            .unwrap();
+        let reset_val: u64 = reset_header.value.parse().unwrap();
+        assert!(reset_val <= 60);
 
         let response = rate_limiter
             .should_rate_limit(req.clone().into_request())
@@ -383,13 +390,20 @@ pub mod tests {
             .unwrap()
             .into_inner();
         assert_eq!(response.overall_code, i32::from(Code::OverLimit));
-        assert_eq!(
-            response.response_headers_to_add,
-            vec![
-                header_value("X-RateLimit-Limit", "1, 1;w=60"),
-                header_value("X-RateLimit-Remaining", "0"),
-            ],
-        );
+        assert_eq!(response.response_headers_to_add.len(), 3);
+        assert!(response
+            .response_headers_to_add
+            .contains(&header_value("X-RateLimit-Limit", "1, 1;w=60")));
+        assert!(response
+            .response_headers_to_add
+            .contains(&header_value("X-RateLimit-Remaining", "0")));
+        let reset_header = response
+            .response_headers_to_add
+            .iter()
+            .find(|h| h.key == "X-RateLimit-Reset")
+            .unwrap();
+        let reset_val: u64 = reset_header.value.parse().unwrap();
+        assert!(reset_val <= 60);
     }
 
     #[tokio::test]
@@ -541,13 +555,20 @@ pub mod tests {
             .into_inner();
 
         assert_eq!(response.overall_code, i32::from(Code::OverLimit));
-        assert_eq!(
-            response.response_headers_to_add,
-            vec![
-                header_value("X-RateLimit-Limit", "0, 0;w=60, 10;w=60"),
-                header_value("X-RateLimit-Remaining", "0"),
-            ],
-        );
+        assert_eq!(response.response_headers_to_add.len(), 3);
+        assert!(response
+            .response_headers_to_add
+            .contains(&header_value("X-RateLimit-Limit", "0, 0;w=60, 10;w=60")));
+        assert!(response
+            .response_headers_to_add
+            .contains(&header_value("X-RateLimit-Remaining", "0")));
+        let reset_header = response
+            .response_headers_to_add
+            .iter()
+            .find(|h| h.key == "X-RateLimit-Reset")
+            .unwrap();
+        let reset_val: u64 = reset_header.value.parse().unwrap();
+        assert!(reset_val <= 60);
     }
 
     #[tokio::test]
@@ -602,13 +623,20 @@ pub mod tests {
             .unwrap()
             .into_inner();
         assert_eq!(response.overall_code, i32::from(Code::Ok));
-        assert_eq!(
-            response.response_headers_to_add,
-            vec![
-                header_value("X-RateLimit-Limit", "10, 10;w=60"),
-                header_value("X-RateLimit-Remaining", "4"),
-            ],
-        );
+        assert_eq!(response.response_headers_to_add.len(), 3);
+        assert!(response
+            .response_headers_to_add
+            .contains(&header_value("X-RateLimit-Limit", "10, 10;w=60")));
+        assert!(response
+            .response_headers_to_add
+            .contains(&header_value("X-RateLimit-Remaining", "4")));
+        let reset_header = response
+            .response_headers_to_add
+            .iter()
+            .find(|h| h.key == "X-RateLimit-Reset")
+            .unwrap();
+        let reset_val: u64 = reset_header.value.parse().unwrap();
+        assert!(reset_val <= 60);
 
         let response = rate_limiter
             .should_rate_limit(req.clone().into_request())
@@ -616,13 +644,20 @@ pub mod tests {
             .unwrap()
             .into_inner();
         assert_eq!(response.overall_code, i32::from(Code::OverLimit));
-        assert_eq!(
-            response.response_headers_to_add,
-            vec![
-                header_value("X-RateLimit-Limit", "10, 10;w=60"),
-                header_value("X-RateLimit-Remaining", "0"),
-            ],
-        );
+        assert_eq!(response.response_headers_to_add.len(), 3);
+        assert!(response
+            .response_headers_to_add
+            .contains(&header_value("X-RateLimit-Limit", "10, 10;w=60")));
+        assert!(response
+            .response_headers_to_add
+            .contains(&header_value("X-RateLimit-Remaining", "0")));
+        let reset_header = response
+            .response_headers_to_add
+            .iter()
+            .find(|h| h.key == "X-RateLimit-Reset")
+            .unwrap();
+        let reset_val: u64 = reset_header.value.parse().unwrap();
+        assert!(reset_val <= 60);
     }
 
     #[tokio::test]
@@ -679,13 +714,20 @@ pub mod tests {
             .unwrap()
             .into_inner();
         assert_eq!(response.overall_code, i32::from(Code::Ok));
-        assert_eq!(
-            response.response_headers_to_add,
-            vec![
-                header_value("X-RateLimit-Limit", "1, 1;w=60"),
-                header_value("X-RateLimit-Remaining", "0"),
-            ],
-        );
+        assert_eq!(response.response_headers_to_add.len(), 3);
+        assert!(response
+            .response_headers_to_add
+            .contains(&header_value("X-RateLimit-Limit", "1, 1;w=60")));
+        assert!(response
+            .response_headers_to_add
+            .contains(&header_value("X-RateLimit-Remaining", "0")));
+        let reset_header = response
+            .response_headers_to_add
+            .iter()
+            .find(|h| h.key == "X-RateLimit-Reset")
+            .unwrap();
+        let reset_val: u64 = reset_header.value.parse().unwrap();
+        assert!(reset_val <= 60);
 
         let response = rate_limiter
             .should_rate_limit(req.clone().into_request())
@@ -693,12 +735,19 @@ pub mod tests {
             .unwrap()
             .into_inner();
         assert_eq!(response.overall_code, i32::from(Code::OverLimit));
-        assert_eq!(
-            response.response_headers_to_add,
-            vec![
-                header_value("X-RateLimit-Limit", "1, 1;w=60"),
-                header_value("X-RateLimit-Remaining", "0"),
-            ],
-        );
+        assert_eq!(response.response_headers_to_add.len(), 3);
+        assert!(response
+            .response_headers_to_add
+            .contains(&header_value("X-RateLimit-Limit", "1, 1;w=60")));
+        assert!(response
+            .response_headers_to_add
+            .contains(&header_value("X-RateLimit-Remaining", "0")));
+        let reset_header = response
+            .response_headers_to_add
+            .iter()
+            .find(|h| h.key == "X-RateLimit-Reset")
+            .unwrap();
+        let reset_val: u64 = reset_header.value.parse().unwrap();
+        assert!(reset_val <= 60);
     }
 }
