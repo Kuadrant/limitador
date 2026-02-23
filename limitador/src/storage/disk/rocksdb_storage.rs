@@ -89,12 +89,10 @@ impl CounterStorage for RocksDbStorage {
                 }
             }
 
-            if check {
-                if counter.max_value() < remaining {
-                    return Ok(Authorization::Limited(
-                        counter.limit().name().map(|n| n.to_string()),
-                    ));
-                }
+            if check && counter.max_value() < remaining {
+                return Ok(Authorization::Limited(
+                    counter.limit().name().map(|n| n.to_string()),
+                ));
             }
 
             keys.push(key);

@@ -92,31 +92,30 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             };
             
             first_limited = is_limited(counters, delta, script_res, update);
-        } else {
-            if check {
-                let counter_vals: Vec<Option<i64>> = {
-                    redis::cmd("MGET")
+        } else if check {
+            let counter_vals: Vec<Option<i64>> = {
+                redis::cmd("MGET")
                         .arg(counter_keys.clone())
                         .query_async(&mut con)
                         .instrument(info_span!("datastore"))
                         .await?
-                };
+            };
 
-                for (i, counter) in counters.iter().enumerate() {
-                    // remaining  = max - (curr_val + delta)
-                    let remaining = counter
-                        .max_value()
-                        .checked_sub(u64::try_from(counter_vals[i].unwrap_or(0)).unwrap_or(0) + delta);
-                    /* */
-                    if remaining.is_none() {
-                        first_limited = Some(Authorization::Limited(
-                            counter.limit().name().map(|n| n.to_owned()),
-                        ));
-                        break;
-                    }
-                    
+            for (i, counter) in counters.iter().enumerate() {
+                // remaining  = max - (curr_val + delta)
+                let remaining = counter
+                    .max_value()
+                    .checked_sub(u64::try_from(counter_vals[i].unwrap_or(0)).unwrap_or(0) + delta);
+
+                if remaining.is_none() {
+                    first_limited = Some(Authorization::Limited(
+                        counter.limit().name().map(|n| n.to_owned()),
+                    ));
+                    break;
                 }
+                    
             }
+            
         }
 
         if update {
