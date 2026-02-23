@@ -360,6 +360,7 @@ fn async_bench_is_rate_limited<F>(
                         &params.namespace.to_owned().into(),
                         &params.ctx,
                         params.delta,
+                        false,
                     )
                     .await
                     .unwrap()
@@ -386,6 +387,7 @@ fn bench_update_counters(
                 &params.namespace.to_owned().into(),
                 &params.ctx,
                 params.delta,
+                false,
             )
             .unwrap();
     })
@@ -413,6 +415,7 @@ fn async_bench_update_counters<F>(
                         &params.namespace.to_owned().into(),
                         &params.ctx,
                         params.delta,
+                        false,
                     )
                     .await
             })
