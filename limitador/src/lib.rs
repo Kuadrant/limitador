@@ -114,20 +114,21 @@
 //! values_to_report.insert("req_method".to_string(), "GET".to_string());
 //! values_to_report.insert("user_id".to_string(), "1".to_string());
 //!
+//!
 //! // Check if we can report
 //! let namespace = "my_namespace".into();
 //! let ctx = &values_to_report.into();
-//! assert!(!rate_limiter.is_rate_limited(&namespace, &ctx, 1).unwrap().limited);
+//! assert!(!rate_limiter.is_rate_limited(&namespace, &ctx, 1, false).unwrap().limited);
 //!
 //! // Report
-//! rate_limiter.update_counters(&namespace, &ctx, 1).unwrap();
+//! rate_limiter.update_counters(&namespace, &ctx, 1, false).unwrap();
 //!
 //! // Check and report again
-//! assert!(!rate_limiter.is_rate_limited(&namespace, &ctx, 1).unwrap().limited);
-//! rate_limiter.update_counters(&namespace, &ctx, 1).unwrap();
+//! assert!(!rate_limiter.is_rate_limited(&namespace, &ctx, 1, false).unwrap().limited);
+//! rate_limiter.update_counters(&namespace, &ctx, 1, false).unwrap();
 //!
 //! // We've already reported 2, so reporting another one should not be allowed
-//! assert!(rate_limiter.is_rate_limited(&namespace, &ctx, 1).unwrap().limited);
+//! assert!(rate_limiter.is_rate_limited(&namespace, &ctx, 1, false).unwrap().limited);
 //!
 //! // You can also check and report if not limited in a single call. It's useful
 //! // for example, when calling Limitador from a proxy. Instead of doing 2
@@ -197,9 +198,7 @@ use crate::counter::Counter;
 use crate::errors::LimitadorError;
 use crate::limit::{Context, Limit, Namespace};
 use crate::storage::in_memory::InMemoryStorage;
-use crate::storage::{
-    AsyncCounterStorage, AsyncStorage, Authorization, CounterStorage, Storage, StorageErr,
-};
+use crate::storage::{AsyncCounterStorage, AsyncStorage, Authorization, CounterStorage, Storage};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -360,48 +359,9 @@ impl RateLimiter {
         namespace: &Namespace,
         values: &Context,
         delta: u64,
+        load_counters: bool,
     ) -> LimitadorResult<CheckResult> {
-        let counters = self.counters_that_apply(namespace, values)?;
-
-        match self.find_first_limited_counter(&counters, delta) {
-            Err(e) => Err(e.into()),
-            Ok(auth) => match auth {
-                Authorization::Ok => Ok(CheckResult {
-                    limited: false,
-                    counters: Vec::default(),
-                    limit_name: None,
-                }),
-                Authorization::Limited(name) => Ok(CheckResult {
-                    limited: true,
-                    counters: Vec::default(),
-                    limit_name: name,
-                }),
-            },
-        }
-    }
-
-    fn find_first_limited_counter(
-        &self,
-        counters: &[Counter],
-        delta: u64,
-    ) -> Result<Authorization, StorageErr> {
-        // Iterate over counters and
-        // stop on first errors
-        // stop on first counter not withing limits
-        for counter in counters.iter() {
-            match self.storage.is_within_limits(counter, delta) {
-                Ok(within_limits) => {
-                    if !within_limits {
-                        return Ok(Authorization::Limited(
-                            counter.limit().name().map(|n| n.to_owned()),
-                        ));
-                    }
-                }
-                Err(e) => return Err(e),
-            }
-        }
-
-        Ok(Authorization::Ok)
+        self.check_and_update(namespace, values, delta, true, false, load_counters)
     }
 
     pub fn update_counters(
@@ -409,13 +369,9 @@ impl RateLimiter {
         namespace: &Namespace,
         ctx: &Context,
         delta: u64,
-    ) -> LimitadorResult<()> {
-        let counters = self.counters_that_apply(namespace, ctx)?;
-
-        counters
-            .iter()
-            .try_for_each(|counter| self.storage.update_counter(counter, delta))
-            .map_err(|err| err.into())
+        load_counters: bool,
+    ) -> LimitadorResult<CheckResult> {
+        self.check_and_update(namespace, ctx, delta, false, true, load_counters)
     }
 
     pub fn check_rate_limited_and_update(
@@ -423,6 +379,18 @@ impl RateLimiter {
         namespace: &Namespace,
         ctx: &Context,
         delta: u64,
+        load_counters: bool,
+    ) -> LimitadorResult<CheckResult> {
+        self.check_and_update(namespace, ctx, delta, true, true, load_counters)
+    }
+
+    pub fn check_and_update(
+        &self,
+        namespace: &Namespace,
+        ctx: &Context,
+        delta: u64,
+        check: bool,
+        update: bool,
         load_counters: bool,
     ) -> LimitadorResult<CheckResult> {
         let mut counters = self.counters_that_apply(namespace, ctx)?;
@@ -435,9 +403,9 @@ impl RateLimiter {
             });
         }
 
-        let check_result = self
-            .storage
-            .check_and_update(&mut counters, delta, load_counters)?;
+        let check_result =
+            self.storage
+                .check_and_update(&mut counters, delta, check, update, load_counters)?;
 
         let counters = if load_counters {
             counters
@@ -561,48 +529,10 @@ impl AsyncRateLimiter {
         namespace: &Namespace,
         ctx: &Context<'_>,
         delta: u64,
+        load_counters: bool,
     ) -> LimitadorResult<CheckResult> {
-        let counters = self.counters_that_apply(namespace, ctx).await?;
-
-        match self.find_first_limited_counter(&counters, delta).await {
-            Err(e) => Err(e.into()),
-            Ok(auth) => match auth {
-                Authorization::Ok => Ok(CheckResult {
-                    limited: false,
-                    counters: Vec::default(),
-                    limit_name: None,
-                }),
-                Authorization::Limited(name) => Ok(CheckResult {
-                    limited: true,
-                    counters: Vec::default(),
-                    limit_name: name,
-                }),
-            },
-        }
-    }
-
-    async fn find_first_limited_counter(
-        &self,
-        counters: &[Counter],
-        delta: u64,
-    ) -> Result<Authorization, StorageErr> {
-        // Iterate over counters and
-        // stop on first errors
-        // stop on first counter not withing limits
-        for counter in counters.iter() {
-            match self.storage.is_within_limits(counter, delta).await {
-                Ok(within_limits) => {
-                    if !within_limits {
-                        return Ok(Authorization::Limited(
-                            counter.limit().name().map(|n| n.to_owned()),
-                        ));
-                    }
-                }
-                Err(e) => return Err(e),
-            }
-        }
-
-        Ok(Authorization::Ok)
+        self.check_and_update(namespace, ctx, delta, true, false, load_counters)
+            .await
     }
 
     pub async fn update_counters(
@@ -610,14 +540,10 @@ impl AsyncRateLimiter {
         namespace: &Namespace,
         ctx: &Context<'_>,
         delta: u64,
-    ) -> LimitadorResult<()> {
-        let counters = self.counters_that_apply(namespace, ctx).await?;
-
-        for counter in counters {
-            self.storage.update_counter(&counter, delta).await?
-        }
-
-        Ok(())
+        load_counters: bool,
+    ) -> LimitadorResult<CheckResult> {
+        self.check_and_update(namespace, ctx, delta, false, true, load_counters)
+            .await
     }
 
     pub async fn check_rate_limited_and_update(
@@ -625,6 +551,19 @@ impl AsyncRateLimiter {
         namespace: &Namespace,
         ctx: &Context<'_>,
         delta: u64,
+        load_counters: bool,
+    ) -> LimitadorResult<CheckResult> {
+        self.check_and_update(namespace, ctx, delta, true, true, load_counters)
+            .await
+    }
+
+    pub async fn check_and_update(
+        &self,
+        namespace: &Namespace,
+        ctx: &Context<'_>,
+        delta: u64,
+        check: bool,
+        update: bool,
         load_counters: bool,
     ) -> LimitadorResult<CheckResult> {
         // the above where-clause is needed in order to call unwrap().
@@ -640,7 +579,7 @@ impl AsyncRateLimiter {
 
         let check_result = self
             .storage
-            .check_and_update(&mut counters, delta, load_counters)
+            .check_and_update(&mut counters, delta, check, update, load_counters)
             .await?;
 
         let counters = if load_counters {

@@ -45,6 +45,8 @@ impl CounterStorage for RocksDbStorage {
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,
+        check: bool,
+        update: bool,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let mut keys: Vec<Vec<u8>> = Vec::with_capacity(counters.len());
@@ -66,17 +68,28 @@ impl CounterStorage for RocksDbStorage {
                 }
             };
 
+            let current_remaining = val;
+            let remaining = val + delta;
             if load_counters {
                 counter.set_expires_in(ttl);
-                counter.set_remaining(
-                    counter
-                        .max_value()
-                        .checked_sub(val + delta)
-                        .unwrap_or_default(),
-                );
+                if update {
+                    counter.set_remaining(
+                        counter
+                            .max_value()
+                            .checked_sub(remaining)
+                            .unwrap_or_default(),
+                    );
+                } else {
+                    counter.set_remaining(
+                        counter
+                            .max_value()
+                            .checked_sub(current_remaining)
+                            .unwrap_or_default(),
+                    )
+                }
             }
 
-            if counter.max_value() < val + delta {
+            if check && counter.max_value() < remaining {
                 return Ok(Authorization::Limited(
                     counter.limit().name().map(|n| n.to_string()),
                 ));
@@ -85,8 +98,10 @@ impl CounterStorage for RocksDbStorage {
             keys.push(key);
         }
 
-        for (idx, counter) in counters.iter_mut().enumerate() {
-            self.insert_or_update(&keys[idx], counter, delta)?;
+        if update {
+            for (idx, counter) in counters.iter_mut().enumerate() {
+                self.insert_or_update(&keys[idx], counter, delta)?;
+            }
         }
 
         Ok(Authorization::Ok)
