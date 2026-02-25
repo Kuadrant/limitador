@@ -78,7 +78,9 @@ impl TestsLimiter {
                 limiter.is_rate_limited(&namespace.into(), ctx, delta, false)
             }
             LimiterImpl::Async(limiter) => {
-                limiter.is_rate_limited(&namespace.into(), ctx, delta, false).await
+                limiter
+                    .is_rate_limited(&namespace.into(), ctx, delta, false)
+                    .await
             }
         }
     }
@@ -94,7 +96,9 @@ impl TestsLimiter {
                 limiter.update_counters(&namespace.into(), ctx, delta, false)
             }
             LimiterImpl::Async(limiter) => {
-                limiter.update_counters(&namespace.into(), ctx, delta, false).await
+                limiter
+                    .update_counters(&namespace.into(), ctx, delta, false)
+                    .await
             }
         }
     }

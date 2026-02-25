@@ -82,7 +82,9 @@ impl AsyncCounterStorage for CachedRedisStorage {
             match self.cached_counters.get(counter) {
                 Some(val) => {
                     if first_limited.is_none() && val.is_limited(counter, delta) {
-                        first_limited = Some(Authorization::Limited(counter.limit().name().map(|n| n.to_owned())));
+                        first_limited = Some(Authorization::Limited(
+                            counter.limit().name().map(|n| n.to_owned()),
+                        ));
                     }
                     if load_counters {
                         if update {
@@ -92,9 +94,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
                                     .unwrap_or_default(),
                             );
                         } else {
-                            counter.set_remaining(
-                                val.remaining(counter)
-                            );
+                            counter.set_remaining(val.remaining(counter));
                         }
                         counter.set_expires_in(val.ttl());
                     }
@@ -151,14 +151,14 @@ impl AsyncCounterStorage for CachedRedisStorage {
         // This ensures get_counters sees all updates made via update_counters
         let conn = self.async_redis_storage.conn_manager().clone();
         let partitioned = Arc::new(AtomicBool::new(false));
-                                                                                                                                                                                             
+
         flush_batcher_and_update_counters(
             conn,
             self.cached_counters.clone(),
             partitioned,
-            DEFAULT_BATCH_SIZE,                                                                                                                                    
+            DEFAULT_BATCH_SIZE,
         )
-      .await;                                          
+        .await;
         self.async_redis_storage.get_counters(limits).await
     }
 

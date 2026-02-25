@@ -113,7 +113,7 @@
 //! let mut values_to_report: HashMap<String, String> = HashMap::new();
 //! values_to_report.insert("req_method".to_string(), "GET".to_string());
 //! values_to_report.insert("user_id".to_string(), "1".to_string());
-//! 
+//!
 //!
 //! // Check if we can report
 //! let namespace = "my_namespace".into();
@@ -198,9 +198,7 @@ use crate::counter::Counter;
 use crate::errors::LimitadorError;
 use crate::limit::{Context, Limit, Namespace};
 use crate::storage::in_memory::InMemoryStorage;
-use crate::storage::{
-    AsyncCounterStorage, AsyncStorage, Authorization, CounterStorage, Storage,
-};
+use crate::storage::{AsyncCounterStorage, AsyncStorage, Authorization, CounterStorage, Storage};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -365,7 +363,7 @@ impl RateLimiter {
     ) -> LimitadorResult<CheckResult> {
         self.check_and_update(namespace, values, delta, true, false, load_counters)
     }
- 
+
     pub fn update_counters(
         &self,
         namespace: &Namespace,
@@ -405,9 +403,9 @@ impl RateLimiter {
             });
         }
 
-        let check_result = self
-            .storage
-            .check_and_update(&mut counters, delta, check, update, load_counters)?;
+        let check_result =
+            self.storage
+                .check_and_update(&mut counters, delta, check, update, load_counters)?;
 
         let counters = if load_counters {
             counters
@@ -533,7 +531,8 @@ impl AsyncRateLimiter {
         delta: u64,
         load_counters: bool,
     ) -> LimitadorResult<CheckResult> {
-        self.check_and_update(namespace, ctx, delta, true, false, load_counters).await
+        self.check_and_update(namespace, ctx, delta, true, false, load_counters)
+            .await
     }
 
     pub async fn update_counters(
@@ -543,7 +542,8 @@ impl AsyncRateLimiter {
         delta: u64,
         load_counters: bool,
     ) -> LimitadorResult<CheckResult> {
-        self.check_and_update(namespace, ctx, delta, false, true, load_counters).await
+        self.check_and_update(namespace, ctx, delta, false, true, load_counters)
+            .await
     }
 
     pub async fn check_rate_limited_and_update(
@@ -553,7 +553,8 @@ impl AsyncRateLimiter {
         delta: u64,
         load_counters: bool,
     ) -> LimitadorResult<CheckResult> {
-        self.check_and_update(namespace, ctx, delta, true, true, load_counters).await
+        self.check_and_update(namespace, ctx, delta, true, true, load_counters)
+            .await
     }
 
     pub async fn check_and_update(

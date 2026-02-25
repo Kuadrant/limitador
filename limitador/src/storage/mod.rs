@@ -7,7 +7,6 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::sync::{Arc, RwLock};
 
-
 #[cfg(feature = "disk_storage")]
 pub mod disk;
 #[cfg(feature = "distributed_storage")]
@@ -258,7 +257,7 @@ impl AsyncStorage {
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,
-        check: bool, 
+        check: bool,
         update: bool,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
@@ -286,16 +285,8 @@ pub trait CounterStorage: Sync + Send {
     fn get_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<HashSet<Counter>, StorageErr>; // todo revise typing here?
     fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr>; // todo revise typing here?
     fn clear(&self) -> Result<(), StorageErr>;
-    fn is_within_limits(
-        &self, 
-        counter: &Counter, 
-        delta: u64, 
-    ) -> Result<bool, StorageErr>;   
-    fn update_counter(
-        &self, 
-        counter: &Counter, 
-        delta: u64, 
-    ) -> Result<(), StorageErr>;
+    fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr>;
+    fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr>;
     fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
@@ -314,16 +305,8 @@ pub trait AsyncCounterStorage: Sync + Send {
     ) -> Result<HashSet<Counter>, StorageErr>;
     async fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr>;
     async fn clear(&self) -> Result<(), StorageErr>;
-    async fn is_within_limits(
-        &self, 
-        counter: &Counter, 
-        delta: u64, 
-    ) -> Result<bool, StorageErr>;
-    async fn update_counter(
-        &self, 
-        counter: &Counter, 
-        delta: u64,
-    ) -> Result<(), StorageErr>;
+    async fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr>;
+    async fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr>;
     async fn check_and_update<'a>(
         &self,
         counters: &mut Vec<Counter>,
@@ -332,7 +315,6 @@ pub trait AsyncCounterStorage: Sync + Send {
         update: bool,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr>;
-
 }
 
 #[derive(Debug)]

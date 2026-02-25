@@ -10,7 +10,6 @@ use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
-
 pub struct InMemoryStorage {
     simple_limits: RwLock<BTreeMap<Limit, AtomicExpiringValue>>,
     qualified_counters: Cache<Counter, Arc<AtomicExpiringValue>>,
@@ -85,32 +84,30 @@ impl CounterStorage for InMemoryStorage {
             Vec::new();
         let now = SystemTime::now();
 
-        let mut process_counter =
-            |counter: &mut Counter, value: u64, delta: u64| -> () {
-              
-                let current_remaining = counter.max_value().checked_sub(value);
-                let remaining = counter.max_value().checked_sub(value + delta);
-                if load_counters {   
-                    if update {
-                        counter.set_remaining(remaining.unwrap_or_default());
-                    } else {
-                        counter.set_remaining(current_remaining.unwrap_or_default());
-                    }
+        let mut process_counter = |counter: &mut Counter, value: u64, delta: u64| -> () {
+            let current_remaining = counter.max_value().checked_sub(value);
+            let remaining = counter.max_value().checked_sub(value + delta);
+            if load_counters {
+                if update {
+                    counter.set_remaining(remaining.unwrap_or_default());
+                } else {
+                    counter.set_remaining(current_remaining.unwrap_or_default());
                 }
+            }
 
-                if first_limited.is_none() && remaining.is_none() {
-                    first_limited = Some(Authorization::Limited(
-                        counter.limit().name().map(|n| n.to_owned()),
-                    ));
-                }                
-            };
+            if first_limited.is_none() && remaining.is_none() {
+                first_limited = Some(Authorization::Limited(
+                    counter.limit().name().map(|n| n.to_owned()),
+                ));
+            }
+        };
 
         // Process simple counters
         for counter in counters.iter_mut().filter(|c| !c.is_qualified()) {
             let atomic_expiring_value: &AtomicExpiringValue =
                 limits_by_namespace.get(counter.limit()).unwrap();
-            
-            process_counter( counter, atomic_expiring_value.value(), delta);
+
+            process_counter(counter, atomic_expiring_value.value(), delta);
 
             if update {
                 counter_values_to_update.push((atomic_expiring_value, counter.window()));
@@ -148,7 +145,7 @@ impl CounterStorage for InMemoryStorage {
                 .iter()
                 .for_each(|(v, ttl)| {
                     v.update(delta, *ttl, now);
-            });
+                });
         }
 
         Ok(Authorization::Ok)

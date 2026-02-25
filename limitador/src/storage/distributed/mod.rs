@@ -102,18 +102,17 @@ impl CounterStorage for CrInMemoryStorage {
         let mut counter_values_to_update: Vec<Vec<u8>> = Vec::new();
         let now = SystemTime::now();
 
-        let mut process_counter =
-            |counter: &mut Counter, value: u64, delta: u64| -> () {
-                let remaining = counter.max_value().checked_sub(value + delta);
-                if load_counters {
-                    counter.set_remaining(remaining.unwrap_or(0));
-                }
-                if first_limited.is_none() && remaining.is_none() {
-                    first_limited = Some(Authorization::Limited(
-                        counter.limit().name().map(|n| n.to_owned()),
-                    ));
-                }
-            };
+        let mut process_counter = |counter: &mut Counter, value: u64, delta: u64| -> () {
+            let remaining = counter.max_value().checked_sub(value + delta);
+            if load_counters {
+                counter.set_remaining(remaining.unwrap_or(0));
+            }
+            if first_limited.is_none() && remaining.is_none() {
+                first_limited = Some(Authorization::Limited(
+                    counter.limit().name().map(|n| n.to_owned()),
+                ));
+            }
+        };
 
         // Process simple counters
         for counter in counters.iter_mut() {
@@ -171,7 +170,7 @@ impl CounterStorage for CrInMemoryStorage {
                 self.increment_counter(store_value.clone(), delta, now);
             });
         }
-        
+
         Ok(Authorization::Ok)
     }
 

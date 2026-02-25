@@ -90,15 +90,15 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                     .instrument(info_span!("datastore"))
                     .await?
             };
-            
+
             first_limited = is_limited(counters, delta, script_res, update);
         } else if check {
             let counter_vals: Vec<Option<i64>> = {
                 redis::cmd("MGET")
-                        .arg(counter_keys.clone())
-                        .query_async(&mut con)
-                        .instrument(info_span!("datastore"))
-                        .await?
+                    .arg(counter_keys.clone())
+                    .query_async(&mut con)
+                    .instrument(info_span!("datastore"))
+                    .await?
             };
 
             for (i, counter) in counters.iter().enumerate() {
@@ -113,9 +113,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                     ));
                     break;
                 }
-                    
             }
-            
         }
 
         if update {
@@ -294,7 +292,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]  // Hangs
+    #[ignore] // Hangs
     async fn errs_on_connection_issue() {
         let result = AsyncRedisStorage::new("redis://127.0.0.1:21").await;
         assert!(result.is_err());

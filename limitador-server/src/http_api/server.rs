@@ -137,8 +137,14 @@ async fn check(
     let mut ctx = Context::default();
     ctx.list_binding("descriptors".to_string(), vec![values]);
     let is_rate_limited_result = match state.get_ref().limiter() {
-        Limiter::Blocking(limiter) => limiter.is_rate_limited(&namespace, &ctx, delta, response_headers.is_some()),
-        Limiter::Async(limiter) => limiter.is_rate_limited(&namespace, &ctx, delta, response_headers.is_some()).await,
+        Limiter::Blocking(limiter) => {
+            limiter.is_rate_limited(&namespace, &ctx, delta, response_headers.is_some())
+        }
+        Limiter::Async(limiter) => {
+            limiter
+                .is_rate_limited(&namespace, &ctx, delta, response_headers.is_some())
+                .await
+        }
     };
 
     match is_rate_limited_result {
@@ -191,8 +197,14 @@ async fn report(
     let mut ctx = Context::default();
     ctx.list_binding("descriptors".to_string(), vec![values.clone()]);
     let update_counters_result = match data.get_ref().limiter() {
-        Limiter::Blocking(limiter) => limiter.update_counters(&namespace, &ctx, delta, response_headers.is_some()),
-        Limiter::Async(limiter) => limiter.update_counters(&namespace, &ctx, delta, response_headers.is_some()).await,
+        Limiter::Blocking(limiter) => {
+            limiter.update_counters(&namespace, &ctx, delta, response_headers.is_some())
+        }
+        Limiter::Async(limiter) => {
+            limiter
+                .update_counters(&namespace, &ctx, delta, response_headers.is_some())
+                .await
+        }
     };
 
     match update_counters_result {
@@ -202,8 +214,12 @@ async fn report(
                 Some(response_headers) => {
                     // Get current limit state for headers by checking with delta=0
                     let check_result = match data.get_ref().limiter() {
-                        Limiter::Blocking(limiter) => limiter.is_rate_limited(&namespace, &ctx, 0, true),
-                        Limiter::Async(limiter) => limiter.is_rate_limited(&namespace, &ctx, 0, true).await,
+                        Limiter::Blocking(limiter) => {
+                            limiter.is_rate_limited(&namespace, &ctx, 0, true)
+                        }
+                        Limiter::Async(limiter) => {
+                            limiter.is_rate_limited(&namespace, &ctx, 0, true).await
+                        }
                     };
 
                     match check_result {

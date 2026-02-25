@@ -70,20 +70,22 @@ impl RateLimitService for KuadrantService {
         ctx.list_binding("descriptors".to_string(), values);
 
         let rate_limited_resp = match &*self.limiter {
-            Limiter::Blocking(limiter) => limiter
-                .is_rate_limited(
-                    &namespace,
-                    &ctx,
-                    1, // req.hits_addend as u64,
-                    self.rate_limit_headers != RateLimitHeaders::None,
-                ),
-            Limiter::Async(limiter) => limiter
-                .is_rate_limited(
-                    &namespace,
-                    &ctx,
-                    1, // req.hits_addend as u64,
-                    self.rate_limit_headers != RateLimitHeaders::None,
-                ).await,
+            Limiter::Blocking(limiter) => limiter.is_rate_limited(
+                &namespace,
+                &ctx,
+                1, // req.hits_addend as u64,
+                self.rate_limit_headers != RateLimitHeaders::None,
+            ),
+            Limiter::Async(limiter) => {
+                limiter
+                    .is_rate_limited(
+                        &namespace,
+                        &ctx,
+                        1, // req.hits_addend as u64,
+                        self.rate_limit_headers != RateLimitHeaders::None,
+                    )
+                    .await
+            }
         };
 
         if let Err(e) = rate_limited_resp {
@@ -171,20 +173,22 @@ impl RateLimitService for KuadrantService {
         ctx.list_binding("descriptors".to_string(), values);
 
         let rate_limited_resp = match &*self.limiter {
-            Limiter::Blocking(limiter) => limiter
-                .update_counters(
-                    &namespace, 
-                    &ctx, 
-                    hits_addend,
-                    self.rate_limit_headers != RateLimitHeaders::None
-                ),
-            Limiter::Async(limiter) => limiter
-                .update_counters(
-                    &namespace, 
-                    &ctx, 
-                    hits_addend,
-                    self.rate_limit_headers != RateLimitHeaders::None 
-                ).await,
+            Limiter::Blocking(limiter) => limiter.update_counters(
+                &namespace,
+                &ctx,
+                hits_addend,
+                self.rate_limit_headers != RateLimitHeaders::None,
+            ),
+            Limiter::Async(limiter) => {
+                limiter
+                    .update_counters(
+                        &namespace,
+                        &ctx,
+                        hits_addend,
+                        self.rate_limit_headers != RateLimitHeaders::None,
+                    )
+                    .await
+            }
         };
 
         if let Err(e) = rate_limited_resp {
