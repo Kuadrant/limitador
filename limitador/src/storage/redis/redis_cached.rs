@@ -88,11 +88,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
                         first_limited = Some(a);
                     }
                     if load_counters {
-                        counter.set_remaining(
-                            val.remaining(counter)
-                                .checked_sub(delta)
-                                .unwrap_or_default(),
-                        );
+                        counter.set_remaining(val.remaining(counter).saturating_sub(delta));
                         counter.set_expires_in(val.ttl());
                     }
                 }
