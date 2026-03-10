@@ -111,6 +111,9 @@ impl CounterStorage for InMemoryStorage {
                     return Ok(limited);
                 }
             }
+            if load_counters {
+                counter.set_expires_in(atomic_expiring_value.ttl());
+            }
             counter_values_to_update.push((atomic_expiring_value, counter.window()));
         }
 
@@ -127,6 +130,9 @@ impl CounterStorage for InMemoryStorage {
                 if !load_counters {
                     return Ok(limited);
                 }
+            }
+            if load_counters {
+                counter.set_expires_in(value.ttl());
             }
 
             qualified_counter_values_to_updated.push((value, counter.window()));
