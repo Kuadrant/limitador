@@ -29,7 +29,7 @@ RUN cargo build --release --target aarch64-unknown-linux-gnu
 # Run Stage
 # ------------------------------------------------------------------------------
 
-FROM registry.access.redhat.com/ubi10-minimal:10.0
+FROM registry.access.redhat.com/ubi10/ubi-minimal:10.1
 
 # shadow-utils is required for `useradd`
 RUN PKGS="libgcc libstdc++ shadow-utils" \
