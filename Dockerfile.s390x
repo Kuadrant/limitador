@@ -27,7 +27,7 @@ COPY . .
 RUN cargo build --release --target s390x-unknown-linux-gnu
 
 # ------------------------------------------------------------------------------
-# Run Stage (UBI9 minimal has s390x variant)
+# Run Stage (UBI10 minimal has s390x variant)
 # ------------------------------------------------------------------------------
 
 FROM registry.access.redhat.com/ubi10/ubi-minimal:10.1
