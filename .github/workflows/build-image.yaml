@@ -122,6 +122,6 @@ jobs:
       - name: Smoke Test
         run: |
           image="${{ env.IMG_REGISTRY_HOST }}/${{ env.IMG_REGISTRY_ORG }}/limitador:${{ steps.meta.outputs.version }}"
-          docker run --rm -t --platform linux/amd64 "$image" limitador-server --help
-          docker run --rm -t --platform linux/arm64 "$image" limitador-server --help
-          docker run --rm -t --platform linux/s390x "$image" limitador-server --help
+          docker run --rm -t --platform linux/amd64 "$image" --help
+          docker run --rm -t --platform linux/arm64 "$image" --help
+          docker run --rm -t --platform linux/s390x "$image" --help
