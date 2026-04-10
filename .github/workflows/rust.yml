@@ -91,6 +91,8 @@ jobs:
             platform: linux/amd64
           - dockerfile: Dockerfile.aarch64
             platform: linux/arm64
+          - dockerfile: Dockerfile.s390x
+            platform: linux/s390x
     steps:
       - uses: actions/checkout@v6
       - name: Set up Docker Buildx
@@ -107,7 +109,6 @@ jobs:
           provenance: false
           build-args: |
             GITHUB_SHA=${{ github.sha }}
-
   required-checks:
     name: Limitador Required Checks
     # This check adds a list of checks to one job to simplify adding settings to the repo.
