@@ -167,6 +167,7 @@ impl RateLimitService for KuadrantService {
             return Err(Status::unavailable("Service unavailable"));
         }
 
+        self.metrics.incr_report_calls(&namespace, &ctx);
         self.metrics
             .incr_authorized_hits(&namespace, &ctx, hits_addend);
 
@@ -616,6 +617,82 @@ mod tests {
             let response = rate_limiter.report(req).await.unwrap().into_inner();
 
             assert_eq!(response.overall_code, i32::from(Code::Ok));
+        }
+
+        #[test]
+        fn test_increments_report_calls_metric() {
+            let recorder = metrics_exporter_prometheus::PrometheusBuilder::new().build_recorder();
+            let handle: Arc<metrics_exporter_prometheus::PrometheusHandle> =
+                recorder.handle().into();
+
+            let namespace = "report_calls_test_namespace";
+            let limit = Limit::new(
+                namespace,
+                10,
+                60,
+                vec!["descriptors[0]['req.method'] == 'GET'"
+                    .try_into()
+                    .expect("failed parsing!")],
+                vec!["descriptors[0]['app.id']"
+                    .try_into()
+                    .expect("failed parsing!")],
+            );
+
+            let limiter = RateLimiter::new(10_000);
+            limiter.add_limit(limit);
+
+            let prometheus_metrics =
+                Arc::new(PrometheusMetrics::new_with_handle(false, handle.clone()));
+            let rate_limiter = KuadrantService::new(
+                Arc::new(Limiter::Blocking(limiter)),
+                prometheus_metrics.clone(),
+            );
+
+            let req = RateLimitRequest {
+                domain: namespace.to_string(),
+                descriptors: vec![RateLimitDescriptor {
+                    entries: vec![
+                        Entry {
+                            key: "req.method".to_string(),
+                            value: "GET".to_string(),
+                        },
+                        Entry {
+                            key: "app.id".to_string(),
+                            value: "1".to_string(),
+                        },
+                    ],
+                    limit: None,
+                }],
+                hits_addend: 1,
+            };
+
+            // Use a fresh runtime (not inside an existing one) so block_on works
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap();
+
+            metrics::with_local_recorder(&recorder, || {
+                rt.block_on(async {
+                    rate_limiter
+                        .report(req.clone().into_request())
+                        .await
+                        .unwrap();
+                    rate_limiter
+                        .report(req.clone().into_request())
+                        .await
+                        .unwrap();
+                });
+            });
+
+            let metrics_output = handle.render();
+            assert!(
+                metrics_output.contains(&format!(
+                    "report_calls{{limitador_namespace=\"{}\"}} 2",
+                    namespace
+                )),
+                "Expected report_calls counter to be 2, got:\n{}",
+                metrics_output
+            );
         }
 
         #[tokio::test]
