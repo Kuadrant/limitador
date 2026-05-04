@@ -115,7 +115,7 @@ impl Counter {
         for (var, value) in &self.set_variables {
             variables.push((var.as_str(), value.as_str()));
         }
-        variables.sort_by(|(key1, _), (key2, _)| key1.cmp(key2));
+        variables.sort_by_key(|(key1, _)| *key1);
         variables
     }
 }

@@ -586,8 +586,8 @@ impl Broker {
             let state = self.replication_state.read().await;
             state
                 .peer_trackers
-                .iter()
-                .filter_map(|(_, peer_tracker)| {
+                .values()
+                .filter_map(|peer_tracker| {
                     if peer_tracker.session.is_none() {
                         // first try to connect to the configured URL
                         let mut urls: Vec<_> = peer_tracker.url.iter().cloned().collect();
