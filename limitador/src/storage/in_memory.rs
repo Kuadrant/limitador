@@ -249,7 +249,7 @@ impl InMemoryStorage {
             {
                 for (c, _) in self.qualified_counters.iter() {
                     if c.limit() == limit {
-                        self.qualified_counters.invalidate(&c);
+                        self.qualified_counters.invalidate(c.as_ref());
                     }
                 }
             }
