@@ -4,7 +4,7 @@ use std::future::Future;
 use std::time::Instant;
 
 use criterion::{black_box, criterion_group, criterion_main, Bencher, BenchmarkId, Criterion};
-use rand::seq::SliceRandom;
+use rand::seq::IndexedRandom;
 use rand::SeedableRng;
 
 use limitador::limit::{Context, Limit};
