@@ -1,33 +1,205 @@
 ---
-name: Release crate
+name: Release
 
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: "version (no `v` prefix)"
+      release-branch:
+        description: "Release branch (e.g. release-2.5)"
         required: true
-        default: "1.0.0"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.release-branch }}
+  cancel-in-progress: false
 
 jobs:
-  publish:
-    name: Publish Limitador crate to crates.io
+  read-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+      crate-version: ${{ steps.parse.outputs.crate-version }}
+      major: ${{ steps.parse.outputs.major }}
+      minor: ${{ steps.parse.outputs.minor }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release-branch }}
+
+      - name: Install yq
+        run: |
+          sudo wget --quiet --output-document=/usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/download/v4.34.2/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Parse version from release.yaml
+        id: parse
+        run: |
+          chmod +x .github/scripts/parse-version.sh
+          .github/scripts/parse-version.sh
+
+      - name: Validate versions are not sentinel
+        env:
+          VERSION: ${{ steps.parse.outputs.version }}
+          CRATE_VERSION: ${{ steps.parse.outputs.crate-version }}
+        run: |
+          if [[ "$VERSION" == "0.0.0" ]]; then
+            echo "::error::Version is 0.0.0 -- has the pre-release PR been merged?"
+            exit 1
+          fi
+          if [[ "$CRATE_VERSION" == "0.0.0" ]]; then
+            echo "::error::Crate version is 0.0.0 -- has the pre-release PR been merged?"
+            exit 1
+          fi
+
+      - name: Validate branch matches version
+        env:
+          RELEASE_BRANCH: ${{ inputs.release-branch }}
+          MAJOR: ${{ steps.parse.outputs.major }}
+          MINOR: ${{ steps.parse.outputs.minor }}
+          VERSION: ${{ steps.parse.outputs.version }}
+        run: |
+          EXPECTED_BRANCH="release-${MAJOR}.${MINOR}"
+          if [[ "$RELEASE_BRANCH" != "$EXPECTED_BRANCH" ]]; then
+            echo "::error::Branch '${RELEASE_BRANCH}' does not match version ${VERSION} (expected branch: $EXPECTED_BRANCH)"
+            exit 1
+          fi
+
+      - name: Check for existing release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.parse.outputs.version }}
+        run: |
+          if gh release view "v${VERSION}" &>/dev/null; then
+            echo "::error::GitHub Release v${VERSION} already exists"
+            exit 1
+          fi
+
+  smoke-tests:
+    needs: read-version
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release-branch }}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
       - uses: abelfodil/protoc-action@v1
         with:
           protoc-version: "3.19.4"
+
       - uses: supercharge/redis-github-action@1.8.1
         with:
           redis-version: 7
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --locked --all-features --all-targets -- -D warnings
+
+      - name: Check
+        run: cargo check --locked --all-features
+
+      - name: Test
+        run: cargo test --locked --all-features
+
+      - name: Publish dry-run
+        run: cargo publish --dry-run --package limitador
+
+  tag:
+    needs: [read-version, smoke-tests]
+    runs-on: ubuntu-latest
+    steps:
       - uses: actions/checkout@v6
         with:
-          ref: crate-v${{ github.event.inputs.version }}
-      - name: Build
-        run: cargo build --verbose --release
-      - name: Check
-        run: cargo fmt --all -- --check && cargo clippy -- -D warnings
-      - name: Run tests
-        run: cargo test --verbose
-      - name: Publish
-        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }} -p limitador:${{ github.event.inputs.version }}
+          ref: ${{ inputs.release-branch }}
+          fetch-depth: 0
+
+      - name: Create and push tags
+        env:
+          VERSION: ${{ needs.read-version.outputs.version }}
+          CRATE_VERSION: ${{ needs.read-version.outputs.crate-version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          for TAG in "v${VERSION}" "server-v${VERSION}" "crate-v${CRATE_VERSION}"; do
+            if git tag --list "$TAG" | grep --quiet .; then
+              echo "::error::Tag $TAG already exists"
+              exit 1
+            fi
+            git tag --annotate "$TAG" --message "Release $TAG"
+          done
+
+          git push origin "v${VERSION}" "server-v${VERSION}" "crate-v${CRATE_VERSION}"
+
+  publish-crate:
+    needs: [read-version, tag]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release-branch }}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - uses: abelfodil/protoc-action@v1
+        with:
+          protoc-version: "3.19.4"
+
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --package limitador
+
+  build-images:
+    needs: [read-version, tag]
+    uses: ./.github/workflows/build-image.yaml
+    with:
+      ref: ${{ inputs.release-branch }}
+      tag: v${{ needs.read-version.outputs.version }}
+    secrets: inherit
+
+  create-release:
+    needs: [read-version, publish-crate, build-images]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release-branch }}
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.read-version.outputs.version }}
+          CRATE_VERSION: ${{ needs.read-version.outputs.crate-version }}
+        run: |
+          TAG="v${VERSION}"
+
+          NOTES=$(cat <<EOF
+          ## Artifacts
+
+          - **Crate**: [limitador v${CRATE_VERSION} on crates.io](https://crates.io/crates/limitador/${CRATE_VERSION})
+          - **Container image**: \`quay.io/kuadrant/limitador:v${VERSION}\`
+
+          ## Tags
+
+          - \`v${VERSION}\` (primary)
+          - \`server-v${VERSION}\`
+          - \`crate-v${CRATE_VERSION}\`
+          EOF
+          )
+
+          gh release create "$TAG" \
+            --title "Release v${VERSION}" \
+            --generate-notes \
+            --notes "$NOTES"

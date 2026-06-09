@@ -1,0 +1,33 @@
+---
+name: Version Gate
+
+on:
+  pull_request:
+    branches:
+      - "release-*"
+    paths:
+      - "release.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-release-yaml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install yq
+        run: |
+          sudo wget --quiet --output-document=/usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/download/v4.34.2/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Validate release.yaml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REF: ${{ github.base_ref }}
+          ORG: ${{ github.repository_owner }}
+        run: |
+          chmod +x .github/scripts/validate-release-yaml.sh
+          .github/scripts/validate-release-yaml.sh "$BASE_REF" "$ORG"

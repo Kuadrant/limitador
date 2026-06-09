@@ -1,101 +1,134 @@
 # How to release Limitador
 
-## Process
+Limitador uses a two-phase release process.
+A **pre-release** workflow prepares code changes and opens a pull request.
+A **release** workflow builds artifacts and creates the GitHub Release after the PR is merged.
 
-### `limitador` crate to crates.io
+## Version conventions
 
- - Create a local branch, whatever the name, e.g. `release`
+Limitador maintains two independent version numbers:
 
-```sh
-git checkout -b release
-```
+- **Server version** (e.g. `2.5.0`) — used for container image tags and as the primary release version
+- **Crate version** (e.g. `0.13.0`) — used for the `limitador` library crate on crates.io
 
- - Remove the `-dev` suffix from both `Cargo.toml`
+Both are tracked in `release.yaml` at the repository root.
+On `main`, versions are `0.0.0` (sentinel for "under development").
 
- ```diff
-diff --git a/limitador-server/Cargo.toml b/limitador-server/Cargo.toml
-index dd2f311..b555df8 100644
---- a/limitador-server/Cargo.toml
-+++ b/limitador-server/Cargo.toml
-@@ -1,6 +1,6 @@
- [package]
- name = "limitador-server"
--version = "1.3.0-dev"
-+version = "1.3.0"
-diff --git a/limitador/Cargo.toml b/limitador/Cargo.toml
-index 3aebf9d..d17b92b 100644
---- a/limitador/Cargo.toml
-+++ b/limitador/Cargo.toml
-@@ -1,6 +1,6 @@
- [package]
- name = "limitador"
--version = "0.5.0-dev"
-+version = "0.5.0"
- ```
+### Tag conventions
 
- - Commit the changes
+Each release creates three git tags:
 
-```sh
-git commit -am "[release] Releasing Crate 0.5.0 and Server 1.3.0"
-```
+- `vX.Y.Z` — primary tag (server version), used by other Kuadrant components
+- `server-vX.Y.Z` — server-specific tag (backward compatibility)
+- `crate-vX.Y.Z` — crate-specific tag (backward compatibility)
 
- - Create a tag named after the version, with the `crate-v` prefix 
+### Branch conventions
 
-```sh
-git tag -a crate-v0.5.0 -m "[tag] Limitador crate v0.5.0"
-```
+Release branches follow the `release-X.Y` pattern (e.g. `release-2.5` for server version `2.5.0`).
+Patch releases reuse the same branch (e.g. `2.5.1` releases from `release-2.5`).
 
- - Push the tag to remote
+## Prerequisites
 
-```sh
-git push origin crate-v0.5.0
-```
+### Repository secrets
 
- - Manually run the `Release crate` workflow action on [Github](https://github.com/Kuadrant/limitador/actions/workflows/release.yaml) providing the version to release in the input box, e.g. `0.5.0`, if all is correct, this should push the release to [crates.io](https://crates.io/crates/limitador/versions)
- - Create the release and release notes on [Github](https://github.com/Kuadrant/limitador/releases/new) using the tag from above, named: `Limitador crate vM.m.d`
+The following secrets must be configured in **Settings > Secrets and variables > Actions > Repository secrets**:
 
+| Secret | Purpose | Used by |
+|--------|---------|---------|
+| `CARGO_REGISTRY_TOKEN` | crates.io API token with publish permission for the `limitador` crate | Release workflow (`cargo publish`) |
+| `IMG_REGISTRY_USERNAME` | quay.io robot account username (e.g. `kuadrant+ci`) | Build Image workflow (docker login) |
+| `IMG_REGISTRY_TOKEN` | quay.io robot account token | Build Image workflow (docker login) |
 
-### `limitador-server` container image to quay.io
+> `GITHUB_TOKEN` is provided automatically by GitHub Actions and does not need to be configured.
+> It is used for creating tags, GitHub Releases, and opening pull requests.
 
- - Create a branch for your version with the `v` prefix, e.g. `v1.3.0`
- - Make sure your `Cargo.toml` is reflecting the proper version, see above
- - Push the branch to remote, which should create a matching release to quay.io with the tag name based of your branch, i.e. in this case `v1.3.0`
- - Create a tag with the `server-v` prefix, e.g. `server-v1.3.0`
- - Push the tag to Github
- - Create the release and release notes on [Github](https://github.com/Kuadrant/limitador/releases/new) using the tag from above, named: `vM.m.d`
- - Delete the branch, only keep the tag used for the release
+## Minor release
+
+### Phase 1: Pre-release
+
+1. Go to **Actions > Pre-release** and click **Run workflow**
+2. Enter the **server version** (e.g. `2.5.0`) and **crate version** (e.g. `0.13.0`)
+3. Optionally set the **source branch** (defaults to `main`).
+   For patch releases, set this to the existing release branch.
+4. The workflow will:
+   - Create the release branch `release-X.Y` from the source branch (if it doesn't exist)
+   - Create a `pre-release-vX.Y.Z` working branch
+   - Update `release.yaml` with both versions
+   - Set `limitador/Cargo.toml` version to the crate version
+   - Set `limitador-server/Cargo.toml` version to the server version
+   - Update `Cargo.lock`
+   - Open a PR against the release branch
+   - Open a **post-release PR** to `main` bumping versions to the next `-dev` (do not merge until after the release)
+
+### Review gate
+
+5. Review the PR. CI will run:
+   - Standard CI checks (fmt, clippy, test, image build)
+   - **Version gate** — validates `release.yaml` versions are non-zero and any dependency releases exist
+6. Approve and merge the PR
+
+### Phase 2: Release
+
+7. Go to **Actions > Release** and click **Run workflow**
+8. Enter the **release branch** (e.g. `release-2.5`)
+9. The workflow will (in strict order):
+   - **Read version** from `release.yaml` and verify no existing GitHub Release
+   - **Smoke tests** — fmt, clippy, check, full test suite, `cargo publish --dry-run`
+   - **Tag** — create and push three tags (`vX.Y.Z`, `server-vX.Y.Z`, `crate-vX.Y.Z`)
+   - **Publish crate** — `cargo publish -p limitador` to crates.io
+   - **Build images** — multi-arch container images (amd64, arm64, s390x) pushed to quay.io
+   - **Create GitHub Release** — only after all artifacts succeed
+
+### Verify
+
+10. Confirm the release artifacts:
+   - [GitHub Release](https://github.com/Kuadrant/limitador/releases) exists with correct tag
+   - [limitador on crates.io](https://crates.io/crates/limitador) shows the new version
+   - Container image `quay.io/kuadrant/limitador:vX.Y.Z` is available
+
+## Patch release
+
+The process is identical to a minor release, except:
+
+- The release branch (`release-X.Y`) already exists
+- Enter the patch version (e.g. `2.5.1`) and corresponding crate version
+- Set the **source branch** to the existing release branch (e.g. `release-2.5`)
+- Before running the pre-release workflow, backport any fixes to the release branch.
+  Create a branch, cherry-pick the commits, and open a PR against the release branch.
+  Branch protections prevent pushing directly to release branches.
 
 ## After the release
 
- - Create a `next` branch off `main` 
- - Update the _both_ Cargo.toml to point to the next `-dev` release
- - Create PR
- - Merge to `main`
+When the source branch is `main` (i.e. a minor release), the pre-release workflow automatically opens a **post-release PR** to `main`.
+This PR bumps both `Cargo.toml` files to the next minor `-dev` version (e.g. `2.5.0` → `2.6.0-dev`, `0.13.0` → `0.14.0-dev`).
+It is created alongside the release PR but should only be merged after the release is complete.
 
-```diff
- diff --git a/limitador-server/Cargo.toml b/limitador-server/Cargo.toml
-index d2bcd36..3724132 100644
---- a/limitador-server/Cargo.toml
-+++ b/limitador-server/Cargo.toml
-@@ -1,6 +1,6 @@
- [package]
- name = "limitador-server"
--version = "2.0.0-dev"
-+version = "2.1.0-dev"
- authors = ["Alex Snaps <asnaps@redhat.com>", "Eguzki Astiz Lezaun <eguzki@redhat.com>", "David Ortiz <z.david.ortiz@gmail.com>"]
- license = "Apache-2.0"
- keywords = ["rate-limiting", "rate", "limiter", "envoy", "rls"]
-diff --git a/limitador/Cargo.toml b/limitador/Cargo.toml
-index ed822b1..baf50c7 100644
---- a/limitador/Cargo.toml
-+++ b/limitador/Cargo.toml
-@@ -1,6 +1,6 @@
- [package]
- name = "limitador"
--version = "0.8.0-dev"
-+version = "0.9.0-dev"
- authors = ["David Ortiz <z.david.ortiz@gmail.com>", "Eguzki Astiz Lezaun <eguzki@redhat.com>", "Alex Snaps <asnaps@redhat.com>"]
- license = "Apache-2.0"
- keywords = ["rate-limiting", "rate", "limiter"]
-```
+For patch releases (source branch is a release branch), the post-release job is skipped.
 
+## Rollback
+
+If the release workflow fails partway through:
+
+- **Failed during smoke tests**: No artifacts created. Fix the issue and re-run.
+- **Failed during tag**: No artifacts created. Fix the issue and re-run.
+- **Failed during crate publish**: Tags exist but no GitHub Release.
+  The crate may or may not have been published — check crates.io.
+  If the crate was published, you cannot re-publish the same version.
+  Delete the tags manually if needed, fix the issue, and re-run with a patch version.
+- **Failed during image build**: Tags exist and crate is published, but no GitHub Release.
+  Delete the tags, yank the crate version on crates.io if needed, fix the issue, and re-run with a patch version.
+  Alternatively, fix the image build and re-run only the release workflow (the tag and crate steps will detect existing artifacts and fail — manual intervention may be needed).
+- **Failed during GitHub Release creation**: All artifacts exist.
+  Create the GitHub Release manually via `gh release create`.
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `release.yaml` | Version and dependency declaration (source of truth) |
+| `.github/workflows/pre-release.yaml` | Phase 1: prepare release PR |
+| `.github/workflows/release.yaml` | Phase 2: test, tag, build, publish, release |
+| `.github/workflows/version-gate.yaml` | CI check on release branch PRs |
+| `.github/workflows/build-image.yaml` | Multi-arch container image build (reusable) |
+| `.github/scripts/parse-version.sh` | Parse and validate versions from release.yaml |
+| `.github/scripts/validate-release-yaml.sh` | Version gate validation logic |

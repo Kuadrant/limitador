@@ -1,0 +1,285 @@
+---
+name: Pre-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Server release version (semver, e.g. 2.5.0)"
+        required: true
+        type: string
+      crate-version:
+        description: "Crate release version (semver, e.g. 0.13.0)"
+        required: true
+        type: string
+      source-branch:
+        description: "Branch to base the pre-release on (default: main for new releases, release branch for patches)"
+        required: false
+        type: string
+        default: "main"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: pre-release
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.validate.outputs.version }}
+      crate-version: ${{ steps.validate.outputs.crate-version }}
+      release-branch: ${{ steps.validate.outputs.release-branch }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source-branch }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate version format
+        id: validate
+        env:
+          VERSION: ${{ inputs.version }}
+          CRATE_VERSION: ${{ inputs.crate-version }}
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "::error::Invalid semver for server version: $VERSION"
+            exit 1
+          fi
+
+          if ! [[ "$CRATE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "::error::Invalid semver for crate version: $CRATE_VERSION"
+            exit 1
+          fi
+
+          MAJOR=$(echo "$VERSION" | cut --delimiter=. --fields=1)
+          MINOR=$(echo "$VERSION" | cut --delimiter=. --fields=2)
+          RELEASE_BRANCH="release-${MAJOR}.${MINOR}"
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "crate-version=$CRATE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "release-branch=$RELEASE_BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Create or verify release branch
+        env:
+          RELEASE_BRANCH: ${{ steps.validate.outputs.release-branch }}
+        run: |
+          if git ls-remote --exit-code origin "refs/heads/${RELEASE_BRANCH}" >/dev/null 2>&1; then
+            echo "Release branch '${RELEASE_BRANCH}' already exists"
+          else
+            echo "Creating release branch '${RELEASE_BRANCH}'"
+            git switch --create "${RELEASE_BRANCH}"
+            git push origin "${RELEASE_BRANCH}"
+          fi
+
+  prepare-release:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.setup.outputs.release-branch }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - uses: abelfodil/protoc-action@v1
+        with:
+          protoc-version: "3.19.4"
+
+      - name: Install yq
+        run: |
+          sudo wget --quiet --output-document=/usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/download/v4.34.2/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Create pre-release branch
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          PRE_RELEASE_BRANCH="pre-release-v${VERSION}"
+          if git ls-remote --exit-code origin "refs/heads/${PRE_RELEASE_BRANCH}" >/dev/null 2>&1; then
+            echo "::error::Pre-release branch '${PRE_RELEASE_BRANCH}' already exists. Delete it first or use a different version."
+            exit 1
+          fi
+          git switch --create "${PRE_RELEASE_BRANCH}"
+
+      - name: Update release.yaml
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+          CRATE_VERSION: ${{ needs.setup.outputs.crate-version }}
+        run: |
+          yq --inplace ".limitador.version = \"${VERSION}\"" release.yaml
+          yq --inplace ".limitador.\"crate-version\" = \"${CRATE_VERSION}\"" release.yaml
+
+      - name: Update Cargo.toml versions
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+          CRATE_VERSION: ${{ needs.setup.outputs.crate-version }}
+        run: |
+          sed --in-place '/^\[package\]/,/^\[/{s/^version = ".*"/version = "'"${CRATE_VERSION}"'"/}' limitador/Cargo.toml
+          sed --in-place '/^\[package\]/,/^\[/{s/^version = ".*"/version = "'"${VERSION}"'"/}' limitador-server/Cargo.toml
+
+      - name: Update Cargo.lock
+        run: cargo check
+
+      - name: Commit and push changes
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+          CRATE_VERSION: ${{ needs.setup.outputs.crate-version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add --all
+          if git diff --cached --quiet; then
+            echo "::error::No changes detected. Versions may already be set to the target values."
+            exit 1
+          fi
+          git commit --message "chore: prepare release server v${VERSION} / crate v${CRATE_VERSION}"
+          git push origin "pre-release-v${VERSION}"
+
+  open-pr:
+    needs: [setup, prepare-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.setup.outputs.version }}
+          CRATE_VERSION: ${{ needs.setup.outputs.crate-version }}
+          RELEASE_BRANCH: ${{ needs.setup.outputs.release-branch }}
+        run: |
+          BODY=$(cat <<EOF
+          ## Release server v${VERSION} / crate v${CRATE_VERSION}
+
+          This PR prepares the release of limitador-server v${VERSION} and limitador crate v${CRATE_VERSION}.
+
+          ### Pre-release changes
+          - Updated \`release.yaml\` with version \`${VERSION}\` and crate-version \`${CRATE_VERSION}\`
+          - Set \`limitador/Cargo.toml\` version to \`${CRATE_VERSION}\`
+          - Set \`limitador-server/Cargo.toml\` version to \`${VERSION}\`
+          - Updated \`Cargo.lock\`
+
+          ### Checklist
+          - [ ] Version numbers are correct in both Cargo.toml files
+          - [ ] \`release.yaml\` versions match Cargo.toml versions
+          - [ ] CI checks pass
+          - [ ] Version gate check passes
+
+          ### Next steps
+          After merging this PR, run the **Release** workflow with branch \`${RELEASE_BRANCH}\`.
+          EOF
+          )
+
+          gh pr create \
+            --base "${RELEASE_BRANCH}" \
+            --head "pre-release-v${VERSION}" \
+            --title "Release server v${VERSION} / crate v${CRATE_VERSION}" \
+            --body "$BODY"
+
+  post-release:
+    if: inputs.source-branch == 'main'
+    needs: [setup, open-pr]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - uses: abelfodil/protoc-action@v1
+        with:
+          protoc-version: "3.19.4"
+
+      - name: Compute next dev versions
+        id: next
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+          CRATE_VERSION: ${{ needs.setup.outputs.crate-version }}
+        run: |
+          MAJOR=$(echo "$VERSION" | cut --delimiter=. --fields=1)
+          MINOR=$(echo "$VERSION" | cut --delimiter=. --fields=2)
+          NEXT_MINOR=$((MINOR + 1))
+          NEXT_VERSION="${MAJOR}.${NEXT_MINOR}.0-dev"
+
+          CRATE_MAJOR=$(echo "$CRATE_VERSION" | cut --delimiter=. --fields=1)
+          CRATE_MINOR=$(echo "$CRATE_VERSION" | cut --delimiter=. --fields=2)
+          NEXT_CRATE_MINOR=$((CRATE_MINOR + 1))
+          NEXT_CRATE_VERSION="${CRATE_MAJOR}.${NEXT_CRATE_MINOR}.0-dev"
+
+          echo "version=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "crate-version=${NEXT_CRATE_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Create post-release branch
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          POST_RELEASE_BRANCH="post-release-v${VERSION}"
+          if git ls-remote --exit-code origin "refs/heads/${POST_RELEASE_BRANCH}" >/dev/null 2>&1; then
+            echo "::error::Post-release branch '${POST_RELEASE_BRANCH}' already exists. Delete it first or use a different version."
+            exit 1
+          fi
+          git switch --create "${POST_RELEASE_BRANCH}"
+
+      - name: Update Cargo.toml versions
+        env:
+          NEXT_VERSION: ${{ steps.next.outputs.version }}
+          NEXT_CRATE_VERSION: ${{ steps.next.outputs.crate-version }}
+        run: |
+          sed --in-place '/^\[package\]/,/^\[/{s/^version = ".*"/version = "'"${NEXT_CRATE_VERSION}"'"/}' limitador/Cargo.toml
+          sed --in-place '/^\[package\]/,/^\[/{s/^version = ".*"/version = "'"${NEXT_VERSION}"'"/}' limitador-server/Cargo.toml
+
+      - name: Update Cargo.lock
+        run: cargo check
+
+      - name: Commit and push changes
+        id: commit
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+          NEXT_VERSION: ${{ steps.next.outputs.version }}
+          NEXT_CRATE_VERSION: ${{ steps.next.outputs.crate-version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add --all
+          if git diff --cached --quiet; then
+            echo "Versions already at next dev. Skipping post-release PR."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit --message "chore: bump to server v${NEXT_VERSION} / crate v${NEXT_CRATE_VERSION}"
+          git push origin "post-release-v${VERSION}"
+
+      - name: Open post-release pull request
+        if: steps.commit.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.setup.outputs.version }}
+          NEXT_VERSION: ${{ steps.next.outputs.version }}
+          NEXT_CRATE_VERSION: ${{ steps.next.outputs.crate-version }}
+        run: |
+          BODY=$(cat <<EOF
+          ## Post-release version bump after server v${VERSION}
+
+          Bumps development versions:
+          - \`limitador/Cargo.toml\` → \`${NEXT_CRATE_VERSION}\`
+          - \`limitador-server/Cargo.toml\` → \`${NEXT_VERSION}\`
+
+          > **Do not merge this PR until the release of server v${VERSION} is complete.**
+          EOF
+          )
+
+          gh pr create \
+            --base main \
+            --head "post-release-v${VERSION}" \
+            --title "Post-release: bump to server v${NEXT_VERSION} / crate v${NEXT_CRATE_VERSION}" \
+            --body "$BODY"
