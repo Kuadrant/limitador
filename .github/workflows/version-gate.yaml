@@ -1,0 +1,29 @@
+---
+name: Version Gate
+
+on:
+  pull_request:
+    branches:
+      - "release-*"
+    paths:
+      - "release.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-release-yaml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/install-yq
+
+      - name: Validate release.yaml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REF: ${{ github.base_ref }}
+          ORG: ${{ github.repository_owner }}
+        run: |
+          chmod +x .github/scripts/validate-release-yaml.sh
+          .github/scripts/validate-release-yaml.sh "$BASE_REF" "$ORG"
