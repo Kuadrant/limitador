@@ -393,15 +393,10 @@ impl RateLimiter {
         // stop on first errors
         // stop on first counter not withing limits
         for counter in counters.iter() {
-            match self.storage.is_within_limits(counter, delta) {
-                Ok(within_limits) => {
-                    if !within_limits {
-                        return Ok(Authorization::Limited(
-                            counter.limit().name().map(|n| n.to_owned()),
-                        ));
-                    }
-                }
-                Err(e) => return Err(e),
+            if !self.storage.is_within_limits(counter, delta)? {
+                return Ok(Authorization::Limited(
+                    counter.limit().name().map(|n| n.to_owned()),
+                ));
             }
         }
 
