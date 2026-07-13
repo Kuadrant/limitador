@@ -185,7 +185,7 @@ impl CounterStorage for CrInMemoryStorage {
     fn get_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
         let limits_map = self.limits.read().unwrap();
-        for (_, counter_entry) in limits_map.iter() {
+        for counter_entry in limits_map.values() {
             if limits.contains(counter_entry.counter.limit()) {
                 let mut counter: Counter = counter_entry.counter.clone();
                 counter.set_remaining(counter.max_value() - counter_entry.value.read());
