@@ -81,6 +81,7 @@ pub mod env {
         pub static ref RATE_LIMIT_HEADERS: Option<&'static str> = value_for("RATE_LIMIT_HEADERS");
     }
 
+    #[allow(dead_code)] // used by lazy_static! initializers; flagged in test-only builds
     fn value_for(env_key: &'static str) -> Option<&'static str> {
         match std::env::var(env_key) {
             Ok(s) => Some(Box::leak(s.into_boxed_str())),
@@ -88,6 +89,7 @@ pub mod env {
         }
     }
 
+    #[allow(dead_code)] // used by lazy_static! initializers; flagged in test-only builds
     fn env_option_is_enabled(env_name: &str) -> bool {
         match env::var(env_name) {
             Ok(value) => value == "1",
