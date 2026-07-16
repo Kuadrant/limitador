@@ -66,6 +66,7 @@ impl PrometheusMetrics {
         );
         describe_counter!("authorized_calls", "Authorized calls");
         describe_counter!("limited_calls", "Limited calls");
+        describe_counter!("report_calls", "Report calls");
         describe_gauge!("limitador_up", "Limitador is running");
         gauge!("limitador_up").set(1);
         describe_gauge!(
@@ -94,6 +95,12 @@ impl PrometheusMetrics {
         let mut labels: Vec<(String, String)> = self.labels(cel_ctx);
         labels.push((NAMESPACE_LABEL.to_string(), namespace.as_ref().to_string()));
         counter!("authorized_calls", &labels).increment(1);
+    }
+
+    pub fn incr_report_calls(&self, namespace: &Namespace, cel_ctx: &Context) {
+        let mut labels: Vec<(String, String)> = self.labels(cel_ctx);
+        labels.push((NAMESPACE_LABEL.to_string(), namespace.as_ref().to_string()));
+        counter!("report_calls", &labels).increment(1);
     }
 
     pub fn incr_authorized_hits(&self, namespace: &Namespace, cel_ctx: &Context, hits_addend: u64) {
@@ -397,6 +404,40 @@ mod tests {
                 "{}",
                 metrics_output
             );
+        });
+    }
+
+    #[test]
+    fn shows_report_calls_by_namespace() {
+        let recorder = PrometheusBuilder::new().build_recorder();
+        let handle: Arc<PrometheusHandle> = recorder.handle().into();
+
+        with_local_recorder(&recorder, || {
+            let prometheus_metrics = PrometheusMetrics::new_with_handle(false, handle.clone());
+            let namespaces_with_report_counts = [
+                ("report_calls_by_namespace".into(), 2),
+                ("report_calls_by_namespace_two".into(), 4),
+            ];
+
+            namespaces_with_report_counts
+                .iter()
+                .for_each(|(namespace, report_count)| {
+                    for _ in 0..*report_count {
+                        prometheus_metrics.incr_report_calls(namespace, &Context::default());
+                    }
+                });
+
+            let metrics_output = prometheus_metrics.gather_metrics();
+
+            namespaces_with_report_counts
+                .iter()
+                .for_each(|(namespace, report_count)| {
+                    assert!(metrics_output.contains(&formatted_counter_with_namespace(
+                        "report_calls",
+                        *report_count,
+                        namespace
+                    )));
+                });
         });
     }
 
