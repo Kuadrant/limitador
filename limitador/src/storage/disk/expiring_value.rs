@@ -105,6 +105,7 @@ impl From<TryFromSliceError> for StorageErr {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::ExpiringValue;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};

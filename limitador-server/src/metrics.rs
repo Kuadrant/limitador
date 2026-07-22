@@ -187,7 +187,7 @@ where
                 // iterate over the groups this span belongs to
                 for group in span_state.group_times.keys().cloned().collect::<Vec<_>>() {
                     // find the set of records related to these groups in the layer
-                    if self.groups.get(&group).unwrap().records.contains(&name) {
+                    if self.groups.get(&group).expect("group must exist in metrics layer").records.contains(&name) {
                         // if we are a record for this group then increment the relevant
                         // span-local timing and continue to the next group
                         span_state.increment(group, timing);
@@ -211,6 +211,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::{MetricsLayer, SpanState, Timings};
     use std::time::Instant;

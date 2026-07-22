@@ -78,7 +78,7 @@ impl RateLimitService for KuadrantService {
             return Err(Status::unavailable("Service unavailable"));
         }
 
-        let rate_limited_resp = rate_limited_resp.unwrap();
+        let rate_limited_resp = rate_limited_resp.expect("rate_limited_resp must be Ok after error check");
         let resp_code = if rate_limited_resp.limited {
             self.metrics.incr_limited_calls(
                 &namespace,
@@ -186,6 +186,7 @@ impl RateLimitService for KuadrantService {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     mod check_rate_limit {
         use tonic::IntoRequest;

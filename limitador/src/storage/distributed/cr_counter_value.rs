@@ -39,7 +39,7 @@ impl<A: Ord> CrCounterValue<A> {
         if self.expiry.expired_at(when) {
             0
         } else {
-            let guard = self.others.read().unwrap();
+            let guard = self.others.read().expect("lock poisoned");
             let others: u64 = guard.values().sum();
             others + self.value.load(Ordering::Relaxed)
         }
@@ -65,7 +65,7 @@ impl<A: Ord> CrCounterValue<A> {
         if actor == self.ourselves {
             self.inc_at(increment, time_window, when);
         } else {
-            let mut guard = self.others.write().unwrap();
+            let mut guard = self.others.write().expect("lock poisoned");
             if self.expiry.update_if_expired(time_window, when) {
                 guard.insert(actor, increment);
             } else {
@@ -86,7 +86,7 @@ impl<A: Ord> CrCounterValue<A> {
                 self.reset(expiry);
             }
             let ourselves = self.value.load(Ordering::SeqCst);
-            let mut others = self.others.write().unwrap();
+            let mut others = self.others.write().expect("lock poisoned");
             for (actor, other_value) in other_values {
                 if actor == self.ourselves {
                     if other_value > ourselves {
@@ -128,7 +128,7 @@ impl<A: Ord> CrCounterValue<A> {
             others,
             expiry,
         } = self;
-        let mut map = others.into_inner().unwrap();
+        let mut map = others.into_inner().expect("lock poisoned");
         map.insert(ourselves, value.into_inner());
         (expiry.into_inner(), map)
     }
@@ -142,7 +142,7 @@ impl<A: Ord> CrCounterValue<A> {
     }
 
     fn reset(&self, expiry: SystemTime) {
-        let mut guard = self.others.write().unwrap();
+        let mut guard = self.others.write().expect("lock poisoned");
         self.expiry.update(expiry);
         self.value.store(0, Ordering::SeqCst);
         guard.clear()
@@ -155,7 +155,7 @@ impl<A: Clone + Ord> Clone for CrCounterValue<A> {
             ourselves: self.ourselves.clone(),
             max_value: self.max_value,
             value: AtomicU64::new(self.value.load(Ordering::SeqCst)),
-            others: RwLock::new(self.others.read().unwrap().clone()),
+            others: RwLock::new(self.others.read().expect("lock poisoned").clone()),
             expiry: self.expiry.clone(),
         }
     }

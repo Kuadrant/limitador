@@ -31,7 +31,7 @@ pub struct CrInMemoryStorage {
 impl CounterStorage for CrInMemoryStorage {
     #[tracing::instrument(skip_all)]
     fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr> {
-        let limits = self.limits.read().unwrap();
+        let limits = self.limits.read().expect("lock poisoned");
 
         let mut value = 0;
         let key = encode_counter_to_key(counter);
@@ -44,7 +44,7 @@ impl CounterStorage for CrInMemoryStorage {
     #[tracing::instrument(skip_all)]
     fn add_counter(&self, limit: &Limit) -> Result<(), StorageErr> {
         if limit.variables().is_empty() {
-            let mut limits = self.limits.write().unwrap();
+            let mut limits = self.limits.write().expect("lock poisoned");
             let key = encode_limit_to_key(limit);
             limits.entry(key.clone()).or_insert(Arc::new(CounterEntry {
                 key,
@@ -63,7 +63,7 @@ impl CounterStorage for CrInMemoryStorage {
 
     #[tracing::instrument(skip_all)]
     fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr> {
-        let mut limits = self.limits.write().unwrap();
+        let mut limits = self.limits.write().expect("lock poisoned");
         let now = SystemTime::now();
 
         let key = encode_counter_to_key(counter);
@@ -127,7 +127,7 @@ impl CounterStorage for CrInMemoryStorage {
             // since that will allow us to have higher concurrency
             let counter_existed = {
                 let key = key.clone();
-                let limits = self.limits.read().unwrap();
+                let limits = self.limits.read().expect("lock poisoned");
                 match limits.get(&key) {
                     None => false,
                     Some(store_value) => {
@@ -147,7 +147,7 @@ impl CounterStorage for CrInMemoryStorage {
             // we need to take the slow path since we need to mutate the limits map.
             if !counter_existed {
                 // try again with a write lock to create the counter if it's still missing.
-                let mut limits = self.limits.write().unwrap();
+                let mut limits = self.limits.write().expect("lock poisoned");
                 let store_value = limits.entry(key.clone()).or_insert(Arc::new(CounterEntry {
                     key: key.clone(),
                     counter: counter.clone(),
@@ -172,9 +172,9 @@ impl CounterStorage for CrInMemoryStorage {
         }
 
         // Update counters
-        let limits = self.limits.read().unwrap();
+        let limits = self.limits.read().expect("lock poisoned");
         counter_values_to_update.into_iter().for_each(|key| {
-            let store_value = limits.get(&key).unwrap();
+            let store_value = limits.get(&key).expect("counter key must exist after insert");
             self.increment_counter(store_value.clone(), delta, now);
         });
 
@@ -184,13 +184,13 @@ impl CounterStorage for CrInMemoryStorage {
     #[tracing::instrument(skip_all)]
     fn get_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<HashSet<Counter>, StorageErr> {
         let mut res = HashSet::new();
-        let limits_map = self.limits.read().unwrap();
+        let limits_map = self.limits.read().expect("lock poisoned");
         for counter_entry in limits_map.values() {
             if limits.contains(counter_entry.counter.limit()) {
                 let mut counter: Counter = counter_entry.counter.clone();
                 counter.set_remaining(counter.max_value() - counter_entry.value.read());
                 counter.set_expires_in(counter_entry.value.ttl());
-                if counter.expires_in().unwrap() > Duration::ZERO {
+                if counter.expires_in().expect("expires_in was just set") > Duration::ZERO {
                     res.insert(counter);
                 }
             }
@@ -208,7 +208,7 @@ impl CounterStorage for CrInMemoryStorage {
 
     #[tracing::instrument(skip_all)]
     fn clear(&self) -> Result<(), StorageErr> {
-        self.limits.write().unwrap().clear();
+        self.limits.write().expect("lock poisoned").clear();
         Ok(())
     }
 }
@@ -220,7 +220,11 @@ impl CrInMemoryStorage {
         listen_address: String,
         peer_urls: Vec<String>,
     ) -> Self {
-        let listen_address = listen_address.to_socket_addrs().unwrap().next().unwrap();
+        let listen_address = listen_address
+            .to_socket_addrs()
+            .expect("invalid listen address")
+            .next()
+            .expect("no socket address resolved for listen address");
         let peer_urls = peer_urls.clone();
         let limits = Arc::new(RwLock::new(LimitsMap::new()));
 
@@ -238,8 +242,8 @@ impl CrInMemoryStorage {
                         .iter()
                         .map(|(k, v)| (k.to_owned(), v.to_owned())),
                 );
-                let limits = limits_clone.read().unwrap();
-                let value = limits.get(&update.key).unwrap();
+                let limits = limits_clone.read().expect("lock poisoned");
+                let value = limits.get(&update.key).expect("counter key must exist in limits map");
                 value
                     .value
                     .merge((UNIX_EPOCH + Duration::from_secs(update.expires_at), values).into());
@@ -273,7 +277,7 @@ impl CrInMemoryStorage {
 
     fn delete_counters_of_limit(&self, limit: &Limit) {
         let key = encode_limit_to_key(limit);
-        self.limits.write().unwrap().remove(&key);
+        self.limits.write().expect("lock poisoned").remove(&key);
     }
 
     fn counter_is_within_limits(counter: &Counter, current_val: Option<&u64>, delta: u64) -> bool {
@@ -295,13 +299,13 @@ async fn process_re_sync(limits: &Arc<RwLock<LimitsMap>>, sender: Sender<Option<
     // sending all the counters to the peer might take a while, so we don't want to lock
     // the limits map for too long, lets figure first get the list of keys that needs to be sent.
     let keys: Vec<_> = {
-        let limits = limits.read().unwrap();
+        let limits = limits.read().expect("lock poisoned");
         limits.keys().cloned().collect()
     };
 
     for key in keys {
         let update = {
-            let limits = limits.read().unwrap();
+            let limits = limits.read().expect("lock poisoned");
             limits.get(&key).and_then(|store_value| {
                 let (expiry, ourself, value) = store_value.value.local_values();
                 if value == 0 || expiry <= SystemTime::now() {
@@ -311,7 +315,7 @@ async fn process_re_sync(limits: &Arc<RwLock<LimitsMap>>, sender: Sender<Option<
                     Some(CounterUpdate {
                         key: key.clone(),
                         values,
-                        expires_at: expiry.duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                        expires_at: expiry.duration_since(UNIX_EPOCH).expect("expiry time before Unix epoch").as_secs(),
                     })
                 }
             })

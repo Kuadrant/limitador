@@ -171,7 +171,7 @@ impl RateLimitService for MyRateLimiter {
             return Err(Status::unavailable("Service unavailable"));
         }
 
-        let mut rate_limited_resp = rate_limited_resp.unwrap();
+        let mut rate_limited_resp = rate_limited_resp.expect("rate_limited_resp must be Ok after error check");
         span.record("ratelimit.limited", rate_limited_resp.limited);
         if let Some(ref name) = rate_limited_resp.limit_name {
             span.record("ratelimit.limit_name", name.as_str());
@@ -258,7 +258,7 @@ pub async fn run_envoy_rls_server(
                 .register_encoded_file_descriptor_set(rls_proto::RLS_DESCRIPTOR_SET)
                 .register_encoded_file_descriptor_set(rls_proto::KUADRANT_RLS_DESCRIPTOR_SET)
                 .build_v1()
-                .unwrap(),
+                .expect("failed to build gRPC reflection service"),
         ),
     };
 
@@ -267,7 +267,7 @@ pub async fn run_envoy_rls_server(
         .add_service(envoy_server)
         .add_service(kuadrant_server)
         .add_optional_service(reflection_service)
-        .serve(address.parse().unwrap())
+        .serve(address.parse().expect("failed to parse gRPC server address"))
         .await
 }
 
@@ -300,6 +300,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 pub mod tests {
     use lazy_static::lazy_static;
     use metrics_exporter_prometheus::PrometheusHandle;

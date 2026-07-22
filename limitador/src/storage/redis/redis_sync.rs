@@ -228,7 +228,7 @@ impl ManageConnection for RedisConnectionManager {
 
 impl Default for RedisStorage {
     fn default() -> Self {
-        Self::new(DEFAULT_REDIS_URL).unwrap()
+        Self::new(DEFAULT_REDIS_URL).expect("failed to create default Redis storage")
     }
 }
 
@@ -243,6 +243,7 @@ impl From<::r2d2::Error> for StorageErr {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod test {
     use crate::storage::redis::RedisStorage;
 

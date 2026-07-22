@@ -24,12 +24,12 @@ pub fn key_for_counter(counter: &Counter) -> Vec<u8> {
         let key = if counter.remaining().is_some() || counter.expires_in().is_some() {
             format!(
                 "namespace:{{{namespace}}},counter:{}",
-                serde_json::to_string(&counter.key()).unwrap()
+                serde_json::to_string(&counter.key()).expect("counter key serialization failed")
             )
         } else {
             format!(
                 "namespace:{{{namespace}}},counter:{}",
-                serde_json::to_string(counter).unwrap()
+                serde_json::to_string(counter).expect("counter serialization failed")
             )
         };
         key.into_bytes()
@@ -49,14 +49,14 @@ pub fn key_for_counters_of_limit(limit: &Limit) -> Vec<u8> {
         let key = IdLimitKey { id };
 
         let mut encoded_key = Vec::new();
-        encoded_key = postcard::to_extend(&2u8, encoded_key).unwrap();
-        encoded_key = postcard::to_extend(&key, encoded_key).unwrap();
+        encoded_key = postcard::to_extend(&2u8, encoded_key).expect("postcard serialization failed");
+        encoded_key = postcard::to_extend(&key, encoded_key).expect("postcard serialization failed");
         encoded_key
     } else {
         let namespace = limit.namespace().as_ref();
         format!(
             "namespace:{{{namespace}}},counters_of_limit:{}",
-            serde_json::to_string(limit).unwrap()
+            serde_json::to_string(limit).expect("limit serialization failed")
         )
         .into_bytes()
     }
@@ -201,7 +201,7 @@ pub mod bin {
     impl<'a> From<&'a Counter> for IdCounterKey<'a> {
         fn from(counter: &'a Counter) -> Self {
             IdCounterKey {
-                id: counter.id().unwrap(),
+                id: counter.id().expect("counter id must be set"),
                 variables: counter.variables_for_key(),
             }
         }
@@ -237,18 +237,18 @@ pub mod bin {
         let mut encoded_key = Vec::new();
         if counter.id().is_none() {
             let key: CounterKey = counter.into();
-            encoded_key = postcard::to_extend(&1u8, encoded_key).unwrap();
-            encoded_key = postcard::to_extend(&key, encoded_key).unwrap()
+            encoded_key = postcard::to_extend(&1u8, encoded_key).expect("postcard serialization failed");
+            encoded_key = postcard::to_extend(&key, encoded_key).expect("postcard serialization failed")
         } else {
             let key: IdCounterKey = counter.into();
-            encoded_key = postcard::to_extend(&2u8, encoded_key).unwrap();
-            encoded_key = postcard::to_extend(&key, encoded_key).unwrap();
+            encoded_key = postcard::to_extend(&2u8, encoded_key).expect("postcard serialization failed");
+            encoded_key = postcard::to_extend(&key, encoded_key).expect("postcard serialization failed");
         }
         encoded_key
     }
 
     pub fn partial_counter_from_counter_key_v2(key: &[u8]) -> Counter {
-        let (version, key) = postcard::take_from_bytes::<u8>(key).unwrap();
+        let (version, key) = postcard::take_from_bytes::<u8>(key).expect("key deserialization failed");
         match version {
             1u8 => {
                 let CounterKey {
@@ -256,7 +256,7 @@ pub mod bin {
                     seconds,
                     conditions,
                     variables,
-                } = postcard::from_bytes(key).unwrap();
+                } = postcard::from_bytes(key).expect("key deserialization failed");
 
                 let map: HashMap<String, String> = variables
                     .into_iter()
@@ -275,7 +275,7 @@ pub mod bin {
                 Counter::resolved_vars(limit, map).expect("counter creation failed!")
             }
             2u8 => {
-                let IdCounterKey { id, variables } = postcard::from_bytes(key).unwrap();
+                let IdCounterKey { id, variables } = postcard::from_bytes(key).expect("key deserialization failed");
                 let map: HashMap<String, String> = variables
                     .into_iter()
                     .map(|(var, value)| (var.to_string(), value.to_string()))
@@ -299,15 +299,15 @@ pub mod bin {
 
     pub fn key_for_counter(counter: &Counter) -> Vec<u8> {
         let key: CounterKey = counter.into();
-        postcard::to_stdvec(&key).unwrap()
+        postcard::to_stdvec(&key).expect("postcard serialization failed")
     }
 
     pub fn prefix_for_namespace(namespace: &str) -> Vec<u8> {
-        postcard::to_stdvec(namespace).unwrap()
+        postcard::to_stdvec(namespace).expect("postcard serialization failed")
     }
 
     pub fn partial_counter_from_counter_key(key: &[u8]) -> Counter {
-        let key: CounterKey = postcard::from_bytes(key).unwrap();
+        let key: CounterKey = postcard::from_bytes(key).expect("key deserialization failed");
         let CounterKey {
             ns,
             seconds,
@@ -330,7 +330,7 @@ pub mod bin {
             map.keys()
                 .map(|p| p.as_str().try_into().expect("variable corrupted!")),
         );
-        Counter::resolved_vars(limit, map).unwrap()
+        Counter::resolved_vars(limit, map).expect("counter creation failed!")
     }
 
     #[cfg(test)]

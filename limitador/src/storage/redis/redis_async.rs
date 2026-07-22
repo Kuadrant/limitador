@@ -267,6 +267,7 @@ impl AsyncRedisStorage {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use crate::storage::redis::AsyncRedisStorage;
     use redis::ErrorKind;

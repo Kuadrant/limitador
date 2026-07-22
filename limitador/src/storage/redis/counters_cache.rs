@@ -165,11 +165,11 @@ impl Batcher {
             Entry::Occupied(needs_merge) => {
                 let arc = needs_merge.get();
                 if !Arc::ptr_eq(arc, &value) {
-                    arc.delta(&counter, value.pending_writes().unwrap());
+                    arc.delta(&counter, value.pending_writes().expect("pending_writes must be set"));
                 }
             }
             Entry::Vacant(miss) => {
-                self.limiter.acquire().await.unwrap().forget();
+                self.limiter.acquire().await.expect("semaphore closed unexpectedly").forget();
                 gauge!("batcher_size").increment(1);
                 miss.insert_entry(value);
             }
@@ -201,7 +201,7 @@ impl Batcher {
                 }
                 let mut result = HashMap::new();
                 for counter in &batch {
-                    let value = self.updates.get(counter).unwrap().clone();
+                    let value = self.updates.get(counter).expect("counter must exist in updates after iteration").clone();
                     result.insert(counter.clone(), value);
                 }
                 histogram!("batcher_flush_size").record(result.len() as f64);
@@ -383,6 +383,7 @@ impl CountersCacheBuilder {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::HashMap;
     use std::ops::Add;

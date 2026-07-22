@@ -186,7 +186,7 @@ impl RocksDbStorage {
             Some(Vec::from(value))
         });
         opts.create_if_missing(true);
-        let db = DB::open(&opts, path).unwrap();
+        let db = DB::open(&opts, path)?;
         Ok(Self { db })
     }
 
@@ -223,6 +223,7 @@ impl RocksDbStorage {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::RocksDbStorage;
     use crate::counter::Counter;

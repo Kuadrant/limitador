@@ -138,6 +138,7 @@ impl PartialEq for Counter {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use crate::counter::Counter;
     use crate::limit::Limit;

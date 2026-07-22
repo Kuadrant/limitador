@@ -24,7 +24,7 @@ impl CounterStorage for InMemoryStorage {
                 .map(|c| c.value())
                 .unwrap_or_default()
         } else {
-            let limits_by_namespace = self.simple_limits.read().unwrap();
+            let limits_by_namespace = self.simple_limits.read().expect("lock poisoned");
             limits_by_namespace
                 .get(counter.limit())
                 .map(|c| c.value())
@@ -37,7 +37,7 @@ impl CounterStorage for InMemoryStorage {
     #[tracing::instrument(skip_all)]
     fn add_counter(&self, limit: &Limit) -> Result<(), StorageErr> {
         if limit.variables().is_empty() {
-            let mut limits_by_namespace = self.simple_limits.write().unwrap();
+            let mut limits_by_namespace = self.simple_limits.write().expect("lock poisoned");
             limits_by_namespace.entry(limit.clone()).or_default();
         }
         Ok(())
@@ -45,7 +45,7 @@ impl CounterStorage for InMemoryStorage {
 
     #[tracing::instrument(skip_all)]
     fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr> {
-        let mut counters = self.simple_limits.write().unwrap();
+        let mut counters = self.simple_limits.write().expect("lock poisoned");
         let now = SystemTime::now();
         if counter.is_qualified() {
             let value = match self.qualified_counters.get(counter) {
@@ -75,7 +75,7 @@ impl CounterStorage for InMemoryStorage {
         delta: u64,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
-        let limits_by_namespace = self.simple_limits.read().unwrap();
+        let limits_by_namespace = self.simple_limits.read().expect("lock poisoned");
         let mut first_limited = None;
         let mut counter_values_to_update: Vec<(&AtomicExpiringValue, Duration)> = Vec::new();
         let mut qualified_counter_values_to_updated: Vec<(Arc<AtomicExpiringValue>, Duration)> =
@@ -104,7 +104,7 @@ impl CounterStorage for InMemoryStorage {
         // Process simple counters
         for counter in counters.iter_mut().filter(|c| !c.is_qualified()) {
             let atomic_expiring_value: &AtomicExpiringValue =
-                limits_by_namespace.get(counter.limit()).unwrap();
+                limits_by_namespace.get(counter.limit()).expect("counter limit must be registered");
 
             if let Some(limited) = process_counter(counter, atomic_expiring_value.value(), delta) {
                 if !load_counters {
@@ -165,7 +165,7 @@ impl CounterStorage for InMemoryStorage {
                 counter_with_val
                     .set_remaining(counter_with_val.max_value() - expiring_value.value());
                 counter_with_val.set_expires_in(expiring_value.ttl());
-                if counter_with_val.expires_in().unwrap() > Duration::ZERO {
+                if counter_with_val.expires_in().expect("expires_in was just set") > Duration::ZERO {
                     res.insert(counter_with_val);
                 }
             }
@@ -177,7 +177,7 @@ impl CounterStorage for InMemoryStorage {
                 counter_with_val
                     .set_remaining(counter_with_val.max_value() - expiring_value.value());
                 counter_with_val.set_expires_in(expiring_value.ttl());
-                if counter_with_val.expires_in().unwrap() > Duration::ZERO {
+                if counter_with_val.expires_in().expect("expires_in was just set") > Duration::ZERO {
                     res.insert(counter_with_val);
                 }
             }
@@ -196,7 +196,7 @@ impl CounterStorage for InMemoryStorage {
 
     #[tracing::instrument(skip_all)]
     fn clear(&self) -> Result<(), StorageErr> {
-        self.simple_limits.write().unwrap().clear();
+        self.simple_limits.write().expect("lock poisoned").clear();
         Ok(())
     }
 }
@@ -217,13 +217,13 @@ impl InMemoryStorage {
     ) -> HashMap<Counter, AtomicExpiringValue> {
         let mut res: HashMap<Counter, AtomicExpiringValue> = HashMap::new();
 
-        for (limit, counter) in self.simple_limits.read().unwrap().iter() {
+        for (limit, counter) in self.simple_limits.read().expect("lock poisoned").iter() {
             if limit.namespace() == namespace {
                 res.insert(
                     // todo fixme
                     Counter::new(limit.clone(), &Context::default())
-                        .unwrap()
-                        .unwrap(),
+                        .expect("stored limit must produce valid counter")
+                        .expect("stored limit must produce valid counter"),
                     counter.clone(),
                 );
             }
@@ -240,7 +240,7 @@ impl InMemoryStorage {
 
     fn delete_counters_of_limit(&self, limit: &Limit) {
         if limit.variables().is_empty() {
-            self.simple_limits.write().unwrap().remove(limit);
+            self.simple_limits.write().expect("lock poisoned").remove(limit);
         } else {
             let l = limit.clone();
             if let Err(PredicateError::InvalidationClosuresDisabled) = self
@@ -271,6 +271,7 @@ impl Default for InMemoryStorage {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

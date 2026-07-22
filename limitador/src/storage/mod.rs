@@ -54,18 +54,18 @@ impl Storage {
     }
 
     pub fn get_namespaces(&self) -> HashSet<Namespace> {
-        self.limits.read().unwrap().keys().cloned().collect()
+        self.limits.read().expect("lock poisoned").keys().cloned().collect()
     }
 
     pub fn add_limit(&self, limit: Limit) -> bool {
         let namespace = limit.namespace().clone();
-        let mut limits = self.limits.write().unwrap();
-        self.counters.add_counter(&limit).unwrap();
+        let mut limits = self.limits.write().expect("lock poisoned");
+        self.counters.add_counter(&limit).expect("add_counter failed");
         limits.entry(namespace).or_default().insert(Arc::new(limit))
     }
 
     pub fn update_limit(&self, update: &Limit) -> bool {
-        let mut namespaces = self.limits.write().unwrap();
+        let mut namespaces = self.limits.write().expect("lock poisoned");
         let limits = namespaces.get_mut(update.namespace());
         if let Some(limits) = limits {
             let req_update = if let Some(limit) = limits.get(update) {
@@ -83,7 +83,7 @@ impl Storage {
     }
 
     pub fn get_limits(&self, namespace: &Namespace) -> HashSet<Arc<Limit>> {
-        match self.limits.read().unwrap().get(namespace) {
+        match self.limits.read().expect("lock poisoned").get(namespace) {
             // todo revise typing here?
             Some(limits) => limits.iter().map(Arc::clone).collect(),
             None => HashSet::new(),
@@ -91,7 +91,7 @@ impl Storage {
     }
 
     pub fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
-        let arc = match self.limits.read().unwrap().get(limit.namespace()) {
+        let arc = match self.limits.read().expect("lock poisoned").get(limit.namespace()) {
             None => Arc::new(limit.clone()),
             Some(limits) => limits
                 .iter()
@@ -103,7 +103,7 @@ impl Storage {
         limits.insert(arc);
         self.counters.delete_counters(&limits)?;
 
-        let mut limits = self.limits.write().unwrap();
+        let mut limits = self.limits.write().expect("lock poisoned");
 
         if let Some(limits_for_ns) = limits.get_mut(limit.namespace()) {
             limits_for_ns.remove(limit);
@@ -116,7 +116,7 @@ impl Storage {
     }
 
     pub fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr> {
-        if let Some(data) = self.limits.write().unwrap().remove(namespace) {
+        if let Some(data) = self.limits.write().expect("lock poisoned").remove(namespace) {
             self.counters.delete_counters(&data)?;
         }
         Ok(())
@@ -141,14 +141,14 @@ impl Storage {
     }
 
     pub fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
-        match self.limits.read().unwrap().get(namespace) {
+        match self.limits.read().expect("lock poisoned").get(namespace) {
             Some(limits) => self.counters.get_counters(limits),
             None => Ok(HashSet::new()),
         }
     }
 
     pub fn clear(&self) -> Result<(), StorageErr> {
-        self.limits.write().unwrap().clear();
+        self.limits.write().expect("lock poisoned").clear();
         self.counters.clear()
     }
 }
@@ -162,13 +162,13 @@ impl AsyncStorage {
     }
 
     pub fn get_namespaces(&self) -> HashSet<Namespace> {
-        self.limits.read().unwrap().keys().cloned().collect()
+        self.limits.read().expect("lock poisoned").keys().cloned().collect()
     }
 
     pub fn add_limit(&self, limit: Limit) -> bool {
         let namespace = limit.namespace().clone();
 
-        let mut limits_for_namespace = self.limits.write().unwrap();
+        let mut limits_for_namespace = self.limits.write().expect("lock poisoned");
 
         match limits_for_namespace.get_mut(&namespace) {
             Some(limits) => limits.insert(Arc::new(limit)),
@@ -182,7 +182,7 @@ impl AsyncStorage {
     }
 
     pub fn update_limit(&self, update: &Limit) -> bool {
-        let mut namespaces = self.limits.write().unwrap();
+        let mut namespaces = self.limits.write().expect("lock poisoned");
         let limits = namespaces.get_mut(update.namespace());
         if let Some(limits) = limits {
             let req_update = if let Some(limit) = limits.get(update) {
@@ -200,14 +200,14 @@ impl AsyncStorage {
     }
 
     pub fn get_limits(&self, namespace: &Namespace) -> HashSet<Arc<Limit>> {
-        match self.limits.read().unwrap().get(namespace) {
+        match self.limits.read().expect("lock poisoned").get(namespace) {
             Some(limits) => limits.iter().map(Arc::clone).collect(),
             None => HashSet::new(),
         }
     }
 
     pub async fn delete_limit(&self, limit: &Limit) -> Result<(), StorageErr> {
-        let arc = match self.limits.read().unwrap().get(limit.namespace()) {
+        let arc = match self.limits.read().expect("lock poisoned").get(limit.namespace()) {
             None => Arc::new(limit.clone()),
             Some(limits) => limits
                 .iter()
@@ -219,7 +219,7 @@ impl AsyncStorage {
         limits.insert(arc);
         self.counters.delete_counters(&limits).await?;
 
-        let mut limits_for_namespace = self.limits.write().unwrap();
+        let mut limits_for_namespace = self.limits.write().expect("lock poisoned");
 
         if let Some(counters_by_limit) = limits_for_namespace.get_mut(limit.namespace()) {
             counters_by_limit.remove(limit);
@@ -232,7 +232,7 @@ impl AsyncStorage {
     }
 
     pub async fn delete_limits(&self, namespace: &Namespace) -> Result<(), StorageErr> {
-        let option = { self.limits.write().unwrap().remove(namespace) };
+        let option = { self.limits.write().expect("lock poisoned").remove(namespace) };
         if let Some(data) = option {
             self.counters.delete_counters(&data).await?;
         }
@@ -271,7 +271,7 @@ impl AsyncStorage {
     }
 
     pub async fn clear(&self) -> Result<(), StorageErr> {
-        self.limits.write().unwrap().clear();
+        self.limits.write().expect("lock poisoned").clear();
         self.counters.clear().await
     }
 }

@@ -394,6 +394,7 @@ async fn flush_batcher_and_update_counters<C: ConnectionLike>(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use crate::counter::Counter;
     use crate::limit::Limit;

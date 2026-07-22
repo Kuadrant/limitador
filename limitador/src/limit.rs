@@ -159,7 +159,7 @@ impl Limit {
         let all_conditions_apply = self
             .conditions
             .iter()
-            .all(|predicate| predicate.test(&ctx.for_limit(self)).unwrap());
+            .all(|predicate| predicate.test(&ctx.for_limit(self)).expect("predicate evaluation failed"));
 
         let all_vars_are_set = self.variables.iter().all(|var| {
             ctx.has_variables(
@@ -214,6 +214,7 @@ impl PartialEq for Limit {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::counter::Counter;
