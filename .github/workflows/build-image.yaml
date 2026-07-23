@@ -34,6 +34,10 @@ jobs:
             platform: linux/s390x
             scope: build-s390x
             artifactsuffix: s390x
+          - dockerfile: Dockerfile.ppc64le
+            platform: linux/ppc64le
+            scope: build-ppc64le
+            artifactsuffix: ppc64le
     steps:
       - name: Check out code
         uses: actions/checkout@v6
@@ -125,3 +129,4 @@ jobs:
           docker run --rm -t --platform linux/amd64 "$image" --help
           docker run --rm -t --platform linux/arm64 "$image" --help
           docker run --rm -t --platform linux/s390x "$image" --help
+          docker run --rm -t --platform linux/ppc64le "$image" --help
