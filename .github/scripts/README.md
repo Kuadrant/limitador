@@ -146,3 +146,89 @@ EOF
 # ::error::Dependency 'some-repo' targets version '99.99.99', but release v99.99.99 does not exist in Kuadrant/some-repo
 # exit code: 1
 ```
+
+## sync-release-yaml.sh
+
+Reads package versions from `Cargo.toml` via `cargo metadata` and writes them into `release.yaml`. If the Cargo.toml versions end in `-dev` (as on `main`), writes `0.0.0` sentinel values instead. This keeps `release.yaml` as a generated mirror of the authoritative `Cargo.toml` versions.
+
+### Usage
+
+```sh
+.github/scripts/sync-release-yaml.sh [path-to-release-yaml]
+```
+
+### Examples
+
+After setting release versions in Cargo.toml:
+
+```sh
+cargo set-version --offline -p limitador 0.13.0
+cargo set-version --offline -p limitador-server 2.5.0
+.github/scripts/sync-release-yaml.sh
+cat release.yaml
+# limitador:
+#   version: "2.5.0"
+#   crate-version: "0.13.0"
+# dependencies: {}
+```
+
+On main with dev versions (`0.13.0-dev`, `2.5.0-dev`):
+
+```sh
+.github/scripts/sync-release-yaml.sh
+cat release.yaml
+# limitador:
+#   version: "0.0.0"
+#   crate-version: "0.0.0"
+# dependencies: {}
+```
+
+## check-versions.sh
+
+Validates that `release.yaml` and `Cargo.toml` versions agree. On `main`, `release.yaml` at `0.0.0` is valid if and only if the corresponding `Cargo.toml` version ends in `-dev`. Otherwise, versions must match exactly.
+
+### Usage
+
+```sh
+.github/scripts/check-versions.sh [path-to-release-yaml]
+```
+
+### Examples
+
+On main (sentinel + dev versions — passes):
+
+```sh
+# release.yaml has 0.0.0/0.0.0, Cargo.toml has 2.5.0-dev/0.13.0-dev
+.github/scripts/check-versions.sh
+# Version consistency check passed: release.yaml and Cargo.toml agree
+#   Server: release.yaml=0.0.0 Cargo.toml=2.5.0-dev
+#   Crate:  release.yaml=0.0.0 Cargo.toml=0.13.0-dev
+```
+
+On a release branch (exact match required — passes):
+
+```sh
+# release.yaml has 2.5.0/0.13.0, Cargo.toml has 2.5.0/0.13.0
+.github/scripts/check-versions.sh
+# Version consistency check passed
+```
+
+### Error cases
+
+Mismatch on a release branch:
+
+```sh
+# release.yaml has 2.5.0 but Cargo.toml has 2.5.1
+.github/scripts/check-versions.sh
+# ::error::Server version mismatch: release.yaml has '2.5.0' but Cargo.toml has '2.5.1'
+# exit code: 1
+```
+
+Sentinel 0.0.0 without -dev in Cargo.toml:
+
+```sh
+# release.yaml has 0.0.0 but Cargo.toml has 2.5.0 (no -dev)
+.github/scripts/check-versions.sh
+# ::error::release.yaml version is 0.0.0 but limitador-server Cargo.toml version '2.5.0' does not end in -dev
+# exit code: 1
+```

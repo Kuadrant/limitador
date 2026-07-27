@@ -88,11 +88,15 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
+      - uses: Swatinem/rust-cache@v2
+
       - uses: abelfodil/protoc-action@v1
         with:
           protoc-version: "3.19.4"
 
       - uses: ./.github/actions/install-yq
+
+      - run: cargo install cargo-edit --version 0.13.13
 
       - name: Create pre-release branch
         env:
@@ -105,21 +109,37 @@ jobs:
           fi
           git switch --create "${PRE_RELEASE_BRANCH}"
 
-      - name: Update release.yaml
-        env:
-          VERSION: ${{ needs.setup.outputs.version }}
-          CRATE_VERSION: ${{ needs.setup.outputs.crate-version }}
-        run: |
-          yq --inplace ".limitador.version = \"${VERSION}\"" release.yaml
-          yq --inplace ".limitador.\"crate-version\" = \"${CRATE_VERSION}\"" release.yaml
-
       - name: Update Cargo.toml versions
         env:
           VERSION: ${{ needs.setup.outputs.version }}
           CRATE_VERSION: ${{ needs.setup.outputs.crate-version }}
         run: |
-          sed --in-place '/^\[package\]/,/^\[/{s/^version = ".*"/version = "'"${CRATE_VERSION}"'"/}' limitador/Cargo.toml
-          sed --in-place '/^\[package\]/,/^\[/{s/^version = ".*"/version = "'"${VERSION}"'"/}' limitador-server/Cargo.toml
+          cargo set-version --offline -p limitador "$CRATE_VERSION"
+          cargo set-version --offline -p limitador-server "$VERSION"
+
+      - name: Verify Cargo.toml versions
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+          CRATE_VERSION: ${{ needs.setup.outputs.crate-version }}
+        run: |
+          ACTUAL_CRATE=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="limitador") | .version')
+          ACTUAL_SERVER=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="limitador-server") | .version')
+          FAIL=0
+          if [ "$ACTUAL_CRATE" != "$CRATE_VERSION" ]; then
+            echo "::error::Expected limitador version $CRATE_VERSION, got $ACTUAL_CRATE"
+            FAIL=1
+          fi
+          if [ "$ACTUAL_SERVER" != "$VERSION" ]; then
+            echo "::error::Expected limitador-server version $VERSION, got $ACTUAL_SERVER"
+            FAIL=1
+          fi
+          if [ "$FAIL" -ne 0 ]; then exit 1; fi
+          echo "Cargo.toml versions verified: limitador=$ACTUAL_CRATE, limitador-server=$ACTUAL_SERVER"
+
+      - name: Generate release.yaml from Cargo.toml
+        run: |
+          chmod +x .github/scripts/sync-release-yaml.sh
+          .github/scripts/sync-release-yaml.sh
 
       - name: Update Cargo.lock
         run: cargo check
@@ -192,9 +212,13 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
+      - uses: Swatinem/rust-cache@v2
+
       - uses: abelfodil/protoc-action@v1
         with:
           protoc-version: "3.19.4"
+
+      - uses: ./.github/actions/install-yq
 
       - name: Compute next dev versions
         id: next
@@ -226,13 +250,20 @@ jobs:
           fi
           git switch --create "${POST_RELEASE_BRANCH}"
 
+      - run: cargo install cargo-edit --version 0.13.13
+
       - name: Update Cargo.toml versions
         env:
           NEXT_VERSION: ${{ steps.next.outputs.version }}
           NEXT_CRATE_VERSION: ${{ steps.next.outputs.crate-version }}
         run: |
-          sed --in-place '/^\[package\]/,/^\[/{s/^version = ".*"/version = "'"${NEXT_CRATE_VERSION}"'"/}' limitador/Cargo.toml
-          sed --in-place '/^\[package\]/,/^\[/{s/^version = ".*"/version = "'"${NEXT_VERSION}"'"/}' limitador-server/Cargo.toml
+          cargo set-version --offline -p limitador "$NEXT_CRATE_VERSION"
+          cargo set-version --offline -p limitador-server "$NEXT_VERSION"
+
+      - name: Generate release.yaml from Cargo.toml
+        run: |
+          chmod +x .github/scripts/sync-release-yaml.sh
+          .github/scripts/sync-release-yaml.sh
 
       - name: Update Cargo.lock
         run: cargo check

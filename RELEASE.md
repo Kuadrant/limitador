@@ -11,8 +11,9 @@ Limitador maintains two independent version numbers:
 - **Server version** (e.g. `2.5.0`) — used for container image tags and as the primary release version
 - **Crate version** (e.g. `0.13.0`) — used for the `limitador` library crate on crates.io
 
-Both are tracked in `release.yaml` at the repository root.
-On `main`, versions are `0.0.0` (sentinel for "under development").
+**Source of truth: `Cargo.toml`.** The `limitador/Cargo.toml` and `limitador-server/Cargo.toml` package versions are authoritative. `release.yaml` at the repo root is a generated mirror that `kuadrant-operator` and other cross-repo tooling reads for a uniform version file regardless of language.
+
+On `main`, `Cargo.toml` versions end in `-dev` (e.g. `0.13.0-dev`) and `release.yaml` uses `0.0.0` sentinel values. On release branches, both files must agree exactly.
 
 ### Tag conventions
 
@@ -53,18 +54,18 @@ The following secrets must be configured in **Settings > Secrets and variables >
 4. The workflow will:
    - Create the release branch `release-X.Y` from the source branch (if it doesn't exist)
    - Create a `pre-release-vX.Y.Z` working branch
-   - Update `release.yaml` with both versions
-   - Set `limitador/Cargo.toml` version to the crate version
-   - Set `limitador-server/Cargo.toml` version to the server version
+   - Set `limitador/Cargo.toml` version via `cargo set-version` and verify with `cargo metadata`
+   - Set `limitador-server/Cargo.toml` version via `cargo set-version` and verify with `cargo metadata`
+   - Generate `release.yaml` from Cargo.toml values
    - Update `Cargo.lock`
    - Open a PR against the release branch
-   - Open a **post-release PR** to `main` bumping versions to the next `-dev` (do not merge until after the release)
+   - Open a **post-release PR** to `main` bumping versions to the next `-dev` and resetting `release.yaml` to `0.0.0` (do not merge until after the release)
 
 ### Review gate
 
 5. Review the PR. CI will run:
    - Standard CI checks (fmt, clippy, test, image build)
-   - **Version gate** — validates `release.yaml` versions are non-zero and any dependency releases exist
+   - **Version gate** — validates `release.yaml` and `Cargo.toml` agree, and on release branches rejects sentinel/dev versions
 6. Approve and merge the PR
 
 ### Phase 2: Release
@@ -125,10 +126,14 @@ If the release workflow fails partway through:
 
 | File | Purpose |
 |------|---------|
-| `release.yaml` | Version and dependency declaration (source of truth) |
-| `.github/workflows/pre-release.yaml` | Phase 1: prepare release PR |
+| `limitador/Cargo.toml` | Crate version (source of truth) |
+| `limitador-server/Cargo.toml` | Server version (source of truth) |
+| `release.yaml` | Generated mirror for cross-repo tooling (`kuadrant-operator`) |
+| `.github/workflows/pre-release.yaml` | Phase 1: set Cargo.toml versions, generate release.yaml, open PR |
 | `.github/workflows/release.yaml` | Phase 2: test, tag, build, publish, release |
-| `.github/workflows/version-gate.yaml` | CI check on release branch PRs |
+| `.github/workflows/version-gate.yaml` | CI check: release.yaml/Cargo.toml consistency (all branches) |
 | `.github/workflows/build-image.yaml` | Multi-arch container image build (reusable) |
 | `.github/scripts/parse-version.sh` | Parse and validate versions from release.yaml |
-| `.github/scripts/validate-release-yaml.sh` | Version gate validation logic |
+| `.github/scripts/sync-release-yaml.sh` | Generate release.yaml from Cargo.toml via cargo metadata |
+| `.github/scripts/check-versions.sh` | Validate release.yaml and Cargo.toml agree |
+| `.github/scripts/validate-release-yaml.sh` | Version gate: reject sentinel/dev versions on release branches |

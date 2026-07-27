@@ -29,7 +29,18 @@ jobs:
         with:
           ref: ${{ inputs.release-branch }}
 
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - uses: abelfodil/protoc-action@v1
+        with:
+          protoc-version: "3.19.4"
+
       - uses: ./.github/actions/install-yq
+
+      - name: Verify Cargo.toml and release.yaml agree
+        run: |
+          chmod +x .github/scripts/check-versions.sh
+          .github/scripts/check-versions.sh
 
       - name: Parse version from release.yaml
         id: parse
