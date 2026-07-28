@@ -1,0 +1,48 @@
+---
+name: Version Gate
+
+on:
+  pull_request:
+    paths:
+      - "release.yaml"
+      - "limitador/Cargo.toml"
+      - "limitador-server/Cargo.toml"
+
+permissions:
+  contents: read
+
+jobs:
+  check-version-consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - uses: abelfodil/protoc-action@v1
+        with:
+          protoc-version: "3.19.4"
+
+      - uses: ./.github/actions/install-yq
+
+      - name: Check Cargo.toml and release.yaml agree
+        run: |
+          chmod +x .github/scripts/check-versions.sh
+          .github/scripts/check-versions.sh
+
+  validate-release-yaml:
+    if: startsWith(github.base_ref, 'release-')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/install-yq
+
+      - name: Validate release.yaml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REF: ${{ github.base_ref }}
+          ORG: ${{ github.repository_owner }}
+        run: |
+          chmod +x .github/scripts/validate-release-yaml.sh
+          .github/scripts/validate-release-yaml.sh "$BASE_REF" "$ORG"
