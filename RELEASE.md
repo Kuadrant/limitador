@@ -72,8 +72,9 @@ The following secrets must be configured in **Settings > Secrets and variables >
 ### Phase 2: Release
 
 1. Go to [Actions > Release](https://github.com/Kuadrant/limitador/actions/workflows/release.yaml) and click **Run workflow**
-2. Enter the **release branch** (e.g. `release-2.5`)
-3. The workflow will (in strict order):
+2. Use workflow from **release branch** (e.g. `release-2.5`).
+3. Enter the **release branch** (e.g. `release-2.5`) input field.
+4. The workflow will (in strict order):
    - **Read version** from `release.yaml` and verify no existing GitHub Release
    - **Smoke tests** — fmt, clippy, check, full test suite, `cargo publish --dry-run`
    - **Tag** — create and push three tags (`vX.Y.Z`, `server-vX.Y.Z`, `crate-vX.Y.Z`)

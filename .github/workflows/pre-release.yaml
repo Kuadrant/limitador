@@ -242,6 +242,9 @@ jobs:
           echo "version=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
           echo "crate-version=${NEXT_CRATE_VERSION}" >> "$GITHUB_OUTPUT"
 
+      - name: Fetch crate sources and registry index entries
+        run: cargo fetch --locked
+
       - name: Create post-release branch
         env:
           VERSION: ${{ needs.setup.outputs.version }}
