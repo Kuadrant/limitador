@@ -47,11 +47,12 @@ The following secrets must be configured in **Settings > Secrets and variables >
 
 ### Phase 1: Pre-release
 
-1. Go to **Actions > Pre-release** and click **Run workflow**
-2. Enter the **server version** (e.g. `2.5.0`) and **crate version** (e.g. `0.13.0`)
-3. Optionally set the **source branch** (defaults to `main`).
+1. Go to [Actions > Pre-release](https://github.com/Kuadrant/limitador/actions/workflows/pre-release.yaml) and click **Run workflow**
+2. Use workflow from `main` branch.
+3. Enter the **server version** (e.g. `2.5.0`) and **crate version** (e.g. `0.13.0`)
+4. Optionally set the **source branch** (defaults to `main`).
    For patch releases, set this to the existing release branch.
-4. The workflow will:
+5. The workflow will:
    - Create the release branch `release-X.Y` from the source branch (if it doesn't exist)
    - Create a `pre-release-vX.Y.Z` working branch
    - Set `limitador/Cargo.toml` version via `cargo set-version` and verify with `cargo metadata`
@@ -63,16 +64,16 @@ The following secrets must be configured in **Settings > Secrets and variables >
 
 ### Review gate
 
-5. Review the PR. CI will run:
+1. Review the PR. CI will run:
    - Standard CI checks (fmt, clippy, test, image build)
    - **Version gate** — validates `release.yaml` and `Cargo.toml` agree, and on release branches rejects sentinel/dev versions
-6. Approve and merge the PR
+2. Approve and merge the PR
 
 ### Phase 2: Release
 
-7. Go to **Actions > Release** and click **Run workflow**
-8. Enter the **release branch** (e.g. `release-2.5`)
-9. The workflow will (in strict order):
+1. Go to [Actions > Release](https://github.com/Kuadrant/limitador/actions/workflows/release.yaml) and click **Run workflow**
+2. Enter the **release branch** (e.g. `release-2.5`)
+3. The workflow will (in strict order):
    - **Read version** from `release.yaml` and verify no existing GitHub Release
    - **Smoke tests** — fmt, clippy, check, full test suite, `cargo publish --dry-run`
    - **Tag** — create and push three tags (`vX.Y.Z`, `server-vX.Y.Z`, `crate-vX.Y.Z`)
@@ -82,10 +83,11 @@ The following secrets must be configured in **Settings > Secrets and variables >
 
 ### Verify
 
-10. Confirm the release artifacts:
-   - [GitHub Release](https://github.com/Kuadrant/limitador/releases) exists with correct tag
-   - [limitador on crates.io](https://crates.io/crates/limitador) shows the new version
-   - Container image `quay.io/kuadrant/limitador:vX.Y.Z` is available
+1. Confirm the release artifacts:
+
+- [GitHub Release](https://github.com/Kuadrant/limitador/releases) exists with correct tag
+- [limitador on crates.io](https://crates.io/crates/limitador) shows the new version
+- Container image `quay.io/kuadrant/limitador:vX.Y.Z` is available
 
 ## Patch release
 
