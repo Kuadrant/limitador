@@ -98,6 +98,9 @@ jobs:
 
       - run: cargo install cargo-edit --version 0.13.13
 
+      - name: Fetch crate sources and registry index entries
+        run: cargo fetch --locked
+
       - name: Create pre-release branch
         env:
           VERSION: ${{ needs.setup.outputs.version }}
