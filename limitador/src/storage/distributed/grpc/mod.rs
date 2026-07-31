@@ -41,9 +41,9 @@ impl ClockSkew {
         if local == remote {
             ClockSkew::None()
         } else if local.gt(&remote) {
-            ClockSkew::Slow(local.duration_since(remote).unwrap())
+            ClockSkew::Slow(local.duration_since(remote).expect("local > remote was just checked"))
         } else {
-            ClockSkew::Fast(remote.duration_since(local).unwrap())
+            ClockSkew::Fast(remote.duration_since(local).expect("remote > local was just checked"))
         }
     }
 
@@ -175,7 +175,7 @@ impl Session {
                             Ok(permit) => {
 
                                 let key = tx_updates_order.remove(0);
-                                let cr_counter_value = tx_updates_by_key.remove(&key).unwrap().clone();
+                                let cr_counter_value = tx_updates_by_key.remove(&key).expect("key must exist in tx_updates_by_key").clone();
                                 let (expiry, values) = cr_counter_value.value.clone().into_inner();
 
                                 // only send the update if it has not expired.
@@ -183,7 +183,7 @@ impl Session {
                                     permit.send(Ok(Message::CounterUpdate(CounterUpdate {
                                         key,
                                         values: values.into_iter().collect(),
-                                        expires_at: expiry.duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                                        expires_at: expiry.duration_since(UNIX_EPOCH).expect("expiry time before Unix epoch").as_secs(),
                                     })))?;
                                 }
                             }
@@ -222,7 +222,7 @@ impl Session {
                     .send(Ok(Message::Pong(Pong {
                         current_time: SystemTime::now()
                             .duration_since(UNIX_EPOCH)
-                            .unwrap()
+                            .expect("system time before Unix epoch")
                             .as_millis() as u64,
                     })))
                     .await?;
@@ -537,7 +537,7 @@ impl Broker {
             .add_service(ReplicationServer::new(self.clone()))
             .serve(self.listen_address)
             .await
-            .unwrap();
+            .expect("replication server failed to start");
     }
 
     // Connect to a peer and start a replication session.  This returns once the session handshake
@@ -649,7 +649,7 @@ impl Broker {
         out_stream
             .clone()
             .send(Ok(Message::Pong(Pong {
-                current_time: start.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                current_time: start.duration_since(UNIX_EPOCH).expect("system time before Unix epoch").as_millis() as u64,
             })))
             .await?;
 
@@ -709,7 +709,7 @@ impl Broker {
                 }
             }
             None => {
-                let latency = end.duration_since(start).unwrap();
+                let latency = end.duration_since(start).expect("end time before start time");
                 let peer_time = UNIX_EPOCH.add(Duration::from_millis(peer_pong.current_time));
                 let peer_time_adj = peer_time.add(latency.div_f32(2.0)); // adjust for round trip latency
                 let discovered_urls = peer_hello
@@ -732,7 +732,7 @@ impl Broker {
                     &tracker.clock_skew
                 );
                 state.peer_trackers.insert(peer_id.clone(), tracker);
-                let tracker = state.peer_trackers.get_mut(&peer_id).unwrap();
+                let tracker = state.peer_trackers.get_mut(&peer_id).expect("peer tracker must exist after insert");
                 (tracker, Some(session))
             }
         };

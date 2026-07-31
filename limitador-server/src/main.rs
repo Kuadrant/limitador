@@ -1,4 +1,4 @@
-#![deny(clippy::all, clippy::cargo)]
+#![deny(clippy::all, clippy::cargo, clippy::unwrap_used)]
 #![allow(clippy::multiple_crate_versions)]
 
 #[macro_use]
@@ -165,7 +165,7 @@ impl Limiter {
 
     fn in_memory_limiter(cfg: InMemoryStorageConfiguration) -> Self {
         let rate_limiter_builder =
-            RateLimiterBuilder::new(cfg.cache_size.or_else(guess_cache_size).unwrap());
+            RateLimiterBuilder::new(cfg.cache_size.or_else(guess_cache_size).expect("cache_size not configured and could not be guessed"));
 
         Self::Blocking(rate_limiter_builder.build())
     }
@@ -174,7 +174,7 @@ impl Limiter {
     fn distributed_limiter(cfg: DistributedStorageConfiguration) -> Self {
         let storage = DistributedInMemoryStorage::new(
             cfg.name,
-            cfg.cache_size.or_else(guess_cache_size).unwrap(),
+            cfg.cache_size.or_else(guess_cache_size).expect("cache_size not configured and could not be guessed"),
             cfg.listen_address,
             cfg.peer_urls,
         );
@@ -302,21 +302,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let limiter = Arc::clone(&rate_limiter);
     let handle = Handle::current();
     // it should not fail because the limits file has already been read
-    let mut limits_file_dir = Path::new(&limit_file).parent().unwrap();
+    let mut limits_file_dir = Path::new(&limit_file).parent().expect("limit file has no parent directory");
     if limits_file_dir.as_os_str().is_empty() {
         limits_file_dir = Path::new(".");
     }
     // structure needed to keep state of the last known canonical limits file path
-    let limit_cfg = std::path::absolute(&limit_file).unwrap();
-    let mut canonical_cfg = std::fs::canonicalize(&limit_cfg).unwrap();
+    let limit_cfg = std::path::absolute(&limit_file).expect("failed to get absolute path for limits file");
+    let mut canonical_cfg = std::fs::canonicalize(&limit_cfg).expect("failed to canonicalize limits file path");
 
-    let labels_cfg = labels_file.map(std::path::absolute).map(Result::unwrap);
+    let labels_cfg = labels_file.map(|f| std::path::absolute(f).expect("failed to get absolute path for labels file"));
     let mut labels_canonical_cfg = labels_cfg
         .clone()
-        .map(std::fs::canonicalize)
-        .map(Result::unwrap);
+        .map(|f| std::fs::canonicalize(f).expect("failed to canonicalize labels file path"));
     let labels_file_dir = labels_cfg.clone().map(|f| {
-        let mut labels_file_dir: PathBuf = f.parent().unwrap().into();
+        let mut labels_file_dir: PathBuf = f.parent().expect("labels file has no parent directory").into();
         if labels_file_dir.as_os_str().is_empty() {
             labels_file_dir = Path::new(".").into();
         }
@@ -345,11 +344,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     handle.spawn(async move {
                                         match limiter.load_limits_from_file(&limit_cfg).await {
                                             Ok(_) => {
-                                                status_updater.write().unwrap().config_success();
+                                                status_updater.write().expect("lock poisoned").config_success();
                                                 info!("data modified; reloaded limit file")
                                             }
                                             Err(e) => {
-                                                status_updater.write().unwrap().config_failure();
+                                                status_updater.write().expect("lock poisoned").config_failure();
                                                 error!("Failed reloading limit file: {}", e)
                                             }
                                         }
@@ -360,7 +359,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 if let Some(location) = event.paths.first() {
                                     if let Ok(actual_location) = std::fs::canonicalize(labels_cfg) {
                                         if location == labels_cfg
-                                            || labels_canonical_cfg.as_ref().unwrap()
+                                            || labels_canonical_cfg.as_ref().expect("labels_canonical_cfg must be set if labels_cfg is set")
                                                 != &actual_location
                                         {
                                             labels_canonical_cfg = Some(actual_location);
@@ -731,7 +730,7 @@ fn create_config() -> (Configuration, &'static str) {
 
     let matches = cmdline.get_matches();
 
-    let limits_file = matches.get_one::<String>("LIMITS_FILE").unwrap();
+    let limits_file = matches.get_one::<String>("LIMITS_FILE").expect("LIMITS_FILE is a required arg");
 
     if matches.get_flag("validate") {
         let error = match std::fs::File::open(limits_file) {
@@ -764,7 +763,7 @@ fn create_config() -> (Configuration, &'static str) {
 
     let storage = match matches.subcommand() {
         Some(("redis", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
-            url: sub.get_one::<String>("URL").unwrap().to_owned(),
+            url: sub.get_one::<String>("URL").expect("URL arg is required").to_owned(),
             cache: None,
         }),
         Some(("disk", sub)) => StorageConfiguration::Disk(DiskStorageConfiguration {
@@ -779,12 +778,12 @@ fn create_config() -> (Configuration, &'static str) {
             },
         }),
         Some(("redis_cached", sub)) => StorageConfiguration::Redis(RedisStorageConfiguration {
-            url: sub.get_one::<String>("URL").unwrap().to_owned(),
+            url: sub.get_one::<String>("URL").expect("URL arg is required").to_owned(),
             cache: Some(RedisStorageCacheConfiguration {
-                batch_size: *sub.get_one("batch").unwrap(),
-                flushing_period: *sub.get_one("flush").unwrap(),
-                max_counters: *sub.get_one("max").unwrap(),
-                response_timeout: *sub.get_one("timeout").unwrap(),
+                batch_size: *sub.get_one("batch").expect("batch arg is required"),
+                flushing_period: *sub.get_one("flush").expect("flush arg is required"),
+                max_counters: *sub.get_one("max").expect("max arg is required"),
+                response_timeout: *sub.get_one("timeout").expect("timeout arg is required"),
             }),
         }),
         Some(("memory", sub)) => StorageConfiguration::InMemory(InMemoryStorageConfiguration {
@@ -793,8 +792,8 @@ fn create_config() -> (Configuration, &'static str) {
         #[cfg(feature = "distributed_storage")]
         Some(("distributed", sub)) => {
             StorageConfiguration::Distributed(DistributedStorageConfiguration {
-                name: sub.get_one::<String>("NAME").unwrap().to_owned(),
-                listen_address: sub.get_one::<String>("LISTEN_ADDRESS").unwrap().to_owned(),
+                name: sub.get_one::<String>("NAME").expect("NAME arg is required").to_owned(),
+                listen_address: sub.get_one::<String>("LISTEN_ADDRESS").expect("LISTEN_ADDRESS arg is required").to_owned(),
                 peer_urls: sub
                     .get_many::<String>("PEER_URLS")
                     .unwrap_or(ValuesRef::default())
@@ -809,7 +808,7 @@ fn create_config() -> (Configuration, &'static str) {
 
     let rate_limit_headers = match matches
         .get_one::<String>("rate_limit_headers")
-        .unwrap()
+        .expect("rate_limit_headers arg is required")
         .as_str()
     {
         "NONE" => RateLimitHeaders::None,
@@ -820,10 +819,10 @@ fn create_config() -> (Configuration, &'static str) {
     let mut config = Configuration::with(
         storage,
         limits_file.to_string(),
-        matches.get_one::<String>("ip").unwrap().into(),
-        *matches.get_one::<u16>("port").unwrap(),
-        matches.get_one::<String>("http_ip").unwrap().into(),
-        *matches.get_one::<u16>("http_port").unwrap(),
+        matches.get_one::<String>("ip").expect("ip arg is required").into(),
+        *matches.get_one::<u16>("port").expect("port arg is required"),
+        matches.get_one::<String>("http_ip").expect("http_ip arg is required").into(),
+        *matches.get_one::<u16>("http_port").expect("http_port arg is required"),
         matches.get_flag("limit_name_in_labels") || *config::env::LIMIT_NAME_IN_PROMETHEUS_LABELS,
         matches.get_one::<String>("custom_metric_labels").cloned(),
         matches
@@ -831,7 +830,7 @@ fn create_config() -> (Configuration, &'static str) {
             .cloned(),
         matches
             .get_one::<String>("tracing_endpoint")
-            .unwrap()
+            .expect("tracing_endpoint arg is required")
             .into(),
         rate_limit_headers,
         matches.get_flag("grpc_reflection_service"),

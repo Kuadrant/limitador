@@ -44,7 +44,7 @@ impl RateLimitData {
     }
 
     fn status(&self) -> Status {
-        *self.status.read().unwrap()
+        *self.status.read().expect("lock poisoned")
     }
 }
 
@@ -330,6 +330,7 @@ pub async fn run_http_server(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::envoy_rls::server::tests::TEST_PROMETHEUS_HANDLE;
