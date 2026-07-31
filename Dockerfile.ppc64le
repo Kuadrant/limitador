@@ -1,9 +1,11 @@
 # Build Stage: cross-compile for ppc64le (IBM POWER)
 FROM --platform=${BUILDPLATFORM} rust:1.88 AS limitador-build
 
-RUN apt-get update && apt-get upgrade -y && \
+RUN dpkg --add-architecture ppc64el \
+    && apt-get update && apt-get upgrade -y && \
     apt-get install -y --no-install-recommends protobuf-compiler clang \
-    gcc-powerpc64le-linux-gnu g++-powerpc64le-linux-gnu libc6-dev-ppc64el-cross
+    gcc-powerpc64le-linux-gnu g++-powerpc64le-linux-gnu libc6-dev-ppc64el-cross \
+    libssl-dev:ppc64el pkg-config
 
 RUN rustup target add powerpc64le-unknown-linux-gnu
 
@@ -15,7 +17,12 @@ ENV RUSTFLAGS="-C target-feature=-crt-static" \
     CARGO_TARGET_POWERPC64LE_UNKNOWN_LINUX_GNU_LINKER=powerpc64le-linux-gnu-gcc \
     CC_powerpc64le_unknown_linux_gnu=powerpc64le-linux-gnu-gcc \
     CXX_powerpc64le_unknown_linux_gnu=powerpc64le-linux-gnu-g++ \
-    BINDGEN_EXTRA_CLANG_ARGS="--sysroot=/usr/powerpc64le-linux-gnu"
+    BINDGEN_EXTRA_CLANG_ARGS="--sysroot=/usr/powerpc64le-linux-gnu" \
+    OPENSSL_LIB_DIR=/usr/lib/powerpc64le-linux-gnu \
+    OPENSSL_INCLUDE_DIR=/usr/include/powerpc64le-linux-gnu \
+    PKG_CONFIG_SYSROOT_DIR=/usr/powerpc64le-linux-gnu \
+    PKG_CONFIG_PATH=/usr/lib/powerpc64le-linux-gnu/pkgconfig \
+    PKG_CONFIG_ALLOW_CROSS=1
 
 COPY . .
 RUN cargo build --release --target powerpc64le-unknown-linux-gnu
