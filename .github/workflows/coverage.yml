@@ -11,13 +11,13 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: Swatinem/rust-cache@v2
-      - uses: abelfodil/protoc-action@v1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # ratchet:actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # ratchet:actions-rust-lang/setup-rust-toolchain@v1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # ratchet:Swatinem/rust-cache@v2
+      - uses: abelfodil/protoc-action@b540a249a18feedb02bfbfa655afa15255cf3dc6 # ratchet:abelfodil/protoc-action@v1
         with:
           protoc-version: "3.19.4"
-      - uses: actions-rs/cargo@v1
+      - uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # ratchet:actions-rs/cargo@v1
         with:
           command: check
 
@@ -25,28 +25,28 @@ jobs:
     name: Test Suite
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: supercharge/redis-github-action@1.8.1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # ratchet:actions/checkout@v6
+      - uses: supercharge/redis-github-action@bc274cb7238cd63a45029db04ee48c07a72609fd # ratchet:supercharge/redis-github-action@1.8.1
         with:
           redis-version: 7
       # Nightly is required for code coverage with doctests
       # https://github.com/taiki-e/cargo-llvm-cov/issues/2
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # ratchet:actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: nightly
-      - uses: Swatinem/rust-cache@v2
-      - uses: abelfodil/protoc-action@v1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # ratchet:Swatinem/rust-cache@v2
+      - uses: abelfodil/protoc-action@b540a249a18feedb02bfbfa655afa15255cf3dc6 # ratchet:abelfodil/protoc-action@v1
         with:
           protoc-version: "3.19.4"
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@2d2710c179509122228fa1f6bb32c8e3c78b21a9 # ratchet:taiki-e/install-action@cargo-llvm-cov
       - name: Test and Generate code coverage
         run: cargo +nightly llvm-cov --all-features --workspace --lcov --doctests --output-path lcov.info
       - name: Codecov
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         if: env.CODECOV_TOKEN != null
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@ab904c41d6ece82784817410c45d8b8c02684457 # ratchet:codecov/codecov-action@v3
         with:
           verbose: true
           fail_ci_if_error: false

@@ -15,14 +15,14 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: fossas/fossa-action@v1.4.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # ratchet:actions/checkout@v6
+      - uses: fossas/fossa-action@09bcf127dc0ccb4b5a023f6f906728878e8610ba # ratchet:fossas/fossa-action@v1.4.0
         name: License Scan
         with:
           api-key: ${{secrets.FOSSA_API_TOKEN}}
           branch: ${{ github.head_ref || github.ref_name }}
           project: git+github.com/Kuadrant/limitador
-      - uses: fossas/fossa-action@v1.4.0
+      - uses: fossas/fossa-action@09bcf127dc0ccb4b5a023f6f906728878e8610ba # ratchet:fossas/fossa-action@v1.4.0
         name: License test for issues
         with:
           api-key: ${{secrets.FOSSA_API_TOKEN}}
