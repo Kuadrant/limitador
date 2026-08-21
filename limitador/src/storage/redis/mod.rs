@@ -11,13 +11,19 @@ pub const DEFAULT_FLUSHING_PERIOD_SEC: u64 = 1;
 pub const DEFAULT_BATCH_SIZE: usize = 100;
 pub const DEFAULT_MAX_CACHED_COUNTERS: usize = 10000;
 pub const DEFAULT_RESPONSE_TIMEOUT_MS: u64 = 350;
+// GET_COUNTERS_AND_PRUNE is atomic, so this size decides how long every other client waits on
+// Redis's single thread.
+const COUNTERS_SCAN_BATCH_SIZE: usize = 500;
 
 use crate::counter::Counter;
+use crate::limit::Limit;
+use crate::storage::keys::counter_from_counter_key;
 use crate::storage::{Authorization, StorageErr};
 pub use redis_async::AsyncRedisStorage;
 pub use redis_cached::CachedRedisStorage;
 pub use redis_cached::CachedRedisStorageBuilder;
 pub use redis_sync::RedisStorage;
+use std::sync::Arc;
 
 impl From<RedisError> for StorageErr {
     fn from(e: RedisError) -> Self {
@@ -31,6 +37,43 @@ impl From<RedisError> for StorageErr {
             transient,
         }
     }
+}
+
+// `script_res` holds a value and a TTL (in ms) for each of `members`, in the same order. A member
+// with no value is expired (the script has already dropped it from the limit's counter set, so it
+// yields no counter here).
+fn live_counters_from_script_res(
+    limit: &Arc<Limit>,
+    members: &[Vec<u8>],
+    script_res: &[Option<i64>],
+) -> Vec<Counter> {
+    // A mismatch would make the zip below drop counters silently rather than fail
+    debug_assert_eq!(
+        script_res.len(),
+        members.len() * 2,
+        "GET_COUNTERS_AND_PRUNE must report a value and a TTL for every member"
+    );
+
+    let mut counters = Vec::new();
+
+    for (member, val_ttl_pair) in members.iter().zip(script_res.chunks_exact(2)) {
+        let Some(val) = val_ttl_pair[0] else {
+            continue;
+        };
+
+        let mut counter = counter_from_counter_key(member, Arc::clone(limit));
+        counter.set_remaining(
+            limit
+                .max_value()
+                .saturating_sub(u64::try_from(val).unwrap_or(0)),
+        );
+        counter.set_expires_in(Duration::from_millis(
+            u64::try_from(val_ttl_pair[1].unwrap_or(0)).unwrap_or(0),
+        ));
+        counters.push(counter);
+    }
+
+    counters
 }
 
 pub fn is_limited(

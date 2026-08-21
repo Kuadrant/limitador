@@ -1099,6 +1099,148 @@ mod test {
         assert_eq!(rate_limiter.get_counters(namespace).await.unwrap().len(), 0);
     }
 
+    #[cfg(feature = "redis_storage")]
+    fn counters_in_redis_index() -> usize {
+        let client =
+            redis::Client::open("redis://127.0.0.1:6379").expect("We need a Redis running locally");
+        let mut con = client
+            .get_connection()
+            .expect("We need a Redis running locally");
+
+        // `storage::keys` is private to the crate, so the set keys are matched by pattern.
+        // Only matches limits with no id: an id-based set key is untagged binary, so
+        // reusing this with `Limit::with_id` would silently count zero.
+        let set_keys: Vec<Vec<u8>> = redis::cmd("KEYS")
+            .arg("*counters_of_limit*")
+            .query(&mut con)
+            .unwrap();
+
+        set_keys
+            .iter()
+            .map(|set_key| {
+                redis::cmd("SCARD")
+                    .arg(set_key)
+                    .query::<usize>(&mut con)
+                    .unwrap()
+            })
+            .sum()
+    }
+
+    #[cfg(feature = "redis_storage")]
+    async fn async_redis_tests_limiter() -> TestsLimiter {
+        let storage = AsyncRedisStorage::new("redis://127.0.0.1:6379")
+            .await
+            .expect("We need a Redis running locally");
+        storage.clear().await.unwrap();
+        TestsLimiter::new_from_async_impl(AsyncRateLimiter::new_with_storage(Box::new(storage)))
+    }
+
+    #[cfg(feature = "redis_storage")]
+    fn sync_redis_tests_limiter() -> TestsLimiter {
+        let storage = RedisStorage::default();
+        storage.clear().unwrap();
+        TestsLimiter::new_from_blocking_impl(RateLimiter::new_with_storage(Box::new(storage)))
+    }
+
+    #[cfg(feature = "redis_storage")]
+    fn a_limit_of(namespace: &str, max_value: u64, seconds: u64) -> Limit {
+        Limit::new(
+            namespace,
+            max_value,
+            seconds,
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        )
+    }
+
+    #[cfg(feature = "redis_storage")]
+    async fn report_one_hit(rate_limiter: &TestsLimiter, namespace: &str, app_id: &str) {
+        let mut values = HashMap::new();
+        values.insert("req_method".to_string(), "GET".to_string());
+        values.insert("app_id".to_string(), app_id.to_string());
+        let ctx = values.into();
+        rate_limiter
+            .update_counters(namespace, &ctx, 1)
+            .await
+            .unwrap();
+    }
+
+    // Reading is the only thing that takes an expired counter out of its limit's counter set.
+    // Without that the set would keep one member per counter ever created, for the life of the instance.
+    #[cfg(feature = "redis_storage")]
+    #[tokio::test]
+    #[serial]
+    async fn get_counters_prunes_expired_counters_from_the_index() {
+        let namespace = "test_namespace";
+        let limit_time = 1;
+        let rate_limiter = async_redis_tests_limiter().await;
+
+        rate_limiter
+            .add_limit(&a_limit_of(namespace, 10, limit_time))
+            .await;
+        report_one_hit(&rate_limiter, namespace, "1").await;
+
+        assert_eq!(counters_in_redis_index(), 1);
+
+        sleep(Duration::from_secs(limit_time + 1));
+
+        // The counter key is gone, yet the set still lists it - expiry alone unindexes nothing
+        assert_eq!(counters_in_redis_index(), 1);
+
+        assert!(rate_limiter
+            .get_counters(namespace)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(counters_in_redis_index(), 0);
+    }
+
+    // The sync `get_counters` re-implements the scan and. So test coverage won't let the two copies drift.
+    #[cfg(feature = "redis_storage")]
+    #[tokio::test]
+    #[serial]
+    async fn get_counters_prunes_expired_counters_from_the_index_with_sync_redis() {
+        let namespace = "test_namespace";
+        let limit_time = 1;
+        let rate_limiter = sync_redis_tests_limiter();
+
+        rate_limiter
+            .add_limit(&a_limit_of(namespace, 10, limit_time))
+            .await;
+        report_one_hit(&rate_limiter, namespace, "1").await;
+
+        assert_eq!(counters_in_redis_index(), 1);
+
+        sleep(Duration::from_secs(limit_time + 1));
+
+        // The counter key is gone, yet the set still lists it - expiry alone unindexes nothing
+        assert_eq!(counters_in_redis_index(), 1);
+
+        assert!(rate_limiter
+            .get_counters(namespace)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(counters_in_redis_index(), 0);
+    }
+
+    // Only members whose counter key is gone should be pruned during the `get_counters` scan
+    #[cfg(feature = "redis_storage")]
+    #[tokio::test]
+    #[serial]
+    async fn get_counters_keeps_live_counters_in_the_index() {
+        let namespace = "test_namespace";
+        let rate_limiter = async_redis_tests_limiter().await;
+
+        rate_limiter.add_limit(&a_limit_of(namespace, 10, 60)).await;
+        report_one_hit(&rate_limiter, namespace, "1").await;
+
+        assert_eq!(rate_limiter.get_counters(namespace).await.unwrap().len(), 1);
+        // The load-bearing assertion. A prune that removed live members would still satisfy the assert
+        // above, because each member is read before the point where it would be removed.
+        assert_eq!(counters_in_redis_index(), 1);
+    }
+
     async fn configure_with_creates_the_given_limits(rate_limiter: &mut TestsLimiter) {
         let first_limit = Limit::new(
             "first_namespace",
