@@ -56,3 +56,35 @@ pub const VALUES_AND_TTLS: &str = "
     end
     return res
 ";
+
+// KEYS[1]: key that contains the counters that belong to the limit
+// KEYS[i], i > 1: counter keys to read
+// Returns the value and the TTL (in ms) of every counter key, in the same
+// order and with the same layout as VALUES_AND_TTLS. The counters are passed
+// as keys rather than as arguments so that Redis cluster can route the script.
+//
+// For a limit with no id they share the {namespace} hash tag with KEYS[1], so
+// they all live on the same shard. Keys for a limit with an id carry no hash tag at all, so on a
+// real cluster they can land on different shards. Slot-safety there needs the key encoding in
+// storage::keys to tag by id.
+//
+// A counter that no longer exists reports a nil value and is removed from the limit's counter set.
+// Nothing else ever removes those members, so without this the set grows by one entry per counter
+// ever created under the limit. The get and the srem must be one script. Otherwise an update
+// recreating the counter in between finds the member still there, so its sadd no-ops and the srem
+// then unindexes a live counter.
+pub const GET_COUNTERS_AND_PRUNE: &str = "
+    local res = {}
+    for i = 2, #KEYS do
+        local val = redis.call('get', KEYS[i])
+        if val == false then
+            redis.call('srem', KEYS[1], KEYS[i])
+            table.insert(res, false)
+            table.insert(res, -2)
+        else
+            table.insert(res, val)
+            table.insert(res, redis.call('pttl', KEYS[i]))
+        end
+    end
+    return res
+";

@@ -1,12 +1,14 @@
 extern crate redis;
 
-use self::redis::aio::ConnectionManager;
+use self::redis::aio::{ConnectionLike, ConnectionManager};
 use self::redis::ConnectionInfo;
 use crate::counter::Counter;
 use crate::limit::Limit;
 use crate::storage::keys::*;
-use crate::storage::redis::is_limited;
-use crate::storage::redis::scripts::{SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS};
+use crate::storage::redis::scripts::{
+    GET_COUNTERS_AND_PRUNE, SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS,
+};
+use crate::storage::redis::{is_limited, live_counters_from_script_res, COUNTERS_SCAN_BATCH_SIZE};
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
 use redis::{AsyncCommands, ErrorKind, RedisError};
@@ -14,7 +16,6 @@ use std::collections::HashSet;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
 use tracing::{info_span, Instrument};
 
 // Note: this implementation does not guarantee exact limits. Ensuring that we
@@ -156,39 +157,30 @@ impl AsyncCounterStorage for AsyncRedisStorage {
         let mut con = self.conn_manager.clone();
 
         for limit in limits {
-            let counter_keys = {
-                con.smembers::<Vec<u8>, HashSet<Vec<u8>>>(key_for_counters_of_limit(limit))
+            let set_key = key_for_counters_of_limit(limit);
+            let mut cursor = 0u64;
+
+            loop {
+                // SSCAN can repeat a member, or skip one added mid-scan. Duplicates collapse in `res`
+                // Skipped member stays in the set, so a later get_counters returns it.
+                let (next_cursor, members): (u64, Vec<Vec<u8>>) = redis::cmd("SSCAN")
+                    .arg(&set_key)
+                    .arg(cursor)
+                    .arg("COUNT")
+                    .arg(COUNTERS_SCAN_BATCH_SIZE)
+                    .query_async(&mut con)
                     .instrument(info_span!("datastore"))
-                    .await?
-            };
+                    .await?;
 
-            for counter_key in counter_keys {
-                let mut counter: Counter =
-                    counter_from_counter_key(&counter_key, Arc::clone(limit));
-
-                // If the key does not exist, it means that the counter expired,
-                // so we don't have to return it.
-                // TODO: we should delete the counter from the set of counters
-                // associated with the limit taking into account that we should
-                // do the "get" + "delete if none" atomically.
-                // This does not cause any bugs, but consumes memory
-                // unnecessarily.
-                let option = {
-                    con.get::<Vec<u8>, Option<i64>>(counter_key.clone())
-                        .instrument(info_span!("datastore"))
-                        .await?
-                };
-                if let Some(val) = option {
-                    counter.set_remaining(limit.max_value() - u64::try_from(val).unwrap_or(0));
-                    let ttl: i64 = {
-                        con.ttl(&counter_key)
-                            .instrument(info_span!("datastore"))
-                            .await?
-                    };
-                    counter.set_expires_in(Duration::from_secs(u64::try_from(ttl).unwrap_or(0)));
-
-                    res.insert(counter);
+                if !members.is_empty() {
+                    let script_res = read_and_prune_counters(&mut con, &set_key, &members).await?;
+                    res.extend(live_counters_from_script_res(limit, &members, &script_res));
                 }
+
+                if next_cursor == 0 {
+                    break;
+                }
+                cursor = next_cursor;
             }
         }
 
@@ -235,6 +227,7 @@ impl AsyncRedisStorage {
         let store = Self { conn_manager };
         store.load_script(SCRIPT_UPDATE_COUNTER).await?;
         store.load_script(VALUES_AND_TTLS).await?;
+        store.load_script(GET_COUNTERS_AND_PRUNE).await?;
         Ok(store)
     }
 
@@ -266,10 +259,65 @@ impl AsyncRedisStorage {
     }
 }
 
+async fn read_and_prune_counters<C: ConnectionLike>(
+    redis_conn: &mut C,
+    set_key: &[u8],
+    members: &[Vec<u8>],
+) -> Result<Vec<Option<i64>>, StorageErr> {
+    let script = redis::Script::new(GET_COUNTERS_AND_PRUNE);
+    let mut script_invocation = script.prepare_invoke();
+    script_invocation.key(set_key);
+    for member in members {
+        script_invocation.key(member);
+    }
+
+    Ok(script_invocation
+        .invoke_async(redis_conn)
+        .instrument(info_span!("datastore"))
+        .await?)
+}
+
 #[cfg(test)]
 mod tests {
+    use super::read_and_prune_counters;
+    use crate::storage::redis::scripts::GET_COUNTERS_AND_PRUNE;
     use crate::storage::redis::AsyncRedisStorage;
-    use redis::ErrorKind;
+    use redis::{ErrorKind, Value};
+    use redis_test::{MockCmd, MockRedisConnection};
+
+    #[tokio::test]
+    async fn read_and_prune_counters_declares_every_counter_as_a_key() {
+        let script = redis::Script::new(GET_COUNTERS_AND_PRUNE);
+        let set_key = b"namespace:{test_namespace},counters_of_limit:{}".to_vec();
+        let members = vec![
+            b"namespace:{test_namespace},counter:alive".to_vec(),
+            b"namespace:{test_namespace},counter:expired".to_vec(),
+        ];
+
+        // Every counter is declared as a key of its own, not an argument, so Redis cluster can route
+        // the script
+        let mut mock_client = MockRedisConnection::new(vec![MockCmd::new(
+            redis::cmd("EVALSHA")
+                .arg(script.get_hash())
+                .arg(3)
+                .arg(&set_key)
+                .arg(&members[0])
+                .arg(&members[1]),
+            Ok(Value::Array(vec![
+                Value::BulkString(b"3".to_vec()),
+                Value::Int(59_000),
+                Value::Nil,
+                Value::Int(-2),
+            ])),
+        )]);
+
+        let script_res = read_and_prune_counters(&mut mock_client, &set_key, &members)
+            .await
+            .expect("should have read the batch");
+
+        // A nil value marks the member the script removed, and does not shift the pairs that follow
+        assert_eq!(script_res, vec![Some(3), Some(59_000), None, Some(-2)]);
+    }
 
     #[tokio::test]
     async fn errs_on_bad_url() {

@@ -4,8 +4,10 @@ use self::redis::{Commands, ConnectionInfo, ConnectionLike, IntoConnectionInfo, 
 use crate::counter::Counter;
 use crate::limit::Limit;
 use crate::storage::keys::*;
-use crate::storage::redis::is_limited;
-use crate::storage::redis::scripts::{SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS};
+use crate::storage::redis::scripts::{
+    GET_COUNTERS_AND_PRUNE, SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS,
+};
+use crate::storage::redis::{is_limited, live_counters_from_script_res, COUNTERS_SCAN_BATCH_SIZE};
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 use r2d2::{ManageConnection, Pool};
 use std::collections::HashSet;
@@ -114,31 +116,35 @@ impl CounterStorage for RedisStorage {
         let mut con = self.conn_pool.get()?;
 
         for limit in limits {
-            let counter_keys =
-                con.smembers::<Vec<u8>, HashSet<Vec<u8>>>(key_for_counters_of_limit(limit))?;
+            let set_key = key_for_counters_of_limit(limit);
+            let mut cursor = 0u64;
 
-            for counter_key in counter_keys {
-                let mut counter: Counter =
-                    counter_from_counter_key(&counter_key, Arc::clone(limit));
+            loop {
+                // SSCAN can repeat a member, or skip one added mid-scan. Duplicates collapse in `res`
+                // Skipped member stays in the set, so a later get_counters returns it.
+                let (next_cursor, members): (u64, Vec<Vec<u8>>) = redis::cmd("SSCAN")
+                    .arg(&set_key)
+                    .arg(cursor)
+                    .arg("COUNT")
+                    .arg(COUNTERS_SCAN_BATCH_SIZE)
+                    .query(&mut *con)?;
 
-                // If the key does not exist, it means that the counter expired,
-                // so we don't have to return it.
-                // TODO: we should delete the counter from the set of counters
-                // associated with the limit taking into account that we should
-                // do the "get" + "delete if none" atomically.
-                // This does not cause any bugs, but consumes memory
-                // unnecessarily.
-                if let Some(val) = con.get::<Vec<u8>, Option<i64>>(counter_key.clone())? {
-                    counter.set_remaining(
-                        limit
-                            .max_value()
-                            .saturating_sub(u64::try_from(val).unwrap_or(0)),
-                    );
-                    let ttl = con.ttl(&counter_key)?;
-                    counter.set_expires_in(Duration::from_secs(ttl));
+                if !members.is_empty() {
+                    let script = redis::Script::new(GET_COUNTERS_AND_PRUNE);
+                    let mut script_invocation = script.prepare_invoke();
+                    script_invocation.key(&set_key);
+                    for member in &members {
+                        script_invocation.key(member);
+                    }
+                    let script_res: Vec<Option<i64>> = script_invocation.invoke(&mut *con)?;
 
-                    res.insert(counter);
+                    res.extend(live_counters_from_script_res(limit, &members, &script_res));
                 }
+
+                if next_cursor == 0 {
+                    break;
+                }
+                cursor = next_cursor;
             }
         }
 
