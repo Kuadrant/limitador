@@ -64,7 +64,9 @@ pub const VALUES_AND_TTLS: &str = "
 // as keys rather than as arguments so that Redis cluster can route the script.
 //
 // For a limit with no id they share the {namespace} hash tag with KEYS[1], so
-// they all live on the same shard.
+// they all live on the same shard. Keys for a limit with an id carry no hash tag at all, so on a
+// real cluster they can land on different shards. Slot-safety there needs the key encoding in
+// storage::keys to tag by id.
 //
 // A counter that no longer exists reports a nil value and is removed from the limit's counter set.
 // Nothing else ever removes those members, so without this the set grows by one entry per counter
