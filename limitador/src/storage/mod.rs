@@ -1,11 +1,13 @@
 use crate::counter::Counter;
 use crate::limit::{Limit, Namespace};
+use crate::reservation::ReservationId;
 use crate::InMemoryStorage;
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 #[cfg(feature = "disk_storage")]
 pub mod disk;
@@ -147,6 +149,26 @@ impl Storage {
         }
     }
 
+    pub fn reserve(
+        &self,
+        counters: &mut Vec<Counter>,
+        reservation_id: &ReservationId,
+        amount: u64,
+        ttl: Duration,
+        load_counters: bool,
+    ) -> Result<Authorization, StorageErr> {
+        self.counters
+            .reserve(counters, reservation_id, amount, ttl, load_counters)
+    }
+
+    pub fn release_reservation(
+        &self,
+        counters: &[Counter],
+        reservation_id: &ReservationId,
+    ) -> Result<bool, StorageErr> {
+        self.counters.release_reservation(counters, reservation_id)
+    }
+
     pub fn clear(&self) -> Result<(), StorageErr> {
         self.limits.write().unwrap().clear();
         self.counters.clear()
@@ -270,6 +292,29 @@ impl AsyncStorage {
         self.counters.get_counters(&limits).await
     }
 
+    pub async fn reserve(
+        &self,
+        counters: &mut Vec<Counter>,
+        reservation_id: &ReservationId,
+        amount: u64,
+        ttl: Duration,
+        load_counters: bool,
+    ) -> Result<Authorization, StorageErr> {
+        self.counters
+            .reserve(counters, reservation_id, amount, ttl, load_counters)
+            .await
+    }
+
+    pub async fn release_reservation(
+        &self,
+        counters: &[Counter],
+        reservation_id: &ReservationId,
+    ) -> Result<bool, StorageErr> {
+        self.counters
+            .release_reservation(counters, reservation_id)
+            .await
+    }
+
     pub async fn clear(&self) -> Result<(), StorageErr> {
         self.limits.write().unwrap().clear();
         self.counters.clear().await
@@ -289,6 +334,37 @@ pub trait CounterStorage: Sync + Send {
     fn get_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<HashSet<Counter>, StorageErr>; // todo revise typing here?
     fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr>; // todo revise typing here?
     fn clear(&self) -> Result<(), StorageErr>;
+
+    /// Holds `amount` of estimated capacity against every counter in `counters`, provided
+    /// none of them would be pushed over their limit once outstanding reservations are
+    /// accounted for. All counters are admitted, or none are.
+    ///
+    /// Backends that don't yet support reservations can rely on this default, which
+    /// always fails with a non-transient [`StorageErr`].
+    fn reserve(
+        &self,
+        _counters: &mut Vec<Counter>,
+        _reservation_id: &ReservationId,
+        _amount: u64,
+        _ttl: Duration,
+        _load_counters: bool,
+    ) -> Result<Authorization, StorageErr> {
+        Err(StorageErr::unsupported(
+            "reservations are not supported by this storage backend",
+        ))
+    }
+
+    /// Releases the reservation identified by `reservation_id` from every counter in
+    /// `counters`, if a live entry is found. Returns whether anything was released.
+    fn release_reservation(
+        &self,
+        _counters: &[Counter],
+        _reservation_id: &ReservationId,
+    ) -> Result<bool, StorageErr> {
+        Err(StorageErr::unsupported(
+            "reservations are not supported by this storage backend",
+        ))
+    }
 }
 
 #[async_trait]
@@ -307,6 +383,31 @@ pub trait AsyncCounterStorage: Sync + Send {
     ) -> Result<HashSet<Counter>, StorageErr>;
     async fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr>;
     async fn clear(&self) -> Result<(), StorageErr>;
+
+    /// See [`CounterStorage::reserve`].
+    async fn reserve(
+        &self,
+        _counters: &mut Vec<Counter>,
+        _reservation_id: &ReservationId,
+        _amount: u64,
+        _ttl: Duration,
+        _load_counters: bool,
+    ) -> Result<Authorization, StorageErr> {
+        Err(StorageErr::unsupported(
+            "reservations are not supported by this storage backend",
+        ))
+    }
+
+    /// See [`CounterStorage::release_reservation`].
+    async fn release_reservation(
+        &self,
+        _counters: &[Counter],
+        _reservation_id: &ReservationId,
+    ) -> Result<bool, StorageErr> {
+        Err(StorageErr::unsupported(
+            "reservations are not supported by this storage backend",
+        ))
+    }
 }
 
 #[derive(Debug)]
@@ -329,6 +430,14 @@ impl Error for StorageErr {
 }
 
 impl StorageErr {
+    pub(crate) fn unsupported(msg: impl Into<String>) -> Self {
+        Self {
+            msg: msg.into(),
+            source: None,
+            transient: false,
+        }
+    }
+
     pub fn msg(&self) -> &str {
         &self.msg
     }

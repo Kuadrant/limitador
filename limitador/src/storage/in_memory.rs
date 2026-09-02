@@ -1,5 +1,6 @@
 use crate::counter::Counter;
 use crate::limit::{Context, Limit, Namespace};
+use crate::reservation::{ReservationEntry, ReservationId};
 use crate::storage::atomic_expiring_value::AtomicExpiringValue;
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 use moka::sync::{Cache, CacheBuilder};
@@ -13,6 +14,7 @@ use std::time::{Duration, SystemTime};
 pub struct InMemoryStorage {
     simple_limits: RwLock<BTreeMap<Limit, AtomicExpiringValue>>,
     qualified_counters: Cache<Counter, Arc<AtomicExpiringValue>>,
+    reservations: RwLock<HashMap<Counter, Vec<ReservationEntry>>>,
 }
 
 impl CounterStorage for InMemoryStorage {
@@ -199,6 +201,73 @@ impl CounterStorage for InMemoryStorage {
         self.simple_limits.write().unwrap().clear();
         Ok(())
     }
+
+    #[tracing::instrument(skip_all)]
+    fn reserve(
+        &self,
+        counters: &mut Vec<Counter>,
+        reservation_id: &ReservationId,
+        amount: u64,
+        ttl: Duration,
+        load_counters: bool,
+    ) -> Result<Authorization, StorageErr> {
+        let now = SystemTime::now();
+        let mut first_limited = None;
+        let mut expires_at_by_counter = Vec::with_capacity(counters.len());
+
+        for counter in counters.iter_mut() {
+            let (value, window_ttl) = self.touch(counter, now);
+            let outstanding = self.outstanding(counter, now);
+            let expires_at = std::cmp::min(now + ttl, now + window_ttl);
+            expires_at_by_counter.push(expires_at);
+
+            let total = value + outstanding + amount;
+            if load_counters {
+                let remaining = counter.max_value().checked_sub(total);
+                counter.set_remaining(remaining.unwrap_or_default());
+                counter.set_expires_in(window_ttl);
+            }
+            if first_limited.is_none() && total > counter.max_value() {
+                first_limited = Some(Authorization::Limited(
+                    counter.limit().name().map(|n| n.to_owned()),
+                ));
+            }
+        }
+
+        if let Some(limited) = first_limited {
+            return Ok(limited);
+        }
+
+        let mut registry = self.reservations.write().unwrap();
+        for (counter, expires_at) in counters.iter().zip(expires_at_by_counter) {
+            let entries = registry.entry(counter.clone()).or_default();
+            entries.retain(|e| e.is_live_at(now));
+            entries.push(ReservationEntry::new(reservation_id.clone(), amount, expires_at));
+        }
+
+        Ok(Authorization::Ok)
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn release_reservation(
+        &self,
+        counters: &[Counter],
+        reservation_id: &ReservationId,
+    ) -> Result<bool, StorageErr> {
+        let mut released = false;
+        let mut registry = self.reservations.write().unwrap();
+        for counter in counters {
+            if let Some(entries) = registry.get_mut(counter) {
+                let before = entries.len();
+                entries.retain(|e| e.reservation_id() != reservation_id);
+                released |= entries.len() != before;
+                if entries.is_empty() {
+                    registry.remove(counter);
+                }
+            }
+        }
+        Ok(released)
+    }
 }
 
 impl InMemoryStorage {
@@ -208,6 +277,7 @@ impl InMemoryStorage {
             qualified_counters: CacheBuilder::new(cache_size)
                 .support_invalidation_closures()
                 .build(),
+            reservations: RwLock::new(HashMap::new()),
         }
     }
 
@@ -261,6 +331,45 @@ impl InMemoryStorage {
             Some(current_val) => current_val + delta <= counter.max_value(),
             None => counter.max_value() >= delta,
         }
+    }
+
+    // Reads the counter's current value, lazily starting (or restarting, if expired) its
+    // window with a zero-delta update. Returns the (unaffected) value and the ttl of the
+    // window it now belongs to, so callers can compute a per-counter reservation expiry
+    // without ever touching the counter's real value.
+    fn touch(&self, counter: &Counter, now: SystemTime) -> (u64, Duration) {
+        if counter.is_qualified() {
+            let value = match self.qualified_counters.get(counter) {
+                None => self.qualified_counters.get_with(counter.clone(), || {
+                    Arc::new(AtomicExpiringValue::new(0, now + counter.window()))
+                }),
+                Some(value) => value,
+            };
+            let current = value.update(0, counter.window(), now);
+            (current, value.ttl())
+        } else {
+            let mut counters = self.simple_limits.write().unwrap();
+            let value = counters
+                .entry(counter.limit().clone())
+                .or_insert_with(|| AtomicExpiringValue::new(0, now + counter.window()));
+            let current = value.update(0, counter.window(), now);
+            (current, value.ttl())
+        }
+    }
+
+    fn outstanding(&self, counter: &Counter, now: SystemTime) -> u64 {
+        self.reservations
+            .read()
+            .unwrap()
+            .get(counter)
+            .map(|entries| {
+                entries
+                    .iter()
+                    .filter(|e| e.is_live_at(now))
+                    .map(|e| e.amount())
+                    .sum()
+            })
+            .unwrap_or_default()
     }
 }
 

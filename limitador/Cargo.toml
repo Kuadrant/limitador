@@ -15,7 +15,7 @@ edition = "2021"
 [features]
 default = ["disk_storage", "redis_storage"]
 disk_storage = ["rocksdb"]
-distributed_storage = ["tokio", "tokio-stream", "h2", "base64", "uuid", "tonic", "tonic-reflection", "prost", "prost-types"]
+distributed_storage = ["tokio", "tokio-stream", "h2", "base64", "tonic", "tonic-reflection", "prost", "prost-types"]
 redis_storage = ["redis", "r2d2", "tokio"]
 
 [dependencies]
@@ -48,7 +48,7 @@ tokio = { version = "1", optional = true, features = [
 base64 = { version = "0.22", optional = true }
 tokio-stream = { version = "0.1", optional = true }
 h2 = { version = "0.4", optional = true }
-uuid = { version = "1.8.0", features = ["v4", "fast-rng"], optional = true }
+uuid = { version = "1.8.0", features = ["v4", "fast-rng"] }
 tonic = { version = "0.12.3", optional = true }
 tonic-reflection = { version = "0.12.3", optional = true }
 prost = { version = "0.13.3", optional = true }
