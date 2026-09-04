@@ -258,7 +258,7 @@ impl CachedRedisStorage {
         Ok(Self {
             cached_counters: counters_cache,
             async_redis_storage,
-            reservations: LocalReservationRegistry::new(),
+            reservations: LocalReservationRegistry::new(max_cached_counters as u64),
         })
     }
 }

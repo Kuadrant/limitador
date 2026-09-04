@@ -1,9 +1,28 @@
 use crate::counter::Counter;
 use crate::reservation::{ReservationEntry, ReservationId};
 use crate::storage::Authorization;
-use std::collections::HashMap;
-use std::sync::RwLock;
-use std::time::{Duration, SystemTime};
+use moka::sync::{Cache, CacheBuilder};
+use moka::Expiry;
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant, SystemTime};
+
+/// Used by backends that don't have their own natural "expected number of distinct
+/// counters" knob to size their local reservation registry against (currently only
+/// `RocksDbStorage`; `InMemoryStorage` and `CachedRedisStorage` reuse their own counter
+/// cache size instead).
+#[cfg(feature = "disk_storage")]
+pub(crate) const DEFAULT_LOCAL_RESERVATIONS_CACHE_SIZE: u64 = 10_000;
+
+/// A counter's outstanding reservations, plus the remaining ttl of its current window as
+/// of the last `reserve()` call that touched it - a reservation can never outlive its
+/// counter's window (see `LocalReservationRegistry::reserve`'s `expires_at` clamp), so this
+/// is also always a safe upper bound for how long to keep the whole entry cached.
+struct CounterReservations {
+    window_ttl: Duration,
+    entries: Vec<ReservationEntry>,
+}
+
+type Entry = Arc<RwLock<CounterReservations>>;
 
 /// A local (single-process, in-memory only) reservation registry.
 ///
@@ -12,8 +31,13 @@ use std::time::{Duration, SystemTime};
 /// "local-memory-only" scope already granted to disk/distributed storage for counters
 /// themselves. Not a substitute for a properly shared implementation where multiple
 /// replicas need to see each other's outstanding reservations.
+///
+/// Backed by a size-bounded Moka cache with a per-entry `Expiry` policy tied to each
+/// counter's own window ttl, so a counter's reservations are actively reclaimed once its
+/// window closes - even if that counter is never touched again - rather than accumulating
+/// until the cache fills up.
 pub(crate) struct LocalReservationRegistry {
-    entries: RwLock<HashMap<Counter, Vec<ReservationEntry>>>,
+    entries: Cache<Counter, Entry>,
 }
 
 pub(crate) struct ReservationRequest<'a> {
@@ -24,20 +48,49 @@ pub(crate) struct ReservationRequest<'a> {
     pub(crate) now: SystemTime,
 }
 
+struct ReservationExpiry;
+
+impl Expiry<Counter, Entry> for ReservationExpiry {
+    fn expire_after_create(
+        &self,
+        _key: &Counter,
+        value: &Entry,
+        _created_at: Instant,
+    ) -> Option<Duration> {
+        Some(value.read().unwrap().window_ttl)
+    }
+
+    // Mutating through the `RwLock` alone doesn't notify the cache of anything; `reserve`
+    // re-inserts after updating `window_ttl` so this gets re-evaluated against the fresh
+    // value, the same way the Redis backend re-issues `PEXPIRE` on every `reserve()` call.
+    fn expire_after_update(
+        &self,
+        _key: &Counter,
+        value: &Entry,
+        _updated_at: Instant,
+        _duration_until_expiry: Option<Duration>,
+    ) -> Option<Duration> {
+        Some(value.read().unwrap().window_ttl)
+    }
+}
+
 impl LocalReservationRegistry {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(max_size: u64) -> Self {
         Self {
-            entries: RwLock::new(HashMap::new()),
+            entries: CacheBuilder::new(max_size)
+                .expire_after(ReservationExpiry)
+                .build(),
         }
     }
 
     fn outstanding(&self, counter: &Counter, now: SystemTime) -> u64 {
         self.entries
-            .read()
-            .unwrap()
             .get(counter)
-            .map(|entries| {
-                entries
+            .map(|entry| {
+                entry
+                    .read()
+                    .unwrap()
+                    .entries
                     .iter()
                     .filter(|e| e.is_live_at(now))
                     .map(|e| e.amount())
@@ -48,6 +101,10 @@ impl LocalReservationRegistry {
 
     /// `values_and_window_ttls[i]` must be the current value and remaining window ttl of
     /// `counters[i]`, already read (and, if absent, lazily established) by the caller.
+    // TODO: `outstanding` is read here, then written well below, with no lock held across
+    // the gap - two truly concurrent `reserve()` calls on the same counter (real OS-thread
+    // parallelism, not async interleaving) could both admit past the limit. Not reachable
+    // today (gRPC server is single threaded tokio runtime), but should be closed properly.
     pub(crate) fn reserve(
         &self,
         counters: &mut [Counter],
@@ -80,15 +137,28 @@ impl LocalReservationRegistry {
             return limited;
         }
 
-        let mut registry = self.entries.write().unwrap();
-        for (counter, expires_at) in counters.iter().zip(expires_at_by_counter) {
-            let entries = registry.entry(counter.clone()).or_default();
-            entries.retain(|e| e.is_live_at(now));
-            entries.push(ReservationEntry::new(
-                request.reservation_id.clone(),
-                request.amount,
-                expires_at,
-            ));
+        for ((counter, expires_at), (_, window_ttl)) in counters
+            .iter()
+            .zip(expires_at_by_counter)
+            .zip(values_and_window_ttls)
+        {
+            let entry = self.entries.get_with(counter.clone(), || {
+                Arc::new(RwLock::new(CounterReservations {
+                    window_ttl: *window_ttl,
+                    entries: Vec::new(),
+                }))
+            });
+            {
+                let mut guard = entry.write().unwrap();
+                guard.window_ttl = *window_ttl;
+                guard.entries.retain(|e| e.is_live_at(now));
+                guard.entries.push(ReservationEntry::new(
+                    request.reservation_id.clone(),
+                    request.amount,
+                    expires_at,
+                ));
+            }
+            self.entries.insert(counter.clone(), entry);
         }
 
         Authorization::Ok
@@ -96,14 +166,21 @@ impl LocalReservationRegistry {
 
     pub(crate) fn release(&self, counters: &[Counter], reservation_id: &ReservationId) -> bool {
         let mut released = false;
-        let mut registry = self.entries.write().unwrap();
         for counter in counters {
-            if let Some(entries) = registry.get_mut(counter) {
-                let before = entries.len();
-                entries.retain(|e| e.reservation_id() != reservation_id);
-                released |= entries.len() != before;
-                if entries.is_empty() {
-                    registry.remove(counter);
+            if let Some(entry) = self.entries.get(counter) {
+                let now_empty = {
+                    let mut guard = entry.write().unwrap();
+                    let before = guard.entries.len();
+                    guard
+                        .entries
+                        .retain(|e| e.reservation_id() != reservation_id);
+                    released |= guard.entries.len() != before;
+                    guard.entries.is_empty()
+                };
+                if now_empty {
+                    self.entries.invalidate(counter);
+                } else {
+                    self.entries.insert(counter.clone(), entry);
                 }
             }
         }

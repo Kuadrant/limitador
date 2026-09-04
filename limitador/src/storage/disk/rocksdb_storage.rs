@@ -6,7 +6,9 @@ use crate::storage::disk::OptimizeFor;
 use crate::storage::keys::bin::{
     key_for_counter, partial_counter_from_counter_key, prefix_for_namespace,
 };
-use crate::storage::local_reservations::{LocalReservationRegistry, ReservationRequest};
+use crate::storage::local_reservations::{
+    LocalReservationRegistry, ReservationRequest, DEFAULT_LOCAL_RESERVATIONS_CACHE_SIZE,
+};
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 use rocksdb::{
     CompactionDecision, DBCompressionType, DBWithThreadMode, IteratorMode, MultiThreaded, Options,
@@ -237,7 +239,7 @@ impl RocksDbStorage {
         let db = DB::open(&opts, path).unwrap();
         Ok(Self {
             db,
-            reservations: LocalReservationRegistry::new(),
+            reservations: LocalReservationRegistry::new(DEFAULT_LOCAL_RESERVATIONS_CACHE_SIZE),
         })
     }
 

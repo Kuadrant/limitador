@@ -248,7 +248,7 @@ impl InMemoryStorage {
             qualified_counters: CacheBuilder::new(cache_size)
                 .support_invalidation_closures()
                 .build(),
-            reservations: LocalReservationRegistry::new(),
+            reservations: LocalReservationRegistry::new(cache_size),
         }
     }
 
