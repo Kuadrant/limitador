@@ -3,15 +3,16 @@ extern crate redis;
 use self::redis::{Commands, ConnectionInfo, ConnectionLike, IntoConnectionInfo, RedisError};
 use crate::counter::Counter;
 use crate::limit::Limit;
+use crate::reservation::ReservationId;
 use crate::storage::keys::*;
 use crate::storage::redis::is_limited;
-use crate::storage::redis::scripts::{SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS};
+use crate::storage::redis::scripts::{SCRIPT_RESERVE, SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS};
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 use r2d2::{ManageConnection, Pool};
 use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
 const MAX_REDIS_CONNS: u32 = 20; // TODO: make it configurable
@@ -167,6 +168,81 @@ impl CounterStorage for RedisStorage {
         let mut con = self.conn_pool.get()?;
         redis::cmd("FLUSHDB").exec(&mut *con)?;
         Ok(())
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn reserve(
+        &self,
+        counters: &mut Vec<Counter>,
+        reservation_id: &ReservationId,
+        amount: u64,
+        ttl: Duration,
+        load_counters: bool,
+    ) -> Result<Authorization, StorageErr> {
+        let mut con = self.conn_pool.get()?;
+
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+
+        let script = redis::Script::new(SCRIPT_RESERVE);
+        let mut invocation = script.prepare_invoke();
+        for counter in counters.iter() {
+            invocation.key(key_for_counter(counter));
+            invocation.key(key_for_reservations(counter));
+        }
+        for counter in counters.iter() {
+            invocation.arg(counter.window().as_secs());
+            invocation.arg(counter.max_value());
+        }
+        invocation
+            .arg(amount)
+            .arg(ttl.as_millis() as i64)
+            .arg(reservation_id.as_str())
+            .arg(now_ms);
+
+        let raw: Vec<i64> = invocation.invoke(&mut *con)?;
+        let admitted = raw.last().copied().unwrap_or(0) == 1;
+
+        let mut first_limited = None;
+        for (i, counter) in counters.iter_mut().enumerate() {
+            let value = raw[i * 3].max(0) as u64;
+            let outstanding = raw[i * 3 + 1].max(0) as u64;
+            let window_ttl_ms = raw[i * 3 + 2].max(0) as u64;
+            let total = value + outstanding + amount;
+
+            if load_counters {
+                let remaining = counter.max_value().checked_sub(total);
+                counter.set_remaining(remaining.unwrap_or_default());
+                counter.set_expires_in(Duration::from_millis(window_ttl_ms));
+            }
+            if first_limited.is_none() && total > counter.max_value() {
+                first_limited = Some(counter.limit().name().map(|n| n.to_owned()));
+            }
+        }
+
+        if admitted {
+            Ok(Authorization::Ok)
+        } else {
+            Ok(Authorization::Limited(first_limited.unwrap_or(None)))
+        }
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn release_reservation(
+        &self,
+        counters: &[Counter],
+        reservation_id: &ReservationId,
+    ) -> Result<bool, StorageErr> {
+        let mut con = self.conn_pool.get()?;
+
+        let mut released = false;
+        for counter in counters {
+            let removed: i64 = con.hdel(key_for_reservations(counter), reservation_id.as_str())?;
+            released |= removed > 0;
+        }
+        Ok(released)
     }
 }
 

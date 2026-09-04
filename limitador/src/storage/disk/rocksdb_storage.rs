@@ -1,10 +1,12 @@
 use crate::counter::Counter;
 use crate::limit::Limit;
+use crate::reservation::ReservationId;
 use crate::storage::disk::expiring_value::ExpiringValue;
 use crate::storage::disk::OptimizeFor;
 use crate::storage::keys::bin::{
     key_for_counter, partial_counter_from_counter_key, prefix_for_namespace,
 };
+use crate::storage::local_reservations::{LocalReservationRegistry, ReservationRequest};
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 use rocksdb::{
     CompactionDecision, DBCompressionType, DBWithThreadMode, IteratorMode, MultiThreaded, Options,
@@ -18,6 +20,8 @@ use tracing::debug_span;
 
 pub struct RocksDbStorage {
     db: DBWithThreadMode<MultiThreaded>,
+    // Local-memory only, not shared across processes - see `LocalReservationRegistry`'s docs.
+    reservations: LocalReservationRegistry,
 }
 
 impl CounterStorage for RocksDbStorage {
@@ -151,6 +155,50 @@ impl CounterStorage for RocksDbStorage {
         }
         Ok(())
     }
+
+    // Local-memory only (see `LocalReservationRegistry`'s docs): not shared across processes,
+    // which is consistent with `RocksDbStorage`'s existing single-instance scope for counters
+    // themselves.
+    #[tracing::instrument(skip_all)]
+    fn reserve(
+        &self,
+        counters: &mut Vec<Counter>,
+        reservation_id: &ReservationId,
+        amount: u64,
+        ttl: Duration,
+        load_counters: bool,
+    ) -> Result<Authorization, StorageErr> {
+        let now = SystemTime::now();
+        let mut values_and_window_ttls = Vec::with_capacity(counters.len());
+        for counter in counters.iter() {
+            let key = key_for_counter(counter);
+            // Zero-delta "touch": establishes a fresh window if absent/expired, without
+            // affecting the counter's real value - mirrors `InMemoryStorage`'s `touch`.
+            let value = self.insert_or_update(&key, counter, 0)?;
+            values_and_window_ttls.push((value.value(), value.ttl()));
+        }
+
+        Ok(self.reservations.reserve(
+            counters,
+            &values_and_window_ttls,
+            ReservationRequest {
+                reservation_id,
+                amount,
+                ttl,
+                load_counters,
+                now,
+            },
+        ))
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn release_reservation(
+        &self,
+        counters: &[Counter],
+        reservation_id: &ReservationId,
+    ) -> Result<bool, StorageErr> {
+        Ok(self.reservations.release(counters, reservation_id))
+    }
 }
 
 impl RocksDbStorage {
@@ -187,7 +235,10 @@ impl RocksDbStorage {
         });
         opts.create_if_missing(true);
         let db = DB::open(&opts, path).unwrap();
-        Ok(Self { db })
+        Ok(Self {
+            db,
+            reservations: LocalReservationRegistry::new(),
+        })
     }
 
     fn insert_or_update(

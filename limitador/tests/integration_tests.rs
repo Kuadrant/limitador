@@ -73,6 +73,73 @@ macro_rules! test_with_all_storage_impls {
     };
 }
 
+// Backends that have implemented `CounterStorage`/`AsyncCounterStorage`'s
+// `reserve`/`release_reservation` so far - either shared (in-memory, both Redis storages) or,
+// for disk/cached-Redis, a local-memory-only starting point (see `LocalReservationRegistry`).
+// Distributed storage still relies on the traits' default (unsupported) impl and is
+// deliberately left out, rather than run and fail - it's also not compiled by default
+// (`distributed_storage` isn't in either crate's default features) and not production-ready.
+macro_rules! test_with_reservation_capable_storage_impls {
+    ($function:ident) => {
+        paste::item! {
+            #[tokio::test]
+            async fn [<$function _in_memory_storage>]() {
+                let rate_limiter =
+                    RateLimiter::new_with_storage(Box::<InMemoryStorage>::default());
+                $function(&mut TestsLimiter::new_from_blocking_impl(rate_limiter)).await;
+            }
+
+            #[cfg(feature = "disk_storage")]
+            #[tokio::test]
+            async fn [<$function _disk_storage>]() {
+                let dir = TempDir::new().expect("We should have a dir!");
+                let rate_limiter =
+                    RateLimiter::new_with_storage(Box::new(DiskStorage::open(dir.path(), OptimizeFor::Throughput).expect("Couldn't open temp dir")));
+                $function(&mut TestsLimiter::new_from_blocking_impl(rate_limiter)).await;
+            }
+
+            #[cfg(feature = "redis_storage")]
+            #[tokio::test]
+            #[serial]
+            async fn [<$function _with_sync_redis>]() {
+                let storage = RedisStorage::default();
+                storage.clear().unwrap();
+                let rate_limiter = RateLimiter::new_with_storage(
+                    Box::new(storage)
+                );
+                $function(&mut TestsLimiter::new_from_blocking_impl(rate_limiter)).await;
+            }
+
+            #[cfg(feature = "redis_storage")]
+            #[tokio::test]
+            #[serial]
+            async fn [<$function _with_async_redis>]() {
+                let storage = AsyncRedisStorage::new("redis://127.0.0.1:6379").await.expect("We need a Redis running locally");
+                storage.clear().await.unwrap();
+                let rate_limiter = AsyncRateLimiter::new_with_storage(
+                    Box::new(storage)
+                );
+                $function(&mut TestsLimiter::new_from_async_impl(rate_limiter)).await;
+            }
+
+            #[cfg(feature = "redis_storage")]
+            #[tokio::test]
+            #[serial]
+            async fn [<$function _with_async_redis_and_local_cache>]() {
+                let storage_builder = CachedRedisStorageBuilder::new("redis://127.0.0.1:6379").
+                    flushing_period(Duration::from_millis(2)).
+                    max_cached_counters(10000);
+                let storage = storage_builder.build().await.expect("We need a Redis running locally");
+                storage.clear().await.unwrap();
+                let rate_limiter = AsyncRateLimiter::new_with_storage(
+                    Box::new(storage)
+                );
+                $function(&mut TestsLimiter::new_from_async_impl(rate_limiter)).await;
+            }
+        }
+    };
+}
+
 #[cfg(feature = "distributed_storage")]
 async fn distributed_storage_factory(
     count: usize,
@@ -159,7 +226,7 @@ mod test {
     use self::limitador::counter::Counter;
     use self::limitador::RateLimiter;
     use crate::helpers::tests_limiter::*;
-    use limitador::limit::Limit;
+    use limitador::limit::{Context, Expression, Limit};
     #[cfg(feature = "disk_storage")]
     use limitador::storage::disk::{DiskStorage, OptimizeFor};
     #[cfg(feature = "distributed_storage")]
@@ -208,6 +275,13 @@ mod test {
     test_with_all_storage_impls!(configure_with_deletes_all_except_the_limits_given);
     test_with_all_storage_impls!(configure_with_updates_the_limits);
     test_with_all_storage_impls!(add_limit_only_adds_if_not_present);
+
+    test_with_reservation_capable_storage_impls!(reserve_accounts_for_outstanding_reservations);
+    test_with_reservation_capable_storage_impls!(
+        commit_reservation_applies_actual_amount_and_releases_hold
+    );
+    test_with_reservation_capable_storage_impls!(reserve_without_matching_limits_is_a_noop);
+    test_with_reservation_capable_storage_impls!(expired_reservations_do_not_count_as_outstanding);
 
     test_with_distributed_storage_impls!(distributed_rate_limited);
 
@@ -1280,6 +1354,118 @@ mod test {
         let known_limit = limits.iter().next().unwrap();
         assert_eq!(known_limit.max_value(), 10);
         assert_eq!(known_limit.name(), None);
+    }
+
+    async fn reserve_accounts_for_outstanding_reservations(rate_limiter: &mut TestsLimiter) {
+        let namespace = "reservations";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rate_limiter.add_limit(&limit).await;
+
+        let ctx = Context::default();
+
+        let first = rate_limiter
+            .reserve(namespace, &ctx, 6, Duration::from_secs(30), false)
+            .await
+            .unwrap();
+        assert!(!first.limited);
+        assert!(first.reservation_id.is_some());
+
+        // value(0) + outstanding(6) + 6 = 12 > 10: rejected
+        let second = rate_limiter
+            .reserve(namespace, &ctx, 6, Duration::from_secs(30), false)
+            .await
+            .unwrap();
+        assert!(second.limited);
+        assert!(second.reservation_id.is_none());
+
+        // value(0) + outstanding(6) + 4 = 10 <= 10: admitted
+        let third = rate_limiter
+            .reserve(namespace, &ctx, 4, Duration::from_secs(30), false)
+            .await
+            .unwrap();
+        assert!(!third.limited);
+    }
+
+    async fn commit_reservation_applies_actual_amount_and_releases_hold(
+        rate_limiter: &mut TestsLimiter,
+    ) {
+        let namespace = "commit";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rate_limiter.add_limit(&limit).await;
+
+        let ctx = Context::default();
+
+        let reserved = rate_limiter
+            .reserve(namespace, &ctx, 6, Duration::from_secs(30), false)
+            .await
+            .unwrap();
+        let reservation_id = reserved.reservation_id.expect("should be admitted");
+
+        // Still held: 0 + outstanding(6) + 6 = 12 > 10
+        let blocked = rate_limiter
+            .reserve(namespace, &ctx, 6, Duration::from_secs(30), false)
+            .await
+            .unwrap();
+        assert!(blocked.limited);
+
+        // Real usage turned out lower than the estimate
+        let commit = rate_limiter
+            .commit_reservation(namespace, &ctx, &reservation_id, 2)
+            .await
+            .unwrap();
+        assert!(commit.reservation_released);
+
+        // Committing again is a no-op release, but still applies actual_amount unconditionally
+        let second_commit = rate_limiter
+            .commit_reservation(namespace, &ctx, &reservation_id, 2)
+            .await
+            .unwrap();
+        assert!(!second_commit.reservation_released);
+
+        // Counter is now at 4 (2 + 2) with no outstanding reservations: 4 + 6 = 10 <= 10
+        let after = rate_limiter
+            .reserve(namespace, &ctx, 6, Duration::from_secs(30), false)
+            .await
+            .unwrap();
+        assert!(!after.limited);
+    }
+
+    async fn reserve_without_matching_limits_is_a_noop(rate_limiter: &mut TestsLimiter) {
+        let result = rate_limiter
+            .reserve(
+                "empty",
+                &Context::default(),
+                5,
+                Duration::from_secs(10),
+                false,
+            )
+            .await
+            .unwrap();
+        assert!(!result.limited);
+        assert!(result.reservation_id.is_none());
+    }
+
+    async fn expired_reservations_do_not_count_as_outstanding(rate_limiter: &mut TestsLimiter) {
+        let namespace = "expiry";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rate_limiter.add_limit(&limit).await;
+
+        let ctx = Context::default();
+
+        // A zero ttl means this reservation is already expired by the time we look at it
+        // again.
+        let first = rate_limiter
+            .reserve(namespace, &ctx, 8, Duration::ZERO, false)
+            .await
+            .unwrap();
+        assert!(!first.limited);
+
+        // The first reservation is already expired, so another 8 fits again: 0 + 0 + 8 <= 10
+        let second = rate_limiter
+            .reserve(namespace, &ctx, 8, Duration::from_secs(30), false)
+            .await
+            .unwrap();
+        assert!(!second.limited);
     }
 
     #[allow(dead_code)]

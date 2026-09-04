@@ -24,6 +24,8 @@ pub mod redis;
 mod atomic_expiring_value;
 #[cfg(any(feature = "disk_storage", feature = "redis_storage"))]
 mod keys;
+// Used unconditionally by `in_memory` and, when enabled, by `disk`/`redis`.
+mod local_reservations;
 
 pub enum Authorization {
     Ok,

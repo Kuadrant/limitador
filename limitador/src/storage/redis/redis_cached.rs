@@ -1,6 +1,8 @@
 use crate::counter::Counter;
 use crate::limit::Limit;
+use crate::reservation::ReservationId;
 use crate::storage::keys::*;
+use crate::storage::local_reservations::{LocalReservationRegistry, ReservationRequest};
 use crate::storage::redis::counters_cache::{
     CachedCounterValue, CountersCache, CountersCacheBuilder,
 };
@@ -43,6 +45,10 @@ use tracing::{error, info, info_span, warn, Instrument};
 pub struct CachedRedisStorage {
     cached_counters: Arc<CountersCache>,
     async_redis_storage: AsyncRedisStorage,
+    // Local-memory only, not shared across processes - see `LocalReservationRegistry`'s docs.
+    // A starting point, matching the accuracy trade-offs this backend already makes for
+    // counters themselves; not meant for production multi-replica deployments yet.
+    reservations: LocalReservationRegistry,
 }
 
 #[async_trait]
@@ -144,6 +150,49 @@ impl AsyncCounterStorage for CachedRedisStorage {
     async fn clear(&self) -> Result<(), StorageErr> {
         self.async_redis_storage.clear().await
     }
+
+    // Local-memory only (see `LocalReservationRegistry`'s docs): admission is checked against
+    // this instance's own cached view of each counter, the same accuracy trade-off
+    // `check_and_update` already makes for this backend.
+    #[tracing::instrument(skip_all)]
+    async fn reserve(
+        &self,
+        counters: &mut Vec<Counter>,
+        reservation_id: &ReservationId,
+        amount: u64,
+        ttl: Duration,
+        load_counters: bool,
+    ) -> Result<Authorization, StorageErr> {
+        let now = SystemTime::now();
+        let values_and_window_ttls: Vec<(u64, Duration)> = counters
+            .iter()
+            .map(|counter| match self.cached_counters.get(counter) {
+                Some(cached) => (cached.hits(counter), cached.ttl()),
+                None => (0, counter.window()),
+            })
+            .collect();
+
+        Ok(self.reservations.reserve(
+            counters,
+            &values_and_window_ttls,
+            ReservationRequest {
+                reservation_id,
+                amount,
+                ttl,
+                load_counters,
+                now,
+            },
+        ))
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn release_reservation(
+        &self,
+        counters: &[Counter],
+        reservation_id: &ReservationId,
+    ) -> Result<bool, StorageErr> {
+        Ok(self.reservations.release(counters, reservation_id))
+    }
 }
 
 impl CachedRedisStorage {
@@ -209,6 +258,7 @@ impl CachedRedisStorage {
         Ok(Self {
             cached_counters: counters_cache,
             async_redis_storage,
+            reservations: LocalReservationRegistry::new(),
         })
     }
 }

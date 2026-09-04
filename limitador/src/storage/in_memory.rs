@@ -1,7 +1,8 @@
 use crate::counter::Counter;
 use crate::limit::{Context, Limit, Namespace};
-use crate::reservation::{ReservationEntry, ReservationId};
+use crate::reservation::ReservationId;
 use crate::storage::atomic_expiring_value::AtomicExpiringValue;
+use crate::storage::local_reservations::{LocalReservationRegistry, ReservationRequest};
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 use moka::sync::{Cache, CacheBuilder};
 use moka::PredicateError;
@@ -14,7 +15,7 @@ use std::time::{Duration, SystemTime};
 pub struct InMemoryStorage {
     simple_limits: RwLock<BTreeMap<Limit, AtomicExpiringValue>>,
     qualified_counters: Cache<Counter, Arc<AtomicExpiringValue>>,
-    reservations: RwLock<HashMap<Counter, Vec<ReservationEntry>>>,
+    reservations: LocalReservationRegistry,
 }
 
 impl CounterStorage for InMemoryStorage {
@@ -212,40 +213,22 @@ impl CounterStorage for InMemoryStorage {
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let now = SystemTime::now();
-        let mut first_limited = None;
-        let mut expires_at_by_counter = Vec::with_capacity(counters.len());
+        let values_and_window_ttls: Vec<(u64, Duration)> = counters
+            .iter()
+            .map(|counter| self.touch(counter, now))
+            .collect();
 
-        for counter in counters.iter_mut() {
-            let (value, window_ttl) = self.touch(counter, now);
-            let outstanding = self.outstanding(counter, now);
-            let expires_at = std::cmp::min(now + ttl, now + window_ttl);
-            expires_at_by_counter.push(expires_at);
-
-            let total = value + outstanding + amount;
-            if load_counters {
-                let remaining = counter.max_value().checked_sub(total);
-                counter.set_remaining(remaining.unwrap_or_default());
-                counter.set_expires_in(window_ttl);
-            }
-            if first_limited.is_none() && total > counter.max_value() {
-                first_limited = Some(Authorization::Limited(
-                    counter.limit().name().map(|n| n.to_owned()),
-                ));
-            }
-        }
-
-        if let Some(limited) = first_limited {
-            return Ok(limited);
-        }
-
-        let mut registry = self.reservations.write().unwrap();
-        for (counter, expires_at) in counters.iter().zip(expires_at_by_counter) {
-            let entries = registry.entry(counter.clone()).or_default();
-            entries.retain(|e| e.is_live_at(now));
-            entries.push(ReservationEntry::new(reservation_id.clone(), amount, expires_at));
-        }
-
-        Ok(Authorization::Ok)
+        Ok(self.reservations.reserve(
+            counters,
+            &values_and_window_ttls,
+            ReservationRequest {
+                reservation_id,
+                amount,
+                ttl,
+                load_counters,
+                now,
+            },
+        ))
     }
 
     #[tracing::instrument(skip_all)]
@@ -254,19 +237,7 @@ impl CounterStorage for InMemoryStorage {
         counters: &[Counter],
         reservation_id: &ReservationId,
     ) -> Result<bool, StorageErr> {
-        let mut released = false;
-        let mut registry = self.reservations.write().unwrap();
-        for counter in counters {
-            if let Some(entries) = registry.get_mut(counter) {
-                let before = entries.len();
-                entries.retain(|e| e.reservation_id() != reservation_id);
-                released |= entries.len() != before;
-                if entries.is_empty() {
-                    registry.remove(counter);
-                }
-            }
-        }
-        Ok(released)
+        Ok(self.reservations.release(counters, reservation_id))
     }
 }
 
@@ -277,7 +248,7 @@ impl InMemoryStorage {
             qualified_counters: CacheBuilder::new(cache_size)
                 .support_invalidation_closures()
                 .build(),
-            reservations: RwLock::new(HashMap::new()),
+            reservations: LocalReservationRegistry::new(),
         }
     }
 
@@ -355,21 +326,6 @@ impl InMemoryStorage {
             let current = value.update(0, counter.window(), now);
             (current, value.ttl())
         }
-    }
-
-    fn outstanding(&self, counter: &Counter, now: SystemTime) -> u64 {
-        self.reservations
-            .read()
-            .unwrap()
-            .get(counter)
-            .map(|entries| {
-                entries
-                    .iter()
-                    .filter(|e| e.is_live_at(now))
-                    .map(|e| e.amount())
-                    .sum()
-            })
-            .unwrap_or_default()
     }
 }
 

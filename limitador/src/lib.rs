@@ -494,9 +494,9 @@ impl RateLimiter {
         }
 
         let reservation_id = ReservationId::new();
-        let auth = self
-            .storage
-            .reserve(&mut counters, &reservation_id, amount, ttl, load_counters)?;
+        let auth =
+            self.storage
+                .reserve(&mut counters, &reservation_id, amount, ttl, load_counters)?;
 
         let counters = if load_counters {
             counters
@@ -541,7 +541,8 @@ impl RateLimiter {
         let reservation_released = if counters.is_empty() {
             false
         } else {
-            self.storage.release_reservation(&counters, reservation_id)?
+            self.storage
+                .release_reservation(&counters, reservation_id)?
         };
 
         Ok(CommitResult {

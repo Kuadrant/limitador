@@ -56,3 +56,94 @@ pub const VALUES_AND_TTLS: &str = "
     end
     return res
 ";
+
+// Atomically checks and, if every counter admits it, holds `amount` of estimated
+// capacity against all of them. All counters are admitted, or none are: nothing is
+// written unless every counter would stay within its limit once outstanding, live
+// reservations are accounted for.
+//
+// KEYS come in pairs: [counter_key, reservation_key, counter_key, reservation_key, ...]
+// ARGV holds one (window_seconds, max_value) pair per counter, in the same order as
+// KEYS, followed by four trailing scalars:
+//   ARGV[2i-1] = window (seconds) for counter i, used to lazily start its window if
+//                the counter key doesn't exist yet
+//   ARGV[2i]   = max_value for counter i
+//   ARGV[#KEYS+1] = amount requested
+//   ARGV[#KEYS+2] = reservation ttl (ms), already clamped by the caller
+//   ARGV[#KEYS+3] = reservation id
+//   ARGV[#KEYS+4] = now (ms)
+//
+// Returns a flat list, three values per counter - [value, outstanding, window_ttl_ms] -
+// followed by a trailing 1 (admitted) or 0 (limited).
+pub const SCRIPT_RESERVE: &str = "
+    local n = #KEYS / 2
+    local amount = tonumber(ARGV[#KEYS + 1])
+    local ttl_ms = tonumber(ARGV[#KEYS + 2])
+    local reservation_id = ARGV[#KEYS + 3]
+    local now_ms = tonumber(ARGV[#KEYS + 4])
+
+    local values = {}
+    local outstanding = {}
+    local window_ttls = {}
+    local admitted = true
+
+    for i = 1, n do
+        local counter_key = KEYS[2 * i - 1]
+        local reservation_key = KEYS[2 * i]
+        local window_secs = tonumber(ARGV[2 * i - 1])
+        local max_value = tonumber(ARGV[2 * i])
+
+        if redis.call('exists', counter_key) == 0 then
+            redis.call('set', counter_key, 0, 'EX', window_secs)
+        end
+        local value = tonumber(redis.call('get', counter_key)) or 0
+        local window_ttl_ms = redis.call('pttl', counter_key)
+        if window_ttl_ms < 0 then
+            window_ttl_ms = window_secs * 1000
+        end
+
+        local held = 0
+        local fields = redis.call('hgetall', reservation_key)
+        for j = 1, #fields, 2 do
+            local field = fields[j]
+            local packed = fields[j + 1]
+            local sep = string.find(packed, ':')
+            local field_amount = tonumber(string.sub(packed, 1, sep - 1))
+            local field_expires_at = tonumber(string.sub(packed, sep + 1))
+            if field_expires_at > now_ms then
+                held = held + field_amount
+            else
+                redis.call('hdel', reservation_key, field)
+            end
+        end
+
+        values[i] = value
+        outstanding[i] = held
+        window_ttls[i] = window_ttl_ms
+
+        if value + held + amount > max_value then
+            admitted = false
+        end
+    end
+
+    if admitted then
+        for i = 1, n do
+            local reservation_key = KEYS[2 * i]
+            local expires_at_ms = now_ms + ttl_ms
+            if expires_at_ms > now_ms + window_ttls[i] then
+                expires_at_ms = now_ms + window_ttls[i]
+            end
+            redis.call('hset', reservation_key, reservation_id, amount .. ':' .. expires_at_ms)
+            redis.call('pexpire', reservation_key, window_ttls[i])
+        end
+    end
+
+    local res = {}
+    for i = 1, n do
+        table.insert(res, values[i])
+        table.insert(res, outstanding[i])
+        table.insert(res, window_ttls[i])
+    end
+    table.insert(res, admitted and 1 or 0)
+    return res
+";

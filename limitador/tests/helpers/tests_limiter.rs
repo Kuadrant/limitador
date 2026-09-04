@@ -1,8 +1,10 @@
 use limitador::counter::Counter;
 use limitador::errors::LimitadorError;
 use limitador::limit::{Context, Limit, Namespace};
+use limitador::reservation::{CommitResult, ReservationId, ReserveResult};
 use limitador::{AsyncRateLimiter, CheckResult, RateLimiter};
 use std::collections::HashSet;
+use std::time::Duration;
 
 // This exposes a struct that wraps both implementations of the rate limiter,
 // the blocking and the async one. This allows us to avoid duplications in the
@@ -132,6 +134,45 @@ impl TestsLimiter {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => limiter.configure_with(limits),
             LimiterImpl::Async(limiter) => limiter.configure_with(limits).await,
+        }
+    }
+
+    pub async fn reserve(
+        &self,
+        namespace: &str,
+        ctx: &Context<'_>,
+        amount: u64,
+        ttl: Duration,
+        load_counters: bool,
+    ) -> Result<ReserveResult, LimitadorError> {
+        match &self.limiter_impl {
+            LimiterImpl::Blocking(limiter) => {
+                limiter.reserve(&namespace.into(), ctx, amount, ttl, load_counters)
+            }
+            LimiterImpl::Async(limiter) => {
+                limiter
+                    .reserve(&namespace.into(), ctx, amount, ttl, load_counters)
+                    .await
+            }
+        }
+    }
+
+    pub async fn commit_reservation(
+        &self,
+        namespace: &str,
+        ctx: &Context<'_>,
+        reservation_id: &ReservationId,
+        actual_amount: u64,
+    ) -> Result<CommitResult, LimitadorError> {
+        match &self.limiter_impl {
+            LimiterImpl::Blocking(limiter) => {
+                limiter.commit_reservation(&namespace.into(), ctx, reservation_id, actual_amount)
+            }
+            LimiterImpl::Async(limiter) => {
+                limiter
+                    .commit_reservation(&namespace.into(), ctx, reservation_id, actual_amount)
+                    .await
+            }
         }
     }
 }
