@@ -3,11 +3,48 @@ syntax = "proto3";
 package kuadrant.service.ratelimit.v1;
 
 import "envoy/service/ratelimit/v3/rls.proto";
+import "envoy/extensions/common/ratelimit/v3/ratelimit.proto";
+import "google/protobuf/duration.proto";
 
 service RateLimitService {
   // Determine whether a request should be allowed or denied based on rate limiting rules.
-  rpc CheckRateLimit(envoy.service.ratelimit.v3.RateLimitRequest) returns (envoy.service.ratelimit.v3.RateLimitResponse); 
+  rpc CheckRateLimit(envoy.service.ratelimit.v3.RateLimitRequest) returns (envoy.service.ratelimit.v3.RateLimitResponse);
 
   // The report method modifies specific counters associated with the descriptors, incrementing each one by the amount specified in $hits_addend$
-  rpc Report(envoy.service.ratelimit.v3.RateLimitRequest) returns (envoy.service.ratelimit.v3.RateLimitResponse); 
+  rpc Report(envoy.service.ratelimit.v3.RateLimitRequest) returns (envoy.service.ratelimit.v3.RateLimitResponse);
+
+  // Reserve holds estimated capacity (e.g. estimated tokens) against the matching counters,
+  // without exceeding their limits once other outstanding reservations are accounted for.
+  // The hold lasts until Commit resolves it or it expires, whichever comes first.
+  rpc Reserve(ReserveRequest) returns (ReserveResponse);
+
+  // Commit resolves a reservation with the caller's real usage: it always applies
+  // actual_amount to the matching counters, and releases the reservation_id's hold if it is
+  // still found and live. A late or already-expired reservation_id degrades gracefully to
+  // Report-equivalent behavior.
+  rpc Commit(CommitRequest) returns (CommitResponse);
+}
+
+message ReserveRequest {
+  string domain = 1;
+  repeated envoy.extensions.common.ratelimit.v3.RateLimitDescriptor descriptors = 2;
+  uint64 amount = 3;
+  google.protobuf.Duration ttl = 4;
+}
+
+message ReserveResponse {
+  envoy.service.ratelimit.v3.RateLimitResponse.Code code = 1;
+  // Only set when code is OK. Must be passed back to Commit to resolve this reservation.
+  string reservation_id = 2;
+}
+
+message CommitRequest {
+  string domain = 1;
+  repeated envoy.extensions.common.ratelimit.v3.RateLimitDescriptor descriptors = 2;
+  string reservation_id = 3;
+  uint64 actual_amount = 4;
+}
+
+message CommitResponse {
+  bool reservation_released = 1;
 }
