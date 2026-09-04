@@ -1,6 +1,6 @@
 use crate::counter::Counter;
 use std::fmt::{Display, Formatter};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 
 /// Opaque handle identifying a single reservation created by `RateLimiter::reserve`
@@ -100,4 +100,33 @@ pub struct ReserveResult {
 /// behavior.
 pub struct CommitResult {
     pub reservation_released: bool,
+}
+
+/// Policy limits applied by `RateLimiter::reserve`/`AsyncRateLimiter::reserve`, set once via
+/// `RateLimiterBuilder::reservation_limits`/`AsyncRateLimiterBuilder::reservation_limits`
+/// rather than per call - the fraction clamp needs each matching counter's own `max_value`,
+/// which `reserve()` already resolves internally, so there's no reason for callers to supply
+/// it (or re-resolve counters themselves) on every call.
+#[derive(Debug, Clone, Copy)]
+pub struct ReservationLimits {
+    /// Clamps a `reserve()` call's requested amount to `counter.max_value() * max_fraction`
+    /// for every matching counter; the most restrictive one wins. Defaults to `1.0`, i.e. no
+    /// clamp beyond each counter's own `max_value` - RFC 0021 recommends `0.5` as a safety
+    /// default, but that's a policy choice for embedders to opt into, not a silent default
+    /// that would change what already-configured callers' `reserve()` calls admit.
+    pub max_fraction: f64,
+    /// Hard ceiling on a `reserve()` call's requested ttl. Defaults to 60s (RFC 0021's
+    /// recommendation) - unlike `max_fraction`, there's no safe "no-op" `Duration` to default
+    /// to instead, since an extreme sentinel risks overflowing `SystemTime::now() + ttl`
+    /// inside storage.
+    pub max_ttl: Duration,
+}
+
+impl Default for ReservationLimits {
+    fn default() -> Self {
+        Self {
+            max_fraction: 1.0,
+            max_ttl: Duration::from_secs(60),
+        }
+    }
 }

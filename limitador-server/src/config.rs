@@ -17,6 +17,7 @@ use crate::envoy_rls::server::RateLimitHeaders;
 use limitador::limit::Expression;
 use limitador::storage;
 use std::fmt;
+use std::time::Duration;
 use tracing::level_filters::LevelFilter;
 use url::Url;
 
@@ -54,6 +55,9 @@ pub struct Configuration {
     pub structured_logs: bool,
     pub rate_limit_headers: RateLimitHeaders,
     pub grpc_reflection_service: bool,
+    pub disable_reservations: bool,
+    pub max_reservation_fraction: f64,
+    pub max_reservation_ttl: Duration,
 }
 
 pub mod env {
@@ -133,6 +137,9 @@ impl Configuration {
             structured_logs: false,
             rate_limit_headers,
             grpc_reflection_service,
+            disable_reservations: false,
+            max_reservation_fraction: 0.5,
+            max_reservation_ttl: Duration::from_secs(60),
         }
     }
 
@@ -165,6 +172,9 @@ impl Default for Configuration {
             structured_logs: false,
             rate_limit_headers: RateLimitHeaders::None,
             grpc_reflection_service: false,
+            disable_reservations: false,
+            max_reservation_fraction: 0.5,
+            max_reservation_ttl: Duration::from_secs(60),
         }
     }
 }

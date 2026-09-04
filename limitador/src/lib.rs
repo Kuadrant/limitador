@@ -196,7 +196,7 @@
 use crate::counter::Counter;
 use crate::errors::LimitadorError;
 use crate::limit::{Context, Limit, Namespace};
-use crate::reservation::{CommitResult, ReservationId, ReserveResult};
+use crate::reservation::{CommitResult, ReservationId, ReservationLimits, ReserveResult};
 use crate::storage::in_memory::InMemoryStorage;
 use crate::storage::{
     AsyncCounterStorage, AsyncStorage, Authorization, CounterStorage, Storage, StorageErr,
@@ -216,14 +216,17 @@ pub mod storage;
 
 pub struct RateLimiter {
     storage: Storage,
+    reservation_limits: ReservationLimits,
 }
 
 pub struct AsyncRateLimiter {
     storage: AsyncStorage,
+    reservation_limits: ReservationLimits,
 }
 
 pub struct RateLimiterBuilder {
     storage: Storage,
+    reservation_limits: ReservationLimits,
 }
 
 type LimitadorResult<T> = Result<T, LimitadorError>;
@@ -286,12 +289,16 @@ impl From<CheckResult> for bool {
 
 impl RateLimiterBuilder {
     pub fn with_storage(storage: Storage) -> Self {
-        Self { storage }
+        Self {
+            storage,
+            reservation_limits: ReservationLimits::default(),
+        }
     }
 
     pub fn new(cache_size: u64) -> Self {
         Self {
             storage: Storage::new(cache_size),
+            reservation_limits: ReservationLimits::default(),
         }
     }
 
@@ -300,25 +307,43 @@ impl RateLimiterBuilder {
         self
     }
 
+    /// See [`ReservationLimits`].
+    pub fn reservation_limits(mut self, reservation_limits: ReservationLimits) -> Self {
+        self.reservation_limits = reservation_limits;
+        self
+    }
+
     pub fn build(self) -> RateLimiter {
         RateLimiter {
             storage: self.storage,
+            reservation_limits: self.reservation_limits,
         }
     }
 }
 
 pub struct AsyncRateLimiterBuilder {
     storage: AsyncStorage,
+    reservation_limits: ReservationLimits,
 }
 
 impl AsyncRateLimiterBuilder {
     pub fn new(storage: AsyncStorage) -> Self {
-        Self { storage }
+        Self {
+            storage,
+            reservation_limits: ReservationLimits::default(),
+        }
+    }
+
+    /// See [`ReservationLimits`].
+    pub fn reservation_limits(mut self, reservation_limits: ReservationLimits) -> Self {
+        self.reservation_limits = reservation_limits;
+        self
     }
 
     pub fn build(self) -> AsyncRateLimiter {
         AsyncRateLimiter {
             storage: self.storage,
+            reservation_limits: self.reservation_limits,
         }
     }
 }
@@ -327,12 +352,14 @@ impl RateLimiter {
     pub fn new(cache_size: u64) -> Self {
         Self {
             storage: Storage::new(cache_size),
+            reservation_limits: ReservationLimits::default(),
         }
     }
 
     pub fn new_with_storage(counters: Box<dyn CounterStorage>) -> Self {
         Self {
             storage: Storage::with_counter_storage(counters),
+            reservation_limits: ReservationLimits::default(),
         }
     }
 
@@ -493,6 +520,13 @@ impl RateLimiter {
             });
         }
 
+        let amount = counters
+            .iter()
+            .map(|c| (c.max_value() as f64 * self.reservation_limits.max_fraction) as u64)
+            .min()
+            .map_or(amount, |max| amount.min(max));
+        let ttl = ttl.min(self.reservation_limits.max_ttl);
+
         let reservation_id = ReservationId::new();
         let auth =
             self.storage
@@ -612,6 +646,7 @@ impl AsyncRateLimiter {
     pub fn new_with_storage(storage: Box<dyn AsyncCounterStorage>) -> Self {
         Self {
             storage: AsyncStorage::with_counter_storage(storage),
+            reservation_limits: ReservationLimits::default(),
         }
     }
 
@@ -775,6 +810,13 @@ impl AsyncRateLimiter {
             });
         }
 
+        let amount = counters
+            .iter()
+            .map(|c| (c.max_value() as f64 * self.reservation_limits.max_fraction) as u64)
+            .min()
+            .map_or(amount, |max| amount.min(max));
+        let ttl = ttl.min(self.reservation_limits.max_ttl);
+
         let reservation_id = ReservationId::new();
         let auth = self
             .storage
@@ -910,7 +952,8 @@ fn classify_limits_by_namespace(
 #[cfg(test)]
 mod test {
     use crate::limit::{Context, Expression, Limit};
-    use crate::RateLimiter;
+    use crate::reservation::ReservationLimits;
+    use crate::{RateLimiter, RateLimiterBuilder};
     use std::collections::HashMap;
     use std::time::Duration;
 
@@ -1053,6 +1096,59 @@ mod test {
             .unwrap();
         assert!(!result.limited);
         assert!(result.reservation_id.is_none());
+    }
+
+    #[test]
+    fn reserve_clamps_amount_to_max_reservation_fraction() {
+        let rl = RateLimiterBuilder::new(100)
+            .reservation_limits(ReservationLimits {
+                max_fraction: 0.5,
+                ..Default::default()
+            })
+            .build();
+        let namespace = "fraction";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rl.add_limit(limit);
+
+        let ns = namespace.into();
+        let ctx = Context::default();
+
+        // Requested 8, but clamped to floor(10 * 0.5) = 5.
+        let first = rl
+            .reserve(&ns, &ctx, 8, Duration::from_secs(30), false)
+            .unwrap();
+        assert!(!first.limited);
+
+        // A second reservation for 5 more would need 5 + 5 = 10 <= 10, so it's admitted -
+        // proving the first only actually held 5, not the requested 8.
+        let second = rl
+            .reserve(&ns, &ctx, 5, Duration::from_secs(30), false)
+            .unwrap();
+        assert!(!second.limited);
+
+        // A third for even 1 more would be 10 + 1 = 11 > 10: rejected.
+        let third = rl
+            .reserve(&ns, &ctx, 1, Duration::from_secs(30), false)
+            .unwrap();
+        assert!(third.limited);
+    }
+
+    #[test]
+    fn default_max_reservation_fraction_does_not_clamp() {
+        let rl = RateLimiter::new(100);
+        let namespace = "no_fraction_clamp";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rl.add_limit(limit);
+
+        let ns = namespace.into();
+        let ctx = Context::default();
+
+        // Without an explicit `max_reservation_fraction`, the full 10 can be reserved in one
+        // go - it's only ever clamped down to the counter's own `max_value`, never tighter.
+        let result = rl
+            .reserve(&ns, &ctx, 10, Duration::from_secs(30), false)
+            .unwrap();
+        assert!(!result.limited);
     }
 
     #[test]

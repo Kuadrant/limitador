@@ -10,26 +10,42 @@ use super::server::custom::service::ratelimit::v1::{
 };
 use super::server::envoy::service::ratelimit::v3::rate_limit_response::Code;
 use super::server::envoy::service::ratelimit::v3::{RateLimitRequest, RateLimitResponse};
+use super::server::ReservationConfig;
 use crate::prometheus_metrics::PrometheusMetrics;
 use crate::Limiter;
 use limitador::limit::Context;
 use limitador::reservation::ReservationId;
 
-// RFC 0021 defaults. Not yet wired to the `--max-reservation-ttl`/`--max-reservation-fraction`
-// server flags (separate, not-yet-implemented follow-up) - a caller-requested ttl is clamped
-// to this ceiling, and it's also used when the caller doesn't set `ttl` at all. There is no
-// equivalent clamp yet for `amount` (the fraction-of-limit clamp needs each matching counter's
-// own max_value, which isn't known until inside `RateLimiter::reserve`).
-const MAX_RESERVATION_TTL: Duration = Duration::from_secs(60);
+// Used only when the caller doesn't set `ttl` at all. Deliberately not "the real default" -
+// the library's own `RateLimiterBuilder::reservation_limits` ceiling (set once, at
+// construction time) always clamps this down to whatever's actually configured, so this only
+// needs to be "large enough to never be the binding constraint," not accurate.
+const UNSET_RESERVATION_TTL: Duration = Duration::from_secs(u32::MAX as u64);
 
 pub struct KuadrantService {
     limiter: Arc<Limiter>,
     metrics: Arc<PrometheusMetrics>,
+    reservation_config: ReservationConfig,
 }
 
 impl KuadrantService {
+    // Only used by tests: production code (`server.rs`) always goes through
+    // `new_with_reservation_config` so it can pass along the real, CLI-configured settings.
+    #[cfg(test)]
     pub fn new(limiter: Arc<Limiter>, metrics: Arc<PrometheusMetrics>) -> Self {
-        Self { limiter, metrics }
+        Self::new_with_reservation_config(limiter, metrics, ReservationConfig::default())
+    }
+
+    pub fn new_with_reservation_config(
+        limiter: Arc<Limiter>,
+        metrics: Arc<PrometheusMetrics>,
+        reservation_config: ReservationConfig,
+    ) -> Self {
+        Self {
+            limiter,
+            metrics,
+            reservation_config,
+        }
     }
 }
 
@@ -203,6 +219,10 @@ impl RateLimitService for KuadrantService {
     ) -> Result<Response<ReserveResponse>, Status> {
         debug!("Reserve request received: {:?}", request);
 
+        if self.reservation_config.disable_reservations {
+            return Err(Status::unimplemented("reservations are disabled"));
+        }
+
         let mut values: Vec<HashMap<String, String>> = Vec::default();
         let (_metadata, _ext, req) = request.into_parts();
         let namespace = req.domain;
@@ -227,11 +247,16 @@ impl RateLimitService for KuadrantService {
         let mut ctx = Context::default();
         ctx.list_binding("descriptors".to_string(), values);
 
+        // Both the fraction-of-limit clamp on `amount` and the ceiling on `ttl` happen inside
+        // `RateLimiter::reserve` itself (`RateLimiterBuilder::reservation_limits`, set once
+        // when the limiter is constructed) - the fraction clamp needs each matching counter's
+        // own max_value, already resolved there, so there's no point re-resolving limits here
+        // just to clamp again; `ttl` is simply passed through unclamped (or, if unset, as a
+        // large sentinel the library's own ceiling will cut down to size).
         let ttl = req
             .ttl
             .and_then(|d| Duration::try_from(d).ok())
-            .unwrap_or(MAX_RESERVATION_TTL)
-            .min(MAX_RESERVATION_TTL);
+            .unwrap_or(UNSET_RESERVATION_TTL);
 
         let reserve_resp = match &*self.limiter {
             Limiter::Blocking(limiter) => limiter.reserve(&namespace, &ctx, req.amount, ttl, false),
@@ -276,6 +301,10 @@ impl RateLimitService for KuadrantService {
         request: Request<CommitRequest>,
     ) -> Result<Response<CommitResponse>, Status> {
         debug!("Commit request received: {:?}", request);
+
+        if self.reservation_config.disable_reservations {
+            return Err(Status::unimplemented("reservations are disabled"));
+        }
 
         let mut values: Vec<HashMap<String, String>> = Vec::default();
         let (_metadata, _ext, req) = request.into_parts();

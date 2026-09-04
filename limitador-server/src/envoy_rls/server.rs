@@ -56,6 +56,20 @@ impl RateLimitHeaders {
     }
 }
 
+/// Server-side knobs for the `Reserve`/`Commit` RPCs (RFC 0021).
+///
+/// `--max-reservation-fraction`/`--max-reservation-ttl` are *not* here: both are
+/// `RateLimiter`/`AsyncRateLimiter`-level settings (`RateLimiterBuilder::reservation_limits`),
+/// applied once when the limiter is constructed. The fraction clamp needs each matching
+/// counter's own `max_value` - already resolved internally by `reserve()` - rather than a
+/// second, redundant lookup here; the ttl ceiling lives alongside it for the same reason
+/// (a single place embedders configure both "how big" and "how long" a reservation may be).
+#[derive(Debug, Clone, Default)]
+pub struct ReservationConfig {
+    /// When set, `Reserve`/`Commit` return `UNIMPLEMENTED` instead of doing anything.
+    pub disable_reservations: bool,
+}
+
 pub struct MyRateLimiter {
     limiter: Arc<Limiter>,
     rate_limit_headers: RateLimitHeaders,
@@ -241,11 +255,13 @@ pub async fn run_envoy_rls_server(
     rate_limit_headers: RateLimitHeaders,
     metrics: Arc<PrometheusMetrics>,
     grpc_reflection_service: bool,
+    reservation_config: ReservationConfig,
 ) -> Result<(), transport::Error> {
     let rate_limiter = MyRateLimiter::new(limiter.clone(), rate_limit_headers, metrics.clone());
     let envoy_server = RateLimitServiceServer::new(rate_limiter);
 
-    let kuadrant_svc = KuadrantService::new(limiter, metrics);
+    let kuadrant_svc =
+        KuadrantService::new_with_reservation_config(limiter, metrics, reservation_config);
     let kuadrant_server =
         custom::service::ratelimit::v1::rate_limit_service_server::RateLimitServiceServer::new(
             kuadrant_svc,
