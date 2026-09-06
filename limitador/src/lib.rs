@@ -957,6 +957,60 @@ mod test {
     use std::collections::HashMap;
     use std::time::Duration;
 
+    // RFC 0021's motivating scenario: N concurrent in-flight requests against one limit,
+    // racing to reserve capacity before any of them has reported real usage. Uses real OS
+    // threads (`std::thread::scope`), not async tasks, since `reserve()`'s local (in-memory)
+    // path has no internal `.await` - only genuine thread-level parallelism can exercise a
+    // races there (see the `LocalReservationRegistry::admission_lock` docs for the bug this
+    // guards against).
+    #[test]
+    fn concurrent_reserve_calls_never_exceed_the_limit() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        const MAX_VALUE: u64 = 50;
+        const AMOUNT: u64 = 5;
+        const CONCURRENT_REQUESTS: usize = 20;
+
+        for _ in 0..20 {
+            let rl = Arc::new(RateLimiter::new(10_000));
+            let namespace = "race";
+            let limit = Limit::new(
+                namespace,
+                MAX_VALUE,
+                60,
+                vec![],
+                Vec::<Expression>::default(),
+            );
+            rl.add_limit(limit);
+            let ns: crate::limit::Namespace = namespace.into();
+
+            let admitted_count = Arc::new(AtomicUsize::new(0));
+            std::thread::scope(|s| {
+                for _ in 0..CONCURRENT_REQUESTS {
+                    let rl = rl.clone();
+                    let ns = ns.clone();
+                    let admitted_count = admitted_count.clone();
+                    s.spawn(move || {
+                        let ctx = Context::default();
+                        let res = rl
+                            .reserve(&ns, &ctx, AMOUNT, Duration::from_secs(30), false)
+                            .unwrap();
+                        if !res.limited {
+                            admitted_count.fetch_add(1, Ordering::SeqCst);
+                        }
+                    });
+                }
+            });
+
+            // Exactly floor(MAX_VALUE / AMOUNT) requests should have been admitted - never
+            // more (that would mean the race let outstanding reservations jointly exceed the
+            // limit), and never fewer (that would mean available capacity went unused).
+            let expected = (MAX_VALUE / AMOUNT) as usize;
+            assert_eq!(admitted_count.load(Ordering::SeqCst), expected);
+        }
+    }
+
     #[test]
     fn properly_updates_existing_limits() {
         let rl = RateLimiter::new(100);

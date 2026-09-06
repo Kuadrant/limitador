@@ -1468,6 +1468,113 @@ mod test {
         assert!(!second.limited);
     }
 
+    // RFC 0021's motivating scenario against the shared, Redis-backed path: N concurrent
+    // in-flight requests racing to reserve capacity against one limit. Unlike the local
+    // (in-memory) path, this is expected to already be safe regardless of threading, since
+    // the entire check-and-write happens inside one atomic Lua script executed by Redis.
+    #[cfg(feature = "redis_storage")]
+    #[test]
+    #[serial]
+    fn concurrent_reserve_calls_never_exceed_the_limit_with_sync_redis() {
+        use limitador::storage::redis::RedisStorage;
+        use limitador::RateLimiter;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        const MAX_VALUE: u64 = 50;
+        const AMOUNT: u64 = 5;
+        const CONCURRENT_REQUESTS: usize = 20;
+
+        let storage = RedisStorage::default();
+        storage.clear().unwrap();
+        let rl = Arc::new(RateLimiter::new_with_storage(Box::new(storage)));
+        let namespace = "sync_redis_race";
+        let limit = Limit::new(
+            namespace,
+            MAX_VALUE,
+            60,
+            vec![],
+            Vec::<Expression>::default(),
+        );
+        rl.add_limit(limit);
+        let ns: limitador::limit::Namespace = namespace.into();
+
+        let admitted_count = Arc::new(AtomicUsize::new(0));
+        std::thread::scope(|s| {
+            for _ in 0..CONCURRENT_REQUESTS {
+                let rl = rl.clone();
+                let ns = ns.clone();
+                let admitted_count = admitted_count.clone();
+                s.spawn(move || {
+                    let ctx = Context::default();
+                    let res = rl
+                        .reserve(&ns, &ctx, AMOUNT, Duration::from_secs(30), false)
+                        .unwrap();
+                    if !res.limited {
+                        admitted_count.fetch_add(1, Ordering::SeqCst);
+                    }
+                });
+            }
+        });
+
+        let expected = (MAX_VALUE / AMOUNT) as usize;
+        assert_eq!(admitted_count.load(Ordering::SeqCst), expected);
+    }
+
+    #[cfg(feature = "redis_storage")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    #[serial]
+    async fn concurrent_reserve_calls_never_exceed_the_limit_with_async_redis() {
+        use limitador::storage::redis::AsyncRedisStorage;
+        use limitador::AsyncRateLimiter;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        const MAX_VALUE: u64 = 50;
+        const AMOUNT: u64 = 5;
+        const CONCURRENT_REQUESTS: usize = 20;
+
+        let storage = AsyncRedisStorage::new("redis://127.0.0.1:6379")
+            .await
+            .expect("We need a Redis running locally");
+        storage.clear().await.unwrap();
+        let rl = Arc::new(AsyncRateLimiter::new_with_storage(Box::new(storage)));
+        let namespace = "async_redis_race";
+        let limit = Limit::new(
+            namespace,
+            MAX_VALUE,
+            60,
+            vec![],
+            Vec::<Expression>::default(),
+        );
+        rl.add_limit(limit);
+        let ns: limitador::limit::Namespace = namespace.into();
+
+        let admitted_count = Arc::new(AtomicUsize::new(0));
+        let mut handles = Vec::with_capacity(CONCURRENT_REQUESTS);
+        for _ in 0..CONCURRENT_REQUESTS {
+            let rl = rl.clone();
+            let ns = ns.clone();
+            let admitted_count = admitted_count.clone();
+            handles.push(tokio::spawn(async move {
+                let ctx = Context::default();
+                let res = rl
+                    .reserve(&ns, &ctx, AMOUNT, Duration::from_secs(30), false)
+                    .await
+                    .unwrap();
+                if !res.limited {
+                    admitted_count.fetch_add(1, Ordering::SeqCst);
+                }
+            }));
+        }
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        let expected = (MAX_VALUE / AMOUNT) as usize;
+        assert_eq!(admitted_count.load(Ordering::SeqCst), expected);
+    }
+
     #[allow(dead_code)]
     async fn distributed_rate_limited<Fut>(create_distributed_limiters: fn(count: usize) -> Fut)
     where

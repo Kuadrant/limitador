@@ -3,7 +3,7 @@ use crate::reservation::{ReservationEntry, ReservationId};
 use crate::storage::Authorization;
 use moka::sync::{Cache, CacheBuilder};
 use moka::Expiry;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime};
 
 /// Used by backends that don't have their own natural "expected number of distinct
@@ -38,6 +38,17 @@ type Entry = Arc<RwLock<CounterReservations>>;
 /// until the cache fills up.
 pub(crate) struct LocalReservationRegistry {
     entries: Cache<Counter, Entry>,
+    // Serializes the whole check-then-write admission decision in `reserve()` across every
+    // counter it touches. Without this, two truly concurrent `reserve()` calls (real
+    // OS-thread parallelism) can both read the same stale `outstanding` value, both decide
+    // to admit, and both write - jointly exceeding the limit. Reservations are a lower-volume
+    // path (only token/LLM-style rate limiting), so trading fine-grained per-counter
+    // concurrency for one simple, obviously-correct critical section is the right tradeoff -
+    // this is the in-process equivalent of the atomicity Redis gets for free from running the
+    // whole check-and-write as a single Lua script. `release()` doesn't need this lock: it
+    // only ever monotonically decreases outstanding, so racing it against a `reserve()`'s read
+    // can only make that read more conservative, never allow over-admission.
+    admission_lock: Mutex<()>,
 }
 
 pub(crate) struct ReservationRequest<'a> {
@@ -80,6 +91,7 @@ impl LocalReservationRegistry {
             entries: CacheBuilder::new(max_size)
                 .expire_after(ReservationExpiry)
                 .build(),
+            admission_lock: Mutex::new(()),
         }
     }
 
@@ -101,16 +113,15 @@ impl LocalReservationRegistry {
 
     /// `values_and_window_ttls[i]` must be the current value and remaining window ttl of
     /// `counters[i]`, already read (and, if absent, lazily established) by the caller.
-    // TODO: `outstanding` is read here, then written well below, with no lock held across
-    // the gap - two truly concurrent `reserve()` calls on the same counter (real OS-thread
-    // parallelism, not async interleaving) could both admit past the limit. Not reachable
-    // today (gRPC server is single threaded tokio runtime), but should be closed properly.
     pub(crate) fn reserve(
         &self,
         counters: &mut [Counter],
         values_and_window_ttls: &[(u64, Duration)],
         request: ReservationRequest,
     ) -> Authorization {
+        // Held for the whole check-then-write sequence below - see `admission_lock`'s docs.
+        let _admission_guard = self.admission_lock.lock().unwrap();
+
         let now = request.now;
         let mut first_limited = None;
         let mut expires_at_by_counter = Vec::with_capacity(counters.len());
