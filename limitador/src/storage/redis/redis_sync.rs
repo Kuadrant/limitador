@@ -191,6 +191,7 @@ impl CounterStorage for RedisStorage {
         for counter in counters.iter() {
             invocation.key(key_for_counter(counter));
             invocation.key(key_for_reservations(counter));
+            invocation.key(key_for_counters_of_limit(counter.limit()));
         }
         for counter in counters.iter() {
             invocation.arg(counter.window().as_secs());

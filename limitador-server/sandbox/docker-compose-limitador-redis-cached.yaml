@@ -39,4 +39,4 @@ services:
     volumes:
       - ./limits.yaml:/opt/kuadrant/limits/limits.yaml
   redis:
-    image: redis:5
+    image: redis:7

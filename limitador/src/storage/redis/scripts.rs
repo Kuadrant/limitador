@@ -62,25 +62,29 @@ pub const VALUES_AND_TTLS: &str = "
 // written unless every counter would stay within its limit once outstanding, live
 // reservations are accounted for.
 //
-// KEYS come in pairs: [counter_key, reservation_key, counter_key, reservation_key, ...]
+// KEYS come in triplets: [counter_key, reservation_key, limit_key, ...]. `limit_key` is
+// the same per-limit set `SCRIPT_UPDATE_COUNTER` maintains (the one `get_counters`/the
+// `/counters` endpoint enumerate) - a freshly-initialized counter is registered into it
+// here too, so a counter touched only by Reserve is still visible, exactly as if it had
+// been touched by Report/CheckRateLimit.
 // ARGV holds one (window_seconds, max_value) pair per counter, in the same order as
 // KEYS, followed by four trailing scalars:
 //   ARGV[2i-1] = window (seconds) for counter i, used to lazily start its window if
 //                the counter key doesn't exist yet
 //   ARGV[2i]   = max_value for counter i
-//   ARGV[#KEYS+1] = amount requested
-//   ARGV[#KEYS+2] = reservation ttl (ms), already clamped by the caller
-//   ARGV[#KEYS+3] = reservation id
-//   ARGV[#KEYS+4] = now (ms)
+//   ARGV[2n+1] = amount requested
+//   ARGV[2n+2] = reservation ttl (ms), already clamped by the caller
+//   ARGV[2n+3] = reservation id
+//   ARGV[2n+4] = now (ms)
 //
 // Returns a flat list, three values per counter - [value, outstanding, window_ttl_ms] -
 // followed by a trailing 1 (admitted) or 0 (limited).
 pub const SCRIPT_RESERVE: &str = "
-    local n = #KEYS / 2
-    local amount = tonumber(ARGV[#KEYS + 1])
-    local ttl_ms = tonumber(ARGV[#KEYS + 2])
-    local reservation_id = ARGV[#KEYS + 3]
-    local now_ms = tonumber(ARGV[#KEYS + 4])
+    local n = #KEYS / 3
+    local amount = tonumber(ARGV[2 * n + 1])
+    local ttl_ms = tonumber(ARGV[2 * n + 2])
+    local reservation_id = ARGV[2 * n + 3]
+    local now_ms = tonumber(ARGV[2 * n + 4])
 
     local values = {}
     local outstanding = {}
@@ -88,13 +92,15 @@ pub const SCRIPT_RESERVE: &str = "
     local admitted = true
 
     for i = 1, n do
-        local counter_key = KEYS[2 * i - 1]
-        local reservation_key = KEYS[2 * i]
+        local counter_key = KEYS[3 * i - 2]
+        local reservation_key = KEYS[3 * i - 1]
+        local limit_key = KEYS[3 * i]
         local window_secs = tonumber(ARGV[2 * i - 1])
         local max_value = tonumber(ARGV[2 * i])
 
         if redis.call('exists', counter_key) == 0 then
             redis.call('set', counter_key, 0, 'EX', window_secs)
+            redis.call('sadd', limit_key, counter_key)
         end
         local value = tonumber(redis.call('get', counter_key)) or 0
         local window_ttl_ms = redis.call('pttl', counter_key)
@@ -128,7 +134,7 @@ pub const SCRIPT_RESERVE: &str = "
 
     if admitted then
         for i = 1, n do
-            local reservation_key = KEYS[2 * i]
+            local reservation_key = KEYS[3 * i - 1]
             local expires_at_ms = now_ms + ttl_ms
             if expires_at_ms > now_ms + window_ttls[i] then
                 expires_at_ms = now_ms + window_ttls[i]
