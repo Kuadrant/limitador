@@ -175,7 +175,15 @@ impl LocalReservationRegistry {
         Authorization::Ok
     }
 
+    // Held for the whole read-then-write sequence below, same as `reserve()` - see
+    // `admission_lock`'s docs. Without this, a concurrent `reserve()` could replace this
+    // counter's cache entry with a fresh `Arc` (e.g. if the one we're about to read had
+    // already expired/been evicted) between our `get` and our later `invalidate`; blindly
+    // writing back our now-stale captured `Arc` would silently discard whatever
+    // concurrently-admitted, still-live reservation that fresh `Arc` holds.
     pub(crate) fn release(&self, counters: &[Counter], reservation_id: &ReservationId) -> bool {
+        let _admission_guard = self.admission_lock.lock().unwrap();
+
         let mut released = false;
         for counter in counters {
             if let Some(entry) = self.entries.get(counter) {
@@ -190,9 +198,14 @@ impl LocalReservationRegistry {
                 };
                 if now_empty {
                     self.entries.invalidate(counter);
-                } else {
-                    self.entries.insert(counter.clone(), entry);
                 }
+                // Otherwise: nothing left to do. The mutation above already happened through
+                // the same `Arc`/`RwLock` the cache still maps `counter` to (guaranteed by
+                // holding `admission_lock` for the whole call), so it's already visible to
+                // later reads - reinserting would only risk clobbering a fresher entry with
+                // our own stale reference, and would incorrectly push the entry's
+                // Moka-tracked expiry out from now, past the counter's actual window
+                // boundary, since `release` never touches `window_ttl`.
             }
         }
         released
