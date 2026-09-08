@@ -38,16 +38,20 @@ type Entry = Arc<RwLock<CounterReservations>>;
 /// until the cache fills up.
 pub(crate) struct LocalReservationRegistry {
     entries: Cache<Counter, Entry>,
-    // Serializes the whole check-then-write admission decision in `reserve()` across every
-    // counter it touches. Without this, two truly concurrent `reserve()` calls (real
-    // OS-thread parallelism) can both read the same stale `outstanding` value, both decide
-    // to admit, and both write - jointly exceeding the limit. Reservations are a lower-volume
-    // path (only token/LLM-style rate limiting), so trading fine-grained per-counter
-    // concurrency for one simple, obviously-correct critical section is the right tradeoff -
-    // this is the in-process equivalent of the atomicity Redis gets for free from running the
-    // whole check-and-write as a single Lua script. `release()` doesn't need this lock: it
-    // only ever monotonically decreases outstanding, so racing it against a `reserve()`'s read
-    // can only make that read more conservative, never allow over-admission.
+    // Held by both `reserve()` and `release()` for their entire read-then-write sequence.
+    //
+    // - In `reserve()`: without it, two truly concurrent calls (real OS-thread parallelism)
+    //   could both read the same stale `outstanding` value, both decide to admit, and both
+    //   write - jointly exceeding the limit.
+    // - In `release()`: without it, a concurrent `reserve()` could replace a counter's cache
+    //   entry with a fresh `Arc` (e.g. if the one `release()` just read had already
+    //   expired/been evicted) before `release()` writes back; `release()` would then discard
+    //   whatever live reservation that fresh `Arc` holds.
+    //
+    // Reservations are a lower-volume path (only token/LLM-style rate limiting), so trading
+    // fine-grained per-counter concurrency for one simple, obviously-correct critical section
+    // is the right tradeoff - this is the in-process equivalent of the atomicity Redis gets
+    // for free from running the whole check-and-write as a single Lua script.
     admission_lock: Mutex<()>,
 }
 
