@@ -36,6 +36,10 @@ message ReserveResponse {
   envoy.service.ratelimit.v3.RateLimitResponse.Code code = 1;
   // Only set when code is OK. Must be passed back to Commit to resolve this reservation.
   string reservation_id = 2;
+  // Only set when code is OK. The amount actually held - can be less than the requested
+  // amount if the server clamped it down; purely informational, Commit's actual_amount is
+  // independent of it.
+  uint64 reserved_amount = 3;
 }
 
 message CommitRequest {

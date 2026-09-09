@@ -225,6 +225,7 @@ impl RateLimitService for KuadrantService {
             return Ok(Response::new(ReserveResponse {
                 code: Code::Unknown.into(),
                 reservation_id: String::new(),
+                reserved_amount: 0,
             }));
         }
 
@@ -277,6 +278,7 @@ impl RateLimitService for KuadrantService {
         Ok(Response::new(ReserveResponse {
             code: code.into(),
             reservation_id,
+            reserved_amount: reserve_resp.amount,
         }))
     }
 
@@ -952,6 +954,7 @@ mod tests {
                 .into_inner();
             assert_eq!(response.code, i32::from(Code::Ok));
             assert!(!response.reservation_id.is_empty());
+            assert_eq!(response.reserved_amount, 6);
 
             // Still held: 0 + outstanding(6) + 6 = 12 > 10
             let blocked = service
@@ -961,6 +964,7 @@ mod tests {
                 .into_inner();
             assert_eq!(blocked.code, i32::from(Code::OverLimit));
             assert!(blocked.reservation_id.is_empty());
+            assert_eq!(blocked.reserved_amount, 0);
 
             let commit_req = CommitRequest {
                 domain: namespace.to_string(),

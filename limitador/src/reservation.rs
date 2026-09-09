@@ -83,11 +83,18 @@ impl ReservationEntry {
 /// Result of `RateLimiter::reserve`/`AsyncRateLimiter::reserve`.
 ///
 /// `reservation_id` is `Some` only when `limited` is `false`: admission was granted
-/// and the estimated `amount` is now held against every matching counter until it
-/// expires or is resolved by `RateLimiter::commit_reservation`.
+/// and `amount` is now held against every matching counter until it expires or is
+/// resolved by `RateLimiter::commit_reservation`.
+///
+/// `amount` is the amount actually held, uniformly across every matching counter - it
+/// can be less than what was requested if `ReservationLimits::max_fraction` clamped it
+/// down, and it's `0` when `limited` is `true`. It's purely informational:
+/// `commit_reservation`'s `actual_amount` is independent of it and always applied as
+/// given.
 pub struct ReserveResult {
     pub limited: bool,
     pub reservation_id: Option<ReservationId>,
+    pub amount: u64,
     pub counters: Vec<Counter>,
     pub limit_name: Option<String>,
 }

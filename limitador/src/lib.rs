@@ -518,6 +518,7 @@ impl RateLimiter {
             return Ok(ReserveResult {
                 limited: false,
                 reservation_id: None,
+                amount: 0,
                 counters,
                 limit_name: None,
             });
@@ -537,6 +538,7 @@ impl RateLimiter {
             return Ok(ReserveResult {
                 limited: false,
                 reservation_id: None,
+                amount: 0,
                 counters: Vec::default(),
                 limit_name: None,
             });
@@ -561,12 +563,14 @@ impl RateLimiter {
             Authorization::Ok => ReserveResult {
                 limited: false,
                 reservation_id: Some(reservation_id),
+                amount,
                 counters,
                 limit_name: None,
             },
             Authorization::Limited(name) => ReserveResult {
                 limited: true,
                 reservation_id: None,
+                amount: 0,
                 counters,
                 limit_name: name,
             },
@@ -828,6 +832,7 @@ impl AsyncRateLimiter {
             return Ok(ReserveResult {
                 limited: false,
                 reservation_id: None,
+                amount: 0,
                 counters,
                 limit_name: None,
             });
@@ -846,6 +851,7 @@ impl AsyncRateLimiter {
             return Ok(ReserveResult {
                 limited: false,
                 reservation_id: None,
+                amount: 0,
                 counters: Vec::default(),
                 limit_name: None,
             });
@@ -871,12 +877,14 @@ impl AsyncRateLimiter {
             Authorization::Ok => ReserveResult {
                 limited: false,
                 reservation_id: Some(reservation_id),
+                amount,
                 counters,
                 limit_name: None,
             },
             Authorization::Limited(name) => ReserveResult {
                 limited: true,
                 reservation_id: None,
+                amount: 0,
                 counters,
                 limit_name: name,
             },
@@ -1216,6 +1224,7 @@ mod test {
             .reserve(&ns, &ctx, 8, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(!first.limited);
+        assert_eq!(first.amount, 5);
 
         // A second reservation for 5 more would need 5 + 5 = 10 <= 10, so it's admitted -
         // proving the first only actually held 5, not the requested 8.
@@ -1247,6 +1256,7 @@ mod test {
             .reserve(&ns, &ctx, 10, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(!result.limited);
+        assert_eq!(result.amount, 10);
     }
 
     #[test]
@@ -1273,6 +1283,7 @@ mod test {
             .unwrap();
         assert!(!result.limited);
         assert!(result.reservation_id.is_none());
+        assert_eq!(result.amount, 0);
 
         // Repeating it stays consistent - no lingering zero-amount entries accumulate to
         // eventually (incorrectly) block admission.
