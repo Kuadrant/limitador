@@ -11,10 +11,14 @@
 // KEYS[2]: key that contains the counters that belong to the limit
 // ARGV[1]: counter TTL
 // ARGV[2]: delta
+//
+// `expire ... NX` (Redis >= 7.0) skips (re)setting the TTL if one is already running -
+// needed because `SCRIPT_RESERVE` can pre-create a counter key at 0 with a live TTL, and
+// `c == delta` alone can't tell that apart from a genuinely brand new key.
 pub const SCRIPT_UPDATE_COUNTER: &str = "
     local c = redis.call('incrby', KEYS[1], ARGV[2])
     if c == tonumber(ARGV[2]) then
-      redis.call('expire', KEYS[1], ARGV[1])
+      redis.call('expire', KEYS[1], ARGV[1], 'NX')
       redis.call('sadd', KEYS[2], KEYS[1])
     end
     return c";
@@ -25,6 +29,8 @@ pub const SCRIPT_UPDATE_COUNTER: &str = "
 // ARGV[i+1]: Deltas
 // This function returns a list with the values and TTLs for the updated counter_keys,
 // the first position the counter value and the second the TTL
+//
+// See `SCRIPT_UPDATE_COUNTER`'s comment on the `NX` flag.
 pub const BATCH_UPDATE_COUNTERS: &str = "
     local res = {}
     for i = 1, #KEYS, 2 do
@@ -36,7 +42,7 @@ pub const BATCH_UPDATE_COUNTERS: &str = "
         local c = redis.call('incrby', counter_key, delta)
         table.insert(res, c)
         if c == tonumber(delta) then
-            redis.call('expire', counter_key, ttl)
+            redis.call('expire', counter_key, ttl, 'NX')
             redis.call('sadd', limit_key, counter_key)
         end
         table.insert(res, redis.call('pexpiretime', counter_key))

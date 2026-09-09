@@ -321,7 +321,71 @@ impl From<::r2d2::Error> for StorageErr {
 
 #[cfg(test)]
 mod test {
+    use crate::counter::Counter;
+    use crate::limit::{Context, Expression, Limit};
+    use crate::reservation::ReservationId;
+    use crate::storage::keys::key_for_counter;
     use crate::storage::redis::RedisStorage;
+    use crate::storage::{Authorization, CounterStorage};
+    use serial_test::serial;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    // Regression test for the bug fixed by adding `NX` to `SCRIPT_UPDATE_COUNTER`'s
+    // `expire` call: `Reserve` pre-creates a counter's key at value 0 to start its window,
+    // so the first real `update_counter` after it (here, via `Commit`) must not treat that
+    // as "a fresh key" and re-anchor the TTL - the window `Reserve` already started must be
+    // preserved.
+    #[test]
+    #[serial]
+    fn reserve_then_update_counter_does_not_extend_the_ttl() {
+        let storage = RedisStorage::default();
+        storage.clear().unwrap();
+
+        let namespace = "reserve_then_update_ttl_test";
+        let limit = Arc::new(Limit::new(
+            namespace,
+            10,
+            60,
+            vec![],
+            Vec::<Expression>::default(),
+        ));
+        let ctx = Context::default();
+        let mut counters = vec![Counter::new(limit, &ctx).unwrap().unwrap()];
+
+        let reservation_id = ReservationId::new();
+        let auth = storage
+            .reserve(
+                &mut counters,
+                &reservation_id,
+                1,
+                Duration::from_secs(60),
+                false,
+            )
+            .unwrap();
+        assert!(matches!(auth, Authorization::Ok));
+
+        let key = key_for_counter(&counters[0]);
+        let mut con = storage.conn_pool.get().unwrap();
+        let ttl_after_reserve: i64 = redis::cmd("PTTL").arg(&key).query(&mut *con).unwrap();
+        assert!(
+            ttl_after_reserve > 0,
+            "expected Reserve to have already started the counter's window"
+        );
+
+        // A real, if brief, sleep so a "window reset" would show up as the TTL going back up
+        // towards the full 60s, not just measurement noise around an unchanged value.
+        std::thread::sleep(Duration::from_millis(50));
+
+        storage.update_counter(&counters[0], 1).unwrap();
+
+        let ttl_after_update: i64 = redis::cmd("PTTL").arg(&key).query(&mut *con).unwrap();
+        assert!(
+            ttl_after_update <= ttl_after_reserve,
+            "the counter's real first update must not re-anchor the window Reserve already \
+             started: ttl_after_reserve={ttl_after_reserve}ms, ttl_after_update={ttl_after_update}ms"
+        );
+    }
 
     #[test]
     fn errs_on_bad_url() {

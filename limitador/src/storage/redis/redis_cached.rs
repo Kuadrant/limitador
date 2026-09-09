@@ -520,7 +520,7 @@ mod tests {
 
         let mut mock_client = MockRedisConnection::new(vec![MockCmd::new(
             redis::cmd("EVALSHA")
-                .arg("95a717e821d8fbdd667b5e4c6fede4c9cad16006")
+                .arg("4ea27f5b6faf30153f9e26e4d685d40435f3cc1d")
                 .arg("2")
                 .arg(key_for_counter(&counter))
                 .arg(key_for_counters_of_limit(counter.limit()))
@@ -579,7 +579,7 @@ mod tests {
 
         let mock_client = MockRedisConnection::new(vec![MockCmd::new(
             redis::cmd("EVALSHA")
-                .arg("95a717e821d8fbdd667b5e4c6fede4c9cad16006")
+                .arg("4ea27f5b6faf30153f9e26e4d685d40435f3cc1d")
                 .arg("2")
                 .arg(key_for_counter(&counter))
                 .arg(key_for_counters_of_limit(counter.limit()))
@@ -633,7 +633,7 @@ mod tests {
         assert!(error.is_timeout());
         let mock_client = MockRedisConnection::new(vec![MockCmd::new::<&mut Cmd, Value>(
             redis::cmd("EVALSHA")
-                .arg("95a717e821d8fbdd667b5e4c6fede4c9cad16006")
+                .arg("4ea27f5b6faf30153f9e26e4d685d40435f3cc1d")
                 .arg("2")
                 .arg(key_for_counter(&counter))
                 .arg(key_for_counters_of_limit(counter.limit()))

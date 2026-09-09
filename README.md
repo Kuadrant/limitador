@@ -64,7 +64,7 @@ cargo build
 
 ### Run the tests
 
-Some tests need a redis deployed in `localhost:6379`. You can run it in Docker with:
+Some tests need a Redis (>= 7.0) deployed in `localhost:6379`. You can run it in Docker with:
 ```bash
 docker run --rm -p 6379:6379 -it redis:7
 ```
