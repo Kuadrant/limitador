@@ -585,6 +585,10 @@ impl RateLimiter {
         reservation_id: &ReservationId,
         actual_amount: u64,
     ) -> LimitadorResult<CommitResult> {
+        // If the counters resolved here differ from those reserve originally held
+        // (e.g. limits changed between the two calls),
+        // any reservation left on a counter no longer resolved isn't released by this call.
+        // It just sits until its own ttl expires naturally.
         let counters = self.counters_that_apply(namespace, ctx)?;
 
         counters
