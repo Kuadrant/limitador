@@ -1364,7 +1364,7 @@ mod test {
         let ctx = Context::default();
 
         let first = rate_limiter
-            .reserve(namespace, &ctx, 6, Duration::from_secs(30), false)
+            .reserve(namespace, &ctx, 6, Some(Duration::from_secs(30)), false)
             .await
             .unwrap();
         assert!(!first.limited);
@@ -1372,7 +1372,7 @@ mod test {
 
         // value(0) + outstanding(6) + 6 = 12 > 10: rejected
         let second = rate_limiter
-            .reserve(namespace, &ctx, 6, Duration::from_secs(30), false)
+            .reserve(namespace, &ctx, 6, Some(Duration::from_secs(30)), false)
             .await
             .unwrap();
         assert!(second.limited);
@@ -1380,7 +1380,7 @@ mod test {
 
         // value(0) + outstanding(6) + 4 = 10 <= 10: admitted
         let third = rate_limiter
-            .reserve(namespace, &ctx, 4, Duration::from_secs(30), false)
+            .reserve(namespace, &ctx, 4, Some(Duration::from_secs(30)), false)
             .await
             .unwrap();
         assert!(!third.limited);
@@ -1396,14 +1396,14 @@ mod test {
         let ctx = Context::default();
 
         let reserved = rate_limiter
-            .reserve(namespace, &ctx, 6, Duration::from_secs(30), false)
+            .reserve(namespace, &ctx, 6, Some(Duration::from_secs(30)), false)
             .await
             .unwrap();
         let reservation_id = reserved.reservation_id.expect("should be admitted");
 
         // Still held: 0 + outstanding(6) + 6 = 12 > 10
         let blocked = rate_limiter
-            .reserve(namespace, &ctx, 6, Duration::from_secs(30), false)
+            .reserve(namespace, &ctx, 6, Some(Duration::from_secs(30)), false)
             .await
             .unwrap();
         assert!(blocked.limited);
@@ -1424,7 +1424,7 @@ mod test {
 
         // Counter is now at 4 (2 + 2) with no outstanding reservations: 4 + 6 = 10 <= 10
         let after = rate_limiter
-            .reserve(namespace, &ctx, 6, Duration::from_secs(30), false)
+            .reserve(namespace, &ctx, 6, Some(Duration::from_secs(30)), false)
             .await
             .unwrap();
         assert!(!after.limited);
@@ -1436,7 +1436,7 @@ mod test {
                 "empty",
                 &Context::default(),
                 5,
-                Duration::from_secs(10),
+                Some(Duration::from_secs(10)),
                 false,
             )
             .await
@@ -1455,14 +1455,14 @@ mod test {
         // A zero ttl means this reservation is already expired by the time we look at it
         // again.
         let first = rate_limiter
-            .reserve(namespace, &ctx, 8, Duration::ZERO, false)
+            .reserve(namespace, &ctx, 8, Some(Duration::ZERO), false)
             .await
             .unwrap();
         assert!(!first.limited);
 
         // The first reservation is already expired, so another 8 fits again: 0 + 0 + 8 <= 10
         let second = rate_limiter
-            .reserve(namespace, &ctx, 8, Duration::from_secs(30), false)
+            .reserve(namespace, &ctx, 8, Some(Duration::from_secs(30)), false)
             .await
             .unwrap();
         assert!(!second.limited);
@@ -1508,7 +1508,7 @@ mod test {
                 s.spawn(move || {
                     let ctx = Context::default();
                     let res = rl
-                        .reserve(&ns, &ctx, AMOUNT, Duration::from_secs(30), false)
+                        .reserve(&ns, &ctx, AMOUNT, Some(Duration::from_secs(30)), false)
                         .unwrap();
                     if !res.limited {
                         admitted_count.fetch_add(1, Ordering::SeqCst);
@@ -1559,7 +1559,7 @@ mod test {
             handles.push(tokio::spawn(async move {
                 let ctx = Context::default();
                 let res = rl
-                    .reserve(&ns, &ctx, AMOUNT, Duration::from_secs(30), false)
+                    .reserve(&ns, &ctx, AMOUNT, Some(Duration::from_secs(30)), false)
                     .await
                     .unwrap();
                 if !res.limited {

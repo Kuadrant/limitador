@@ -501,12 +501,15 @@ impl RateLimiter {
     ///
     /// On success, `reservation_id` in the result must later be passed to
     /// `commit_reservation` to release the hold once actual usage is known.
+    ///
+    /// `ttl` of `None` uses `ReservationLimits::max_ttl` outright; `Some` is still clamped to
+    /// it.
     pub fn reserve(
         &self,
         namespace: &Namespace,
         ctx: &Context,
         amount: u64,
-        ttl: Duration,
+        ttl: Option<Duration>,
         load_counters: bool,
     ) -> LimitadorResult<ReserveResult> {
         let mut counters = self.counters_that_apply(namespace, ctx)?;
@@ -539,7 +542,9 @@ impl RateLimiter {
             });
         }
 
-        let ttl = ttl.min(self.reservation_limits.max_ttl);
+        let ttl = ttl.map_or(self.reservation_limits.max_ttl, |ttl| {
+            ttl.min(self.reservation_limits.max_ttl)
+        });
 
         let reservation_id = ReservationId::new();
         let auth =
@@ -810,7 +815,7 @@ impl AsyncRateLimiter {
         namespace: &Namespace,
         ctx: &Context<'_>,
         amount: u64,
-        ttl: Duration,
+        ttl: Option<Duration>,
         load_counters: bool,
     ) -> LimitadorResult<ReserveResult> {
         let mut counters = self.counters_that_apply(namespace, ctx).await?;
@@ -842,7 +847,9 @@ impl AsyncRateLimiter {
             });
         }
 
-        let ttl = ttl.min(self.reservation_limits.max_ttl);
+        let ttl = ttl.map_or(self.reservation_limits.max_ttl, |ttl| {
+            ttl.min(self.reservation_limits.max_ttl)
+        });
 
         let reservation_id = ReservationId::new();
         let auth = self
@@ -1021,7 +1028,7 @@ mod test {
                     s.spawn(move || {
                         let ctx = Context::default();
                         let res = rl
-                            .reserve(&ns, &ctx, AMOUNT, Duration::from_secs(30), false)
+                            .reserve(&ns, &ctx, AMOUNT, Some(Duration::from_secs(30)), false)
                             .unwrap();
                         if !res.limited {
                             admitted_count.fetch_add(1, Ordering::SeqCst);
@@ -1108,21 +1115,21 @@ mod test {
         let ctx = Context::default();
 
         let first = rl
-            .reserve(&ns, &ctx, 6, Duration::from_secs(30), false)
+            .reserve(&ns, &ctx, 6, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(!first.limited);
         assert!(first.reservation_id.is_some());
 
         // value(0) + outstanding(6) + 6 = 12 > 10: rejected
         let second = rl
-            .reserve(&ns, &ctx, 6, Duration::from_secs(30), false)
+            .reserve(&ns, &ctx, 6, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(second.limited);
         assert!(second.reservation_id.is_none());
 
         // value(0) + outstanding(6) + 4 = 10 <= 10: admitted
         let third = rl
-            .reserve(&ns, &ctx, 4, Duration::from_secs(30), false)
+            .reserve(&ns, &ctx, 4, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(!third.limited);
     }
@@ -1138,13 +1145,13 @@ mod test {
         let ctx = Context::default();
 
         let reserved = rl
-            .reserve(&ns, &ctx, 6, Duration::from_secs(30), false)
+            .reserve(&ns, &ctx, 6, Some(Duration::from_secs(30)), false)
             .unwrap();
         let reservation_id = reserved.reservation_id.expect("should be admitted");
 
         // Still held: 0 + outstanding(6) + 6 = 12 > 10
         let blocked = rl
-            .reserve(&ns, &ctx, 6, Duration::from_secs(30), false)
+            .reserve(&ns, &ctx, 6, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(blocked.limited);
 
@@ -1162,7 +1169,7 @@ mod test {
 
         // Counter is now at 4 (2 + 2) with no outstanding reservations: 4 + 6 = 10 <= 10
         let after = rl
-            .reserve(&ns, &ctx, 6, Duration::from_secs(30), false)
+            .reserve(&ns, &ctx, 6, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(!after.limited);
     }
@@ -1173,7 +1180,13 @@ mod test {
         let ns = "empty".into();
 
         let result = rl
-            .reserve(&ns, &Context::default(), 5, Duration::from_secs(10), false)
+            .reserve(
+                &ns,
+                &Context::default(),
+                5,
+                Some(Duration::from_secs(10)),
+                false,
+            )
             .unwrap();
         assert!(!result.limited);
         assert!(result.reservation_id.is_none());
@@ -1196,20 +1209,20 @@ mod test {
 
         // Requested 8, but clamped to floor(10 * 0.5) = 5.
         let first = rl
-            .reserve(&ns, &ctx, 8, Duration::from_secs(30), false)
+            .reserve(&ns, &ctx, 8, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(!first.limited);
 
         // A second reservation for 5 more would need 5 + 5 = 10 <= 10, so it's admitted -
         // proving the first only actually held 5, not the requested 8.
         let second = rl
-            .reserve(&ns, &ctx, 5, Duration::from_secs(30), false)
+            .reserve(&ns, &ctx, 5, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(!second.limited);
 
         // A third for even 1 more would be 10 + 1 = 11 > 10: rejected.
         let third = rl
-            .reserve(&ns, &ctx, 1, Duration::from_secs(30), false)
+            .reserve(&ns, &ctx, 1, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(third.limited);
     }
@@ -1227,7 +1240,7 @@ mod test {
         // Without an explicit `max_reservation_fraction`, the full 10 can be reserved in one
         // go - it's only ever clamped down to the counter's own `max_value`, never tighter.
         let result = rl
-            .reserve(&ns, &ctx, 10, Duration::from_secs(30), false)
+            .reserve(&ns, &ctx, 10, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(!result.limited);
     }
@@ -1252,7 +1265,7 @@ mod test {
         let ctx = Context::default();
 
         let result = rl
-            .reserve(&ns, &ctx, 5, Duration::from_secs(30), false)
+            .reserve(&ns, &ctx, 5, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(!result.limited);
         assert!(result.reservation_id.is_none());
@@ -1260,7 +1273,7 @@ mod test {
         // Repeating it stays consistent - no lingering zero-amount entries accumulate to
         // eventually (incorrectly) block admission.
         let again = rl
-            .reserve(&ns, &ctx, 5, Duration::from_secs(30), false)
+            .reserve(&ns, &ctx, 5, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(!again.limited);
         assert!(again.reservation_id.is_none());
@@ -1278,12 +1291,14 @@ mod test {
 
         // A zero ttl means this reservation is already expired by the time we look at it
         // again, without needing to sleep: `expires_at == now_1 <= now_2`.
-        let first = rl.reserve(&ns, &ctx, 8, Duration::ZERO, false).unwrap();
+        let first = rl
+            .reserve(&ns, &ctx, 8, Some(Duration::ZERO), false)
+            .unwrap();
         assert!(!first.limited);
 
         // The first reservation is already expired, so another 8 fits again: 0 + 0 + 8 <= 10
         let second = rl
-            .reserve(&ns, &ctx, 8, Duration::from_secs(30), false)
+            .reserve(&ns, &ctx, 8, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(!second.limited);
     }
@@ -1299,13 +1314,13 @@ mod test {
         let ctx = Context::default();
 
         let first = rl
-            .reserve(&ns, &ctx, 8, Duration::from_millis(20), false)
+            .reserve(&ns, &ctx, 8, Some(Duration::from_millis(20)), false)
             .unwrap();
         assert!(!first.limited);
 
         // Still outstanding: 0 + outstanding(8) + 8 = 16 > 10
         let blocked = rl
-            .reserve(&ns, &ctx, 8, Duration::from_secs(30), false)
+            .reserve(&ns, &ctx, 8, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(blocked.limited);
 
@@ -1313,7 +1328,7 @@ mod test {
 
         // The first reservation has now genuinely expired: 0 + 0 + 8 <= 10
         let admitted = rl
-            .reserve(&ns, &ctx, 8, Duration::from_secs(30), false)
+            .reserve(&ns, &ctx, 8, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(!admitted.limited);
     }

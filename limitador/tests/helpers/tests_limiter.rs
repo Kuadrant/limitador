@@ -142,7 +142,7 @@ impl TestsLimiter {
         namespace: &str,
         ctx: &Context<'_>,
         amount: u64,
-        ttl: Duration,
+        ttl: Option<Duration>,
         load_counters: bool,
     ) -> Result<ReserveResult, LimitadorError> {
         match &self.limiter_impl {

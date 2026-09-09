@@ -16,12 +16,6 @@ use crate::Limiter;
 use limitador::limit::Context;
 use limitador::reservation::ReservationId;
 
-// Used only when the caller doesn't set `ttl` at all. Deliberately not "the real default" -
-// the library's own `RateLimiterBuilder::reservation_limits` ceiling (set once, at
-// construction time) always clamps this down to whatever's actually configured, so this only
-// needs to be "large enough to never be the binding constraint," not accurate.
-const UNSET_RESERVATION_TTL: Duration = Duration::from_secs(u32::MAX as u64);
-
 pub struct KuadrantService {
     limiter: Arc<Limiter>,
     metrics: Arc<PrometheusMetrics>,
@@ -247,16 +241,7 @@ impl RateLimitService for KuadrantService {
         let mut ctx = Context::default();
         ctx.list_binding("descriptors".to_string(), values);
 
-        // Both the fraction-of-limit clamp on `amount` and the ceiling on `ttl` happen inside
-        // `RateLimiter::reserve` itself (`RateLimiterBuilder::reservation_limits`, set once
-        // when the limiter is constructed) - the fraction clamp needs each matching counter's
-        // own max_value, already resolved there, so there's no point re-resolving limits here
-        // just to clamp again; `ttl` is simply passed through unclamped (or, if unset, as a
-        // large sentinel the library's own ceiling will cut down to size).
-        let ttl = req
-            .ttl
-            .and_then(|d| Duration::try_from(d).ok())
-            .unwrap_or(UNSET_RESERVATION_TTL);
+        let ttl = req.ttl.and_then(|d| Duration::try_from(d).ok());
 
         let reserve_resp = match &*self.limiter {
             Limiter::Blocking(limiter) => limiter.reserve(&namespace, &ctx, req.amount, ttl, false),
