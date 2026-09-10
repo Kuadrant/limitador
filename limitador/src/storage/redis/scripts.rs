@@ -63,10 +63,11 @@ pub const VALUES_AND_TTLS: &str = "
     return res
 ";
 
-// Atomically checks and, if every counter admits it, holds `amount` of estimated
-// capacity against all of them. All counters are admitted, or none are: nothing is
-// written unless every counter would stay within its limit once outstanding, live
-// reservations are accounted for.
+// Atomically checks `check_amount` and, if every counter admits it, holds `hold_amount`
+// of estimated capacity against all of them (`hold_amount` may be less than
+// `check_amount`, e.g. clamped by policy). All counters are admitted, or none are:
+// nothing is written unless every counter would stay within its limit once outstanding,
+// live reservations and `check_amount` are accounted for.
 //
 // KEYS come in triplets: [counter_key, reservation_key, limit_key, ...]. `limit_key` is
 // the same per-limit set `SCRIPT_UPDATE_COUNTER` maintains (the one `get_counters`/the
@@ -74,23 +75,25 @@ pub const VALUES_AND_TTLS: &str = "
 // here too, so a counter touched only by Reserve is still visible, exactly as if it had
 // been touched by Report/CheckRateLimit.
 // ARGV holds one (window_seconds, max_value) pair per counter, in the same order as
-// KEYS, followed by four trailing scalars:
+// KEYS, followed by five trailing scalars:
 //   ARGV[2i-1] = window (seconds) for counter i, used to lazily start its window if
 //                the counter key doesn't exist yet
 //   ARGV[2i]   = max_value for counter i
-//   ARGV[2n+1] = amount requested
-//   ARGV[2n+2] = reservation ttl (ms), already clamped by the caller
-//   ARGV[2n+3] = reservation id
-//   ARGV[2n+4] = now (ms)
+//   ARGV[2n+1] = check_amount, tested against each counter's remaining capacity
+//   ARGV[2n+2] = hold_amount, written if admitted
+//   ARGV[2n+3] = reservation ttl (ms), already clamped by the caller
+//   ARGV[2n+4] = reservation id
+//   ARGV[2n+5] = now (ms)
 //
 // Returns a flat list, three values per counter - [value, outstanding, window_ttl_ms] -
 // followed by a trailing 1 (admitted) or 0 (limited).
 pub const SCRIPT_RESERVE: &str = "
     local n = #KEYS / 3
-    local amount = tonumber(ARGV[2 * n + 1])
-    local ttl_ms = tonumber(ARGV[2 * n + 2])
-    local reservation_id = ARGV[2 * n + 3]
-    local now_ms = tonumber(ARGV[2 * n + 4])
+    local check_amount = tonumber(ARGV[2 * n + 1])
+    local hold_amount = tonumber(ARGV[2 * n + 2])
+    local ttl_ms = tonumber(ARGV[2 * n + 3])
+    local reservation_id = ARGV[2 * n + 4]
+    local now_ms = tonumber(ARGV[2 * n + 5])
 
     local values = {}
     local outstanding = {}
@@ -133,19 +136,19 @@ pub const SCRIPT_RESERVE: &str = "
         outstanding[i] = held
         window_ttls[i] = window_ttl_ms
 
-        if value + held + amount > max_value then
+        if value + held + check_amount > max_value then
             admitted = false
         end
     end
 
-    if admitted then
+    if admitted and hold_amount > 0 then
         for i = 1, n do
             local reservation_key = KEYS[3 * i - 1]
             local expires_at_ms = now_ms + ttl_ms
             if expires_at_ms > now_ms + window_ttls[i] then
                 expires_at_ms = now_ms + window_ttls[i]
             end
-            redis.call('hset', reservation_key, reservation_id, amount .. ':' .. expires_at_ms)
+            redis.call('hset', reservation_key, reservation_id, hold_amount .. ':' .. expires_at_ms)
             redis.call('pexpire', reservation_key, window_ttls[i])
         end
     end

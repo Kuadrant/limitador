@@ -175,10 +175,13 @@ impl CounterStorage for RedisStorage {
         &self,
         counters: &mut Vec<Counter>,
         reservation_id: &ReservationId,
-        amount: u64,
+        check_amount: u64,
+        hold_amount: u64,
         ttl: Duration,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
+        debug_assert!(hold_amount <= check_amount);
+
         let mut con = self.conn_pool.get()?;
 
         let now_ms = SystemTime::now()
@@ -198,7 +201,8 @@ impl CounterStorage for RedisStorage {
             invocation.arg(counter.max_value());
         }
         invocation
-            .arg(amount)
+            .arg(check_amount)
+            .arg(hold_amount)
             .arg(ttl.as_millis() as i64)
             .arg(reservation_id.as_str())
             .arg(now_ms);
@@ -211,7 +215,7 @@ impl CounterStorage for RedisStorage {
             let value = raw[i * 3].max(0) as u64;
             let outstanding = raw[i * 3 + 1].max(0) as u64;
             let window_ttl_ms = raw[i * 3 + 2].max(0) as u64;
-            let total = value + outstanding + amount;
+            let total = value + outstanding + check_amount;
 
             if load_counters {
                 let remaining = counter.max_value().checked_sub(total);
@@ -325,11 +329,25 @@ mod test {
     use crate::limit::{Context, Expression, Limit};
     use crate::reservation::ReservationId;
     use crate::storage::keys::key_for_counter;
+    use crate::storage::keys::key_for_reservations;
     use crate::storage::redis::RedisStorage;
     use crate::storage::{Authorization, CounterStorage};
     use serial_test::serial;
     use std::sync::Arc;
     use std::time::Duration;
+
+    fn counter(namespace: &str, max_value: u64) -> Counter {
+        let limit = Arc::new(Limit::new(
+            namespace,
+            max_value,
+            60,
+            vec![],
+            Vec::<Expression>::default(),
+        ));
+        Counter::new(limit, &Context::default())
+            .unwrap()
+            .expect("must have a counter")
+    }
 
     // Regression test for the bug fixed by adding `NX` to `SCRIPT_UPDATE_COUNTER`'s
     // `expire` call: `Reserve` pre-creates a counter's key at value 0 to start its window,
@@ -359,6 +377,7 @@ mod test {
                 &mut counters,
                 &reservation_id,
                 1,
+                1,
                 Duration::from_secs(60),
                 false,
             )
@@ -385,6 +404,74 @@ mod test {
             "the counter's real first update must not re-anchor the window Reserve already \
              started: ttl_after_reserve={ttl_after_reserve}ms, ttl_after_update={ttl_after_update}ms"
         );
+    }
+
+    #[test]
+    #[serial]
+    fn reserve_with_hold_amount_zero_creates_no_entry() {
+        let storage = RedisStorage::default();
+        storage.clear().unwrap();
+        let mut counters = vec![counter("reserve_hold_zero_test", 10)];
+        let reservation_id = ReservationId::new();
+
+        let auth = storage
+            .reserve(
+                &mut counters,
+                &reservation_id,
+                10,
+                0,
+                Duration::from_secs(60),
+                false,
+            )
+            .unwrap();
+        assert!(matches!(auth, Authorization::Ok));
+
+        let mut con = storage.conn_pool.get().unwrap();
+        let reservations_key = key_for_reservations(&counters[0]);
+        let exists: bool = redis::cmd("EXISTS")
+            .arg(&reservations_key)
+            .query(&mut *con)
+            .unwrap();
+        assert!(!exists, "no reservation hash should have been written");
+
+        let released = storage
+            .release_reservation(&counters, &reservation_id)
+            .unwrap();
+        assert!(!released, "nothing should have been held to release");
+    }
+
+    #[test]
+    #[serial]
+    fn reserve_with_check_amount_zero_creates_no_reservation_entry() {
+        let storage = RedisStorage::default();
+        storage.clear().unwrap();
+        let mut counters = vec![counter("reserve_check_zero_test", 10)];
+        let reservation_id = ReservationId::new();
+
+        let auth = storage
+            .reserve(
+                &mut counters,
+                &reservation_id,
+                0,
+                0,
+                Duration::from_secs(60),
+                false,
+            )
+            .unwrap();
+        assert!(matches!(auth, Authorization::Ok));
+
+        let mut con = storage.conn_pool.get().unwrap();
+        let reservations_key = key_for_reservations(&counters[0]);
+        let exists: bool = redis::cmd("EXISTS")
+            .arg(&reservations_key)
+            .query(&mut *con)
+            .unwrap();
+        assert!(!exists, "no reservation hash should have been written");
+
+        let released = storage
+            .release_reservation(&counters, &reservation_id)
+            .unwrap();
+        assert!(!released, "nothing should have been held to release");
     }
 
     #[test]

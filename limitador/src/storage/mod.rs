@@ -155,12 +155,19 @@ impl Storage {
         &self,
         counters: &mut Vec<Counter>,
         reservation_id: &ReservationId,
-        amount: u64,
+        check_amount: u64,
+        hold_amount: u64,
         ttl: Duration,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
-        self.counters
-            .reserve(counters, reservation_id, amount, ttl, load_counters)
+        self.counters.reserve(
+            counters,
+            reservation_id,
+            check_amount,
+            hold_amount,
+            ttl,
+            load_counters,
+        )
     }
 
     pub fn release_reservation(
@@ -298,12 +305,20 @@ impl AsyncStorage {
         &self,
         counters: &mut Vec<Counter>,
         reservation_id: &ReservationId,
-        amount: u64,
+        check_amount: u64,
+        hold_amount: u64,
         ttl: Duration,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         self.counters
-            .reserve(counters, reservation_id, amount, ttl, load_counters)
+            .reserve(
+                counters,
+                reservation_id,
+                check_amount,
+                hold_amount,
+                ttl,
+                load_counters,
+            )
             .await
     }
 
@@ -337,9 +352,11 @@ pub trait CounterStorage: Sync + Send {
     fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr>; // todo revise typing here?
     fn clear(&self) -> Result<(), StorageErr>;
 
-    /// Holds `amount` of estimated capacity against every counter in `counters`, provided
-    /// none of them would be pushed over their limit once outstanding reservations are
-    /// accounted for. All counters are admitted, or none are.
+    /// Admits, or not, based on `check_amount`: every counter in `counters` must stay
+    /// within its limit if `check_amount` were held, once outstanding reservations are
+    /// accounted for - all counters are admitted, or none are. If admitted, `hold_amount`
+    /// (which may be less than `check_amount`, e.g. clamped by policy) is what actually
+    /// gets held.
     ///
     /// Backends that don't yet support reservations can rely on this default, which
     /// always fails with a non-transient [`StorageErr`].
@@ -347,7 +364,8 @@ pub trait CounterStorage: Sync + Send {
         &self,
         _counters: &mut Vec<Counter>,
         _reservation_id: &ReservationId,
-        _amount: u64,
+        _check_amount: u64,
+        _hold_amount: u64,
         _ttl: Duration,
         _load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
@@ -391,7 +409,8 @@ pub trait AsyncCounterStorage: Sync + Send {
         &self,
         _counters: &mut Vec<Counter>,
         _reservation_id: &ReservationId,
-        _amount: u64,
+        _check_amount: u64,
+        _hold_amount: u64,
         _ttl: Duration,
         _load_counters: bool,
     ) -> Result<Authorization, StorageErr> {

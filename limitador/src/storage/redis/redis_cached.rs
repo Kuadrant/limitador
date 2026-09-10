@@ -152,24 +152,54 @@ impl AsyncCounterStorage for CachedRedisStorage {
     }
 
     // Local-memory only (see `LocalReservationRegistry`'s docs): admission is checked against
-    // this instance's own cached view of each counter, the same accuracy trade-off
-    // `check_and_update` already makes for this backend.
+    // this instance's own cached view of each counter. Unlike `check_and_update`, a cache
+    // miss here can't just default to 0 - a counter only ever touched through Reserve/Commit
+    // (`commit_reservation`'s `update_counter` never populates this cache) would then never
+    // get a real entry at all, so `reserve` would always see it as empty regardless of what's
+    // actually been committed. Misses are fetched live from Redis instead, in one batched
+    // round trip.
     #[tracing::instrument(skip_all)]
     async fn reserve(
         &self,
         counters: &mut Vec<Counter>,
         reservation_id: &ReservationId,
-        amount: u64,
+        check_amount: u64,
+        hold_amount: u64,
         ttl: Duration,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let now = SystemTime::now();
-        let values_and_window_ttls: Vec<(u64, Duration)> = counters
+
+        let mut values_and_window_ttls: Vec<Option<(u64, Duration)>> = counters
             .iter()
-            .map(|counter| match self.cached_counters.get(counter) {
-                Some(cached) => (cached.hits(counter), cached.ttl()),
-                None => (0, counter.window()),
+            .map(|counter| {
+                self.cached_counters
+                    .get(counter)
+                    .map(|cached| (cached.hits(counter), cached.ttl()))
             })
+            .collect();
+
+        let missing: Vec<usize> = values_and_window_ttls
+            .iter()
+            .enumerate()
+            .filter_map(|(i, v)| v.is_none().then_some(i))
+            .collect();
+
+        if !missing.is_empty() {
+            let missing_counters: Vec<Counter> =
+                missing.iter().map(|&i| counters[i].clone()).collect();
+            let fetched = self
+                .async_redis_storage
+                .values_and_window_ttls(&missing_counters)
+                .await?;
+            for (i, value_ttl) in missing.into_iter().zip(fetched) {
+                values_and_window_ttls[i] = Some(value_ttl);
+            }
+        }
+
+        let values_and_window_ttls: Vec<(u64, Duration)> = values_and_window_ttls
+            .into_iter()
+            .map(|v| v.expect("every entry was either cached or just fetched"))
             .collect();
 
         Ok(self.reservations.reserve(
@@ -177,7 +207,8 @@ impl AsyncCounterStorage for CachedRedisStorage {
             &values_and_window_ttls,
             ReservationRequest {
                 reservation_id,
-                amount,
+                check_amount,
+                hold_amount,
                 ttl,
                 load_counters,
                 now,
@@ -446,21 +477,37 @@ async fn flush_batcher_and_update_counters<C: ConnectionLike>(
 #[cfg(test)]
 mod tests {
     use crate::counter::Counter;
-    use crate::limit::Limit;
+    use crate::limit::{Context, Expression, Limit};
+    use crate::reservation::ReservationId;
     use crate::storage::keys::{key_for_counter, key_for_counters_of_limit};
     use crate::storage::redis::counters_cache::{
         CachedCounterValue, CountersCache, CountersCacheBuilder,
     };
     use crate::storage::redis::redis_cached::{flush_batcher_and_update_counters, update_counters};
     use crate::storage::redis::CachedRedisStorage;
+    use crate::storage::{AsyncCounterStorage, Authorization};
     use redis::{Cmd, ErrorKind, RedisError, Value};
     use redis_test::{MockCmd, MockRedisConnection};
+    use serial_test::serial;
     use std::collections::HashMap;
     use std::io;
     use std::ops::Add;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    fn counter(namespace: &str, max_value: u64) -> Counter {
+        let limit = Limit::new(
+            namespace,
+            max_value,
+            60,
+            vec![],
+            Vec::<Expression>::default(),
+        );
+        Counter::new(limit, &Context::default())
+            .unwrap()
+            .expect("must have a counter")
+    }
 
     #[tokio::test]
     async fn errs_on_bad_url() {
@@ -660,5 +707,34 @@ mod tests {
         let c = cached_counters.get(&counter).unwrap();
         assert_eq!(c.hits(&counter), 5);
         assert_eq!(c.pending_writes(), Ok(3));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn reserve_with_hold_amount_zero_creates_no_entry() {
+        let storage = CachedRedisStorage::new("redis://127.0.0.1:6379")
+            .await
+            .unwrap();
+        let mut counters = vec![counter("cached_reserve_hold_zero_test", 10)];
+        let reservation_id = ReservationId::new();
+
+        let auth = storage
+            .reserve(
+                &mut counters,
+                &reservation_id,
+                10,
+                0,
+                Duration::from_secs(60),
+                false,
+            )
+            .await
+            .unwrap();
+        assert!(matches!(auth, Authorization::Ok));
+
+        let released = storage
+            .release_reservation(&counters, &reservation_id)
+            .await
+            .unwrap();
+        assert!(!released, "nothing should have been held to release");
     }
 }

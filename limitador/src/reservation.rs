@@ -116,8 +116,11 @@ pub struct CommitResult {
 /// it (or re-resolve counters themselves) on every call.
 #[derive(Debug, Clone, Copy)]
 pub struct ReservationLimits {
-    /// Clamps a `reserve()` call's requested amount to `counter.max_value() * max_fraction`
-    /// for every matching counter; the most restrictive one wins. Defaults to `1.0`, i.e. no
+    /// Caps the amount actually held by an admitted `reserve()` call to
+    /// `counter.max_value() * max_fraction`, for every matching counter - the most
+    /// restrictive one wins. This never affects admission itself (that's always decided on
+    /// the raw requested amount); it only limits how much of a counter a single reservation
+    /// can claim, so it can't starve concurrent reservations. Defaults to `1.0`, i.e. no
     /// clamp beyond each counter's own `max_value` - RFC 0021 recommends `0.5` as a safety
     /// default, but that's a policy choice for embedders to opt into, not a silent default
     /// that would change what already-configured callers' `reserve()` calls admit.

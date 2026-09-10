@@ -166,7 +166,8 @@ impl CounterStorage for RocksDbStorage {
         &self,
         counters: &mut Vec<Counter>,
         reservation_id: &ReservationId,
-        amount: u64,
+        check_amount: u64,
+        hold_amount: u64,
         ttl: Duration,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
@@ -185,7 +186,8 @@ impl CounterStorage for RocksDbStorage {
             &values_and_window_ttls,
             ReservationRequest {
                 reservation_id,
-                amount,
+                check_amount,
+                hold_amount,
                 ttl,
                 load_counters,
                 now,
@@ -279,13 +281,27 @@ impl RocksDbStorage {
 mod tests {
     use super::RocksDbStorage;
     use crate::counter::Counter;
-    use crate::limit::Limit;
+    use crate::limit::{Context, Limit};
+    use crate::reservation::ReservationId;
     use crate::storage::disk::OptimizeFor;
-    use crate::storage::CounterStorage;
+    use crate::storage::{Authorization, CounterStorage};
     use std::collections::HashMap;
     use std::fs;
     use std::time::Duration;
     use tempfile::TempDir;
+
+    fn counter(max_value: u64) -> Counter {
+        let limit = Limit::new(
+            "reserve_test",
+            max_value,
+            60,
+            vec![],
+            Vec::<crate::limit::Expression>::default(),
+        );
+        Counter::new(limit, &Context::default())
+            .unwrap()
+            .expect("must have a counter")
+    }
 
     #[test]
     fn opens_db_on_disk() {
@@ -337,5 +353,31 @@ mod tests {
                 "Should be above threshold still!"
             );
         }
+    }
+
+    #[test]
+    fn reserve_with_hold_amount_zero_creates_no_entry() {
+        let tmp = TempDir::new().expect("We should have a dir!");
+        let storage =
+            RocksDbStorage::open(tmp.path(), OptimizeFor::Space).expect("We should have storage");
+        let mut counters = vec![counter(10)];
+        let reservation_id = ReservationId::new();
+
+        let auth = storage
+            .reserve(
+                &mut counters,
+                &reservation_id,
+                10,
+                0,
+                Duration::from_secs(60),
+                false,
+            )
+            .unwrap();
+        assert!(matches!(auth, Authorization::Ok));
+
+        let released = storage
+            .release_reservation(&counters, &reservation_id)
+            .unwrap();
+        assert!(!released, "nothing should have been held to release");
     }
 }

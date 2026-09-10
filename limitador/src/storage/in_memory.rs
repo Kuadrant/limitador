@@ -208,7 +208,8 @@ impl CounterStorage for InMemoryStorage {
         &self,
         counters: &mut Vec<Counter>,
         reservation_id: &ReservationId,
-        amount: u64,
+        check_amount: u64,
+        hold_amount: u64,
         ttl: Duration,
         load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
@@ -223,7 +224,8 @@ impl CounterStorage for InMemoryStorage {
             &values_and_window_ttls,
             ReservationRequest {
                 reservation_id,
-                amount,
+                check_amount,
+                hold_amount,
                 ttl,
                 load_counters,
                 now,
@@ -372,5 +374,42 @@ mod tests {
             storage.counters_in_namespace(counter_1.namespace()).len(),
             2
         );
+    }
+
+    fn counter(max_value: u64) -> Counter {
+        let limit = Limit::new(
+            "reserve_test",
+            max_value,
+            60,
+            vec![],
+            Vec::<crate::limit::Expression>::default(),
+        );
+        Counter::new(limit, &Context::default())
+            .unwrap()
+            .expect("must have a counter")
+    }
+
+    #[test]
+    fn reserve_with_hold_amount_zero_creates_no_entry() {
+        let storage = InMemoryStorage::default();
+        let mut counters = vec![counter(10)];
+        let reservation_id = ReservationId::new();
+
+        let auth = storage
+            .reserve(
+                &mut counters,
+                &reservation_id,
+                10,
+                0,
+                Duration::from_secs(60),
+                false,
+            )
+            .unwrap();
+        assert!(matches!(auth, Authorization::Ok));
+
+        let released = storage
+            .release_reservation(&counters, &reservation_id)
+            .unwrap();
+        assert!(!released, "nothing should have been held to release");
     }
 }

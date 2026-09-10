@@ -282,6 +282,75 @@ mod test {
     );
     test_with_reservation_capable_storage_impls!(reserve_without_matching_limits_is_a_noop);
     test_with_reservation_capable_storage_impls!(expired_reservations_do_not_count_as_outstanding);
+    test_with_reservation_capable_storage_impls!(
+        reserve_denies_when_amount_alone_exceeds_max_value
+    );
+    test_with_reservation_capable_storage_impls!(reserve_admits_when_amount_fits);
+    test_with_reservation_capable_storage_impls!(
+        reserve_with_amount_zero_creates_no_reservation_entry
+    );
+    test_with_reservation_capable_storage_impls!(
+        reserve_then_commit_then_reserve_reflects_committed_usage
+    );
+    // Not run against `disk_storage`, unlike the other reservation tests above:
+    // `RocksDbStorage::insert_or_update` silently no-ops a delta that alone exceeds
+    // `max_value`, so `update_counters`'s forced overshoot below never actually gets
+    // written - a separate, pre-existing bug tracked for its own fix.
+    #[tokio::test]
+    async fn reserve_denies_amount_zero_when_already_over_limit_in_memory_storage() {
+        let rate_limiter = RateLimiter::new_with_storage(Box::<InMemoryStorage>::default());
+        reserve_denies_amount_zero_when_already_over_limit(
+            &mut TestsLimiter::new_from_blocking_impl(rate_limiter),
+        )
+        .await;
+    }
+
+    #[cfg(feature = "redis_storage")]
+    #[tokio::test]
+    #[serial]
+    async fn reserve_denies_amount_zero_when_already_over_limit_with_sync_redis() {
+        let storage = RedisStorage::default();
+        storage.clear().unwrap();
+        let rate_limiter = RateLimiter::new_with_storage(Box::new(storage));
+        reserve_denies_amount_zero_when_already_over_limit(
+            &mut TestsLimiter::new_from_blocking_impl(rate_limiter),
+        )
+        .await;
+    }
+
+    #[cfg(feature = "redis_storage")]
+    #[tokio::test]
+    #[serial]
+    async fn reserve_denies_amount_zero_when_already_over_limit_with_async_redis() {
+        let storage = AsyncRedisStorage::new("redis://127.0.0.1:6379")
+            .await
+            .expect("We need a Redis running locally");
+        storage.clear().await.unwrap();
+        let rate_limiter = AsyncRateLimiter::new_with_storage(Box::new(storage));
+        reserve_denies_amount_zero_when_already_over_limit(&mut TestsLimiter::new_from_async_impl(
+            rate_limiter,
+        ))
+        .await;
+    }
+
+    #[cfg(feature = "redis_storage")]
+    #[tokio::test]
+    #[serial]
+    async fn reserve_denies_amount_zero_when_already_over_limit_with_async_redis_and_local_cache() {
+        let storage_builder = CachedRedisStorageBuilder::new("redis://127.0.0.1:6379")
+            .flushing_period(Duration::from_millis(2))
+            .max_cached_counters(10000);
+        let storage = storage_builder
+            .build()
+            .await
+            .expect("We need a Redis running locally");
+        storage.clear().await.unwrap();
+        let rate_limiter = AsyncRateLimiter::new_with_storage(Box::new(storage));
+        reserve_denies_amount_zero_when_already_over_limit(&mut TestsLimiter::new_from_async_impl(
+            rate_limiter,
+        ))
+        .await;
+    }
 
     test_with_distributed_storage_impls!(distributed_rate_limited);
 
@@ -1430,6 +1499,41 @@ mod test {
         assert!(!after.limited);
     }
 
+    // The main Reserve/Commit workflow: real usage committed after a reservation must be
+    // visible to later reservations, not just to other reservations' outstanding accounting.
+    // A backend that reads a stale/empty view of the counter's committed value (rather than
+    // outstanding reservations) would incorrectly admit the final reserve below.
+    async fn reserve_then_commit_then_reserve_reflects_committed_usage(
+        rate_limiter: &mut TestsLimiter,
+    ) {
+        let namespace = "reserve_commit_reserve";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rate_limiter.add_limit(&limit).await;
+
+        let ctx = Context::default();
+
+        // Reserve 4, but real usage turns out to be higher than the estimate.
+        let reserved = rate_limiter
+            .reserve(namespace, &ctx, 4, Some(Duration::from_secs(30)), false)
+            .await
+            .unwrap();
+        assert!(!reserved.limited);
+        let reservation_id = reserved.reservation_id.expect("should be admitted");
+
+        let commit = rate_limiter
+            .commit_reservation(namespace, &ctx, &reservation_id, 9)
+            .await
+            .unwrap();
+        assert!(commit.reservation_released);
+
+        // Counter is now at 9 with no outstanding reservations: 9 + 5 = 14 > 10, denied.
+        let after = rate_limiter
+            .reserve(namespace, &ctx, 5, Some(Duration::from_secs(30)), false)
+            .await
+            .unwrap();
+        assert!(after.limited);
+    }
+
     async fn reserve_without_matching_limits_is_a_noop(rate_limiter: &mut TestsLimiter) {
         let result = rate_limiter
             .reserve(
@@ -1466,6 +1570,85 @@ mod test {
             .await
             .unwrap();
         assert!(!second.limited);
+    }
+
+    async fn reserve_denies_when_amount_alone_exceeds_max_value(rate_limiter: &mut TestsLimiter) {
+        // Admission checks the raw requested amount - a request that could never fit in the
+        // counter at all is denied outright, regardless of `max_fraction` (default here).
+        let namespace = "over_max_value";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rate_limiter.add_limit(&limit).await;
+
+        let ctx = Context::default();
+
+        let result = rate_limiter
+            .reserve(namespace, &ctx, 1000, Some(Duration::from_secs(30)), false)
+            .await
+            .unwrap();
+        assert!(result.limited);
+        assert!(result.reservation_id.is_none());
+    }
+
+    async fn reserve_admits_when_amount_fits(rate_limiter: &mut TestsLimiter) {
+        let namespace = "amount_fits";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rate_limiter.add_limit(&limit).await;
+
+        let ctx = Context::default();
+
+        let result = rate_limiter
+            .reserve(namespace, &ctx, 10, Some(Duration::from_secs(30)), false)
+            .await
+            .unwrap();
+        assert!(!result.limited);
+        assert!(result.reservation_id.is_some());
+    }
+
+    async fn reserve_with_amount_zero_creates_no_reservation_entry(
+        rate_limiter: &mut TestsLimiter,
+    ) {
+        let namespace = "amount_zero";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rate_limiter.add_limit(&limit).await;
+
+        let ctx = Context::default();
+
+        let result = rate_limiter
+            .reserve(namespace, &ctx, 0, Some(Duration::from_secs(30)), false)
+            .await
+            .unwrap();
+        assert!(!result.limited);
+        let reservation_id = result.reservation_id.expect("should be admitted");
+
+        // Nothing was actually held, so there's nothing to release.
+        let commit = rate_limiter
+            .commit_reservation(namespace, &ctx, &reservation_id, 0)
+            .await
+            .unwrap();
+        assert!(!commit.reservation_released);
+    }
+
+    async fn reserve_denies_amount_zero_when_already_over_limit(rate_limiter: &mut TestsLimiter) {
+        // Checking 0 must still reflect the counter's real state, matching how
+        // `is_within_limits`/`check_and_update` never special-case a zero delta: a counter
+        // already over its limit (e.g. from a commit that overshot it) stays "limited" even
+        // for a reservation that asks for nothing extra.
+        let namespace = "amount_zero_over_limit";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rate_limiter.add_limit(&limit).await;
+
+        let ctx = Context::default();
+
+        rate_limiter
+            .update_counters(namespace, &ctx, 15)
+            .await
+            .unwrap();
+
+        let result = rate_limiter
+            .reserve(namespace, &ctx, 0, Some(Duration::from_secs(30)), false)
+            .await
+            .unwrap();
+        assert!(result.limited);
     }
 
     // RFC 0021's motivating scenario against the shared, Redis-backed path: N concurrent

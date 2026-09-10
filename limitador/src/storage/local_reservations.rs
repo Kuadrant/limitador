@@ -57,7 +57,11 @@ pub(crate) struct LocalReservationRegistry {
 
 pub(crate) struct ReservationRequest<'a> {
     pub(crate) reservation_id: &'a ReservationId,
-    pub(crate) amount: u64,
+    /// Amount checked against each counter's remaining capacity to decide admission.
+    pub(crate) check_amount: u64,
+    /// Amount actually held once admitted - may be less than `check_amount` (e.g. clamped
+    /// by policy); `0` counts as "denied" for admission purposes.
+    pub(crate) hold_amount: u64,
     pub(crate) ttl: Duration,
     pub(crate) load_counters: bool,
     pub(crate) now: SystemTime,
@@ -123,6 +127,8 @@ impl LocalReservationRegistry {
         values_and_window_ttls: &[(u64, Duration)],
         request: ReservationRequest,
     ) -> Authorization {
+        debug_assert!(request.hold_amount <= request.check_amount);
+
         // Held for the whole check-then-write sequence below - see `admission_lock`'s docs.
         let _admission_guard = self.admission_lock.lock().unwrap();
 
@@ -135,7 +141,7 @@ impl LocalReservationRegistry {
             let expires_at = std::cmp::min(now + request.ttl, now + *window_ttl);
             expires_at_by_counter.push(expires_at);
 
-            let total = value + outstanding + request.amount;
+            let total = value + outstanding + request.check_amount;
             if request.load_counters {
                 let remaining = counter.max_value().checked_sub(total);
                 counter.set_remaining(remaining.unwrap_or_default());
@@ -150,6 +156,12 @@ impl LocalReservationRegistry {
 
         if let Some(limited) = first_limited {
             return limited;
+        }
+
+        // Admitted, but nothing to actually hold (e.g. `hold_amount` clamped to 0 by
+        // policy) - skip creating a pointless zero-amount entry.
+        if request.hold_amount == 0 {
+            return Authorization::Ok;
         }
 
         for ((counter, expires_at), (_, window_ttl)) in counters
@@ -169,7 +181,7 @@ impl LocalReservationRegistry {
                 guard.entries.retain(|e| e.is_live_at(now));
                 guard.entries.push(ReservationEntry::new(
                     request.reservation_id.clone(),
-                    request.amount,
+                    request.hold_amount,
                     expires_at,
                 ));
             }

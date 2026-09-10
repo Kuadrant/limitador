@@ -494,16 +494,18 @@ impl RateLimiter {
             .map_err(|err| err.into())
     }
 
-    /// Holds `amount` of estimated capacity against every counter matching `namespace`/`ctx`,
-    /// for at most `ttl`. Admission accounts for any capacity already held by other live
-    /// reservations, in addition to the counters' current values. All matching counters are
-    /// admitted, or none are.
+    /// Admits, or not, based on `amount`: every counter matching `namespace`/`ctx` must stay
+    /// within its limit if `amount` were held, once outstanding reservations are accounted
+    /// for - all matching counters are admitted, or none are. If admitted, the amount
+    /// actually held (`ReserveResult::amount`) may be less than `amount`, clamped by
+    /// `ReservationLimits::max_fraction` as a self-defense limit so one reservation can't
+    /// claim an entire counter.
     ///
     /// On success, `reservation_id` in the result must later be passed to
     /// `commit_reservation` to release the hold once actual usage is known.
     ///
-    /// `ttl` of `None` uses `ReservationLimits::max_ttl` outright; `Some` is still clamped to
-    /// it.
+    /// The hold lasts for at most `ttl`; `None` uses `ReservationLimits::max_ttl` outright,
+    /// `Some` is still clamped to it.
     pub fn reserve(
         &self,
         namespace: &Namespace,
@@ -524,34 +526,30 @@ impl RateLimiter {
             });
         }
 
-        let amount = counters
+        // Admission checks the raw, requested `amount` - all-or-nothing, consistent with
+        // `check_and_update`/`is_rate_limited` never silently applying a smaller delta than
+        // requested. `max_fraction` only clamps how much is actually held once admitted, as
+        // a self-defense limit so one reservation can't claim the entire counter.
+        let hold_amount = counters
             .iter()
             .map(|c| (c.max_value() as f64 * self.reservation_limits.max_fraction) as u64)
             .min()
             .map_or(amount, |max| amount.min(max));
-
-        // `max_fraction` can clamp a positive request down to 0 (e.g. a small max_value with
-        // a tight fraction). Reserving 0 can never be denied, so - as with no counters
-        // applying above - skip storage entirely rather than let it create a pointless
-        // zero-amount `ReservationEntry` that holds no real capacity.
-        if amount == 0 {
-            return Ok(ReserveResult {
-                limited: false,
-                reservation_id: None,
-                amount: 0,
-                counters: Vec::default(),
-                limit_name: None,
-            });
-        }
+        debug_assert!(hold_amount <= amount);
 
         let ttl = ttl.map_or(self.reservation_limits.max_ttl, |ttl| {
             ttl.min(self.reservation_limits.max_ttl)
         });
 
         let reservation_id = ReservationId::new();
-        let auth =
-            self.storage
-                .reserve(&mut counters, &reservation_id, amount, ttl, load_counters)?;
+        let auth = self.storage.reserve(
+            &mut counters,
+            &reservation_id,
+            amount,
+            hold_amount,
+            ttl,
+            load_counters,
+        )?;
 
         let counters = if load_counters {
             counters
@@ -563,7 +561,7 @@ impl RateLimiter {
             Authorization::Ok => ReserveResult {
                 limited: false,
                 reservation_id: Some(reservation_id),
-                amount,
+                amount: hold_amount,
                 counters,
                 limit_name: None,
             },
@@ -838,24 +836,14 @@ impl AsyncRateLimiter {
             });
         }
 
-        let amount = counters
+        // See the comment in `RateLimiter::reserve`: admission checks the raw `amount`;
+        // `max_fraction` only clamps how much is actually held once admitted.
+        let hold_amount = counters
             .iter()
             .map(|c| (c.max_value() as f64 * self.reservation_limits.max_fraction) as u64)
             .min()
             .map_or(amount, |max| amount.min(max));
-
-        // See the comment in `RateLimiter::reserve`: skip storage entirely rather than let a
-        // fraction-clamped-to-zero positive request create a pointless zero-amount
-        // `ReservationEntry`.
-        if amount == 0 {
-            return Ok(ReserveResult {
-                limited: false,
-                reservation_id: None,
-                amount: 0,
-                counters: Vec::default(),
-                limit_name: None,
-            });
-        }
+        debug_assert!(hold_amount <= amount);
 
         let ttl = ttl.map_or(self.reservation_limits.max_ttl, |ttl| {
             ttl.min(self.reservation_limits.max_ttl)
@@ -864,7 +852,14 @@ impl AsyncRateLimiter {
         let reservation_id = ReservationId::new();
         let auth = self
             .storage
-            .reserve(&mut counters, &reservation_id, amount, ttl, load_counters)
+            .reserve(
+                &mut counters,
+                &reservation_id,
+                amount,
+                hold_amount,
+                ttl,
+                load_counters,
+            )
             .await?;
 
         let counters = if load_counters {
@@ -877,7 +872,7 @@ impl AsyncRateLimiter {
             Authorization::Ok => ReserveResult {
                 limited: false,
                 reservation_id: Some(reservation_id),
-                amount,
+                amount: hold_amount,
                 counters,
                 limit_name: None,
             },
@@ -1260,18 +1255,16 @@ mod test {
     }
 
     #[test]
-    fn reserve_handles_amount_clamped_to_zero() {
-        // max_value=1 with a 0.5 fraction clamps every positive request down to
-        // floor(1 * 0.5) = 0. Reserving 0 can never be denied, and shouldn't create a
-        // reservation to later release, so this behaves like the "no counters apply" case:
-        // admitted, with no `reservation_id`.
+    fn reserve_denies_when_requested_amount_exceeds_max_value() {
+        // Admission checks the raw requested amount - a request that could never fit in
+        // the counter at all is denied outright, regardless of `max_fraction`.
         let rl = RateLimiterBuilder::new(100)
             .reservation_limits(ReservationLimits {
                 max_fraction: 0.5,
                 ..Default::default()
             })
             .build();
-        let namespace = "fraction_clamped_to_zero";
+        let namespace = "over_max_value";
         let limit = Limit::new(namespace, 1, 60, vec![], Vec::<Expression>::default());
         rl.add_limit(limit);
 
@@ -1281,17 +1274,64 @@ mod test {
         let result = rl
             .reserve(&ns, &ctx, 5, Some(Duration::from_secs(30)), false)
             .unwrap();
-        assert!(!result.limited);
+        assert!(result.limited);
         assert!(result.reservation_id.is_none());
+        assert_eq!(result.amount, 0);
+    }
+
+    #[test]
+    fn reserve_handles_hold_amount_clamped_to_zero() {
+        // max_value=1 with a 0.5 fraction clamps the actually-held amount down to
+        // floor(1 * 0.5) = 0, but a request within max_value is still admitted - it just
+        // doesn't create a reservation to later release, since there's nothing to hold.
+        let rl = RateLimiterBuilder::new(100)
+            .reservation_limits(ReservationLimits {
+                max_fraction: 0.5,
+                ..Default::default()
+            })
+            .build();
+        let namespace = "hold_clamped_to_zero";
+        let limit = Limit::new(namespace, 1, 60, vec![], Vec::<Expression>::default());
+        rl.add_limit(limit);
+
+        let ns = namespace.into();
+        let ctx = Context::default();
+
+        let result = rl
+            .reserve(&ns, &ctx, 1, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        assert!(!result.limited);
+        assert!(result.reservation_id.is_some());
         assert_eq!(result.amount, 0);
 
         // Repeating it stays consistent - no lingering zero-amount entries accumulate to
         // eventually (incorrectly) block admission.
         let again = rl
-            .reserve(&ns, &ctx, 5, Some(Duration::from_secs(30)), false)
+            .reserve(&ns, &ctx, 1, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(!again.limited);
-        assert!(again.reservation_id.is_none());
+        assert!(again.reservation_id.is_some());
+    }
+
+    #[test]
+    fn reserve_denies_a_reservation_that_could_never_fit_even_with_default_fraction() {
+        // With the default `max_fraction` (1.0, no extra clamp beyond `max_value`), a
+        // request far larger than the counter itself is denied outright - it's never
+        // silently admitted holding only `max_value`.
+        let rl = RateLimiter::new(10);
+        let namespace = "over_max_value_default_fraction";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rl.add_limit(limit);
+
+        let ns = namespace.into();
+        let ctx = Context::default();
+
+        let result = rl
+            .reserve(&ns, &ctx, 1000, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        assert!(result.limited);
+        assert!(result.reservation_id.is_none());
+        assert_eq!(result.amount, 0);
     }
 
     #[test]
