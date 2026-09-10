@@ -1,23 +1,45 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tonic::{Request, Response, Status};
 
 use super::server::custom::service::ratelimit::v1::rate_limit_service_server::RateLimitService;
+use super::server::custom::service::ratelimit::v1::{
+    CommitRequest, CommitResponse, ReserveRequest, ReserveResponse,
+};
 use super::server::envoy::service::ratelimit::v3::rate_limit_response::Code;
 use super::server::envoy::service::ratelimit::v3::{RateLimitRequest, RateLimitResponse};
+use super::server::ReservationConfig;
 use crate::prometheus_metrics::PrometheusMetrics;
 use crate::Limiter;
 use limitador::limit::Context;
+use limitador::reservation::ReservationId;
 
 pub struct KuadrantService {
     limiter: Arc<Limiter>,
     metrics: Arc<PrometheusMetrics>,
+    reservation_config: ReservationConfig,
 }
 
 impl KuadrantService {
+    // Only used by tests: production code (`server.rs`) always goes through
+    // `new_with_reservation_config` so it can pass along the real, CLI-configured settings.
+    #[cfg(test)]
     pub fn new(limiter: Arc<Limiter>, metrics: Arc<PrometheusMetrics>) -> Self {
-        Self { limiter, metrics }
+        Self::new_with_reservation_config(limiter, metrics, ReservationConfig::default())
+    }
+
+    pub fn new_with_reservation_config(
+        limiter: Arc<Limiter>,
+        metrics: Arc<PrometheusMetrics>,
+        reservation_config: ReservationConfig,
+    ) -> Self {
+        Self {
+            limiter,
+            metrics,
+            reservation_config,
+        }
     }
 }
 
@@ -182,6 +204,149 @@ impl RateLimitService for KuadrantService {
         };
 
         Ok(Response::new(reply))
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn reserve(
+        &self,
+        request: Request<ReserveRequest>,
+    ) -> Result<Response<ReserveResponse>, Status> {
+        debug!("Reserve request received: {:?}", request);
+
+        if self.reservation_config.disable_reservations {
+            return Err(Status::unimplemented("reservations are disabled"));
+        }
+
+        let mut values: Vec<HashMap<String, String>> = Vec::default();
+        let (_metadata, _ext, req) = request.into_parts();
+        let namespace = req.domain;
+
+        if namespace.is_empty() {
+            return Ok(Response::new(ReserveResponse {
+                code: Code::Unknown.into(),
+                reservation_id: None,
+                reserved_amount: 0,
+            }));
+        }
+
+        let namespace = namespace.into();
+
+        for descriptor in &req.descriptors {
+            let mut map = HashMap::default();
+            for entry in &descriptor.entries {
+                map.insert(entry.key.clone(), entry.value.clone());
+            }
+            values.push(map);
+        }
+
+        let mut ctx = Context::default();
+        ctx.list_binding("descriptors".to_string(), values);
+
+        let ttl = req.ttl.and_then(|d| Duration::try_from(d).ok());
+
+        let reserve_resp = match &*self.limiter {
+            Limiter::Blocking(limiter) => limiter.reserve(&namespace, &ctx, req.amount, ttl, false),
+            Limiter::Async(limiter) => {
+                limiter
+                    .reserve(&namespace, &ctx, req.amount, ttl, false)
+                    .await
+            }
+        };
+
+        if let Err(e) = reserve_resp {
+            // See the comment on the same pattern in `check_rate_limit` above: an
+            // "unavailable" error lets `failure_mode_deny` decide the outcome, rather than
+            // silently letting the request through.
+            error!("Error: {:?}", e);
+            return Err(Status::unavailable("Service unavailable"));
+        }
+
+        let reserve_resp = reserve_resp.unwrap();
+        let (code, reservation_id) = if reserve_resp.limited {
+            self.metrics
+                .incr_limited_calls(&namespace, reserve_resp.limit_name.as_deref(), &ctx);
+            (Code::OverLimit, None)
+        } else {
+            self.metrics.incr_authorized_calls(&namespace, &ctx);
+            let reservation_id = reserve_resp.reservation_id.map(|id| id.to_string());
+            (Code::Ok, reservation_id)
+        };
+
+        Ok(Response::new(ReserveResponse {
+            code: code.into(),
+            reservation_id,
+            reserved_amount: reserve_resp.amount,
+        }))
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn commit(
+        &self,
+        request: Request<CommitRequest>,
+    ) -> Result<Response<CommitResponse>, Status> {
+        debug!("Commit request received: {:?}", request);
+
+        if self.reservation_config.disable_reservations {
+            return Err(Status::unimplemented("reservations are disabled"));
+        }
+
+        let mut values: Vec<HashMap<String, String>> = Vec::default();
+        let (_metadata, _ext, req) = request.into_parts();
+        let namespace = req.domain;
+
+        if namespace.is_empty() {
+            return Ok(Response::new(CommitResponse {
+                reservation_released: false,
+            }));
+        }
+
+        let namespace = namespace.into();
+
+        for descriptor in &req.descriptors {
+            let mut map = HashMap::default();
+            for entry in &descriptor.entries {
+                map.insert(entry.key.clone(), entry.value.clone());
+            }
+            values.push(map);
+        }
+
+        let mut ctx = Context::default();
+        ctx.list_binding("descriptors".to_string(), values);
+
+        let reservation_id = req.reservation_id.map(ReservationId::from);
+
+        let commit_resp = match &*self.limiter {
+            Limiter::Blocking(limiter) => limiter.commit_reservation(
+                &namespace,
+                &ctx,
+                reservation_id.as_ref(),
+                req.actual_amount,
+            ),
+            Limiter::Async(limiter) => {
+                limiter
+                    .commit_reservation(
+                        &namespace,
+                        &ctx,
+                        reservation_id.as_ref(),
+                        req.actual_amount,
+                    )
+                    .await
+            }
+        };
+
+        if let Err(e) = commit_resp {
+            error!("Error: {:?}", e);
+            return Err(Status::unavailable("Service unavailable"));
+        }
+
+        let commit_resp = commit_resp.unwrap();
+        self.metrics.incr_report_calls(&namespace, &ctx);
+        self.metrics
+            .incr_authorized_hits(&namespace, &ctx, req.actual_amount);
+
+        Ok(Response::new(CommitResponse {
+            reservation_released: commit_resp.reservation_released,
+        }))
     }
 }
 
@@ -721,6 +886,172 @@ mod tests {
 
             let response = rate_limiter.report(req).await.unwrap().into_inner();
             assert_eq!(response.overall_code, i32::from(Code::Unknown));
+        }
+    }
+
+    mod reserve_and_commit {
+        use tonic::IntoRequest;
+
+        use limitador::limit::Limit;
+        use limitador::RateLimiter;
+
+        use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::rate_limit_descriptor::Entry;
+        use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::RateLimitDescriptor;
+        use crate::envoy_rls::server::tests::TEST_PROMETHEUS_HANDLE;
+
+        use super::super::*;
+
+        fn descriptor(app_id: &str) -> RateLimitDescriptor {
+            RateLimitDescriptor {
+                entries: vec![
+                    Entry {
+                        key: "req.method".to_string(),
+                        value: "GET".to_string(),
+                    },
+                    Entry {
+                        key: "app.id".to_string(),
+                        value: app_id.to_string(),
+                    },
+                ],
+                limit: None,
+            }
+        }
+
+        fn service_with_limit(namespace: &str, max_value: u64) -> KuadrantService {
+            let limit = Limit::new(
+                namespace,
+                max_value,
+                60,
+                vec!["descriptors[0]['req.method'] == 'GET'"
+                    .try_into()
+                    .expect("failed parsing!")],
+                vec!["descriptors[0]['app.id']"
+                    .try_into()
+                    .expect("failed parsing!")],
+            );
+            let limiter = RateLimiter::new(10_000);
+            limiter.add_limit(limit);
+            KuadrantService::new(
+                Arc::new(Limiter::Blocking(limiter)),
+                Arc::new(PrometheusMetrics::new_with_handle(
+                    false,
+                    TEST_PROMETHEUS_HANDLE.clone(),
+                )),
+            )
+        }
+
+        #[tokio::test]
+        async fn reserve_admits_and_commit_releases() {
+            let namespace = "test_namespace";
+            let service = service_with_limit(namespace, 10);
+
+            let req = ReserveRequest {
+                domain: namespace.to_string(),
+                descriptors: vec![descriptor("1")],
+                amount: 6,
+                ttl: None,
+            };
+
+            let response = service
+                .reserve(req.clone().into_request())
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!(response.code, i32::from(Code::Ok));
+            assert!(response.reservation_id.is_some());
+            assert_eq!(response.reserved_amount, 6);
+
+            // Still held: 0 + outstanding(6) + 6 = 12 > 10
+            let blocked = service
+                .reserve(req.clone().into_request())
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!(blocked.code, i32::from(Code::OverLimit));
+            assert!(blocked.reservation_id.is_none());
+            assert_eq!(blocked.reserved_amount, 0);
+
+            let commit_req = CommitRequest {
+                domain: namespace.to_string(),
+                descriptors: vec![descriptor("1")],
+                reservation_id: response.reservation_id,
+                actual_amount: 2,
+            };
+            let commit_response = service
+                .commit(commit_req.into_request())
+                .await
+                .unwrap()
+                .into_inner();
+            assert!(commit_response.reservation_released);
+
+            // Counter now at 2, no outstanding reservations: 2 + 6 = 8 <= 10
+            let after = service
+                .reserve(req.into_request())
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!(after.code, i32::from(Code::Ok));
+        }
+
+        #[tokio::test]
+        async fn reserve_returns_unknown_when_domain_is_empty() {
+            let service = service_with_limit("test_namespace", 10);
+
+            let req = ReserveRequest {
+                domain: "".to_string(),
+                descriptors: vec![descriptor("1")],
+                amount: 1,
+                ttl: None,
+            }
+            .into_request();
+
+            let response = service.reserve(req).await.unwrap().into_inner();
+            assert_eq!(response.code, i32::from(Code::Unknown));
+            assert!(response.reservation_id.is_none());
+        }
+
+        #[tokio::test]
+        async fn commit_returns_not_released_when_domain_is_empty() {
+            let service = service_with_limit("test_namespace", 10);
+
+            let req = CommitRequest {
+                domain: "".to_string(),
+                descriptors: vec![descriptor("1")],
+                reservation_id: Some("some-id".to_string()),
+                actual_amount: 1,
+            }
+            .into_request();
+
+            let response = service.commit(req).await.unwrap().into_inner();
+            assert!(!response.reservation_released);
+        }
+
+        #[tokio::test]
+        async fn commit_degrades_gracefully_for_unknown_reservation() {
+            let namespace = "test_namespace";
+            let service = service_with_limit(namespace, 10);
+
+            let commit_req = CommitRequest {
+                domain: namespace.to_string(),
+                descriptors: vec![descriptor("1")],
+                reservation_id: Some("never-reserved".to_string()),
+                actual_amount: 3,
+            }
+            .into_request();
+
+            let response = service.commit(commit_req).await.unwrap().into_inner();
+            assert!(!response.reservation_released);
+
+            // actual_amount is still applied unconditionally: 3 + 8 = 11 > 10
+            let req = ReserveRequest {
+                domain: namespace.to_string(),
+                descriptors: vec![descriptor("1")],
+                amount: 8,
+                ttl: None,
+            }
+            .into_request();
+            let response = service.reserve(req).await.unwrap().into_inner();
+            assert_eq!(response.code, i32::from(Code::OverLimit));
         }
     }
 }

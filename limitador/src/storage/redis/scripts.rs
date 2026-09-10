@@ -11,10 +11,14 @@
 // KEYS[2]: key that contains the counters that belong to the limit
 // ARGV[1]: counter TTL
 // ARGV[2]: delta
+//
+// `expire ... NX` (Redis >= 7.0) skips (re)setting the TTL if one is already running -
+// needed because `SCRIPT_RESERVE` can pre-create a counter key at 0 with a live TTL, and
+// `c == delta` alone can't tell that apart from a genuinely brand new key.
 pub const SCRIPT_UPDATE_COUNTER: &str = "
     local c = redis.call('incrby', KEYS[1], ARGV[2])
     if c == tonumber(ARGV[2]) then
-      redis.call('expire', KEYS[1], ARGV[1])
+      redis.call('expire', KEYS[1], ARGV[1], 'NX')
       redis.call('sadd', KEYS[2], KEYS[1])
     end
     return c";
@@ -25,6 +29,8 @@ pub const SCRIPT_UPDATE_COUNTER: &str = "
 // ARGV[i+1]: Deltas
 // This function returns a list with the values and TTLs for the updated counter_keys,
 // the first position the counter value and the second the TTL
+//
+// See `SCRIPT_UPDATE_COUNTER`'s comment on the `NX` flag.
 pub const BATCH_UPDATE_COUNTERS: &str = "
     local res = {}
     for i = 1, #KEYS, 2 do
@@ -36,7 +42,7 @@ pub const BATCH_UPDATE_COUNTERS: &str = "
         local c = redis.call('incrby', counter_key, delta)
         table.insert(res, c)
         if c == tonumber(delta) then
-            redis.call('expire', counter_key, ttl)
+            redis.call('expire', counter_key, ttl, 'NX')
             redis.call('sadd', limit_key, counter_key)
         end
         table.insert(res, redis.call('pexpiretime', counter_key))
@@ -54,5 +60,105 @@ pub const VALUES_AND_TTLS: &str = "
         table.insert(res, redis.call('get', key))
         table.insert(res, redis.call('pttl', key))
     end
+    return res
+";
+
+// Atomically checks `check_amount` and, if every counter admits it, holds `hold_amount`
+// of estimated capacity against all of them (`hold_amount` may be less than
+// `check_amount`, e.g. clamped by policy). All counters are admitted, or none are:
+// nothing is written unless every counter would stay within its limit once outstanding,
+// live reservations and `check_amount` are accounted for.
+//
+// KEYS come in triplets: [counter_key, reservation_key, limit_key, ...]. `limit_key` is
+// the same per-limit set `SCRIPT_UPDATE_COUNTER` maintains (the one `get_counters`/the
+// `/counters` endpoint enumerate) - a freshly-initialized counter is registered into it
+// here too, so a counter touched only by Reserve is still visible, exactly as if it had
+// been touched by Report/CheckRateLimit.
+// ARGV holds one (window_seconds, max_value) pair per counter, in the same order as
+// KEYS, followed by five trailing scalars:
+//   ARGV[2i-1] = window (seconds) for counter i, used to lazily start its window if
+//                the counter key doesn't exist yet
+//   ARGV[2i]   = max_value for counter i
+//   ARGV[2n+1] = check_amount, tested against each counter's remaining capacity
+//   ARGV[2n+2] = hold_amount, written if admitted
+//   ARGV[2n+3] = reservation ttl (ms), already clamped by the caller
+//   ARGV[2n+4] = reservation id
+//   ARGV[2n+5] = now (ms)
+//
+// Returns a flat list, three values per counter - [value, outstanding, window_ttl_ms] -
+// followed by a trailing 1 (admitted) or 0 (limited).
+pub const SCRIPT_RESERVE: &str = "
+    local n = #KEYS / 3
+    local check_amount = tonumber(ARGV[2 * n + 1])
+    local hold_amount = tonumber(ARGV[2 * n + 2])
+    local ttl_ms = tonumber(ARGV[2 * n + 3])
+    local reservation_id = ARGV[2 * n + 4]
+    local now_ms = tonumber(ARGV[2 * n + 5])
+
+    local values = {}
+    local outstanding = {}
+    local window_ttls = {}
+    local admitted = true
+
+    for i = 1, n do
+        local counter_key = KEYS[3 * i - 2]
+        local reservation_key = KEYS[3 * i - 1]
+        local limit_key = KEYS[3 * i]
+        local window_secs = tonumber(ARGV[2 * i - 1])
+        local max_value = tonumber(ARGV[2 * i])
+
+        if redis.call('exists', counter_key) == 0 then
+            redis.call('set', counter_key, 0, 'EX', window_secs)
+            redis.call('sadd', limit_key, counter_key)
+        end
+        local value = tonumber(redis.call('get', counter_key)) or 0
+        local window_ttl_ms = redis.call('pttl', counter_key)
+        if window_ttl_ms < 0 then
+            window_ttl_ms = window_secs * 1000
+        end
+
+        local held = 0
+        local fields = redis.call('hgetall', reservation_key)
+        for j = 1, #fields, 2 do
+            local field = fields[j]
+            local packed = fields[j + 1]
+            local sep = string.find(packed, ':')
+            local field_amount = tonumber(string.sub(packed, 1, sep - 1))
+            local field_expires_at = tonumber(string.sub(packed, sep + 1))
+            if field_expires_at > now_ms then
+                held = held + field_amount
+            else
+                redis.call('hdel', reservation_key, field)
+            end
+        end
+
+        values[i] = value
+        outstanding[i] = held
+        window_ttls[i] = window_ttl_ms
+
+        if value + held + check_amount > max_value then
+            admitted = false
+        end
+    end
+
+    if admitted and hold_amount > 0 then
+        for i = 1, n do
+            local reservation_key = KEYS[3 * i - 1]
+            local expires_at_ms = now_ms + ttl_ms
+            if expires_at_ms > now_ms + window_ttls[i] then
+                expires_at_ms = now_ms + window_ttls[i]
+            end
+            redis.call('hset', reservation_key, reservation_id, hold_amount .. ':' .. expires_at_ms)
+            redis.call('pexpire', reservation_key, window_ttls[i])
+        end
+    end
+
+    local res = {}
+    for i = 1, n do
+        table.insert(res, values[i])
+        table.insert(res, outstanding[i])
+        table.insert(res, window_ttls[i])
+    end
+    table.insert(res, admitted and 1 or 0)
     return res
 ";

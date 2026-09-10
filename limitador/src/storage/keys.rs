@@ -39,6 +39,18 @@ pub fn key_for_counter(counter: &Counter) -> Vec<u8> {
     }
 }
 
+// Reservations are held in a Redis hash (one field per `reservation_id`), so they can't
+// share a key with the counter's own value (a plain string incremented via `INCRBY`) —
+// Redis only allows one data type per key. Deriving this key by suffixing
+// `key_for_counter`'s bytes, rather than serializing the counter's identity again from
+// scratch, avoids a second encode and trivially inherits the `{namespace}` hash tag the
+// counter key already carries, keeping both keys on the same Redis Cluster shard.
+pub fn key_for_reservations(counter: &Counter) -> Vec<u8> {
+    let mut key = key_for_counter(counter);
+    key.extend_from_slice(b",reservations");
+    key
+}
+
 pub fn key_for_counters_of_limit(limit: &Limit) -> Vec<u8> {
     if let Some(id) = limit.id() {
         #[derive(PartialEq, Debug, Serialize, Deserialize)]

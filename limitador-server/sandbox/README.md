@@ -139,6 +139,48 @@ while :; do bin/grpcurl -plaintext -d @ 127.0.0.1:18081 envoy.service.ratelimit.
 EOM
 ```
 
+### Limitador's GRPC Reserve/Commit endpoint (token rate limit reservations)
+
+Besides the standard Envoy `RateLimitService` above, Limitador exposes a custom
+`kuadrant.service.ratelimit.v1.RateLimitService` with `Reserve` and `Commit` RPCs, for holding
+estimated capacity up front and resolving it later with the real usage.
+
+Reserve against the simple (unqualified) `GET` limit in `limits.yaml`:
+
+```bash
+bin/grpcurl -plaintext -d @ 127.0.0.1:18081 kuadrant.service.ratelimit.v1.RateLimitService.Reserve <<EOM
+{
+    "domain": "test_namespace",
+    "amount": 1,
+    "ttl": "60s",
+    "descriptors": [
+        {"entries": [
+            {"key": "req.method", "value": "GET"},
+            {"key": "req.path", "value": "/"}
+        ]}
+    ]
+}
+EOM
+```
+
+Resolve it with `Commit` once the real usage is known:
+
+```bash
+bin/grpcurl -plaintext -d @ 127.0.0.1:18081 kuadrant.service.ratelimit.v1.RateLimitService.Commit <<EOM
+{
+    "domain": "test_namespace",
+    "reservationId": "<paste the reservation_id from the Reserve response>",
+    "actualAmount": 1,
+    "descriptors": [
+        {"entries": [
+            {"key": "req.method", "value": "GET"},
+            {"key": "req.path", "value": "/"}
+        ]}
+    ]
+}
+EOM
+```
+
 ### Downstream traffic
 
 **Upstream** service implemented by [httpbin.org](https://httpbin.org/)

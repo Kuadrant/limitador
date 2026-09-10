@@ -196,12 +196,14 @@
 use crate::counter::Counter;
 use crate::errors::LimitadorError;
 use crate::limit::{Context, Limit, Namespace};
+use crate::reservation::{CommitResult, ReservationId, ReservationLimits, ReserveResult};
 use crate::storage::in_memory::InMemoryStorage;
 use crate::storage::{
     AsyncCounterStorage, AsyncStorage, Authorization, CounterStorage, Storage, StorageErr,
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 
 #[macro_use]
 extern crate core;
@@ -209,18 +211,22 @@ extern crate core;
 pub mod counter;
 pub mod errors;
 pub mod limit;
+pub mod reservation;
 pub mod storage;
 
 pub struct RateLimiter {
     storage: Storage,
+    reservation_limits: ReservationLimits,
 }
 
 pub struct AsyncRateLimiter {
     storage: AsyncStorage,
+    reservation_limits: ReservationLimits,
 }
 
 pub struct RateLimiterBuilder {
     storage: Storage,
+    reservation_limits: ReservationLimits,
 }
 
 type LimitadorResult<T> = Result<T, LimitadorError>;
@@ -283,12 +289,16 @@ impl From<CheckResult> for bool {
 
 impl RateLimiterBuilder {
     pub fn with_storage(storage: Storage) -> Self {
-        Self { storage }
+        Self {
+            storage,
+            reservation_limits: ReservationLimits::default(),
+        }
     }
 
     pub fn new(cache_size: u64) -> Self {
         Self {
             storage: Storage::new(cache_size),
+            reservation_limits: ReservationLimits::default(),
         }
     }
 
@@ -297,25 +307,43 @@ impl RateLimiterBuilder {
         self
     }
 
+    /// See [`ReservationLimits`].
+    pub fn reservation_limits(mut self, reservation_limits: ReservationLimits) -> Self {
+        self.reservation_limits = reservation_limits;
+        self
+    }
+
     pub fn build(self) -> RateLimiter {
         RateLimiter {
             storage: self.storage,
+            reservation_limits: self.reservation_limits,
         }
     }
 }
 
 pub struct AsyncRateLimiterBuilder {
     storage: AsyncStorage,
+    reservation_limits: ReservationLimits,
 }
 
 impl AsyncRateLimiterBuilder {
     pub fn new(storage: AsyncStorage) -> Self {
-        Self { storage }
+        Self {
+            storage,
+            reservation_limits: ReservationLimits::default(),
+        }
+    }
+
+    /// See [`ReservationLimits`].
+    pub fn reservation_limits(mut self, reservation_limits: ReservationLimits) -> Self {
+        self.reservation_limits = reservation_limits;
+        self
     }
 
     pub fn build(self) -> AsyncRateLimiter {
         AsyncRateLimiter {
             storage: self.storage,
+            reservation_limits: self.reservation_limits,
         }
     }
 }
@@ -324,12 +352,14 @@ impl RateLimiter {
     pub fn new(cache_size: u64) -> Self {
         Self {
             storage: Storage::new(cache_size),
+            reservation_limits: ReservationLimits::default(),
         }
     }
 
     pub fn new_with_storage(counters: Box<dyn CounterStorage>) -> Self {
         Self {
             storage: Storage::with_counter_storage(counters),
+            reservation_limits: ReservationLimits::default(),
         }
     }
 
@@ -464,6 +494,126 @@ impl RateLimiter {
             .map_err(|err| err.into())
     }
 
+    /// Admits, or not, based on `amount`: every counter matching `namespace`/`ctx` must stay
+    /// within its limit if `amount` were held, once outstanding reservations are accounted
+    /// for - all matching counters are admitted, or none are. If admitted, the amount
+    /// actually held (`ReserveResult::amount`) may be less than `amount`, clamped by
+    /// `ReservationLimits::max_fraction` as a self-defense limit so one reservation can't
+    /// claim an entire counter.
+    ///
+    /// On success, `reservation_id` in the result must later be passed to
+    /// `commit_reservation` to release the hold once actual usage is known.
+    ///
+    /// The hold lasts for at most `ttl`; `None` uses `ReservationLimits::max_ttl` outright,
+    /// `Some` is still clamped to it.
+    pub fn reserve(
+        &self,
+        namespace: &Namespace,
+        ctx: &Context,
+        amount: u64,
+        ttl: Option<Duration>,
+        load_counters: bool,
+    ) -> LimitadorResult<ReserveResult> {
+        let mut counters = self.counters_that_apply(namespace, ctx)?;
+
+        if counters.is_empty() {
+            return Ok(ReserveResult {
+                limited: false,
+                reservation_id: None,
+                amount: 0,
+                counters,
+                limit_name: None,
+            });
+        }
+
+        // Admission checks the raw, requested `amount` - all-or-nothing, consistent with
+        // `check_and_update`/`is_rate_limited` never silently applying a smaller delta than
+        // requested. `max_fraction` only clamps how much is actually held once admitted, as
+        // a self-defense limit so one reservation can't claim the entire counter.
+        let hold_amount = counters
+            .iter()
+            .map(|c| (c.max_value() as f64 * self.reservation_limits.max_fraction) as u64)
+            .min()
+            .map_or(amount, |max| amount.min(max));
+        debug_assert!(hold_amount <= amount);
+
+        let ttl = ttl.map_or(self.reservation_limits.max_ttl, |ttl| {
+            ttl.min(self.reservation_limits.max_ttl)
+        });
+
+        let reservation_id = ReservationId::new();
+        let auth = self.storage.reserve(
+            &mut counters,
+            &reservation_id,
+            amount,
+            hold_amount,
+            ttl,
+            load_counters,
+        )?;
+
+        let counters = if load_counters {
+            counters
+        } else {
+            Vec::default()
+        };
+
+        Ok(match auth {
+            Authorization::Ok => ReserveResult {
+                limited: false,
+                // `hold_amount == 0` means nothing was actually stored (see the
+                // `hold_amount == 0` guards in storage) - don't hand back a `reservation_id`
+                // that could never be found again by `commit_reservation`.
+                reservation_id: (hold_amount > 0).then_some(reservation_id),
+                amount: hold_amount,
+                counters,
+                limit_name: None,
+            },
+            Authorization::Limited(name) => ReserveResult {
+                limited: true,
+                reservation_id: None,
+                amount: 0,
+                counters,
+                limit_name: name,
+            },
+        })
+    }
+
+    /// Resolves a reservation with the caller's real usage: re-resolves counters from
+    /// `namespace`/`ctx` exactly as `update_counters` does, and unconditionally applies
+    /// `actual_amount` to them, regardless of whether `reservation_id` is still live.
+    /// `reservation_id` of `None` (e.g. `reserve()` admitted the call but held nothing, so
+    /// there was never a reservation to begin with) skips releasing anything and just
+    /// applies `actual_amount` - the same graceful degradation as `Some` with an
+    /// unrecognized or already-expired id.
+    pub fn commit_reservation(
+        &self,
+        namespace: &Namespace,
+        ctx: &Context,
+        reservation_id: Option<&ReservationId>,
+        actual_amount: u64,
+    ) -> LimitadorResult<CommitResult> {
+        // If the counters resolved here differ from those reserve originally held
+        // (e.g. limits changed between the two calls),
+        // any reservation left on a counter no longer resolved isn't released by this call.
+        // It just sits until its own ttl expires naturally.
+        let counters = self.counters_that_apply(namespace, ctx)?;
+
+        counters
+            .iter()
+            .try_for_each(|counter| self.storage.update_counter(counter, actual_amount))?;
+
+        let reservation_released = match reservation_id {
+            Some(reservation_id) if !counters.is_empty() => self
+                .storage
+                .release_reservation(&counters, reservation_id)?,
+            _ => false,
+        };
+
+        Ok(CommitResult {
+            reservation_released,
+        })
+    }
+
     // Deletes all the limits stored except the ones received in the params. For
     // every limit received, if it does not exist, it is created. If it already
     // exists, its associated counters are not reset.
@@ -526,6 +676,7 @@ impl AsyncRateLimiter {
     pub fn new_with_storage(storage: Box<dyn AsyncCounterStorage>) -> Self {
         Self {
             storage: AsyncStorage::with_counter_storage(storage),
+            reservation_limits: ReservationLimits::default(),
         }
     }
 
@@ -669,6 +820,108 @@ impl AsyncRateLimiter {
             .map_err(|err| err.into())
     }
 
+    /// See [`RateLimiter::reserve`].
+    pub async fn reserve(
+        &self,
+        namespace: &Namespace,
+        ctx: &Context<'_>,
+        amount: u64,
+        ttl: Option<Duration>,
+        load_counters: bool,
+    ) -> LimitadorResult<ReserveResult> {
+        let mut counters = self.counters_that_apply(namespace, ctx).await?;
+
+        if counters.is_empty() {
+            return Ok(ReserveResult {
+                limited: false,
+                reservation_id: None,
+                amount: 0,
+                counters,
+                limit_name: None,
+            });
+        }
+
+        // See the comment in `RateLimiter::reserve`: admission checks the raw `amount`;
+        // `max_fraction` only clamps how much is actually held once admitted.
+        let hold_amount = counters
+            .iter()
+            .map(|c| (c.max_value() as f64 * self.reservation_limits.max_fraction) as u64)
+            .min()
+            .map_or(amount, |max| amount.min(max));
+        debug_assert!(hold_amount <= amount);
+
+        let ttl = ttl.map_or(self.reservation_limits.max_ttl, |ttl| {
+            ttl.min(self.reservation_limits.max_ttl)
+        });
+
+        let reservation_id = ReservationId::new();
+        let auth = self
+            .storage
+            .reserve(
+                &mut counters,
+                &reservation_id,
+                amount,
+                hold_amount,
+                ttl,
+                load_counters,
+            )
+            .await?;
+
+        let counters = if load_counters {
+            counters
+        } else {
+            Vec::default()
+        };
+
+        Ok(match auth {
+            Authorization::Ok => ReserveResult {
+                limited: false,
+                // `hold_amount == 0` means nothing was actually stored (see the
+                // `hold_amount == 0` guards in storage) - don't hand back a `reservation_id`
+                // that could never be found again by `commit_reservation`.
+                reservation_id: (hold_amount > 0).then_some(reservation_id),
+                amount: hold_amount,
+                counters,
+                limit_name: None,
+            },
+            Authorization::Limited(name) => ReserveResult {
+                limited: true,
+                reservation_id: None,
+                amount: 0,
+                counters,
+                limit_name: name,
+            },
+        })
+    }
+
+    /// See [`RateLimiter::commit_reservation`].
+    pub async fn commit_reservation(
+        &self,
+        namespace: &Namespace,
+        ctx: &Context<'_>,
+        reservation_id: Option<&ReservationId>,
+        actual_amount: u64,
+    ) -> LimitadorResult<CommitResult> {
+        let counters = self.counters_that_apply(namespace, ctx).await?;
+
+        for counter in &counters {
+            self.storage.update_counter(counter, actual_amount).await?
+        }
+
+        let reservation_released = match reservation_id {
+            Some(reservation_id) if !counters.is_empty() => {
+                self.storage
+                    .release_reservation(&counters, reservation_id)
+                    .await?
+            }
+            _ => false,
+        };
+
+        Ok(CommitResult {
+            reservation_released,
+        })
+    }
+
     // Deletes all the limits stored except the ones received in the params. For
     // every limit received, if it does not exist, it is created. If it already
     // exists, its associated counters are not reset.
@@ -749,8 +1002,64 @@ fn classify_limits_by_namespace(
 #[cfg(test)]
 mod test {
     use crate::limit::{Context, Expression, Limit};
-    use crate::RateLimiter;
+    use crate::reservation::ReservationLimits;
+    use crate::{RateLimiter, RateLimiterBuilder};
     use std::collections::HashMap;
+    use std::time::Duration;
+
+    // RFC 0021's motivating scenario: N concurrent in-flight requests against one limit,
+    // racing to reserve capacity before any of them has reported real usage. Uses real OS
+    // threads (`std::thread::scope`), not async tasks, since `reserve()`'s local (in-memory)
+    // path has no internal `.await` - only genuine thread-level parallelism can exercise a
+    // races there (see the `LocalReservationRegistry::admission_lock` docs for the bug this
+    // guards against).
+    #[test]
+    fn concurrent_reserve_calls_never_exceed_the_limit() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        const MAX_VALUE: u64 = 50;
+        const AMOUNT: u64 = 5;
+        const CONCURRENT_REQUESTS: usize = 20;
+
+        for _ in 0..20 {
+            let rl = Arc::new(RateLimiter::new(10_000));
+            let namespace = "race";
+            let limit = Limit::new(
+                namespace,
+                MAX_VALUE,
+                60,
+                vec![],
+                Vec::<Expression>::default(),
+            );
+            rl.add_limit(limit);
+            let ns: crate::limit::Namespace = namespace.into();
+
+            let admitted_count = Arc::new(AtomicUsize::new(0));
+            std::thread::scope(|s| {
+                for _ in 0..CONCURRENT_REQUESTS {
+                    let rl = rl.clone();
+                    let ns = ns.clone();
+                    let admitted_count = admitted_count.clone();
+                    s.spawn(move || {
+                        let ctx = Context::default();
+                        let res = rl
+                            .reserve(&ns, &ctx, AMOUNT, Some(Duration::from_secs(30)), false)
+                            .unwrap();
+                        if !res.limited {
+                            admitted_count.fetch_add(1, Ordering::SeqCst);
+                        }
+                    });
+                }
+            });
+
+            // Exactly floor(MAX_VALUE / AMOUNT) requests should have been admitted - never
+            // more (that would mean the race let outstanding reservations jointly exceed the
+            // limit), and never fewer (that would mean available capacity went unused).
+            let expected = (MAX_VALUE / AMOUNT) as usize;
+            assert_eq!(admitted_count.load(Ordering::SeqCst), expected);
+        }
+    }
 
     #[test]
     fn properly_updates_existing_limits() {
@@ -809,5 +1118,282 @@ mod test {
             .check_rate_limited_and_update(&namespace.into(), &ctx, 1, true)
             .unwrap();
         assert_eq!(r.counters.first().unwrap().remaining(), Some(41));
+    }
+
+    #[test]
+    fn reserve_accounts_for_outstanding_reservations() {
+        let rl = RateLimiter::new(100);
+        let namespace = "reservations";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rl.add_limit(limit);
+
+        let ns = namespace.into();
+        let ctx = Context::default();
+
+        let first = rl
+            .reserve(&ns, &ctx, 6, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        assert!(!first.limited);
+        assert!(first.reservation_id.is_some());
+
+        // value(0) + outstanding(6) + 6 = 12 > 10: rejected
+        let second = rl
+            .reserve(&ns, &ctx, 6, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        assert!(second.limited);
+        assert!(second.reservation_id.is_none());
+
+        // value(0) + outstanding(6) + 4 = 10 <= 10: admitted
+        let third = rl
+            .reserve(&ns, &ctx, 4, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        assert!(!third.limited);
+    }
+
+    #[test]
+    fn commit_reservation_applies_actual_amount_and_releases_hold() {
+        let rl = RateLimiter::new(100);
+        let namespace = "commit";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rl.add_limit(limit);
+
+        let ns = namespace.into();
+        let ctx = Context::default();
+
+        let reserved = rl
+            .reserve(&ns, &ctx, 6, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        let reservation_id = reserved.reservation_id.expect("should be admitted");
+
+        // Still held: 0 + outstanding(6) + 6 = 12 > 10
+        let blocked = rl
+            .reserve(&ns, &ctx, 6, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        assert!(blocked.limited);
+
+        // Real usage turned out lower than the estimate
+        let commit = rl
+            .commit_reservation(&ns, &ctx, Some(&reservation_id), 2)
+            .unwrap();
+        assert!(commit.reservation_released);
+
+        // Committing again is a no-op release, but still applies actual_amount unconditionally
+        let second_commit = rl
+            .commit_reservation(&ns, &ctx, Some(&reservation_id), 2)
+            .unwrap();
+        assert!(!second_commit.reservation_released);
+
+        // Counter is now at 4 (2 + 2) with no outstanding reservations: 4 + 6 = 10 <= 10
+        let after = rl
+            .reserve(&ns, &ctx, 6, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        assert!(!after.limited);
+    }
+
+    #[test]
+    fn reserve_without_matching_limits_is_a_noop() {
+        let rl = RateLimiter::new(100);
+        let ns = "empty".into();
+
+        let result = rl
+            .reserve(
+                &ns,
+                &Context::default(),
+                5,
+                Some(Duration::from_secs(10)),
+                false,
+            )
+            .unwrap();
+        assert!(!result.limited);
+        assert!(result.reservation_id.is_none());
+    }
+
+    #[test]
+    fn reserve_clamps_amount_to_max_reservation_fraction() {
+        let rl = RateLimiterBuilder::new(100)
+            .reservation_limits(ReservationLimits {
+                max_fraction: 0.5,
+                ..Default::default()
+            })
+            .build();
+        let namespace = "fraction";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rl.add_limit(limit);
+
+        let ns = namespace.into();
+        let ctx = Context::default();
+
+        // Requested 8, but clamped to floor(10 * 0.5) = 5.
+        let first = rl
+            .reserve(&ns, &ctx, 8, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        assert!(!first.limited);
+        assert_eq!(first.amount, 5);
+
+        // A second reservation for 5 more would need 5 + 5 = 10 <= 10, so it's admitted -
+        // proving the first only actually held 5, not the requested 8.
+        let second = rl
+            .reserve(&ns, &ctx, 5, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        assert!(!second.limited);
+
+        // A third for even 1 more would be 10 + 1 = 11 > 10: rejected.
+        let third = rl
+            .reserve(&ns, &ctx, 1, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        assert!(third.limited);
+    }
+
+    #[test]
+    fn default_max_reservation_fraction_does_not_clamp() {
+        let rl = RateLimiter::new(100);
+        let namespace = "no_fraction_clamp";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rl.add_limit(limit);
+
+        let ns = namespace.into();
+        let ctx = Context::default();
+
+        // Without an explicit `max_reservation_fraction`, the full 10 can be reserved in one
+        // go - it's only ever clamped down to the counter's own `max_value`, never tighter.
+        let result = rl
+            .reserve(&ns, &ctx, 10, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        assert!(!result.limited);
+        assert_eq!(result.amount, 10);
+    }
+
+    #[test]
+    fn reserve_denies_when_requested_amount_exceeds_max_value() {
+        // Admission checks the raw requested amount - a request that could never fit in
+        // the counter at all is denied outright, regardless of `max_fraction`.
+        let rl = RateLimiterBuilder::new(100)
+            .reservation_limits(ReservationLimits {
+                max_fraction: 0.5,
+                ..Default::default()
+            })
+            .build();
+        let namespace = "over_max_value";
+        let limit = Limit::new(namespace, 1, 60, vec![], Vec::<Expression>::default());
+        rl.add_limit(limit);
+
+        let ns = namespace.into();
+        let ctx = Context::default();
+
+        let result = rl
+            .reserve(&ns, &ctx, 5, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        assert!(result.limited);
+        assert!(result.reservation_id.is_none());
+        assert_eq!(result.amount, 0);
+    }
+
+    #[test]
+    fn reserve_handles_hold_amount_clamped_to_zero() {
+        // max_value=1 with a 0.5 fraction clamps the actually-held amount down to
+        // floor(1 * 0.5) = 0, but a request within max_value is still admitted - it just
+        // doesn't create a reservation to later release, since there's nothing to hold.
+        let rl = RateLimiterBuilder::new(100)
+            .reservation_limits(ReservationLimits {
+                max_fraction: 0.5,
+                ..Default::default()
+            })
+            .build();
+        let namespace = "hold_clamped_to_zero";
+        let limit = Limit::new(namespace, 1, 60, vec![], Vec::<Expression>::default());
+        rl.add_limit(limit);
+
+        let ns = namespace.into();
+        let ctx = Context::default();
+
+        let result = rl
+            .reserve(&ns, &ctx, 1, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        assert!(!result.limited);
+        assert!(result.reservation_id.is_none());
+        assert_eq!(result.amount, 0);
+
+        // Repeating it stays consistent - no lingering zero-amount entries accumulate to
+        // eventually (incorrectly) block admission.
+        let again = rl
+            .reserve(&ns, &ctx, 1, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        assert!(!again.limited);
+        assert!(again.reservation_id.is_none());
+    }
+
+    #[test]
+    fn reserve_denies_a_reservation_that_could_never_fit_even_with_default_fraction() {
+        // With the default `max_fraction` (1.0, no extra clamp beyond `max_value`), a
+        // request far larger than the counter itself is denied outright - it's never
+        // silently admitted holding only `max_value`.
+        let rl = RateLimiter::new(10);
+        let namespace = "over_max_value_default_fraction";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rl.add_limit(limit);
+
+        let ns = namespace.into();
+        let ctx = Context::default();
+
+        let result = rl
+            .reserve(&ns, &ctx, 1000, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        assert!(result.limited);
+        assert!(result.reservation_id.is_none());
+        assert_eq!(result.amount, 0);
+    }
+
+    #[test]
+    fn expired_reservations_do_not_count_as_outstanding() {
+        let rl = RateLimiter::new(100);
+        let namespace = "expiry";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rl.add_limit(limit);
+
+        let ns = namespace.into();
+        let ctx = Context::default();
+
+        // A zero ttl means this reservation is already expired by the time we look at it
+        // again, without needing to sleep: `expires_at == now_1 <= now_2`.
+        let first = rl
+            .reserve(&ns, &ctx, 8, Some(Duration::ZERO), false)
+            .unwrap();
+        assert!(!first.limited);
+
+        // The first reservation is already expired, so another 8 fits again: 0 + 0 + 8 <= 10
+        let second = rl
+            .reserve(&ns, &ctx, 8, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        assert!(!second.limited);
+    }
+
+    #[test]
+    fn reservation_expires_after_its_ttl_elapses() {
+        let rl = RateLimiter::new(100);
+        let namespace = "expiry-sleep";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rl.add_limit(limit);
+
+        let ns = namespace.into();
+        let ctx = Context::default();
+
+        let first = rl
+            .reserve(&ns, &ctx, 8, Some(Duration::from_millis(20)), false)
+            .unwrap();
+        assert!(!first.limited);
+
+        // Still outstanding: 0 + outstanding(8) + 8 = 16 > 10
+        let blocked = rl
+            .reserve(&ns, &ctx, 8, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        assert!(blocked.limited);
+
+        std::thread::sleep(Duration::from_millis(50));
+
+        // The first reservation has now genuinely expired: 0 + 0 + 8 <= 10
+        let admitted = rl
+            .reserve(&ns, &ctx, 8, Some(Duration::from_secs(30)), false)
+            .unwrap();
+        assert!(!admitted.limited);
     }
 }

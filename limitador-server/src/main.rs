@@ -12,7 +12,7 @@ use crate::config::{
     redacted_url, Configuration, DiskStorageConfiguration, InMemoryStorageConfiguration,
     RedisStorageCacheConfiguration, RedisStorageConfiguration, StorageConfiguration,
 };
-use crate::envoy_rls::server::{run_envoy_rls_server, RateLimitHeaders};
+use crate::envoy_rls::server::{run_envoy_rls_server, RateLimitHeaders, ReservationConfig};
 use crate::http_api::server::run_http_server;
 use crate::metrics::MetricsLayer;
 use chrono::{NaiveDateTime, Utc};
@@ -24,6 +24,7 @@ use const_format::formatcp;
 use limitador::counter::Counter;
 use limitador::errors::LimitadorError;
 use limitador::limit::{Expression, Limit};
+use limitador::reservation::ReservationLimits;
 use limitador::storage::disk::DiskStorage;
 use limitador::storage::redis::{
     AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder, DEFAULT_BATCH_SIZE,
@@ -92,20 +93,30 @@ impl From<LimitadorError> for LimitadorServerError {
 
 impl Limiter {
     pub async fn new(config: Configuration) -> Result<Self, LimitadorServerError> {
+        let reservation_limits = ReservationLimits {
+            max_fraction: config.max_reservation_fraction,
+            max_ttl: config.max_reservation_ttl,
+        };
         let rate_limiter = match config.storage {
-            StorageConfiguration::Redis(cfg) => Self::redis_limiter(cfg).await,
-            StorageConfiguration::InMemory(cfg) => Self::in_memory_limiter(cfg),
+            StorageConfiguration::Redis(cfg) => Self::redis_limiter(cfg, reservation_limits).await,
+            StorageConfiguration::InMemory(cfg) => Self::in_memory_limiter(cfg, reservation_limits),
             #[cfg(feature = "distributed_storage")]
-            StorageConfiguration::Distributed(cfg) => Self::distributed_limiter(cfg),
-            StorageConfiguration::Disk(cfg) => Self::disk_limiter(cfg),
+            StorageConfiguration::Distributed(cfg) => {
+                Self::distributed_limiter(cfg, reservation_limits)
+            }
+            StorageConfiguration::Disk(cfg) => Self::disk_limiter(cfg, reservation_limits),
         };
 
         Ok(rate_limiter)
     }
 
-    async fn redis_limiter(cfg: RedisStorageConfiguration) -> Self {
+    async fn redis_limiter(
+        cfg: RedisStorageConfiguration,
+        reservation_limits: ReservationLimits,
+    ) -> Self {
         let storage = Self::storage_using_redis(cfg).await;
-        let rate_limiter_builder = AsyncRateLimiterBuilder::new(storage);
+        let rate_limiter_builder =
+            AsyncRateLimiterBuilder::new(storage).reservation_limits(reservation_limits);
 
         Self::Async(rate_limiter_builder.build())
     }
@@ -149,7 +160,7 @@ impl Limiter {
         })
     }
 
-    fn disk_limiter(cfg: DiskStorageConfiguration) -> Self {
+    fn disk_limiter(cfg: DiskStorageConfiguration, reservation_limits: ReservationLimits) -> Self {
         let storage = match DiskStorage::open(cfg.path.as_str(), cfg.optimization) {
             Ok(storage) => storage,
             Err(err) => {
@@ -158,20 +169,28 @@ impl Limiter {
             }
         };
         let rate_limiter_builder =
-            RateLimiterBuilder::with_storage(Storage::with_counter_storage(Box::new(storage)));
+            RateLimiterBuilder::with_storage(Storage::with_counter_storage(Box::new(storage)))
+                .reservation_limits(reservation_limits);
 
         Self::Blocking(rate_limiter_builder.build())
     }
 
-    fn in_memory_limiter(cfg: InMemoryStorageConfiguration) -> Self {
+    fn in_memory_limiter(
+        cfg: InMemoryStorageConfiguration,
+        reservation_limits: ReservationLimits,
+    ) -> Self {
         let rate_limiter_builder =
-            RateLimiterBuilder::new(cfg.cache_size.or_else(guess_cache_size).unwrap());
+            RateLimiterBuilder::new(cfg.cache_size.or_else(guess_cache_size).unwrap())
+                .reservation_limits(reservation_limits);
 
         Self::Blocking(rate_limiter_builder.build())
     }
 
     #[cfg(feature = "distributed_storage")]
-    fn distributed_limiter(cfg: DistributedStorageConfiguration) -> Self {
+    fn distributed_limiter(
+        cfg: DistributedStorageConfiguration,
+        reservation_limits: ReservationLimits,
+    ) -> Self {
         let storage = DistributedInMemoryStorage::new(
             cfg.name,
             cfg.cache_size.or_else(guess_cache_size).unwrap(),
@@ -179,7 +198,8 @@ impl Limiter {
             cfg.peer_urls,
         );
         let rate_limiter_builder =
-            RateLimiterBuilder::with_storage(Storage::with_counter_storage(Box::new(storage)));
+            RateLimiterBuilder::with_storage(Storage::with_counter_storage(Box::new(storage)))
+                .reservation_limits(reservation_limits);
 
         Self::Blocking(rate_limiter_builder.build())
     }
@@ -269,6 +289,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http_api_address = config.http_address();
     let rate_limit_headers = config.rate_limit_headers.clone();
     let grpc_reflection_service = config.grpc_reflection_service;
+    let reservation_config = ReservationConfig {
+        disable_reservations: config.disable_reservations,
+    };
 
     let rate_limiter: Arc<Limiter> = match Limiter::new(config).await {
         Ok(limiter) => Arc::new(limiter),
@@ -413,6 +436,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         rate_limit_headers,
         prometheus_metrics.clone(),
         grpc_reflection_service,
+        reservation_config,
     ));
 
     info!("HTTP server starting on {}", http_api_address);
@@ -604,6 +628,31 @@ fn create_config() -> (Configuration, &'static str) {
                 .action(ArgAction::SetTrue)
                 .display_order(100)
                 .help("Enables gRPC server reflection service"),
+        )
+        .arg(
+            Arg::new("disable_reservations")
+                .long("disable-reservations")
+                .action(ArgAction::SetTrue)
+                .display_order(110)
+                .help("Disables the Reserve/Commit gRPC RPCs (token rate limit reservations)"),
+        )
+        .arg(
+            Arg::new("max_reservation_fraction")
+                .long("max-reservation-fraction")
+                .action(ArgAction::Set)
+                .value_parser(value_parser!(f64))
+                .default_value("0.5")
+                .display_order(111)
+                .help("Maximum fraction of a limit's max_value a single Reserve call may hold"),
+        )
+        .arg(
+            Arg::new("max_reservation_ttl")
+                .long("max-reservation-ttl")
+                .action(ArgAction::Set)
+                .value_parser(value_parser!(u64))
+                .default_value("60")
+                .display_order(112)
+                .help("Maximum ttl, in seconds, a Reserve call may request"),
         )
         .subcommand(
             Command::new("memory")
@@ -846,6 +895,10 @@ fn create_config() -> (Configuration, &'static str) {
         _ => unreachable!("Verbosity should at most be 4!"),
     };
     config.structured_logs = matches.get_flag("S");
+    config.disable_reservations = matches.get_flag("disable_reservations");
+    config.max_reservation_fraction = *matches.get_one::<f64>("max_reservation_fraction").unwrap();
+    config.max_reservation_ttl =
+        Duration::from_secs(*matches.get_one::<u64>("max_reservation_ttl").unwrap());
 
     (config, full_version)
 }

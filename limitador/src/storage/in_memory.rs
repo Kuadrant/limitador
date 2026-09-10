@@ -1,6 +1,8 @@
 use crate::counter::Counter;
 use crate::limit::{Context, Limit, Namespace};
+use crate::reservation::ReservationId;
 use crate::storage::atomic_expiring_value::AtomicExpiringValue;
+use crate::storage::local_reservations::{LocalReservationRegistry, ReservationRequest};
 use crate::storage::{Authorization, CounterStorage, StorageErr};
 use moka::sync::{Cache, CacheBuilder};
 use moka::PredicateError;
@@ -13,6 +15,7 @@ use std::time::{Duration, SystemTime};
 pub struct InMemoryStorage {
     simple_limits: RwLock<BTreeMap<Limit, AtomicExpiringValue>>,
     qualified_counters: Cache<Counter, Arc<AtomicExpiringValue>>,
+    reservations: LocalReservationRegistry,
 }
 
 impl CounterStorage for InMemoryStorage {
@@ -199,6 +202,45 @@ impl CounterStorage for InMemoryStorage {
         self.simple_limits.write().unwrap().clear();
         Ok(())
     }
+
+    #[tracing::instrument(skip_all)]
+    fn reserve(
+        &self,
+        counters: &mut Vec<Counter>,
+        reservation_id: &ReservationId,
+        check_amount: u64,
+        hold_amount: u64,
+        ttl: Duration,
+        load_counters: bool,
+    ) -> Result<Authorization, StorageErr> {
+        let now = SystemTime::now();
+        let values_and_window_ttls: Vec<(u64, Duration)> = counters
+            .iter()
+            .map(|counter| self.touch(counter, now))
+            .collect();
+
+        Ok(self.reservations.reserve(
+            counters,
+            &values_and_window_ttls,
+            ReservationRequest {
+                reservation_id,
+                check_amount,
+                hold_amount,
+                ttl,
+                load_counters,
+                now,
+            },
+        ))
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn release_reservation(
+        &self,
+        counters: &[Counter],
+        reservation_id: &ReservationId,
+    ) -> Result<bool, StorageErr> {
+        Ok(self.reservations.release(counters, reservation_id))
+    }
 }
 
 impl InMemoryStorage {
@@ -208,6 +250,7 @@ impl InMemoryStorage {
             qualified_counters: CacheBuilder::new(cache_size)
                 .support_invalidation_closures()
                 .build(),
+            reservations: LocalReservationRegistry::new(cache_size),
         }
     }
 
@@ -262,6 +305,30 @@ impl InMemoryStorage {
             None => counter.max_value() >= delta,
         }
     }
+
+    // Reads the counter's current value, lazily starting (or restarting, if expired) its
+    // window with a zero-delta update. Returns the (unaffected) value and the ttl of the
+    // window it now belongs to, so callers can compute a per-counter reservation expiry
+    // without ever touching the counter's real value.
+    fn touch(&self, counter: &Counter, now: SystemTime) -> (u64, Duration) {
+        if counter.is_qualified() {
+            let value = match self.qualified_counters.get(counter) {
+                None => self.qualified_counters.get_with(counter.clone(), || {
+                    Arc::new(AtomicExpiringValue::new(0, now + counter.window()))
+                }),
+                Some(value) => value,
+            };
+            let current = value.update(0, counter.window(), now);
+            (current, value.ttl())
+        } else {
+            let mut counters = self.simple_limits.write().unwrap();
+            let value = counters
+                .entry(counter.limit().clone())
+                .or_insert_with(|| AtomicExpiringValue::new(0, now + counter.window()));
+            let current = value.update(0, counter.window(), now);
+            (current, value.ttl())
+        }
+    }
 }
 
 impl Default for InMemoryStorage {
@@ -307,5 +374,42 @@ mod tests {
             storage.counters_in_namespace(counter_1.namespace()).len(),
             2
         );
+    }
+
+    fn counter(max_value: u64) -> Counter {
+        let limit = Limit::new(
+            "reserve_test",
+            max_value,
+            60,
+            vec![],
+            Vec::<crate::limit::Expression>::default(),
+        );
+        Counter::new(limit, &Context::default())
+            .unwrap()
+            .expect("must have a counter")
+    }
+
+    #[test]
+    fn reserve_with_hold_amount_zero_creates_no_entry() {
+        let storage = InMemoryStorage::default();
+        let mut counters = vec![counter(10)];
+        let reservation_id = ReservationId::new();
+
+        let auth = storage
+            .reserve(
+                &mut counters,
+                &reservation_id,
+                10,
+                0,
+                Duration::from_secs(60),
+                false,
+            )
+            .unwrap();
+        assert!(matches!(auth, Authorization::Ok));
+
+        let released = storage
+            .release_reservation(&counters, &reservation_id)
+            .unwrap();
+        assert!(!released, "nothing should have been held to release");
     }
 }

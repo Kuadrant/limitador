@@ -4,9 +4,10 @@ use self::redis::aio::ConnectionManager;
 use self::redis::ConnectionInfo;
 use crate::counter::Counter;
 use crate::limit::Limit;
+use crate::reservation::ReservationId;
 use crate::storage::keys::*;
 use crate::storage::redis::is_limited;
-use crate::storage::redis::scripts::{SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS};
+use crate::storage::redis::scripts::{SCRIPT_RESERVE, SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS};
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
 use redis::{AsyncCommands, ErrorKind, RedisError};
@@ -14,7 +15,7 @@ use std::collections::HashSet;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{info_span, Instrument};
 
 // Note: this implementation does not guarantee exact limits. Ensuring that we
@@ -214,6 +215,92 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             .await?;
         Ok(())
     }
+
+    #[tracing::instrument(skip_all)]
+    async fn reserve(
+        &self,
+        counters: &mut Vec<Counter>,
+        reservation_id: &ReservationId,
+        check_amount: u64,
+        hold_amount: u64,
+        ttl: Duration,
+        load_counters: bool,
+    ) -> Result<Authorization, StorageErr> {
+        debug_assert!(hold_amount <= check_amount);
+
+        let mut con = self.conn_manager.clone();
+
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+
+        let script = redis::Script::new(SCRIPT_RESERVE);
+        let mut invocation = script.prepare_invoke();
+        for counter in counters.iter() {
+            invocation.key(key_for_counter(counter));
+            invocation.key(key_for_reservations(counter));
+            invocation.key(key_for_counters_of_limit(counter.limit()));
+        }
+        for counter in counters.iter() {
+            invocation.arg(counter.window().as_secs());
+            invocation.arg(counter.max_value());
+        }
+        invocation
+            .arg(check_amount)
+            .arg(hold_amount)
+            .arg(ttl.as_millis() as i64)
+            .arg(reservation_id.as_str())
+            .arg(now_ms);
+
+        let raw: Vec<i64> = invocation
+            .invoke_async(&mut con)
+            .instrument(info_span!("datastore"))
+            .await?;
+        let admitted = raw.last().copied().unwrap_or(0) == 1;
+
+        let mut first_limited = None;
+        for (i, counter) in counters.iter_mut().enumerate() {
+            let value = raw[i * 3].max(0) as u64;
+            let outstanding = raw[i * 3 + 1].max(0) as u64;
+            let window_ttl_ms = raw[i * 3 + 2].max(0) as u64;
+            let total = value + outstanding + check_amount;
+
+            if load_counters {
+                let remaining = counter.max_value().checked_sub(total);
+                counter.set_remaining(remaining.unwrap_or_default());
+                counter.set_expires_in(Duration::from_millis(window_ttl_ms));
+            }
+            if first_limited.is_none() && total > counter.max_value() {
+                first_limited = Some(counter.limit().name().map(|n| n.to_owned()));
+            }
+        }
+
+        if admitted {
+            Ok(Authorization::Ok)
+        } else {
+            Ok(Authorization::Limited(first_limited.unwrap_or(None)))
+        }
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn release_reservation(
+        &self,
+        counters: &[Counter],
+        reservation_id: &ReservationId,
+    ) -> Result<bool, StorageErr> {
+        let mut con = self.conn_manager.clone();
+
+        let mut released = false;
+        for counter in counters {
+            let removed: i64 = con
+                .hdel(key_for_reservations(counter), reservation_id.as_str())
+                .instrument(info_span!("datastore"))
+                .await?;
+            released |= removed > 0;
+        }
+        Ok(released)
+    }
 }
 
 impl AsyncRedisStorage {
@@ -235,6 +322,7 @@ impl AsyncRedisStorage {
         let store = Self { conn_manager };
         store.load_script(SCRIPT_UPDATE_COUNTER).await?;
         store.load_script(VALUES_AND_TTLS).await?;
+        store.load_script(SCRIPT_RESERVE).await?;
         Ok(store)
     }
 
@@ -264,12 +352,69 @@ impl AsyncRedisStorage {
         script.prepare_invoke().load_async(&mut con).await?;
         Ok(())
     }
+
+    // Used by `CachedRedisStorage::reserve` to prime its local cache on a miss with the real
+    // value/ttl, the same way `check_and_update`'s own cache-miss path eventually reconciles
+    // via `apply_remote_delta` - without this, a counter only ever touched through
+    // Reserve/Commit would never get a cache entry at all, and `reserve` would always see it
+    // as empty regardless of what's actually been committed to Redis.
+    pub(super) async fn values_and_window_ttls(
+        &self,
+        counters: &[Counter],
+    ) -> Result<Vec<(u64, Duration)>, StorageErr> {
+        let mut con = self.conn_manager.clone();
+
+        let script = redis::Script::new(VALUES_AND_TTLS);
+        let mut invocation = script.prepare_invoke();
+        for counter in counters {
+            invocation.key(key_for_counter(counter));
+        }
+
+        let raw: Vec<Option<i64>> = invocation
+            .invoke_async(&mut con)
+            .instrument(info_span!("datastore"))
+            .await?;
+
+        Ok(counters
+            .iter()
+            .zip(raw.chunks(2))
+            .map(|(counter, pair)| {
+                let value = pair[0].unwrap_or(0).max(0) as u64;
+                let ttl = match pair[1] {
+                    Some(ms) if ms >= 0 => Duration::from_millis(ms as u64),
+                    _ => counter.window(),
+                };
+                (value, ttl)
+            })
+            .collect())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::counter::Counter;
+    use crate::limit::{Context, Expression, Limit};
+    use crate::reservation::ReservationId;
+    use crate::storage::keys::key_for_reservations;
     use crate::storage::redis::AsyncRedisStorage;
+    use crate::storage::{AsyncCounterStorage, Authorization};
     use redis::ErrorKind;
+    use serial_test::serial;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    fn counter(namespace: &str, max_value: u64) -> Counter {
+        let limit = Arc::new(Limit::new(
+            namespace,
+            max_value,
+            60,
+            vec![],
+            Vec::<Expression>::default(),
+        ));
+        Counter::new(limit, &Context::default())
+            .unwrap()
+            .expect("must have a counter")
+    }
 
     #[tokio::test]
     async fn errs_on_bad_url() {
@@ -285,5 +430,83 @@ mod tests {
         let error = result.err().unwrap();
         assert_eq!(error.kind(), ErrorKind::IoError);
         assert!(error.is_connection_refusal())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn reserve_with_hold_amount_zero_creates_no_entry() {
+        let storage = AsyncRedisStorage::new("redis://127.0.0.1:6379")
+            .await
+            .unwrap();
+        storage.clear().await.unwrap();
+        let mut counters = vec![counter("async_reserve_hold_zero_test", 10)];
+        let reservation_id = ReservationId::new();
+
+        let auth = storage
+            .reserve(
+                &mut counters,
+                &reservation_id,
+                10,
+                0,
+                Duration::from_secs(60),
+                false,
+            )
+            .await
+            .unwrap();
+        assert!(matches!(auth, Authorization::Ok));
+
+        let mut con = storage.conn_manager.clone();
+        let reservations_key = key_for_reservations(&counters[0]);
+        let exists: bool = redis::cmd("EXISTS")
+            .arg(&reservations_key)
+            .query_async(&mut con)
+            .await
+            .unwrap();
+        assert!(!exists, "no reservation hash should have been written");
+
+        let released = storage
+            .release_reservation(&counters, &reservation_id)
+            .await
+            .unwrap();
+        assert!(!released, "nothing should have been held to release");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn reserve_with_check_amount_zero_creates_no_reservation_entry() {
+        let storage = AsyncRedisStorage::new("redis://127.0.0.1:6379")
+            .await
+            .unwrap();
+        storage.clear().await.unwrap();
+        let mut counters = vec![counter("async_reserve_check_zero_test", 10)];
+        let reservation_id = ReservationId::new();
+
+        let auth = storage
+            .reserve(
+                &mut counters,
+                &reservation_id,
+                0,
+                0,
+                Duration::from_secs(60),
+                false,
+            )
+            .await
+            .unwrap();
+        assert!(matches!(auth, Authorization::Ok));
+
+        let mut con = storage.conn_manager.clone();
+        let reservations_key = key_for_reservations(&counters[0]);
+        let exists: bool = redis::cmd("EXISTS")
+            .arg(&reservations_key)
+            .query_async(&mut con)
+            .await
+            .unwrap();
+        assert!(!exists, "no reservation hash should have been written");
+
+        let released = storage
+            .release_reservation(&counters, &reservation_id)
+            .await
+            .unwrap();
+        assert!(!released, "nothing should have been held to release");
     }
 }

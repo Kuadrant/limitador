@@ -20,3 +20,10 @@
     - "descriptors[0]['req.method'] == 'GET'"
     - "descriptors[0]['req.path'] == '/json'"
   variables: []
+- namespace: test_namespace
+  max_value: 3
+  seconds: 60
+  conditions:
+    - "descriptors[0]['keyA'] == 'valueA'"
+  variables:
+    - descriptors[0]['varA']
