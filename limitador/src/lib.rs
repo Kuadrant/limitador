@@ -560,7 +560,10 @@ impl RateLimiter {
         Ok(match auth {
             Authorization::Ok => ReserveResult {
                 limited: false,
-                reservation_id: Some(reservation_id),
+                // `hold_amount == 0` means nothing was actually stored (see the
+                // `hold_amount == 0` guards in storage) - don't hand back a `reservation_id`
+                // that could never be found again by `commit_reservation`.
+                reservation_id: (hold_amount > 0).then_some(reservation_id),
                 amount: hold_amount,
                 counters,
                 limit_name: None,
@@ -871,7 +874,10 @@ impl AsyncRateLimiter {
         Ok(match auth {
             Authorization::Ok => ReserveResult {
                 limited: false,
-                reservation_id: Some(reservation_id),
+                // `hold_amount == 0` means nothing was actually stored (see the
+                // `hold_amount == 0` guards in storage) - don't hand back a `reservation_id`
+                // that could never be found again by `commit_reservation`.
+                reservation_id: (hold_amount > 0).then_some(reservation_id),
                 amount: hold_amount,
                 counters,
                 limit_name: None,
@@ -1301,7 +1307,7 @@ mod test {
             .reserve(&ns, &ctx, 1, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(!result.limited);
-        assert!(result.reservation_id.is_some());
+        assert!(result.reservation_id.is_none());
         assert_eq!(result.amount, 0);
 
         // Repeating it stays consistent - no lingering zero-amount entries accumulate to
@@ -1310,7 +1316,7 @@ mod test {
             .reserve(&ns, &ctx, 1, Some(Duration::from_secs(30)), false)
             .unwrap();
         assert!(!again.limited);
-        assert!(again.reservation_id.is_some());
+        assert!(again.reservation_id.is_none());
     }
 
     #[test]

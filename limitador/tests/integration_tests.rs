@@ -1621,14 +1621,8 @@ mod test {
             .await
             .unwrap();
         assert!(!result.limited);
-        let reservation_id = result.reservation_id.expect("should be admitted");
-
-        // Nothing was actually held, so there's nothing to release.
-        let commit = rate_limiter
-            .commit_reservation(namespace, &ctx, &reservation_id, 0)
-            .await
-            .unwrap();
-        assert!(!commit.reservation_released);
+        // Nothing was actually held, so there's no `reservation_id` to later release.
+        assert!(result.reservation_id.is_none());
     }
 
     async fn reserve_denies_amount_zero_when_already_over_limit(rate_limiter: &mut TestsLimiter) {
