@@ -117,14 +117,21 @@ pub struct CommitResult {
 #[derive(Debug, Clone, Copy)]
 pub struct ReservationLimits {
     /// Caps the amount actually held by an admitted `reserve()` call to
-    /// `counter.max_value() * max_fraction`, for every matching counter - the most
+    /// `counter.max_value() * max_fraction`, for every matching counter, the most
     /// restrictive one wins. This never affects admission itself (that's always decided on
     /// the raw requested amount); it only limits how much of a counter a single reservation
     /// can claim, so it can't starve concurrent reservations. Defaults to `1.0`, i.e. no
-    /// clamp beyond each counter's own `max_value` - RFC 0021 recommends `0.5` as a safety
-    /// default, but that's a policy choice for embedders to opt into, not a silent default
-    /// that would change what already-configured callers' `reserve()` calls admit.
+    /// clamp beyond each counter's own `max_value`.
+    ///
+    /// This is a trade-off knob, not a free safety win: a lower `max_fraction` admits more
+    /// *concurrent* reservations (better for fairness), but each holds a smaller, less
+    /// accurate share of the real amount it may end up committing - so the more of them are
+    /// in flight at once, the more the counter's real value can overshoot `max_value` once
+    /// they all commit. A higher `max_fraction` accepts more monopolization risk (one
+    /// reservation can claim more of the counter, or all of it at `1.0`) in exchange for a
+    /// tighter bound on aggregate overshoot.
     pub max_fraction: f64,
+
     /// Hard ceiling on a `reserve()` call's requested ttl. Defaults to 60s (RFC 0021's
     /// recommendation) - unlike `max_fraction`, there's no safe "no-op" `Duration` to default
     /// to instead, since an extreme sentinel risks overflowing `SystemTime::now() + ttl`
