@@ -295,7 +295,10 @@ mod test {
     // Not run against `disk_storage`, unlike the other reservation tests above:
     // `RocksDbStorage::insert_or_update` silently no-ops a delta that alone exceeds
     // `max_value`, so `update_counters`'s forced overshoot below never actually gets
-    // written - a separate, pre-existing bug tracked for its own fix.
+    // written - see https://github.com/Kuadrant/limitador/issues/516. Once that's fixed,
+    // replace this whole manual block with a single
+    // `test_with_reservation_capable_storage_impls!(reserve_denies_amount_zero_when_already_over_limit);`
+    // like the other reservation tests above.
     #[tokio::test]
     async fn reserve_denies_amount_zero_when_already_over_limit_in_memory_storage() {
         let rate_limiter = RateLimiter::new_with_storage(Box::<InMemoryStorage>::default());
