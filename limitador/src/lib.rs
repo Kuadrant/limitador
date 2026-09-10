@@ -580,14 +580,16 @@ impl RateLimiter {
 
     /// Resolves a reservation with the caller's real usage: re-resolves counters from
     /// `namespace`/`ctx` exactly as `update_counters` does, and unconditionally applies
-    /// `actual_amount` to them, regardless of whether `reservation_id` is still live. This
-    /// means a late or already-expired reservation degrades gracefully to plain usage
-    /// reporting rather than failing.
+    /// `actual_amount` to them, regardless of whether `reservation_id` is still live.
+    /// `reservation_id` of `None` (e.g. `reserve()` admitted the call but held nothing, so
+    /// there was never a reservation to begin with) skips releasing anything and just
+    /// applies `actual_amount` - the same graceful degradation as `Some` with an
+    /// unrecognized or already-expired id.
     pub fn commit_reservation(
         &self,
         namespace: &Namespace,
         ctx: &Context,
-        reservation_id: &ReservationId,
+        reservation_id: Option<&ReservationId>,
         actual_amount: u64,
     ) -> LimitadorResult<CommitResult> {
         // If the counters resolved here differ from those reserve originally held
@@ -600,11 +602,11 @@ impl RateLimiter {
             .iter()
             .try_for_each(|counter| self.storage.update_counter(counter, actual_amount))?;
 
-        let reservation_released = if counters.is_empty() {
-            false
-        } else {
-            self.storage
-                .release_reservation(&counters, reservation_id)?
+        let reservation_released = match reservation_id {
+            Some(reservation_id) if !counters.is_empty() => self
+                .storage
+                .release_reservation(&counters, reservation_id)?,
+            _ => false,
         };
 
         Ok(CommitResult {
@@ -897,7 +899,7 @@ impl AsyncRateLimiter {
         &self,
         namespace: &Namespace,
         ctx: &Context<'_>,
-        reservation_id: &ReservationId,
+        reservation_id: Option<&ReservationId>,
         actual_amount: u64,
     ) -> LimitadorResult<CommitResult> {
         let counters = self.counters_that_apply(namespace, ctx).await?;
@@ -906,12 +908,13 @@ impl AsyncRateLimiter {
             self.storage.update_counter(counter, actual_amount).await?
         }
 
-        let reservation_released = if counters.is_empty() {
-            false
-        } else {
-            self.storage
-                .release_reservation(&counters, reservation_id)
-                .await?
+        let reservation_released = match reservation_id {
+            Some(reservation_id) if !counters.is_empty() => {
+                self.storage
+                    .release_reservation(&counters, reservation_id)
+                    .await?
+            }
+            _ => false,
         };
 
         Ok(CommitResult {
@@ -1170,13 +1173,13 @@ mod test {
 
         // Real usage turned out lower than the estimate
         let commit = rl
-            .commit_reservation(&ns, &ctx, &reservation_id, 2)
+            .commit_reservation(&ns, &ctx, Some(&reservation_id), 2)
             .unwrap();
         assert!(commit.reservation_released);
 
         // Committing again is a no-op release, but still applies actual_amount unconditionally
         let second_commit = rl
-            .commit_reservation(&ns, &ctx, &reservation_id, 2)
+            .commit_reservation(&ns, &ctx, Some(&reservation_id), 2)
             .unwrap();
         assert!(!second_commit.reservation_released);
 

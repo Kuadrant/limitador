@@ -34,8 +34,10 @@ message ReserveRequest {
 
 message ReserveResponse {
   envoy.service.ratelimit.v3.RateLimitResponse.Code code = 1;
-  // Only set when code is OK. Must be passed back to Commit to resolve this reservation.
-  string reservation_id = 2;
+  // Set when code is OK and something was actually held. Must be passed back to Commit to
+  // resolve this reservation; absent means there's nothing to resolve (e.g. the amount held
+  // ended up being 0).
+  optional string reservation_id = 2;
   // Only set when code is OK. The amount actually held - can be less than the requested
   // amount if the server clamped it down; purely informational, Commit's actual_amount is
   // independent of it.
@@ -45,7 +47,9 @@ message ReserveResponse {
 message CommitRequest {
   string domain = 1;
   repeated envoy.extensions.common.ratelimit.v3.RateLimitDescriptor descriptors = 2;
-  string reservation_id = 3;
+  // Absent degrades gracefully to Report-equivalent behavior, same as an unrecognized or
+  // already-expired id.
+  optional string reservation_id = 3;
   uint64 actual_amount = 4;
 }
 

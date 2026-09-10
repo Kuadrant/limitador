@@ -224,7 +224,7 @@ impl RateLimitService for KuadrantService {
         if namespace.is_empty() {
             return Ok(Response::new(ReserveResponse {
                 code: Code::Unknown.into(),
-                reservation_id: String::new(),
+                reservation_id: None,
                 reserved_amount: 0,
             }));
         }
@@ -265,13 +265,10 @@ impl RateLimitService for KuadrantService {
         let (code, reservation_id) = if reserve_resp.limited {
             self.metrics
                 .incr_limited_calls(&namespace, reserve_resp.limit_name.as_deref(), &ctx);
-            (Code::OverLimit, String::new())
+            (Code::OverLimit, None)
         } else {
             self.metrics.incr_authorized_calls(&namespace, &ctx);
-            let reservation_id = reserve_resp
-                .reservation_id
-                .map(|id| id.to_string())
-                .unwrap_or_default();
+            let reservation_id = reserve_resp.reservation_id.map(|id| id.to_string());
             (Code::Ok, reservation_id)
         };
 
@@ -316,15 +313,23 @@ impl RateLimitService for KuadrantService {
         let mut ctx = Context::default();
         ctx.list_binding("descriptors".to_string(), values);
 
-        let reservation_id = ReservationId::from(req.reservation_id);
+        let reservation_id = req.reservation_id.map(ReservationId::from);
 
         let commit_resp = match &*self.limiter {
-            Limiter::Blocking(limiter) => {
-                limiter.commit_reservation(&namespace, &ctx, &reservation_id, req.actual_amount)
-            }
+            Limiter::Blocking(limiter) => limiter.commit_reservation(
+                &namespace,
+                &ctx,
+                reservation_id.as_ref(),
+                req.actual_amount,
+            ),
             Limiter::Async(limiter) => {
                 limiter
-                    .commit_reservation(&namespace, &ctx, &reservation_id, req.actual_amount)
+                    .commit_reservation(
+                        &namespace,
+                        &ctx,
+                        reservation_id.as_ref(),
+                        req.actual_amount,
+                    )
                     .await
             }
         };
@@ -953,7 +958,7 @@ mod tests {
                 .unwrap()
                 .into_inner();
             assert_eq!(response.code, i32::from(Code::Ok));
-            assert!(!response.reservation_id.is_empty());
+            assert!(response.reservation_id.is_some());
             assert_eq!(response.reserved_amount, 6);
 
             // Still held: 0 + outstanding(6) + 6 = 12 > 10
@@ -963,7 +968,7 @@ mod tests {
                 .unwrap()
                 .into_inner();
             assert_eq!(blocked.code, i32::from(Code::OverLimit));
-            assert!(blocked.reservation_id.is_empty());
+            assert!(blocked.reservation_id.is_none());
             assert_eq!(blocked.reserved_amount, 0);
 
             let commit_req = CommitRequest {
@@ -1002,7 +1007,7 @@ mod tests {
 
             let response = service.reserve(req).await.unwrap().into_inner();
             assert_eq!(response.code, i32::from(Code::Unknown));
-            assert!(response.reservation_id.is_empty());
+            assert!(response.reservation_id.is_none());
         }
 
         #[tokio::test]
@@ -1012,7 +1017,7 @@ mod tests {
             let req = CommitRequest {
                 domain: "".to_string(),
                 descriptors: vec![descriptor("1")],
-                reservation_id: "some-id".to_string(),
+                reservation_id: Some("some-id".to_string()),
                 actual_amount: 1,
             }
             .into_request();
@@ -1029,7 +1034,7 @@ mod tests {
             let commit_req = CommitRequest {
                 domain: namespace.to_string(),
                 descriptors: vec![descriptor("1")],
-                reservation_id: "never-reserved".to_string(),
+                reservation_id: Some("never-reserved".to_string()),
                 actual_amount: 3,
             }
             .into_request();

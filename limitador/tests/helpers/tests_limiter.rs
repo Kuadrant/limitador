@@ -161,7 +161,7 @@ impl TestsLimiter {
         &self,
         namespace: &str,
         ctx: &Context<'_>,
-        reservation_id: &ReservationId,
+        reservation_id: Option<&ReservationId>,
         actual_amount: u64,
     ) -> Result<CommitResult, LimitadorError> {
         match &self.limiter_impl {

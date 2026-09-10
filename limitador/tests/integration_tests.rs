@@ -1482,14 +1482,14 @@ mod test {
 
         // Real usage turned out lower than the estimate
         let commit = rate_limiter
-            .commit_reservation(namespace, &ctx, &reservation_id, 2)
+            .commit_reservation(namespace, &ctx, Some(&reservation_id), 2)
             .await
             .unwrap();
         assert!(commit.reservation_released);
 
         // Committing again is a no-op release, but still applies actual_amount unconditionally
         let second_commit = rate_limiter
-            .commit_reservation(namespace, &ctx, &reservation_id, 2)
+            .commit_reservation(namespace, &ctx, Some(&reservation_id), 2)
             .await
             .unwrap();
         assert!(!second_commit.reservation_released);
@@ -1524,7 +1524,7 @@ mod test {
         let reservation_id = reserved.reservation_id.expect("should be admitted");
 
         let commit = rate_limiter
-            .commit_reservation(namespace, &ctx, &reservation_id, 9)
+            .commit_reservation(namespace, &ctx, Some(&reservation_id), 9)
             .await
             .unwrap();
         assert!(commit.reservation_released);
