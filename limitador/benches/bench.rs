@@ -439,7 +439,6 @@ fn bench_check_rate_limited_and_update(
                     &params.namespace.to_owned().into(),
                     &params.ctx,
                     params.delta,
-                    false,
                 )
                 .unwrap(),
         )
@@ -469,7 +468,6 @@ fn async_bench_check_rate_limited_and_update<F>(
                         &params.namespace.to_owned().into(),
                         &params.ctx,
                         params.delta,
-                        false,
                     )
                     .await
                     .unwrap()

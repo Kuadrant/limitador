@@ -27,9 +27,10 @@ use tracing::{error, info, info_span, warn, Instrument};
 // This is just a first version.
 //
 // The idea is to improve throughput and latencies by caching the limits and
-// counters in memory to reduce the number of accesses to Redis.
-// For now, only the "check_and_update" function uses caching, the rest of
-// functions simply delegate the work to another storage implementation.
+// counters in memory to reduce the number of accesses to Redis. Every counter
+// read/write (`is_within_limits`, `update_counter`, `check`, `check_and_update`) goes through
+// this cache - `get_counters`/`delete_counters`/`clear` are the exception, delegating straight
+// to the underlying `AsyncRedisStorage` since they're not on the hot request path.
 //
 // There might be several instances of Limitador accessing the same Redis server
 // at the same time. This means that cached values might not reflect updates
@@ -53,18 +54,37 @@ pub struct CachedRedisStorage {
 
 #[async_trait]
 impl AsyncCounterStorage for CachedRedisStorage {
+    // Cache-backed, like `check`/`check_and_update`: the whole point of this backend is
+    // trading accuracy for speed, so a cache miss assumes a fresh (0) counter rather than
+    // paying for a live Redis round trip - self-correcting once `apply_remote_delta` reconciles
+    // with the authoritative value on the next flush.
     #[tracing::instrument(skip_all)]
     async fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr> {
-        self.async_redis_storage
-            .is_within_limits(counter, delta)
-            .await
+        let mut counter = counter.clone();
+        Ok(matches!(
+            self.evaluate(std::slice::from_mut(&mut counter), delta),
+            Authorization::Ok
+        ))
+    }
+
+    // Cache-backed, same trade-off as `check_and_update`: increments are applied locally and
+    // flushed to Redis in the background (`Batcher`/`BATCH_UPDATE_COUNTERS`), rather than
+    // written synchronously. This keeps Report/Commit's view of a counter consistent with
+    // `check`/`check_and_update`'s, rather than requiring a separate live Redis read to see
+    // increments applied through this method.
+    #[tracing::instrument(skip_all)]
+    async fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr> {
+        self.cached_counters.increase_by(counter, delta).await;
+        Ok(())
     }
 
     #[tracing::instrument(skip_all)]
-    async fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr> {
-        self.async_redis_storage
-            .update_counter(counter, delta)
-            .await
+    async fn check<'a>(
+        &self,
+        counters: &mut Vec<Counter>,
+        delta: u64,
+    ) -> Result<Authorization, StorageErr> {
+        Ok(self.evaluate(counters, delta))
     }
 
     // Notice that this method does not guarantee 100% accuracy when applying the
@@ -76,61 +96,14 @@ impl AsyncCounterStorage for CachedRedisStorage {
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
-        let mut not_cached: Vec<&mut Counter> = vec![];
-        let mut first_limited = None;
-
-        // Check cached counters
-        for counter in counters.iter_mut() {
-            match self.cached_counters.get(counter) {
-                Some(val) => {
-                    if first_limited.is_none() && val.is_limited(counter, delta) {
-                        let a =
-                            Authorization::Limited(counter.limit().name().map(|n| n.to_owned()));
-                        if !load_counters {
-                            return Ok(a);
-                        }
-                        first_limited = Some(a);
-                    }
-                    if load_counters {
-                        counter.set_remaining(val.remaining(counter).saturating_sub(delta));
-                        counter.set_expires_in(val.ttl());
-                    }
-                }
-                _ => {
-                    not_cached.push(counter);
-                }
+        let auth = self.evaluate(counters, delta);
+        if matches!(auth, Authorization::Ok) {
+            for counter in counters.iter() {
+                self.cached_counters.increase_by(counter, delta).await;
             }
         }
-
-        // Fetch non-cached counters, cache them, and check them
-        if !not_cached.is_empty() {
-            for counter in not_cached.iter_mut() {
-                let fake = CachedCounterValue::load_from_authority_asap(counter, 0);
-                let remaining = fake.remaining(counter);
-                if first_limited.is_none() && remaining == 0 {
-                    first_limited = Some(Authorization::Limited(
-                        counter.limit().name().map(|n| n.to_owned()),
-                    ));
-                }
-                if load_counters {
-                    counter.set_remaining(remaining - delta);
-                    counter.set_expires_in(fake.ttl()); // todo: this is a plain lie!
-                }
-            }
-        }
-
-        if let Some(l) = first_limited {
-            return Ok(l);
-        }
-
-        // Update cached values
-        for counter in counters.iter() {
-            self.cached_counters.increase_by(counter, delta).await;
-        }
-
-        Ok(Authorization::Ok)
+        Ok(auth)
     }
 
     #[tracing::instrument(skip_all)]
@@ -152,11 +125,15 @@ impl AsyncCounterStorage for CachedRedisStorage {
     }
 
     // Local-memory only (see `LocalReservationRegistry`'s docs): admission is checked against
-    // this instance's own cached view of each counter. Unlike `check_and_update`, a cache
-    // miss here can't just default to 0 - a counter only ever touched through Reserve/Commit
-    // (`commit_reservation`'s `update_counter` never populates this cache) would then never
-    // get a real entry at all, so `reserve` would always see it as empty regardless of what's
-    // actually been committed. Misses are fetched live from Redis instead, in one batched
+    // this instance's own cached view of each counter. Unlike `check`/`check_and_update`, a
+    // cache miss here can't just default to 0: those write on every call, so a wrong guess is
+    // corrected in full by the very next flush (`apply_remote_delta` folds in whatever Redis
+    // has beyond what we last accounted for, not just incremental drift). `reserve` never
+    // writes to this cache, and its admission decision - unlike a `check`'s - doesn't get
+    // discarded afterward: an under-estimate would be admitted as a real hold in
+    // `LocalReservationRegistry`, which every subsequent `reserve` call on this counter folds
+    // into its own admission math via `outstanding()`, compounding the mistake for up to
+    // `ReservationLimits::max_ttl`. Misses are fetched live from Redis instead, in one batched
     // round trip.
     #[tracing::instrument(skip_all)]
     async fn reserve(
@@ -166,7 +143,6 @@ impl AsyncCounterStorage for CachedRedisStorage {
         check_amount: u64,
         hold_amount: u64,
         ttl: Duration,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let now = SystemTime::now();
 
@@ -210,7 +186,6 @@ impl AsyncCounterStorage for CachedRedisStorage {
                 check_amount,
                 hold_amount,
                 ttl,
-                load_counters,
                 now,
             },
         ))
@@ -227,6 +202,50 @@ impl AsyncCounterStorage for CachedRedisStorage {
 }
 
 impl CachedRedisStorage {
+    /// Shared by [`AsyncCounterStorage::check`] and [`AsyncCounterStorage::check_and_update`]:
+    /// reads every counter's current cached value (fetching it live, uncached, when missing),
+    /// annotating each with its `remaining`/`expires_in`, and determines whether `delta` more
+    /// would keep all of them within their limit. Never mutates the cache itself.
+    fn evaluate(&self, counters: &mut [Counter], delta: u64) -> Authorization {
+        let mut not_cached: Vec<&mut Counter> = vec![];
+        let mut first_limited = None;
+
+        // Check cached counters
+        for counter in counters.iter_mut() {
+            match self.cached_counters.get(counter) {
+                Some(val) => {
+                    if first_limited.is_none() && val.is_limited(counter, delta) {
+                        first_limited = Some(Authorization::Limited(
+                            counter.limit().name().map(|n| n.to_owned()),
+                        ));
+                    }
+                    counter.set_remaining(val.remaining(counter).saturating_sub(delta));
+                    counter.set_expires_in(val.ttl());
+                }
+                _ => {
+                    not_cached.push(counter);
+                }
+            }
+        }
+
+        // Fetch non-cached counters, cache them, and check them
+        if !not_cached.is_empty() {
+            for counter in not_cached.iter_mut() {
+                let fake = CachedCounterValue::load_from_authority_asap(counter, 0);
+                if first_limited.is_none() && fake.is_limited(counter, delta) {
+                    first_limited = Some(Authorization::Limited(
+                        counter.limit().name().map(|n| n.to_owned()),
+                    ));
+                }
+                let remaining = fake.remaining(counter);
+                counter.set_remaining(remaining.saturating_sub(delta));
+                counter.set_expires_in(fake.ttl()); // todo: this is a plain lie!
+            }
+        }
+
+        first_limited.unwrap_or(Authorization::Ok)
+    }
+
     pub async fn new(redis_url: &str) -> Result<Self, RedisError> {
         Self::new_with_options(
             redis_url,
@@ -709,6 +728,45 @@ mod tests {
         assert_eq!(c.pending_writes(), Ok(3));
     }
 
+    // Regression test: `update_counter` (Report/Commit's path) must be visible to `check`/
+    // `is_within_limits` on this same instance immediately, without waiting for the
+    // background flush to Redis. Both sides must go through `cached_counters` - if
+    // `update_counter` ever went back to writing straight to Redis while `check` reads the
+    // local cache (or vice versa), this instance would give wrong admission decisions for
+    // counters it had itself just reported usage against.
+    #[tokio::test]
+    #[serial]
+    async fn update_counter_is_immediately_visible_to_check_and_is_within_limits() {
+        let storage = CachedRedisStorage::new("redis://127.0.0.1:6379")
+            .await
+            .unwrap();
+        let mut counters = vec![counter("cached_update_counter_visibility_test", 10)];
+
+        assert!(
+            matches!(
+                storage.check(&mut counters, 0).await.unwrap(),
+                Authorization::Ok
+            ),
+            "a fresh counter must be within limits"
+        );
+
+        storage.update_counter(&counters[0], 7).await.unwrap();
+
+        // 7 (just reported) + 4 > 10 (max_value): only detectable if `check` observes the
+        // `update_counter` call above without any wait for a background flush to Redis.
+        assert!(
+            matches!(
+                storage.check(&mut counters, 4).await.unwrap(),
+                Authorization::Limited(_)
+            ),
+            "check must immediately see usage reported via update_counter"
+        );
+        assert!(
+            !storage.is_within_limits(&counters[0], 4).await.unwrap(),
+            "is_within_limits must immediately see usage reported via update_counter"
+        );
+    }
+
     #[tokio::test]
     #[serial]
     async fn reserve_with_hold_amount_zero_creates_no_entry() {
@@ -725,7 +783,6 @@ mod tests {
                 10,
                 0,
                 Duration::from_secs(60),
-                false,
             )
             .await
             .unwrap();

@@ -15,7 +15,6 @@ use crate::envoy_rls::server::envoy::service::ratelimit::v3::{
 use crate::prometheus_metrics::PrometheusMetrics;
 use crate::Limiter;
 use limitador::limit::Context;
-use limitador::CheckResult;
 use tonic::body::Body;
 use tonic::codegen::http::HeaderMap;
 use tonic::{async_trait, transport, transport::Server, Request, Response, Status};
@@ -42,11 +41,13 @@ pub enum RateLimitHeaders {
 }
 
 impl RateLimitHeaders {
-    pub fn headers(&self, response: &mut CheckResult) -> Vec<HeaderValue> {
-        let mut headers = match self {
+    /// Turns an already-computed `response_header()` map (from either `CheckResult` or
+    /// `ReserveResult`) into sorted gRPC header values - or drops it entirely when headers
+    /// are disabled.
+    pub fn headers_from_map(&self, headers: HashMap<String, String>) -> Vec<HeaderValue> {
+        let mut headers: Vec<HeaderValue> = match self {
             RateLimitHeaders::None => Vec::default(),
-            RateLimitHeaders::DraftVersion03 => response
-                .response_header()
+            RateLimitHeaders::DraftVersion03 => headers
                 .into_iter()
                 .map(|(key, value)| HeaderValue { key, value })
                 .collect(),
@@ -153,20 +154,12 @@ impl RateLimitService for MyRateLimiter {
         ctx.list_binding("descriptors".to_string(), values);
 
         let rate_limited_resp = match &*self.limiter {
-            Limiter::Blocking(limiter) => limiter.check_rate_limited_and_update(
-                &namespace,
-                &ctx,
-                hits_addend,
-                self.rate_limit_headers != RateLimitHeaders::None,
-            ),
+            Limiter::Blocking(limiter) => {
+                limiter.check_rate_limited_and_update(&namespace, &ctx, hits_addend)
+            }
             Limiter::Async(limiter) => {
                 limiter
-                    .check_rate_limited_and_update(
-                        &namespace,
-                        &ctx,
-                        hits_addend,
-                        self.rate_limit_headers != RateLimitHeaders::None,
-                    )
+                    .check_rate_limited_and_update(&namespace, &ctx, hits_addend)
                     .await
             }
         };
@@ -190,9 +183,13 @@ impl RateLimitService for MyRateLimiter {
         if let Some(ref name) = rate_limited_resp.limit_name {
             span.record("ratelimit.limit_name", name.as_str());
         }
-        if self.rate_limit_headers != RateLimitHeaders::None {
+
+        let response_headers = if self.rate_limit_headers != RateLimitHeaders::None {
             span.record("ratelimit.num_counters", rate_limited_resp.counters.len());
-        }
+            rate_limited_resp.response_header()
+        } else {
+            HashMap::new()
+        };
 
         let resp_code = if rate_limited_resp.limited {
             self.metrics.incr_limited_calls(
@@ -212,7 +209,7 @@ impl RateLimitService for MyRateLimiter {
             overall_code: resp_code.into(),
             statuses: vec![],
             request_headers_to_add: vec![],
-            response_headers_to_add: self.rate_limit_headers.headers(&mut rate_limited_resp),
+            response_headers_to_add: self.rate_limit_headers.headers_from_map(response_headers),
             raw_body: vec![],
             dynamic_metadata: None,
             quota: None,
@@ -257,11 +254,16 @@ pub async fn run_envoy_rls_server(
     grpc_reflection_service: bool,
     reservation_config: ReservationConfig,
 ) -> Result<(), transport::Error> {
-    let rate_limiter = MyRateLimiter::new(limiter.clone(), rate_limit_headers, metrics.clone());
+    let rate_limiter =
+        MyRateLimiter::new(limiter.clone(), rate_limit_headers.clone(), metrics.clone());
     let envoy_server = RateLimitServiceServer::new(rate_limiter);
 
-    let kuadrant_svc =
-        KuadrantService::new_with_reservation_config(limiter, metrics, reservation_config);
+    let kuadrant_svc = KuadrantService::new_with_reservation_config(
+        limiter,
+        metrics,
+        reservation_config,
+        rate_limit_headers,
+    );
     let kuadrant_server =
         custom::service::ratelimit::v1::rate_limit_service_server::RateLimitServiceServer::new(
             kuadrant_svc,

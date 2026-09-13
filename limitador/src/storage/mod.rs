@@ -134,14 +134,20 @@ impl Storage {
         self.counters.update_counter(counter, delta)
     }
 
+    pub fn check(
+        &self,
+        counters: &mut Vec<Counter>,
+        delta: u64,
+    ) -> Result<Authorization, StorageErr> {
+        self.counters.check(counters, delta)
+    }
+
     pub fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
-        self.counters
-            .check_and_update(counters, delta, load_counters)
+        self.counters.check_and_update(counters, delta)
     }
 
     pub fn get_counters(&self, namespace: &Namespace) -> Result<HashSet<Counter>, StorageErr> {
@@ -158,16 +164,9 @@ impl Storage {
         check_amount: u64,
         hold_amount: u64,
         ttl: Duration,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
-        self.counters.reserve(
-            counters,
-            reservation_id,
-            check_amount,
-            hold_amount,
-            ttl,
-            load_counters,
-        )
+        self.counters
+            .reserve(counters, reservation_id, check_amount, hold_amount, ttl)
     }
 
     pub fn release_reservation(
@@ -282,15 +281,20 @@ impl AsyncStorage {
         self.counters.update_counter(counter, delta).await
     }
 
+    pub async fn check(
+        &self,
+        counters: &mut Vec<Counter>,
+        delta: u64,
+    ) -> Result<Authorization, StorageErr> {
+        self.counters.check(counters, delta).await
+    }
+
     pub async fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
-        self.counters
-            .check_and_update(counters, delta, load_counters)
-            .await
+        self.counters.check_and_update(counters, delta).await
     }
 
     pub async fn get_counters(
@@ -308,17 +312,9 @@ impl AsyncStorage {
         check_amount: u64,
         hold_amount: u64,
         ttl: Duration,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         self.counters
-            .reserve(
-                counters,
-                reservation_id,
-                check_amount,
-                hold_amount,
-                ttl,
-                load_counters,
-            )
+            .reserve(counters, reservation_id, check_amount, hold_amount, ttl)
             .await
     }
 
@@ -342,11 +338,19 @@ pub trait CounterStorage: Sync + Send {
     fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr>;
     fn add_counter(&self, limit: &Limit) -> Result<(), StorageErr>;
     fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr>;
+
+    /// Checks whether `delta` more would keep every counter within its limit, annotating each
+    /// counter with its current `remaining`/`expires_in` - but never persists anything, even
+    /// when every counter is within limits. See [`Self::check_and_update`] for the persisting
+    /// counterpart.
+    fn check(&self, counters: &mut Vec<Counter>, delta: u64) -> Result<Authorization, StorageErr>;
+
+    /// Same check as [`Self::check`], but when every counter is within limits, `delta` is
+    /// also applied to each of them before returning.
     fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr>;
     fn get_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<HashSet<Counter>, StorageErr>; // todo revise typing here?
     fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr>; // todo revise typing here?
@@ -356,7 +360,7 @@ pub trait CounterStorage: Sync + Send {
     /// within its limit if `check_amount` were held, once outstanding reservations are
     /// accounted for - all counters are admitted, or none are. If admitted, `hold_amount`
     /// (which may be less than `check_amount`, e.g. clamped by policy) is what actually
-    /// gets held.
+    /// gets held. Every counter is annotated with its current `remaining`/`expires_in`.
     ///
     /// Backends that don't yet support reservations can rely on this default, which
     /// always fails with a non-transient [`StorageErr`].
@@ -367,7 +371,6 @@ pub trait CounterStorage: Sync + Send {
         _check_amount: u64,
         _hold_amount: u64,
         _ttl: Duration,
-        _load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         Err(StorageErr::unsupported(
             "reservations are not supported by this storage backend",
@@ -391,11 +394,19 @@ pub trait CounterStorage: Sync + Send {
 pub trait AsyncCounterStorage: Sync + Send {
     async fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr>;
     async fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr>;
+
+    /// See [`CounterStorage::check`].
+    async fn check<'a>(
+        &self,
+        counters: &mut Vec<Counter>,
+        delta: u64,
+    ) -> Result<Authorization, StorageErr>;
+
+    /// See [`CounterStorage::check_and_update`].
     async fn check_and_update<'a>(
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr>;
     async fn get_counters(
         &self,
@@ -412,7 +423,6 @@ pub trait AsyncCounterStorage: Sync + Send {
         _check_amount: u64,
         _hold_amount: u64,
         _ttl: Duration,
-        _load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         Err(StorageErr::unsupported(
             "reservations are not supported by this storage backend",

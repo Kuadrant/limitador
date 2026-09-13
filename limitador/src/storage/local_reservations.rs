@@ -63,7 +63,6 @@ pub(crate) struct ReservationRequest<'a> {
     /// by policy); `0` counts as "denied" for admission purposes.
     pub(crate) hold_amount: u64,
     pub(crate) ttl: Duration,
-    pub(crate) load_counters: bool,
     pub(crate) now: SystemTime,
 }
 
@@ -142,11 +141,9 @@ impl LocalReservationRegistry {
             expires_at_by_counter.push(expires_at);
 
             let total = value + outstanding + request.check_amount;
-            if request.load_counters {
-                let remaining = counter.max_value().checked_sub(total);
-                counter.set_remaining(remaining.unwrap_or_default());
-                counter.set_expires_in(*window_ttl);
-            }
+            let remaining = counter.max_value().checked_sub(total);
+            counter.set_remaining(remaining.unwrap_or_default());
+            counter.set_expires_in(*window_ttl);
             if first_limited.is_none() && total > counter.max_value() {
                 first_limited = Some(Authorization::Limited(
                     counter.limit().name().map(|n| n.to_owned()),
