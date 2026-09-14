@@ -477,6 +477,18 @@ impl RateLimiter {
 
         let check_result = self.storage.check_and_update(&mut counters, delta)?;
 
+        // Unlike `is_rate_limited`, this actually persisted `delta` - each counter's
+        // `remaining` (computed against its pre-persist value) needs the same delta subtracted
+        // to reflect the state the successful update just produced. Safe/exact: `Ok` guarantees
+        // every counter's remaining was already `>= delta`.
+        if matches!(check_result, Authorization::Ok) {
+            for counter in counters.iter_mut() {
+                if let Some(remaining) = counter.remaining() {
+                    counter.set_remaining(remaining.saturating_sub(delta));
+                }
+            }
+        }
+
         match check_result {
             Authorization::Ok => Ok(CheckResult {
                 limited: false,
@@ -764,6 +776,17 @@ impl AsyncRateLimiter {
 
         let check_result = self.storage.check_and_update(&mut counters, delta).await?;
 
+        // See the comment in `RateLimiter::check_rate_limited_and_update`: this actually
+        // persisted `delta`, so each counter's remaining needs it subtracted to reflect the
+        // state the successful update just produced.
+        if matches!(check_result, Authorization::Ok) {
+            for counter in counters.iter_mut() {
+                if let Some(remaining) = counter.remaining() {
+                    counter.set_remaining(remaining.saturating_sub(delta));
+                }
+            }
+        }
+
         match check_result {
             Authorization::Ok => Ok(CheckResult {
                 limited: false,
@@ -957,6 +980,27 @@ mod test {
     use crate::{RateLimiter, RateLimiterBuilder};
     use std::collections::HashMap;
     use std::time::Duration;
+
+    // A read-only check must report the counter's true current remaining, not remaining as
+    // if the hypothetical `delta` had already been applied (nothing was actually consumed);
+    // `check_rate_limited_and_update` genuinely persists `delta`, so its remaining must
+    // reflect that real, post-increment state.
+    #[test]
+    fn is_rate_limited_reports_current_remaining_check_rate_limited_and_update_reports_post_delta()
+    {
+        let rl = RateLimiter::new(10_000);
+        let namespace = "remaining_semantics";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rl.add_limit(limit);
+        let ns: crate::limit::Namespace = namespace.into();
+        let ctx = Context::default();
+
+        let result = rl.is_rate_limited(&ns, &ctx, 1).unwrap();
+        assert_eq!(result.counters[0].remaining().unwrap(), 10);
+
+        let result = rl.check_rate_limited_and_update(&ns, &ctx, 1).unwrap();
+        assert_eq!(result.counters[0].remaining().unwrap(), 9);
+    }
 
     // RFC 0021's motivating scenario: N concurrent in-flight requests against one limit,
     // racing to reserve capacity before any of them has reported real usage. Uses real OS

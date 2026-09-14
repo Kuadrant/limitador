@@ -217,7 +217,10 @@ impl RocksDbStorage {
             };
 
             counter.set_expires_in(ttl);
-            counter.set_remaining(counter.max_value().saturating_sub(val + delta));
+            // `remaining` reflects the counter's actual current state, not a projection of
+            // `delta` having been applied - `check()` never applies it, and `check_and_update`
+            // compensates for its own persisted delta afterward (see `RateLimiter`).
+            counter.set_remaining(counter.max_value().saturating_sub(val));
 
             if first_limited.is_none() && counter.max_value() < val + delta {
                 first_limited = Some(Authorization::Limited(

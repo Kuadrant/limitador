@@ -219,7 +219,11 @@ impl CachedRedisStorage {
                             counter.limit().name().map(|n| n.to_owned()),
                         ));
                     }
-                    counter.set_remaining(val.remaining(counter).saturating_sub(delta));
+                    // `remaining` reflects the counter's actual current state, not a projection
+                    // of `delta` having been applied - `check()` never applies it, and
+                    // `check_and_update` compensates for its own persisted delta afterward (see
+                    // `RateLimiter`).
+                    counter.set_remaining(val.remaining(counter));
                     // A zero ttl means the previous window has already elapsed even though a
                     // stale entry is still cached - report a fresh full window, the same as a
                     // counter that was never cached at all.
@@ -242,8 +246,7 @@ impl CachedRedisStorage {
                         counter.limit().name().map(|n| n.to_owned()),
                     ));
                 }
-                let remaining = fake.remaining(counter);
-                counter.set_remaining(remaining.saturating_sub(delta));
+                counter.set_remaining(fake.remaining(counter));
                 counter.set_expires_in(fake.ttl()); // todo: this is a plain lie!
             }
         }

@@ -198,10 +198,12 @@ impl InMemoryStorage {
             // stale entry is still physically present) - report a fresh full window, the same
             // as a counter that never existed at all, rather than a misleading "already reset".
             let ttl = if ttl.is_zero() { counter.window() } else { ttl };
-            let remaining = counter.max_value().checked_sub(value + delta);
-            counter.set_remaining(remaining.unwrap_or_default());
+            // `remaining` reflects the counter's actual current state, not a projection of
+            // `delta` having been applied - `check()` never applies it, and `check_and_update`
+            // compensates for its own persisted delta afterward (see `RateLimiter`).
+            counter.set_remaining(counter.max_value().saturating_sub(value));
             counter.set_expires_in(ttl);
-            if first_limited.is_none() && remaining.is_none() {
+            if first_limited.is_none() && counter.max_value().checked_sub(value + delta).is_none() {
                 first_limited = Some(Authorization::Limited(
                     counter.limit().name().map(|n| n.to_owned()),
                 ));
@@ -432,5 +434,56 @@ mod tests {
             counter.window(),
             "a never-used counter should report a fresh full window, not a stale/zero ttl"
         );
+    }
+
+    #[test]
+    fn check_reports_current_remaining_not_a_post_delta_projection() {
+        let storage = InMemoryStorage::default();
+        let limit = Limit::new(
+            "check_remaining_test",
+            10,
+            60,
+            vec![],
+            Vec::<crate::limit::Expression>::default(),
+        );
+        storage.add_counter(&limit).unwrap();
+        let counter = Counter::new(limit, &Context::default())
+            .unwrap()
+            .expect("must have a counter");
+
+        let mut counters = vec![counter.clone()];
+        // `check` never applies `delta` - it must report the true current remaining (10), not
+        // remaining as if this hypothetical request had already been counted (10 - 1 = 9).
+        storage.check(&mut counters, 1).unwrap();
+
+        assert_eq!(
+            counters[0].remaining().unwrap(),
+            10,
+            "check() must not subtract delta from remaining, since it never applies it"
+        );
+    }
+
+    #[test]
+    fn check_and_update_also_reports_current_pre_persist_remaining() {
+        let storage = InMemoryStorage::default();
+        let limit = Limit::new(
+            "check_and_update_remaining_test",
+            10,
+            60,
+            vec![],
+            Vec::<crate::limit::Expression>::default(),
+        );
+        storage.add_counter(&limit).unwrap();
+        let counter = Counter::new(limit, &Context::default())
+            .unwrap()
+            .expect("must have a counter");
+
+        // At the storage layer, `check_and_update` reports the same pre-persist remaining as
+        // `check` - the caller (`RateLimiter::check_rate_limited_and_update`) is responsible
+        // for subtracting `delta` afterward to reflect the persist it just performed.
+        let mut counters = vec![counter.clone()];
+        storage.check_and_update(&mut counters, 1).unwrap();
+
+        assert_eq!(counters[0].remaining().unwrap(), 10);
     }
 }

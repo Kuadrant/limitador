@@ -685,9 +685,12 @@ pub mod tests {
         assert!(response
             .response_headers_to_add
             .contains(&header_value("X-RateLimit-Limit", "10, 10;w=60")));
+        // The second request is rejected, so nothing was persisted this time - the counter is
+        // unchanged from the first request (6 used, 4 remaining), not "as if" this rejected
+        // request's hits_addend had also been applied.
         assert!(response
             .response_headers_to_add
-            .contains(&header_value("X-RateLimit-Remaining", "0")));
+            .contains(&header_value("X-RateLimit-Remaining", "4")));
         let reset_header = response
             .response_headers_to_add
             .iter()

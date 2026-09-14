@@ -217,10 +217,12 @@ impl CrInMemoryStorage {
             // A zero ttl means the previous window has already elapsed - report a fresh full
             // window, the same as a counter that never existed at all.
             let ttl = if ttl.is_zero() { counter.window() } else { ttl };
-            let remaining = counter.max_value().checked_sub(value + delta);
-            counter.set_remaining(remaining.unwrap_or(0));
+            // `remaining` reflects the counter's actual current state, not a projection of
+            // `delta` having been applied - `check()` never applies it, and `check_and_update`
+            // compensates for its own persisted delta afterward (see `RateLimiter`).
+            counter.set_remaining(counter.max_value().saturating_sub(value));
             counter.set_expires_in(ttl);
-            if first_limited.is_none() && remaining.is_none() {
+            if first_limited.is_none() && counter.max_value().checked_sub(value + delta).is_none() {
                 first_limited = Some(Authorization::Limited(
                     counter.limit().name().map(|n| n.to_owned()),
                 ));
