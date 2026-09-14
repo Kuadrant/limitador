@@ -203,7 +203,16 @@ impl RocksDbStorage {
                 Some(raw) => {
                     let slice: &[u8] = raw.as_ref();
                     let value: ExpiringValue = slice.try_into()?;
-                    (value.value(), value.ttl())
+                    let ttl = value.ttl();
+                    // A zero ttl means the previous window has already elapsed even though a
+                    // stale entry is still physically present - report a fresh full window,
+                    // the same as a counter that never existed at all.
+                    let ttl = if ttl.is_zero() {
+                        Duration::from_secs(counter.limit().seconds())
+                    } else {
+                        ttl
+                    };
+                    (value.value(), ttl)
                 }
             };
 

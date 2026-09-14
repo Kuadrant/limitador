@@ -220,7 +220,12 @@ impl CachedRedisStorage {
                         ));
                     }
                     counter.set_remaining(val.remaining(counter).saturating_sub(delta));
-                    counter.set_expires_in(val.ttl());
+                    // A zero ttl means the previous window has already elapsed even though a
+                    // stale entry is still cached - report a fresh full window, the same as a
+                    // counter that was never cached at all.
+                    let ttl = val.ttl();
+                    let ttl = if ttl.is_zero() { counter.window() } else { ttl };
+                    counter.set_expires_in(ttl);
                 }
                 _ => {
                     not_cached.push(counter);

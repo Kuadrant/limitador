@@ -192,9 +192,12 @@ impl InMemoryStorage {
     fn evaluate(&self, counters: &mut [Counter], delta: u64) -> Authorization {
         let limits_by_namespace = self.simple_limits.read().unwrap();
         let mut first_limited = None;
-        let now = SystemTime::now();
 
         let mut record = |counter: &mut Counter, value: u64, ttl: Duration| {
+            // A zero ttl means the previous window has already elapsed (whether or not a
+            // stale entry is still physically present) - report a fresh full window, the same
+            // as a counter that never existed at all, rather than a misleading "already reset".
+            let ttl = if ttl.is_zero() { counter.window() } else { ttl };
             let remaining = counter.max_value().checked_sub(value + delta);
             counter.set_remaining(remaining.unwrap_or_default());
             counter.set_expires_in(ttl);
@@ -215,14 +218,14 @@ impl InMemoryStorage {
             );
         }
 
+        // Never insert into `qualified_counters` here on a miss - `check()` must stay
+        // read-only. Persisting (and thus actually starting a counter's window) only happens
+        // in `check_and_update`'s subsequent `update_counter` call, once admission is decided.
         for counter in counters.iter_mut().filter(|c| c.is_qualified()) {
-            let value = match self.qualified_counters.get(counter) {
-                None => self.qualified_counters.get_with_by_ref(counter, || {
-                    Arc::new(AtomicExpiringValue::new(0, now + counter.window()))
-                }),
-                Some(counter) => counter,
-            };
-            record(counter, value.value(), value.ttl());
+            match self.qualified_counters.get(counter) {
+                Some(value) => record(counter, value.value(), value.ttl()),
+                None => record(counter, 0, counter.window()),
+            }
         }
 
         first_limited.unwrap_or(Authorization::Ok)
@@ -377,5 +380,57 @@ mod tests {
             .release_reservation(&counters, &reservation_id)
             .unwrap();
         assert!(!released, "nothing should have been held to release");
+    }
+
+    #[test]
+    fn check_does_not_persist_qualified_counters() {
+        let storage = InMemoryStorage::default();
+        let limit = Limit::new(
+            "check_no_persist_test",
+            10,
+            60,
+            vec![],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
+        let map = HashMap::from([("app_id".to_string(), "1".to_string())]);
+        let counter = Counter::new(limit, &map.into())
+            .unwrap()
+            .expect("must have a counter");
+
+        let auth = storage.check(&mut vec![counter], 1).unwrap();
+        assert!(matches!(auth, Authorization::Ok));
+
+        assert_eq!(
+            storage.qualified_counters.iter().count(),
+            0,
+            "a read-only check must not insert anything into the qualified counters cache - \
+             doing so would prematurely start the counter's window and let read-only traffic \
+             grow the cache with zero-usage entries"
+        );
+    }
+
+    #[test]
+    fn check_reports_fresh_window_for_a_never_used_counter() {
+        let storage = InMemoryStorage::default();
+        let limit = Limit::new(
+            "check_fresh_window_test",
+            10,
+            60,
+            vec![],
+            Vec::<crate::limit::Expression>::default(),
+        );
+        storage.add_counter(&limit).unwrap();
+        let counter = Counter::new(limit, &Context::default())
+            .unwrap()
+            .expect("must have a counter");
+
+        let mut counters = vec![counter.clone()];
+        storage.check(&mut counters, 1).unwrap();
+
+        assert_eq!(
+            counters[0].expires_in().unwrap(),
+            counter.window(),
+            "a never-used counter should report a fresh full window, not a stale/zero ttl"
+        );
     }
 }

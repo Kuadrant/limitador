@@ -91,7 +91,7 @@ impl CounterStorage for CrInMemoryStorage {
 
     #[tracing::instrument(skip_all)]
     fn check(&self, counters: &mut Vec<Counter>, delta: u64) -> Result<Authorization, StorageErr> {
-        Ok(self.evaluate(counters, delta).0)
+        Ok(self.evaluate(counters, delta))
     }
 
     #[tracing::instrument(skip_all)]
@@ -100,14 +100,11 @@ impl CounterStorage for CrInMemoryStorage {
         counters: &mut Vec<Counter>,
         delta: u64,
     ) -> Result<Authorization, StorageErr> {
-        let (auth, counter_values_to_update) = self.evaluate(counters, delta);
+        let auth = self.evaluate(counters, delta);
         if matches!(auth, Authorization::Ok) {
-            let now = SystemTime::now();
-            let limits = self.limits.read().unwrap();
-            counter_values_to_update.into_iter().for_each(|key| {
-                let store_value = limits.get(&key).unwrap();
-                self.increment_counter(store_value.clone(), delta, now);
-            });
+            for counter in counters.iter() {
+                self.update_counter(counter, delta)?;
+            }
         }
         Ok(auth)
     }
@@ -209,14 +206,17 @@ impl CrInMemoryStorage {
 
     /// Shared by [`CounterStorage::check`] and [`CounterStorage::check_and_update`]: reads
     /// every counter's current value, annotating each with its `remaining`/`expires_in`, and
-    /// determines whether `delta` more would keep all of them within their limit. Also
-    /// returns each counter's storage key, for the caller's benefit if it goes on to persist.
-    /// Never mutates any stored value itself.
-    fn evaluate(&self, counters: &mut [Counter], delta: u64) -> (Authorization, Vec<Vec<u8>>) {
+    /// determines whether `delta` more would keep all of them within their limit. Never
+    /// mutates any stored value - in particular, a miss never creates an entry in `self.limits`
+    /// (that only happens in `update_counter`, once admission is actually decided), so `check`
+    /// alone can't grow the map or prematurely start a counter's window.
+    fn evaluate(&self, counters: &mut [Counter], delta: u64) -> Authorization {
         let mut first_limited = None;
-        let mut counter_values_to_update: Vec<Vec<u8>> = Vec::new();
 
         let mut record = |counter: &mut Counter, value: u64, ttl: Duration| {
+            // A zero ttl means the previous window has already elapsed - report a fresh full
+            // window, the same as a counter that never existed at all.
+            let ttl = if ttl.is_zero() { counter.window() } else { ttl };
             let remaining = counter.max_value().checked_sub(value + delta);
             counter.set_remaining(remaining.unwrap_or(0));
             counter.set_expires_in(ttl);
@@ -229,45 +229,16 @@ impl CrInMemoryStorage {
 
         for counter in counters.iter_mut() {
             let key = encode_counter_to_key(counter);
-
-            // most of the time the counter should exist, so first try with a read only lock
-            // since that will allow us to have higher concurrency
-            let counter_existed = {
-                let key = key.clone();
-                let limits = self.limits.read().unwrap();
-                match limits.get(&key) {
-                    None => false,
-                    Some(store_value) => {
-                        record(counter, store_value.value.read(), store_value.value.ttl());
-                        counter_values_to_update.push(key);
-                        true
-                    }
+            let limits = self.limits.read().unwrap();
+            match limits.get(&key) {
+                Some(store_value) => {
+                    record(counter, store_value.value.read(), store_value.value.ttl())
                 }
-            };
-
-            // we need to take the slow path since we need to mutate the limits map.
-            if !counter_existed {
-                // try again with a write lock to create the counter if it's still missing.
-                let mut limits = self.limits.write().unwrap();
-                let store_value = limits.entry(key.clone()).or_insert(Arc::new(CounterEntry {
-                    key: key.clone(),
-                    counter: counter.clone(),
-                    value: CrCounterValue::new(
-                        self.identifier.clone(),
-                        counter.max_value(),
-                        counter.window(),
-                    ),
-                }));
-
-                record(counter, store_value.value.read(), store_value.value.ttl());
-                counter_values_to_update.push(key);
+                None => record(counter, 0, counter.window()),
             }
         }
 
-        (
-            first_limited.unwrap_or(Authorization::Ok),
-            counter_values_to_update,
-        )
+        first_limited.unwrap_or(Authorization::Ok)
     }
 
     fn increment_counter(&self, counter_entry: Arc<CounterEntry>, delta: u64, when: SystemTime) {
