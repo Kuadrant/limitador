@@ -211,13 +211,14 @@ impl InMemoryStorage {
         };
 
         for counter in counters.iter_mut().filter(|c| !c.is_qualified()) {
-            let atomic_expiring_value: &AtomicExpiringValue =
-                limits_by_namespace.get(counter.limit()).unwrap();
-            record(
-                counter,
-                atomic_expiring_value.value(),
-                atomic_expiring_value.ttl(),
-            );
+            // Normally always present (populated by `add_counter` when the limit was
+            // registered) - but a concurrent `delete_limit`/`delete_limits`/`clear` between
+            // `counters_that_apply` resolving this counter and this read could remove it.
+            // Treat that race as a fresh counter rather than panic.
+            match limits_by_namespace.get(counter.limit()) {
+                Some(value) => record(counter, value.value(), value.ttl()),
+                None => record(counter, 0, counter.window()),
+            }
         }
 
         // Never insert into `qualified_counters` here on a miss - `check()` must stay
@@ -484,6 +485,35 @@ mod tests {
         let mut counters = vec![counter.clone()];
         storage.check_and_update(&mut counters, 1).unwrap();
 
+        assert_eq!(counters[0].remaining().unwrap(), 10);
+    }
+
+    #[test]
+    fn check_does_not_panic_on_a_simple_counter_whose_limit_was_concurrently_deleted() {
+        let storage = InMemoryStorage::default();
+        let limit = Limit::new(
+            "check_deleted_limit_test",
+            10,
+            60,
+            vec![],
+            Vec::<crate::limit::Expression>::default(),
+        );
+        storage.add_counter(&limit).unwrap();
+        let counter = Counter::new(limit.clone(), &Context::default())
+            .unwrap()
+            .expect("must have a counter");
+
+        // Simulates the race `evaluate` must tolerate: `RateLimiter::counters_that_apply`
+        // already resolved this counter from the limit before a concurrent delete removed its
+        // `simple_limits` entry.
+        let mut limits = HashSet::new();
+        limits.insert(Arc::new(limit));
+        storage.delete_counters(&limits).unwrap();
+
+        let mut counters = vec![counter];
+        let auth = storage.check(&mut counters, 1).unwrap();
+
+        assert!(matches!(auth, Authorization::Ok));
         assert_eq!(counters[0].remaining().unwrap(), 10);
     }
 }
