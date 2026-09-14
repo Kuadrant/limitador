@@ -106,15 +106,14 @@ impl TestsLimiter {
         namespace: &str,
         ctx: &Context<'_>,
         delta: u64,
-        load_counters: bool,
     ) -> Result<CheckResult, LimitadorError> {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => {
-                limiter.check_rate_limited_and_update(&namespace.into(), ctx, delta, load_counters)
+                limiter.check_rate_limited_and_update(&namespace.into(), ctx, delta)
             }
             LimiterImpl::Async(limiter) => {
                 limiter
-                    .check_rate_limited_and_update(&namespace.into(), ctx, delta, load_counters)
+                    .check_rate_limited_and_update(&namespace.into(), ctx, delta)
                     .await
             }
         }
@@ -143,16 +142,11 @@ impl TestsLimiter {
         ctx: &Context<'_>,
         amount: u64,
         ttl: Option<Duration>,
-        load_counters: bool,
     ) -> Result<ReserveResult, LimitadorError> {
         match &self.limiter_impl {
-            LimiterImpl::Blocking(limiter) => {
-                limiter.reserve(&namespace.into(), ctx, amount, ttl, load_counters)
-            }
+            LimiterImpl::Blocking(limiter) => limiter.reserve(&namespace.into(), ctx, amount, ttl),
             LimiterImpl::Async(limiter) => {
-                limiter
-                    .reserve(&namespace.into(), ctx, amount, ttl, load_counters)
-                    .await
+                limiter.reserve(&namespace.into(), ctx, amount, ttl).await
             }
         }
     }

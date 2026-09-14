@@ -48,11 +48,11 @@ pub fn is_limited(
 
     let mut first_limited = None;
     for (i, counter) in counters.iter_mut().enumerate() {
-        // remaining  = max - (curr_val + delta)
-        let remaining = counter
-            .max_value()
-            .checked_sub((counter_vals[i].unwrap_or(0) as u64) + delta);
-        counter.set_remaining(remaining.unwrap_or_default());
+        let value = counter_vals[i].unwrap_or(0) as u64;
+        // `remaining` reflects the counter's actual current state, not a projection of `delta`
+        // having been applied - `check()` never applies it, and `check_and_update` compensates
+        // for its own persisted delta afterward (see `RateLimiter`).
+        counter.set_remaining(counter.max_value().saturating_sub(value));
         let expires_in = counter_ttls_msecs[i]
             .map(|x| {
                 if x >= 0 {
@@ -64,7 +64,7 @@ pub fn is_limited(
             .unwrap_or(counter.window());
 
         counter.set_expires_in(expires_in);
-        if first_limited.is_none() && remaining.is_none() {
+        if first_limited.is_none() && counter.max_value().checked_sub(value + delta).is_none() {
             first_limited = Some(Authorization::Limited(
                 counter.limit().name().map(|n| n.to_owned()),
             ))
