@@ -33,6 +33,17 @@ impl Error for LimitadorError {
     }
 }
 
+impl LimitadorError {
+    /// Whether retrying the same operation later could succeed, as opposed to a permanent
+    /// condition (e.g. a storage backend that doesn't support the requested operation).
+    pub fn is_transient(&self) -> bool {
+        match self {
+            LimitadorError::StorageError(err) => err.is_transient(),
+            LimitadorError::InterpreterError(_) => false,
+        }
+    }
+}
+
 impl From<StorageErr> for LimitadorError {
     fn from(e: StorageErr) -> Self {
         Self::StorageError(e)
@@ -48,5 +59,16 @@ impl From<EvaluationError> for LimitadorError {
 impl From<Infallible> for ParseError {
     fn from(value: Infallible) -> Self {
         unreachable!("unexpected infallible value: {:?}", value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unsupported_storage_error_is_not_transient() {
+        let err: LimitadorError = StorageErr::unsupported("not supported by this backend").into();
+        assert!(!err.is_transient());
     }
 }
