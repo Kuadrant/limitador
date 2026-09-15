@@ -640,7 +640,17 @@ fn create_config() -> (Configuration, &'static str) {
             Arg::new("max_reservation_fraction")
                 .long("max-reservation-fraction")
                 .action(ArgAction::Set)
-                .value_parser(value_parser!(f64))
+                .value_parser(ValueParser::new(|arg: &str| -> Result<f64, String> {
+                    let fraction: f64 = arg
+                        .parse()
+                        .map_err(|e| format!("`{arg}` isn't a valid number: {e}"))?;
+                    if !(0.0..=1.0).contains(&fraction) {
+                        return Err(format!(
+                            "must be between 0.0 and 1.0, got {fraction}"
+                        ));
+                    }
+                    Ok(fraction)
+                }))
                 .default_value("0.5")
                 .display_order(111)
                 .help("Maximum fraction of a limit's max_value a single Reserve call may hold"),
