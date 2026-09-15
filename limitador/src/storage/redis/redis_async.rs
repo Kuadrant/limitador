@@ -239,9 +239,15 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             let value = raw[i * 3].max(0) as u64;
             let outstanding = raw[i * 3 + 1].max(0) as u64;
             let window_ttl_ms = raw[i * 3 + 2].max(0) as u64;
+            // Admission is checked against `check_amount` (the raw, requested amount - see
+            // `RateLimiter::reserve`'s doc comment), but `remaining` must reflect what's
+            // actually held going forward, which is `hold_amount` - otherwise it understates
+            // capacity whenever policy clamps the hold below what was requested.
             let total = value + outstanding + check_amount;
 
-            let remaining = counter.max_value().checked_sub(total);
+            let remaining = counter
+                .max_value()
+                .checked_sub(value + outstanding + hold_amount);
             counter.set_remaining(remaining.unwrap_or_default());
             counter.set_expires_in(Duration::from_millis(window_ttl_ms));
             if first_limited.is_none() && total > counter.max_value() {
@@ -505,5 +511,49 @@ mod tests {
             .await
             .unwrap();
         assert!(!released, "nothing should have been held to release");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn remaining_reflects_hold_amount_not_check_amount() {
+        let storage = AsyncRedisStorage::new("redis://127.0.0.1:6379")
+            .await
+            .unwrap();
+        storage.clear().await.unwrap();
+        // max_value=1000, requesting/checking 500 but policy (e.g. max_fraction) clamps
+        // the actual hold down to 100.
+        let mut counters = vec![counter("async_remaining_reflects_hold_amount_test", 1000)];
+        let reservation_id = ReservationId::new();
+
+        let auth = storage
+            .reserve(
+                &mut counters,
+                &reservation_id,
+                500,
+                100,
+                Duration::from_secs(60),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(auth, Authorization::Ok));
+        assert_eq!(
+            counters[0].remaining(),
+            Some(900),
+            "remaining must reflect the 100 actually held, not the 500 that was checked"
+        );
+
+        // A second reservation for the remaining true capacity (900) must be admitted -
+        // proving the backend's own admission math already agrees with `remaining`.
+        let auth2 = storage
+            .reserve(
+                &mut counters,
+                &ReservationId::new(),
+                900,
+                900,
+                Duration::from_secs(60),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(auth2, Authorization::Ok));
     }
 }
