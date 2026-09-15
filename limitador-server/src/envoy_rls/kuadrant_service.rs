@@ -294,9 +294,15 @@ impl RateLimitService for KuadrantService {
         if let Err(e) = reserve_resp {
             // See the comment on the same pattern in `check_rate_limit` above: an
             // "unavailable" error lets `failure_mode_deny` decide the outcome, rather than
-            // silently letting the request through.
+            // silently letting the request through. Permanent errors (e.g. a storage backend
+            // that doesn't support reservations) get "unimplemented" instead, since retrying
+            // or failing open/closed based on `failure_mode_deny` wouldn't help.
             error!("Error: {:?}", e);
-            return Err(Status::unavailable("Service unavailable"));
+            return Err(if e.is_transient() {
+                Status::unavailable("Service unavailable")
+            } else {
+                Status::unimplemented(e.to_string())
+            });
         }
 
         let mut reserve_resp = reserve_resp.unwrap();
@@ -388,7 +394,11 @@ impl RateLimitService for KuadrantService {
 
         if let Err(e) = commit_resp {
             error!("Error: {:?}", e);
-            return Err(Status::unavailable("Service unavailable"));
+            return Err(if e.is_transient() {
+                Status::unavailable("Service unavailable")
+            } else {
+                Status::unimplemented(e.to_string())
+            });
         }
 
         let commit_resp = commit_resp.unwrap();
