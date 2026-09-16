@@ -219,14 +219,20 @@ impl CounterStorage for RedisStorage {
         counters: &[Counter],
         reservation_id: &ReservationId,
     ) -> Result<bool, StorageErr> {
+        if counters.is_empty() {
+            return Ok(false);
+        }
+
         let mut con = self.conn_pool.get()?;
 
-        let mut released = false;
+        let mut pipeline = redis::pipe();
         for counter in counters {
-            let removed: i64 = con.hdel(key_for_reservations(counter), reservation_id.as_str())?;
-            released |= removed > 0;
+            pipeline.hdel(key_for_reservations(counter), reservation_id.as_str());
         }
-        Ok(released)
+
+        let removed: Vec<i64> = pipeline.query(&mut *con)?;
+
+        Ok(removed.into_iter().any(|removed| removed > 0))
     }
 }
 
