@@ -63,7 +63,6 @@ pub(crate) struct ReservationRequest<'a> {
     /// by policy); `0` counts as "denied" for admission purposes.
     pub(crate) hold_amount: u64,
     pub(crate) ttl: Duration,
-    pub(crate) load_counters: bool,
     pub(crate) now: SystemTime,
 }
 
@@ -135,23 +134,43 @@ impl LocalReservationRegistry {
         let now = request.now;
         let mut first_limited = None;
         let mut expires_at_by_counter = Vec::with_capacity(counters.len());
+        let mut outstanding_by_counter = Vec::with_capacity(counters.len());
 
-        for (counter, (value, window_ttl)) in counters.iter_mut().zip(values_and_window_ttls) {
+        for (counter, (value, _)) in counters.iter().zip(values_and_window_ttls) {
             let outstanding = self.outstanding(counter, now);
-            let expires_at = std::cmp::min(now + request.ttl, now + *window_ttl);
-            expires_at_by_counter.push(expires_at);
+            outstanding_by_counter.push(outstanding);
 
             let total = value + outstanding + request.check_amount;
-            if request.load_counters {
-                let remaining = counter.max_value().checked_sub(total);
-                counter.set_remaining(remaining.unwrap_or_default());
-                counter.set_expires_in(*window_ttl);
-            }
             if first_limited.is_none() && total > counter.max_value() {
                 first_limited = Some(Authorization::Limited(
                     counter.limit().name().map(|n| n.to_owned()),
                 ));
             }
+        }
+
+        // `hold_amount` is only ever persisted below when the whole reservation is
+        // admitted (see the entry-writing loop's `first_limited` guard below), so
+        // `remaining` must only account for it in that case - otherwise a denied
+        // reservation would report capacity as consumed by a hold that was never
+        // actually taken.
+        let granted_hold = if first_limited.is_none() {
+            request.hold_amount
+        } else {
+            0
+        };
+        for ((counter, (value, window_ttl)), outstanding) in counters
+            .iter_mut()
+            .zip(values_and_window_ttls)
+            .zip(&outstanding_by_counter)
+        {
+            let expires_at = std::cmp::min(now + request.ttl, now + *window_ttl);
+            expires_at_by_counter.push(expires_at);
+
+            let remaining = counter
+                .max_value()
+                .checked_sub(value + outstanding + granted_hold);
+            counter.set_remaining(remaining.unwrap_or_default());
+            counter.set_expires_in(*window_ttl);
         }
 
         if let Some(limited) = first_limited {
@@ -225,5 +244,68 @@ impl LocalReservationRegistry {
             }
         }
         released
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::limit::{Context, Limit};
+
+    fn counter(max_value: u64) -> Counter {
+        let limit = Limit::new(
+            "local_reservations_test",
+            max_value,
+            60,
+            vec![],
+            Vec::<crate::limit::Expression>::default(),
+        );
+        Counter::new(limit, &Context::default())
+            .unwrap()
+            .expect("must have a counter")
+    }
+
+    #[test]
+    fn remaining_reflects_hold_amount_not_check_amount() {
+        let registry = LocalReservationRegistry::new(10);
+        let now = SystemTime::now();
+        let window_ttl = Duration::from_secs(60);
+
+        // max_value=1000, requesting/checking 500 but policy (e.g. max_fraction) clamps
+        // the actual hold down to 100.
+        let mut counters = [counter(1000)];
+        let auth = registry.reserve(
+            &mut counters,
+            &[(0, window_ttl)],
+            ReservationRequest {
+                reservation_id: &ReservationId::new(),
+                check_amount: 500,
+                hold_amount: 100,
+                ttl: window_ttl,
+                now,
+            },
+        );
+        assert!(matches!(auth, Authorization::Ok));
+        assert_eq!(
+            counters[0].remaining(),
+            Some(900),
+            "remaining must reflect the 100 actually held, not the 500 that was checked"
+        );
+
+        // A second reservation for the remaining true capacity (900) must be admitted -
+        // proving the registry's own admission math already agrees with `remaining`.
+        let mut counters2 = [counter(1000)];
+        let auth2 = registry.reserve(
+            &mut counters2,
+            &[(0, window_ttl)],
+            ReservationRequest {
+                reservation_id: &ReservationId::new(),
+                check_amount: 900,
+                hold_amount: 900,
+                ttl: window_ttl,
+                now,
+            },
+        );
+        assert!(matches!(auth2, Authorization::Ok));
     }
 }

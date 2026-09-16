@@ -188,7 +188,6 @@ mod helpers;
 mod test {
     extern crate limitador;
 
-    #[allow(dead_code)]
     async fn eventually<F>(
         timeout: Duration,
         tick: Duration,
@@ -284,6 +283,10 @@ mod test {
     test_with_reservation_capable_storage_impls!(expired_reservations_do_not_count_as_outstanding);
     test_with_reservation_capable_storage_impls!(
         reserve_denies_when_amount_alone_exceeds_max_value
+    );
+    test_with_reservation_capable_storage_impls!(reserve_denied_reports_actual_remaining_capacity);
+    test_with_reservation_capable_storage_impls!(
+        reserve_denied_by_other_counter_reports_actual_remaining_capacity
     );
     test_with_reservation_capable_storage_impls!(reserve_admits_when_amount_fits);
     test_with_reservation_capable_storage_impls!(
@@ -771,11 +774,11 @@ mod test {
                 "Must not be limited after {i}"
             );
             rate_limiter
-                .check_rate_limited_and_update(namespace, &get_ctx, 1, false)
+                .check_rate_limited_and_update(namespace, &get_ctx, 1)
                 .await
                 .unwrap();
             rate_limiter
-                .check_rate_limited_and_update(namespace, &post_ctx, 1, false)
+                .check_rate_limited_and_update(namespace, &post_ctx, 1)
                 .await
                 .unwrap();
         }
@@ -1008,7 +1011,7 @@ mod test {
         for _ in 0..max_hits {
             assert!(
                 !rate_limiter
-                    .check_rate_limited_and_update(namespace, &ctx, 1, false)
+                    .check_rate_limited_and_update(namespace, &ctx, 1)
                     .await
                     .unwrap()
                     .limited
@@ -1017,7 +1020,7 @@ mod test {
 
         assert!(
             rate_limiter
-                .check_rate_limited_and_update(namespace, &ctx, 1, false)
+                .check_rate_limited_and_update(namespace, &ctx, 1)
                 .await
                 .unwrap()
                 .limited
@@ -1045,7 +1048,7 @@ mod test {
 
         for hit in 0..max_hits {
             let result = rate_limiter
-                .check_rate_limited_and_update(namespace, &ctx, 1, true)
+                .check_rate_limited_and_update(namespace, &ctx, 1)
                 .await
                 .unwrap();
             assert!(!result.limited);
@@ -1060,7 +1063,7 @@ mod test {
         }
 
         let result = rate_limiter
-            .check_rate_limited_and_update(namespace, &ctx, 1, true)
+            .check_rate_limited_and_update(namespace, &ctx, 1)
             .await
             .unwrap();
         assert!(result.limited);
@@ -1097,7 +1100,7 @@ mod test {
 
         assert!(
             !rate_limiter
-                .check_rate_limited_and_update(namespace, &ctx, 1, false)
+                .check_rate_limited_and_update(namespace, &ctx, 1)
                 .await
                 .unwrap()
                 .limited
@@ -1125,7 +1128,7 @@ mod test {
 
         assert!(
             rate_limiter
-                .check_rate_limited_and_update(namespace, &ctx, 1, false)
+                .check_rate_limited_and_update(namespace, &ctx, 1)
                 .await
                 .unwrap()
                 .limited
@@ -1167,6 +1170,17 @@ mod test {
             .unwrap();
 
         assert_eq!(rate_limiter.get_limits(namespace).await.len(), 1);
+
+        // get_counters() always reads real storage directly - for CachedRedisStorage, Report's
+        // increments are only queued locally and flushed to Redis asynchronously, so poll until
+        // they land rather than assuming synchronous consistency.
+        eventually(
+            Duration::from_millis(500),
+            Duration::from_millis(5),
+            || async { rate_limiter.get_counters(namespace).await.unwrap().len() == 2 },
+        )
+        .await
+        .unwrap();
 
         let counters = rate_limiter.get_counters(namespace).await.unwrap();
 
@@ -1311,6 +1325,17 @@ mod test {
 
         assert!(rate_limiter.get_limits(namespace).await.contains(&limit));
 
+        // get_counters() always reads real storage directly - for CachedRedisStorage, Report's
+        // increments are only queued locally and flushed to Redis asynchronously, so poll until
+        // they land rather than assuming synchronous consistency.
+        eventually(
+            Duration::from_millis(500),
+            Duration::from_millis(5),
+            || async { rate_limiter.get_counters(namespace).await.unwrap().len() == 1 },
+        )
+        .await
+        .unwrap();
+
         let counters: Vec<Counter> = rate_limiter
             .get_counters(namespace)
             .await
@@ -1436,7 +1461,7 @@ mod test {
         let ctx = Context::default();
 
         let first = rate_limiter
-            .reserve(namespace, &ctx, 6, Some(Duration::from_secs(30)), false)
+            .reserve(namespace, &ctx, 6, Some(Duration::from_secs(30)))
             .await
             .unwrap();
         assert!(!first.limited);
@@ -1444,7 +1469,7 @@ mod test {
 
         // value(0) + outstanding(6) + 6 = 12 > 10: rejected
         let second = rate_limiter
-            .reserve(namespace, &ctx, 6, Some(Duration::from_secs(30)), false)
+            .reserve(namespace, &ctx, 6, Some(Duration::from_secs(30)))
             .await
             .unwrap();
         assert!(second.limited);
@@ -1452,7 +1477,7 @@ mod test {
 
         // value(0) + outstanding(6) + 4 = 10 <= 10: admitted
         let third = rate_limiter
-            .reserve(namespace, &ctx, 4, Some(Duration::from_secs(30)), false)
+            .reserve(namespace, &ctx, 4, Some(Duration::from_secs(30)))
             .await
             .unwrap();
         assert!(!third.limited);
@@ -1468,14 +1493,14 @@ mod test {
         let ctx = Context::default();
 
         let reserved = rate_limiter
-            .reserve(namespace, &ctx, 6, Some(Duration::from_secs(30)), false)
+            .reserve(namespace, &ctx, 6, Some(Duration::from_secs(30)))
             .await
             .unwrap();
         let reservation_id = reserved.reservation_id.expect("should be admitted");
 
         // Still held: 0 + outstanding(6) + 6 = 12 > 10
         let blocked = rate_limiter
-            .reserve(namespace, &ctx, 6, Some(Duration::from_secs(30)), false)
+            .reserve(namespace, &ctx, 6, Some(Duration::from_secs(30)))
             .await
             .unwrap();
         assert!(blocked.limited);
@@ -1496,7 +1521,7 @@ mod test {
 
         // Counter is now at 4 (2 + 2) with no outstanding reservations: 4 + 6 = 10 <= 10
         let after = rate_limiter
-            .reserve(namespace, &ctx, 6, Some(Duration::from_secs(30)), false)
+            .reserve(namespace, &ctx, 6, Some(Duration::from_secs(30)))
             .await
             .unwrap();
         assert!(!after.limited);
@@ -1517,7 +1542,7 @@ mod test {
 
         // Reserve 4, but real usage turns out to be higher than the estimate.
         let reserved = rate_limiter
-            .reserve(namespace, &ctx, 4, Some(Duration::from_secs(30)), false)
+            .reserve(namespace, &ctx, 4, Some(Duration::from_secs(30)))
             .await
             .unwrap();
         assert!(!reserved.limited);
@@ -1531,7 +1556,7 @@ mod test {
 
         // Counter is now at 9 with no outstanding reservations: 9 + 5 = 14 > 10, denied.
         let after = rate_limiter
-            .reserve(namespace, &ctx, 5, Some(Duration::from_secs(30)), false)
+            .reserve(namespace, &ctx, 5, Some(Duration::from_secs(30)))
             .await
             .unwrap();
         assert!(after.limited);
@@ -1544,7 +1569,6 @@ mod test {
                 &Context::default(),
                 5,
                 Some(Duration::from_secs(10)),
-                false,
             )
             .await
             .unwrap();
@@ -1562,14 +1586,14 @@ mod test {
         // A zero ttl means this reservation is already expired by the time we look at it
         // again.
         let first = rate_limiter
-            .reserve(namespace, &ctx, 8, Some(Duration::ZERO), false)
+            .reserve(namespace, &ctx, 8, Some(Duration::ZERO))
             .await
             .unwrap();
         assert!(!first.limited);
 
         // The first reservation is already expired, so another 8 fits again: 0 + 0 + 8 <= 10
         let second = rate_limiter
-            .reserve(namespace, &ctx, 8, Some(Duration::from_secs(30)), false)
+            .reserve(namespace, &ctx, 8, Some(Duration::from_secs(30)))
             .await
             .unwrap();
         assert!(!second.limited);
@@ -1585,11 +1609,65 @@ mod test {
         let ctx = Context::default();
 
         let result = rate_limiter
-            .reserve(namespace, &ctx, 1000, Some(Duration::from_secs(30)), false)
+            .reserve(namespace, &ctx, 1000, Some(Duration::from_secs(30)))
             .await
             .unwrap();
         assert!(result.limited);
         assert!(result.reservation_id.is_none());
+    }
+
+    async fn reserve_denied_reports_actual_remaining_capacity(rate_limiter: &mut TestsLimiter) {
+        // A denied reservation never actually holds anything - `remaining` must reflect the
+        // counter's real, already-committed usage, not (incorrectly) subtract the amount
+        // that was requested but never granted.
+        let namespace = "denied_remaining";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rate_limiter.add_limit(&limit).await;
+
+        let ctx = Context::default();
+
+        rate_limiter
+            .update_counters(namespace, &ctx, 8)
+            .await
+            .unwrap();
+
+        // value(8) + outstanding(0) + 5 = 13 > 10: rejected, nothing held.
+        let result = rate_limiter
+            .reserve(namespace, &ctx, 5, Some(Duration::from_secs(30)))
+            .await
+            .unwrap();
+        assert!(result.limited);
+        assert!(result.reservation_id.is_none());
+        assert_eq!(result.counters[0].remaining(), Some(2));
+    }
+
+    async fn reserve_denied_by_other_counter_reports_actual_remaining_capacity(
+        rate_limiter: &mut TestsLimiter,
+    ) {
+        // A reservation spanning multiple counters is all-or-nothing: if any one counter
+        // denies it, none of them actually hold anything - so every counter's `remaining`
+        // must reflect its own real usage, not subtract a hold that was never granted just
+        // because that counter individually had room for the request.
+        let namespace = "denied_remaining_multi";
+        let roomy = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        let tight = Limit::new(namespace, 3, 120, vec![], Vec::<Expression>::default());
+        rate_limiter.add_limit(&roomy).await;
+        rate_limiter.add_limit(&tight).await;
+
+        let ctx = Context::default();
+
+        // roomy: 0 + 0 + 5 = 5 <= 10 (would be admitted alone)
+        // tight: 0 + 0 + 5 = 5 > 3 (denies the whole reservation)
+        let result = rate_limiter
+            .reserve(namespace, &ctx, 5, Some(Duration::from_secs(30)))
+            .await
+            .unwrap();
+        assert!(result.limited);
+        assert!(result.reservation_id.is_none());
+        assert_eq!(result.counters.len(), 2);
+        for counter in &result.counters {
+            assert_eq!(counter.remaining(), Some(counter.max_value()));
+        }
     }
 
     async fn reserve_admits_when_amount_fits(rate_limiter: &mut TestsLimiter) {
@@ -1600,7 +1678,7 @@ mod test {
         let ctx = Context::default();
 
         let result = rate_limiter
-            .reserve(namespace, &ctx, 10, Some(Duration::from_secs(30)), false)
+            .reserve(namespace, &ctx, 10, Some(Duration::from_secs(30)))
             .await
             .unwrap();
         assert!(!result.limited);
@@ -1617,7 +1695,7 @@ mod test {
         let ctx = Context::default();
 
         let result = rate_limiter
-            .reserve(namespace, &ctx, 0, Some(Duration::from_secs(30)), false)
+            .reserve(namespace, &ctx, 0, Some(Duration::from_secs(30)))
             .await
             .unwrap();
         assert!(!result.limited);
@@ -1642,7 +1720,7 @@ mod test {
             .unwrap();
 
         let result = rate_limiter
-            .reserve(namespace, &ctx, 0, Some(Duration::from_secs(30)), false)
+            .reserve(namespace, &ctx, 0, Some(Duration::from_secs(30)))
             .await
             .unwrap();
         assert!(result.limited);
@@ -1688,7 +1766,7 @@ mod test {
                 s.spawn(move || {
                     let ctx = Context::default();
                     let res = rl
-                        .reserve(&ns, &ctx, AMOUNT, Some(Duration::from_secs(30)), false)
+                        .reserve(&ns, &ctx, AMOUNT, Some(Duration::from_secs(30)))
                         .unwrap();
                     if !res.limited {
                         admitted_count.fetch_add(1, Ordering::SeqCst);
@@ -1739,7 +1817,7 @@ mod test {
             handles.push(tokio::spawn(async move {
                 let ctx = Context::default();
                 let res = rl
-                    .reserve(&ns, &ctx, AMOUNT, Some(Duration::from_secs(30)), false)
+                    .reserve(&ns, &ctx, AMOUNT, Some(Duration::from_secs(30)))
                     .await
                     .unwrap();
                 if !res.limited {

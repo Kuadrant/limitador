@@ -65,52 +65,28 @@ impl AsyncCounterStorage for AsyncRedisStorage {
     }
 
     #[tracing::instrument(skip_all)]
+    async fn check<'a>(
+        &self,
+        counters: &mut Vec<Counter>,
+        delta: u64,
+    ) -> Result<Authorization, StorageErr> {
+        Ok(self
+            .evaluate(counters, delta)
+            .await?
+            .unwrap_or(Authorization::Ok))
+    }
+
+    #[tracing::instrument(skip_all)]
     async fn check_and_update<'a>(
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let mut con = self.conn_manager.clone();
         let counter_keys: Vec<Vec<u8>> = counters.iter().map(key_for_counter).collect();
 
-        if load_counters {
-            let script = redis::Script::new(VALUES_AND_TTLS);
-            let mut script_invocation = script.prepare_invoke();
-
-            for counter_key in &counter_keys {
-                script_invocation.key(counter_key);
-            }
-
-            let script_res: Vec<Option<i64>> = {
-                script_invocation
-                    .invoke_async(&mut con)
-                    .instrument(info_span!("datastore"))
-                    .await?
-            };
-            if let Some(res) = is_limited(counters, delta, script_res) {
-                return Ok(res);
-            }
-        } else {
-            let counter_vals: Vec<Option<i64>> = {
-                redis::cmd("MGET")
-                    .arg(counter_keys.clone())
-                    .query_async(&mut con)
-                    .instrument(info_span!("datastore"))
-                    .await?
-            };
-
-            for (i, counter) in counters.iter().enumerate() {
-                // remaining  = max - (curr_val + delta)
-                let remaining = counter
-                    .max_value()
-                    .checked_sub(u64::try_from(counter_vals[i].unwrap_or(0)).unwrap_or(0) + delta);
-                if remaining.is_none() {
-                    return Ok(Authorization::Limited(
-                        counter.limit().name().map(|n| n.to_owned()),
-                    ));
-                }
-            }
+        if let Some(res) = self.evaluate(counters, delta).await? {
+            return Ok(res);
         }
 
         let script = redis::Script::new(SCRIPT_UPDATE_COUNTER);
@@ -224,7 +200,6 @@ impl AsyncCounterStorage for AsyncRedisStorage {
         check_amount: u64,
         hold_amount: u64,
         ttl: Duration,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         debug_assert!(hold_amount <= check_amount);
 
@@ -264,13 +239,19 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             let value = raw[i * 3].max(0) as u64;
             let outstanding = raw[i * 3 + 1].max(0) as u64;
             let window_ttl_ms = raw[i * 3 + 2].max(0) as u64;
+            // Admission is checked against `check_amount` (the raw, requested amount - see
+            // `RateLimiter::reserve`'s doc comment), but `remaining` must reflect what's
+            // actually held going forward, which is `hold_amount` - otherwise it understates
+            // capacity whenever policy clamps the hold below what was requested. When denied,
+            // `SCRIPT_RESERVE` never persists `hold_amount`, so it must be excluded here too.
             let total = value + outstanding + check_amount;
+            let granted_hold = if admitted { hold_amount } else { 0 };
 
-            if load_counters {
-                let remaining = counter.max_value().checked_sub(total);
-                counter.set_remaining(remaining.unwrap_or_default());
-                counter.set_expires_in(Duration::from_millis(window_ttl_ms));
-            }
+            let remaining = counter
+                .max_value()
+                .checked_sub(value + outstanding + granted_hold);
+            counter.set_remaining(remaining.unwrap_or_default());
+            counter.set_expires_in(Duration::from_millis(window_ttl_ms));
             if first_limited.is_none() && total > counter.max_value() {
                 first_limited = Some(counter.limit().name().map(|n| n.to_owned()));
             }
@@ -304,6 +285,32 @@ impl AsyncCounterStorage for AsyncRedisStorage {
 }
 
 impl AsyncRedisStorage {
+    /// Shared by [`AsyncCounterStorage::check`] and [`AsyncCounterStorage::check_and_update`]:
+    /// reads every counter's current value and ttl in one round trip (`VALUES_AND_TTLS` is a
+    /// read-only `GET`+`PTTL` per key), annotating each with its `remaining`/`expires_in`, and
+    /// returns the first counter found over its limit, if any. Never mutates any stored value.
+    async fn evaluate(
+        &self,
+        counters: &mut [Counter],
+        delta: u64,
+    ) -> Result<Option<Authorization>, StorageErr> {
+        let mut con = self.conn_manager.clone();
+        let counter_keys: Vec<Vec<u8>> = counters.iter().map(key_for_counter).collect();
+
+        let script = redis::Script::new(VALUES_AND_TTLS);
+        let mut script_invocation = script.prepare_invoke();
+        for counter_key in &counter_keys {
+            script_invocation.key(counter_key);
+        }
+
+        let script_res: Vec<Option<i64>> = script_invocation
+            .invoke_async(&mut con)
+            .instrument(info_span!("datastore"))
+            .await?;
+
+        Ok(is_limited(counters, delta, script_res))
+    }
+
     pub async fn new(redis_url: &str) -> Result<Self, RedisError> {
         let info = ConnectionInfo::from_str(redis_url)?;
         Self::new_with_conn_manager(
@@ -449,7 +456,6 @@ mod tests {
                 10,
                 0,
                 Duration::from_secs(60),
-                false,
             )
             .await
             .unwrap();
@@ -488,7 +494,6 @@ mod tests {
                 0,
                 0,
                 Duration::from_secs(60),
-                false,
             )
             .await
             .unwrap();
@@ -508,5 +513,49 @@ mod tests {
             .await
             .unwrap();
         assert!(!released, "nothing should have been held to release");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn remaining_reflects_hold_amount_not_check_amount() {
+        let storage = AsyncRedisStorage::new("redis://127.0.0.1:6379")
+            .await
+            .unwrap();
+        storage.clear().await.unwrap();
+        // max_value=1000, requesting/checking 500 but policy (e.g. max_fraction) clamps
+        // the actual hold down to 100.
+        let mut counters = vec![counter("async_remaining_reflects_hold_amount_test", 1000)];
+        let reservation_id = ReservationId::new();
+
+        let auth = storage
+            .reserve(
+                &mut counters,
+                &reservation_id,
+                500,
+                100,
+                Duration::from_secs(60),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(auth, Authorization::Ok));
+        assert_eq!(
+            counters[0].remaining(),
+            Some(900),
+            "remaining must reflect the 100 actually held, not the 500 that was checked"
+        );
+
+        // A second reservation for the remaining true capacity (900) must be admitted -
+        // proving the backend's own admission math already agrees with `remaining`.
+        let auth2 = storage
+            .reserve(
+                &mut counters,
+                &ReservationId::new(),
+                900,
+                900,
+                Duration::from_secs(60),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(auth2, Authorization::Ok));
     }
 }
