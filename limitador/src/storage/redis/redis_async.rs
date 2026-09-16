@@ -268,17 +268,23 @@ impl AsyncCounterStorage for AsyncRedisStorage {
         counters: &[Counter],
         reservation_id: &ReservationId,
     ) -> Result<bool, StorageErr> {
+        if counters.is_empty() {
+            return Ok(false);
+        }
+
         let mut con = self.conn_manager.clone();
 
-        let mut released = false;
+        let mut pipeline = redis::pipe();
         for counter in counters {
-            let removed: i64 = con
-                .hdel(key_for_reservations(counter), reservation_id.as_str())
-                .instrument(info_span!("datastore"))
-                .await?;
-            released |= removed > 0;
+            pipeline.hdel(key_for_reservations(counter), reservation_id.as_str());
         }
-        Ok(released)
+
+        let removed: Vec<i64> = pipeline
+            .query_async(&mut con)
+            .instrument(info_span!("datastore"))
+            .await?;
+
+        Ok(removed.into_iter().any(|removed| removed > 0))
     }
 }
 

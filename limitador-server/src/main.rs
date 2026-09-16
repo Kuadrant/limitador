@@ -645,9 +645,7 @@ fn create_config() -> (Configuration, &'static str) {
                         .parse()
                         .map_err(|e| format!("`{arg}` isn't a valid number: {e}"))?;
                     if !(0.0..=1.0).contains(&fraction) {
-                        return Err(format!(
-                            "must be between 0.0 and 1.0, got {fraction}"
-                        ));
+                        return Err(format!("must be between 0.0 and 1.0, got {fraction}"));
                     }
                     Ok(fraction)
                 }))
