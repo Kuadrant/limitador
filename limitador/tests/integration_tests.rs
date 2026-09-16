@@ -284,6 +284,10 @@ mod test {
     test_with_reservation_capable_storage_impls!(
         reserve_denies_when_amount_alone_exceeds_max_value
     );
+    test_with_reservation_capable_storage_impls!(reserve_denied_reports_actual_remaining_capacity);
+    test_with_reservation_capable_storage_impls!(
+        reserve_denied_by_other_counter_reports_actual_remaining_capacity
+    );
     test_with_reservation_capable_storage_impls!(reserve_admits_when_amount_fits);
     test_with_reservation_capable_storage_impls!(
         reserve_with_amount_zero_creates_no_reservation_entry
@@ -1610,6 +1614,60 @@ mod test {
             .unwrap();
         assert!(result.limited);
         assert!(result.reservation_id.is_none());
+    }
+
+    async fn reserve_denied_reports_actual_remaining_capacity(rate_limiter: &mut TestsLimiter) {
+        // A denied reservation never actually holds anything - `remaining` must reflect the
+        // counter's real, already-committed usage, not (incorrectly) subtract the amount
+        // that was requested but never granted.
+        let namespace = "denied_remaining";
+        let limit = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        rate_limiter.add_limit(&limit).await;
+
+        let ctx = Context::default();
+
+        rate_limiter
+            .update_counters(namespace, &ctx, 8)
+            .await
+            .unwrap();
+
+        // value(8) + outstanding(0) + 5 = 13 > 10: rejected, nothing held.
+        let result = rate_limiter
+            .reserve(namespace, &ctx, 5, Some(Duration::from_secs(30)))
+            .await
+            .unwrap();
+        assert!(result.limited);
+        assert!(result.reservation_id.is_none());
+        assert_eq!(result.counters[0].remaining(), Some(2));
+    }
+
+    async fn reserve_denied_by_other_counter_reports_actual_remaining_capacity(
+        rate_limiter: &mut TestsLimiter,
+    ) {
+        // A reservation spanning multiple counters is all-or-nothing: if any one counter
+        // denies it, none of them actually hold anything - so every counter's `remaining`
+        // must reflect its own real usage, not subtract a hold that was never granted just
+        // because that counter individually had room for the request.
+        let namespace = "denied_remaining_multi";
+        let roomy = Limit::new(namespace, 10, 60, vec![], Vec::<Expression>::default());
+        let tight = Limit::new(namespace, 3, 120, vec![], Vec::<Expression>::default());
+        rate_limiter.add_limit(&roomy).await;
+        rate_limiter.add_limit(&tight).await;
+
+        let ctx = Context::default();
+
+        // roomy: 0 + 0 + 5 = 5 <= 10 (would be admitted alone)
+        // tight: 0 + 0 + 5 = 5 > 3 (denies the whole reservation)
+        let result = rate_limiter
+            .reserve(namespace, &ctx, 5, Some(Duration::from_secs(30)))
+            .await
+            .unwrap();
+        assert!(result.limited);
+        assert!(result.reservation_id.is_none());
+        assert_eq!(result.counters.len(), 2);
+        for counter in &result.counters {
+            assert_eq!(counter.remaining(), Some(counter.max_value()));
+        }
     }
 
     async fn reserve_admits_when_amount_fits(rate_limiter: &mut TestsLimiter) {

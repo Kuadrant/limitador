@@ -242,12 +242,14 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             // Admission is checked against `check_amount` (the raw, requested amount - see
             // `RateLimiter::reserve`'s doc comment), but `remaining` must reflect what's
             // actually held going forward, which is `hold_amount` - otherwise it understates
-            // capacity whenever policy clamps the hold below what was requested.
+            // capacity whenever policy clamps the hold below what was requested. When denied,
+            // `SCRIPT_RESERVE` never persists `hold_amount`, so it must be excluded here too.
             let total = value + outstanding + check_amount;
+            let granted_hold = if admitted { hold_amount } else { 0 };
 
             let remaining = counter
                 .max_value()
-                .checked_sub(value + outstanding + hold_amount);
+                .checked_sub(value + outstanding + granted_hold);
             counter.set_remaining(remaining.unwrap_or_default());
             counter.set_expires_in(Duration::from_millis(window_ttl_ms));
             if first_limited.is_none() && total > counter.max_value() {

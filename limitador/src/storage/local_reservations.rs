@@ -134,27 +134,43 @@ impl LocalReservationRegistry {
         let now = request.now;
         let mut first_limited = None;
         let mut expires_at_by_counter = Vec::with_capacity(counters.len());
+        let mut outstanding_by_counter = Vec::with_capacity(counters.len());
 
-        for (counter, (value, window_ttl)) in counters.iter_mut().zip(values_and_window_ttls) {
+        for (counter, (value, _)) in counters.iter().zip(values_and_window_ttls) {
             let outstanding = self.outstanding(counter, now);
-            let expires_at = std::cmp::min(now + request.ttl, now + *window_ttl);
-            expires_at_by_counter.push(expires_at);
+            outstanding_by_counter.push(outstanding);
 
-            // Admission is checked against `check_amount` (the raw, requested amount - see
-            // `RateLimiter::reserve`'s doc comment), but `remaining` must reflect what's
-            // actually held going forward, which is `hold_amount` - otherwise it understates
-            // capacity whenever policy clamps the hold below what was requested.
             let total = value + outstanding + request.check_amount;
-            let remaining = counter
-                .max_value()
-                .checked_sub(value + outstanding + request.hold_amount);
-            counter.set_remaining(remaining.unwrap_or_default());
-            counter.set_expires_in(*window_ttl);
             if first_limited.is_none() && total > counter.max_value() {
                 first_limited = Some(Authorization::Limited(
                     counter.limit().name().map(|n| n.to_owned()),
                 ));
             }
+        }
+
+        // `hold_amount` is only ever persisted below when the whole reservation is
+        // admitted (see the entry-writing loop's `first_limited` guard below), so
+        // `remaining` must only account for it in that case - otherwise a denied
+        // reservation would report capacity as consumed by a hold that was never
+        // actually taken.
+        let granted_hold = if first_limited.is_none() {
+            request.hold_amount
+        } else {
+            0
+        };
+        for ((counter, (value, window_ttl)), outstanding) in counters
+            .iter_mut()
+            .zip(values_and_window_ttls)
+            .zip(&outstanding_by_counter)
+        {
+            let expires_at = std::cmp::min(now + request.ttl, now + *window_ttl);
+            expires_at_by_counter.push(expires_at);
+
+            let remaining = counter
+                .max_value()
+                .checked_sub(value + outstanding + granted_hold);
+            counter.set_remaining(remaining.unwrap_or_default());
+            counter.set_expires_in(*window_ttl);
         }
 
         if let Some(limited) = first_limited {
