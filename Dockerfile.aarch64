@@ -4,10 +4,15 @@
 
 FROM --platform=${BUILDPLATFORM} mirror.gcr.io/library/rust:1.88 AS limitador-build
 
+# libssl3/libssl-dev:arm64 are pinned to the amd64 candidate version because
+# Debian's security pocket can briefly publish a newer libssl3 for arm64 than
+# for amd64, making the default arm64 candidate uninstallable alongside amd64.
 RUN dpkg --add-architecture arm64 \
-    && apt update && apt upgrade -y \
-    && apt install -y protobuf-compiler clang g++-aarch64-linux-gnu libc6-dev-arm64-cross \
-       libssl-dev:arm64 pkg-config
+    && apt update \
+    && SSL_VER="$(apt-cache policy libssl3 | sed -n 's/^ *Candidate: *//p')" \
+    && apt upgrade -y \
+    && apt install -y protobuf-compiler clang g++-aarch64-linux-gnu libc6-dev-arm64-cross pkg-config \
+       "libssl3:arm64=${SSL_VER}" "libssl-dev:arm64=${SSL_VER}"
 
 RUN rustup target add aarch64-unknown-linux-gnu \
     && rustup toolchain install stable-aarch64-unknown-linux-gnu --force-non-host

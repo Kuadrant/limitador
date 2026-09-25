@@ -1,11 +1,16 @@
 # Build Stage: cross-compile for ppc64le (IBM POWER)
 FROM --platform=${BUILDPLATFORM} rust:1.88 AS limitador-build
 
+# libssl3/libssl-dev:ppc64el are pinned to the amd64 candidate version because
+# Debian's security pocket can briefly publish a newer libssl3 for ppc64el than
+# for amd64, making the default ppc64el candidate uninstallable alongside amd64.
 RUN dpkg --add-architecture ppc64el \
-    && apt-get update && apt-get upgrade -y && \
+    && apt-get update && \
+    SSL_VER="$(apt-cache policy libssl3 | sed -n 's/^ *Candidate: *//p')" && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends protobuf-compiler clang \
-    gcc-powerpc64le-linux-gnu g++-powerpc64le-linux-gnu libc6-dev-ppc64el-cross \
-    libssl-dev:ppc64el pkg-config
+    gcc-powerpc64le-linux-gnu g++-powerpc64le-linux-gnu libc6-dev-ppc64el-cross pkg-config \
+    "libssl3:ppc64el=${SSL_VER}" "libssl-dev:ppc64el=${SSL_VER}"
 
 RUN rustup target add powerpc64le-unknown-linux-gnu
 
