@@ -4,11 +4,16 @@
 
 FROM --platform=${BUILDPLATFORM} rust:1.88 AS limitador-build
 
+# libssl3/libssl-dev:s390x are pinned to the amd64 candidate version because
+# Debian's security pocket can briefly publish a newer libssl3 for s390x than
+# for amd64, making the default s390x candidate uninstallable alongside amd64.
 RUN dpkg --add-architecture s390x \
-    && apt-get update && apt-get upgrade -y \
+    && apt-get update \
+    && SSL_VER="$(apt-cache policy libssl3 | sed -n 's/^ *Candidate: *//p')" \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends protobuf-compiler clang \
-        gcc-s390x-linux-gnu g++-s390x-linux-gnu libc6-dev-s390x-cross \
-        libssl-dev:s390x pkg-config
+        gcc-s390x-linux-gnu g++-s390x-linux-gnu libc6-dev-s390x-cross pkg-config \
+        "libssl3:s390x=${SSL_VER}" "libssl-dev:s390x=${SSL_VER}"
 
 RUN rustup target add s390x-unknown-linux-gnu
 
