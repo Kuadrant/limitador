@@ -72,90 +72,23 @@ impl CounterStorage for InMemoryStorage {
     }
 
     #[tracing::instrument(skip_all)]
+    fn check(&self, counters: &mut Vec<Counter>, delta: u64) -> Result<Authorization, StorageErr> {
+        Ok(self.evaluate(counters, delta))
+    }
+
+    #[tracing::instrument(skip_all)]
     fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
-        let limits_by_namespace = self.simple_limits.read().unwrap();
-        let mut first_limited = None;
-        let mut counter_values_to_update: Vec<(&AtomicExpiringValue, Duration)> = Vec::new();
-        let mut qualified_counter_values_to_updated: Vec<(Arc<AtomicExpiringValue>, Duration)> =
-            Vec::new();
-        let now = SystemTime::now();
-
-        let mut process_counter =
-            |counter: &mut Counter, value: u64, delta: u64| -> Option<Authorization> {
-                if load_counters {
-                    let remaining = counter.max_value().checked_sub(value + delta);
-                    counter.set_remaining(remaining.unwrap_or_default());
-                    if first_limited.is_none() && remaining.is_none() {
-                        first_limited = Some(Authorization::Limited(
-                            counter.limit().name().map(|n| n.to_owned()),
-                        ));
-                    }
-                }
-                if !Self::counter_is_within_limits(counter, Some(&value), delta) {
-                    return Some(Authorization::Limited(
-                        counter.limit().name().map(|n| n.to_owned()),
-                    ));
-                }
-                None
-            };
-
-        // Process simple counters
-        for counter in counters.iter_mut().filter(|c| !c.is_qualified()) {
-            let atomic_expiring_value: &AtomicExpiringValue =
-                limits_by_namespace.get(counter.limit()).unwrap();
-
-            if let Some(limited) = process_counter(counter, atomic_expiring_value.value(), delta) {
-                if !load_counters {
-                    return Ok(limited);
-                }
+        let auth = self.evaluate(counters, delta);
+        if matches!(auth, Authorization::Ok) {
+            for counter in counters.iter() {
+                self.update_counter(counter, delta)?;
             }
-            if load_counters {
-                counter.set_expires_in(atomic_expiring_value.ttl());
-            }
-            counter_values_to_update.push((atomic_expiring_value, counter.window()));
         }
-
-        // Process qualified counters
-        for counter in counters.iter_mut().filter(|c| c.is_qualified()) {
-            let value = match self.qualified_counters.get(counter) {
-                None => self.qualified_counters.get_with_by_ref(counter, || {
-                    Arc::new(AtomicExpiringValue::new(0, now + counter.window()))
-                }),
-                Some(counter) => counter,
-            };
-
-            if let Some(limited) = process_counter(counter, value.value(), delta) {
-                if !load_counters {
-                    return Ok(limited);
-                }
-            }
-            if load_counters {
-                counter.set_expires_in(value.ttl());
-            }
-
-            qualified_counter_values_to_updated.push((value, counter.window()));
-        }
-
-        if let Some(limited) = first_limited {
-            return Ok(limited);
-        }
-
-        // Update counters
-        counter_values_to_update.iter().for_each(|(v, ttl)| {
-            v.update(delta, *ttl, now);
-        });
-        qualified_counter_values_to_updated
-            .iter()
-            .for_each(|(v, ttl)| {
-                v.update(delta, *ttl, now);
-            });
-
-        Ok(Authorization::Ok)
+        Ok(auth)
     }
 
     #[tracing::instrument(skip_all)]
@@ -211,7 +144,6 @@ impl CounterStorage for InMemoryStorage {
         check_amount: u64,
         hold_amount: u64,
         ttl: Duration,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let now = SystemTime::now();
         let values_and_window_ttls: Vec<(u64, Duration)> = counters
@@ -227,7 +159,6 @@ impl CounterStorage for InMemoryStorage {
                 check_amount,
                 hold_amount,
                 ttl,
-                load_counters,
                 now,
             },
         ))
@@ -252,6 +183,55 @@ impl InMemoryStorage {
                 .build(),
             reservations: LocalReservationRegistry::new(cache_size),
         }
+    }
+
+    /// Shared by [`CounterStorage::check`] and [`CounterStorage::check_and_update`]: reads
+    /// every counter's current value, annotating each with its `remaining`/`expires_in`, and
+    /// determines whether `delta` more would keep all of them within their limit. Never
+    /// mutates any stored value.
+    fn evaluate(&self, counters: &mut [Counter], delta: u64) -> Authorization {
+        let limits_by_namespace = self.simple_limits.read().unwrap();
+        let mut first_limited = None;
+
+        let mut record = |counter: &mut Counter, value: u64, ttl: Duration| {
+            // A zero ttl means the previous window has already elapsed (whether or not a
+            // stale entry is still physically present) - report a fresh full window, the same
+            // as a counter that never existed at all, rather than a misleading "already reset".
+            let ttl = if ttl.is_zero() { counter.window() } else { ttl };
+            // `remaining` reflects the counter's actual current state, not a projection of
+            // `delta` having been applied - `check()` never applies it, and `check_and_update`
+            // compensates for its own persisted delta afterward (see `RateLimiter`).
+            counter.set_remaining(counter.max_value().saturating_sub(value));
+            counter.set_expires_in(ttl);
+            if first_limited.is_none() && counter.max_value().checked_sub(value + delta).is_none() {
+                first_limited = Some(Authorization::Limited(
+                    counter.limit().name().map(|n| n.to_owned()),
+                ));
+            }
+        };
+
+        for counter in counters.iter_mut().filter(|c| !c.is_qualified()) {
+            // Normally always present (populated by `add_counter` when the limit was
+            // registered) - but a concurrent `delete_limit`/`delete_limits`/`clear` between
+            // `counters_that_apply` resolving this counter and this read could remove it.
+            // Treat that race as a fresh counter rather than panic.
+            match limits_by_namespace.get(counter.limit()) {
+                Some(value) => record(counter, value.value(), value.ttl()),
+                None => record(counter, 0, counter.window()),
+            }
+        }
+
+        // Never insert into `qualified_counters` here on a miss - `check()` must stay
+        // read-only. Persisting (and thus actually starting a counter's window) only happens
+        // in `check_and_update`'s subsequent `update_counter` call, once admission is decided.
+        for counter in counters.iter_mut().filter(|c| c.is_qualified()) {
+            match self.qualified_counters.get(counter) {
+                Some(value) => record(counter, value.value(), value.ttl()),
+                None => record(counter, 0, counter.window()),
+            }
+        }
+
+        first_limited.unwrap_or(Authorization::Ok)
     }
 
     fn counters_in_namespace(
@@ -296,13 +276,6 @@ impl InMemoryStorage {
                     }
                 }
             }
-        }
-    }
-
-    fn counter_is_within_limits(counter: &Counter, current_val: Option<&u64>, delta: u64) -> bool {
-        match current_val {
-            Some(current_val) => current_val + delta <= counter.max_value(),
-            None => counter.max_value() >= delta,
         }
     }
 
@@ -402,7 +375,6 @@ mod tests {
                 10,
                 0,
                 Duration::from_secs(60),
-                false,
             )
             .unwrap();
         assert!(matches!(auth, Authorization::Ok));
@@ -411,5 +383,137 @@ mod tests {
             .release_reservation(&counters, &reservation_id)
             .unwrap();
         assert!(!released, "nothing should have been held to release");
+    }
+
+    #[test]
+    fn check_does_not_persist_qualified_counters() {
+        let storage = InMemoryStorage::default();
+        let limit = Limit::new(
+            "check_no_persist_test",
+            10,
+            60,
+            vec![],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
+        let map = HashMap::from([("app_id".to_string(), "1".to_string())]);
+        let counter = Counter::new(limit, &map.into())
+            .unwrap()
+            .expect("must have a counter");
+
+        let auth = storage.check(&mut vec![counter], 1).unwrap();
+        assert!(matches!(auth, Authorization::Ok));
+
+        assert_eq!(
+            storage.qualified_counters.iter().count(),
+            0,
+            "a read-only check must not insert anything into the qualified counters cache - \
+             doing so would prematurely start the counter's window and let read-only traffic \
+             grow the cache with zero-usage entries"
+        );
+    }
+
+    #[test]
+    fn check_reports_fresh_window_for_a_never_used_counter() {
+        let storage = InMemoryStorage::default();
+        let limit = Limit::new(
+            "check_fresh_window_test",
+            10,
+            60,
+            vec![],
+            Vec::<crate::limit::Expression>::default(),
+        );
+        storage.add_counter(&limit).unwrap();
+        let counter = Counter::new(limit, &Context::default())
+            .unwrap()
+            .expect("must have a counter");
+
+        let mut counters = vec![counter.clone()];
+        storage.check(&mut counters, 1).unwrap();
+
+        assert_eq!(
+            counters[0].expires_in().unwrap(),
+            counter.window(),
+            "a never-used counter should report a fresh full window, not a stale/zero ttl"
+        );
+    }
+
+    #[test]
+    fn check_reports_current_remaining_not_a_post_delta_projection() {
+        let storage = InMemoryStorage::default();
+        let limit = Limit::new(
+            "check_remaining_test",
+            10,
+            60,
+            vec![],
+            Vec::<crate::limit::Expression>::default(),
+        );
+        storage.add_counter(&limit).unwrap();
+        let counter = Counter::new(limit, &Context::default())
+            .unwrap()
+            .expect("must have a counter");
+
+        let mut counters = vec![counter.clone()];
+        // `check` never applies `delta` - it must report the true current remaining (10), not
+        // remaining as if this hypothetical request had already been counted (10 - 1 = 9).
+        storage.check(&mut counters, 1).unwrap();
+
+        assert_eq!(
+            counters[0].remaining().unwrap(),
+            10,
+            "check() must not subtract delta from remaining, since it never applies it"
+        );
+    }
+
+    #[test]
+    fn check_and_update_also_reports_current_pre_persist_remaining() {
+        let storage = InMemoryStorage::default();
+        let limit = Limit::new(
+            "check_and_update_remaining_test",
+            10,
+            60,
+            vec![],
+            Vec::<crate::limit::Expression>::default(),
+        );
+        storage.add_counter(&limit).unwrap();
+        let counter = Counter::new(limit, &Context::default())
+            .unwrap()
+            .expect("must have a counter");
+
+        // At the storage layer, `check_and_update` reports the same pre-persist remaining as
+        // `check` - the caller (`RateLimiter::check_rate_limited_and_update`) is responsible
+        // for subtracting `delta` afterward to reflect the persist it just performed.
+        let mut counters = vec![counter.clone()];
+        storage.check_and_update(&mut counters, 1).unwrap();
+
+        assert_eq!(counters[0].remaining().unwrap(), 10);
+    }
+
+    #[test]
+    fn check_does_not_panic_on_a_simple_counter_whose_limit_was_concurrently_deleted() {
+        let storage = InMemoryStorage::default();
+        let limit = Limit::new(
+            "check_deleted_limit_test",
+            10,
+            60,
+            vec![],
+            Vec::<crate::limit::Expression>::default(),
+        );
+        storage.add_counter(&limit).unwrap();
+        let counter = Counter::new(limit.clone(), &Context::default())
+            .unwrap()
+            .expect("must have a counter");
+
+        // Simulates the race `evaluate` must tolerate: `RateLimiter::counters_that_apply`
+        // already resolved this counter from the limit before a concurrent delete removed its
+        // `simple_limits` entry.
+        let mut limits = HashSet::new();
+        limits.insert(Arc::new(limit));
+        storage.delete_counters(&limits).unwrap();
+
+        let mut counters = vec![counter];
+        let auth = storage.check(&mut counters, 1).unwrap();
+
+        assert!(matches!(auth, Authorization::Ok));
+        assert_eq!(counters[0].remaining().unwrap(), 10);
     }
 }

@@ -199,15 +199,12 @@ async fn check_and_report(
     ctx.list_binding("descriptors".to_string(), vec![values]);
     let rate_limit_data = data.get_ref();
     let rate_limited_and_update_result = match rate_limit_data.limiter() {
-        Limiter::Blocking(limiter) => limiter.check_rate_limited_and_update(
-            &namespace,
-            &ctx,
-            delta,
-            response_headers.is_some(),
-        ),
+        Limiter::Blocking(limiter) => {
+            limiter.check_rate_limited_and_update(&namespace, &ctx, delta)
+        }
         Limiter::Async(limiter) => {
             limiter
-                .check_rate_limited_and_update(&namespace, &ctx, delta, response_headers.is_some())
+                .check_rate_limited_and_update(&namespace, &ctx, delta)
                 .await
         }
     };
