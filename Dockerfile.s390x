@@ -4,16 +4,19 @@
 
 FROM --platform=${BUILDPLATFORM} rust:1.88 AS limitador-build
 
-# libssl3/libssl-dev:s390x are pinned to the amd64 candidate version because
-# Debian's security pocket can briefly publish a newer libssl3 for s390x than
-# for amd64, making the default s390x candidate uninstallable alongside amd64.
+# libssl3/libssl-dev must be the same version on amd64 and s390x (Multi-Arch: same),
+# but Debian's security pocket can publish a new libssl3 build for one architecture
+# before the other, so neither side's candidate is reliably installable on its own.
+# Pin both to the highest version available for BOTH architectures, and allow
+# downgrading the native amd64 package in case `apt-get upgrade -y` moved it ahead
+# of what's currently available for s390x.
 RUN dpkg --add-architecture s390x \
     && apt-get update \
-    && SSL_VER="$(apt-cache policy libssl3 | sed -n 's/^ *Candidate: *//p')" \
     && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends protobuf-compiler clang \
+    && SSL_VER="$( { apt-cache madison libssl3 | awk '{print $3}' | sort -u; apt-cache madison libssl3:s390x | awk '{print $3}' | sort -u; } | sort | uniq -d | sort -V | tail -n1 )" \
+    && apt-get install -y --no-install-recommends --allow-downgrades protobuf-compiler clang \
         gcc-s390x-linux-gnu g++-s390x-linux-gnu libc6-dev-s390x-cross pkg-config \
-        "libssl3:s390x=${SSL_VER}" "libssl-dev:s390x=${SSL_VER}"
+        "libssl3=${SSL_VER}" "libssl3:s390x=${SSL_VER}" "libssl-dev=${SSL_VER}" "libssl-dev:s390x=${SSL_VER}"
 
 RUN rustup target add s390x-unknown-linux-gnu
 
