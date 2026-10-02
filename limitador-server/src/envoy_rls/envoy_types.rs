@@ -39,7 +39,8 @@ pub mod envoy {
             #[allow(
                 clippy::derive_partial_eq_without_eq,
                 clippy::doc_lazy_continuation,
-                clippy::doc_overindented_list_items
+                clippy::doc_overindented_list_items,
+                clippy::double_must_use
             )]
             pub mod v3 {
                 tonic::include_proto!("envoy.service.ratelimit.v3");

@@ -387,6 +387,10 @@ pub trait CounterStorage: Sync + Send {
     }
 }
 
+// The `async_trait` macro expansion on this trait declaration trips clippy's
+// `double_must_use` lint (the generated signature is flagged must-use twice:
+// once by clippy's heuristic for boxed futures, once by the macro itself).
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait AsyncCounterStorage: Sync + Send {
     async fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr>;
