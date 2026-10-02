@@ -28,6 +28,7 @@ include!("envoy_types.rs");
 pub mod custom {
     pub mod service {
         pub mod ratelimit {
+            #[allow(clippy::double_must_use)]
             pub mod v1 {
                 tonic::include_proto!("kuadrant.service.ratelimit.v1");
             }

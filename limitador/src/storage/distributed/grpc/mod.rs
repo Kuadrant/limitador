@@ -24,7 +24,15 @@ use crate::storage::distributed::grpc::v1::{
 
 // clippy will barf on protobuff generated code for enum variants in
 // v3::socket_option::SocketState, so allow this lint
-#[allow(clippy::enum_variant_names, clippy::derive_partial_eq_without_eq)]
+//
+// clippy::double_must_use is also needed: tonic-build's async-trait-based
+// service traits trip the same lint as `AsyncCounterStorage` in
+// `crate::storage` (see the comment there).
+#[allow(
+    clippy::enum_variant_names,
+    clippy::derive_partial_eq_without_eq,
+    clippy::double_must_use
+)]
 pub mod v1 {
     tonic::include_proto!("limitador.service.distributed.v1");
 }
