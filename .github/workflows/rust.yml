@@ -20,12 +20,12 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # ratchet:actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: Swatinem/rust-cache@v2
-      - uses: abelfodil/protoc-action@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # ratchet:actions-rust-lang/setup-rust-toolchain@v1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # ratchet:Swatinem/rust-cache@v2
+      - uses: abelfodil/protoc-action@b540a249a18feedb02bfbfa655afa15255cf3dc6 # ratchet:abelfodil/protoc-action@v1
         with:
           protoc-version: "3.19.4"
       - run: cargo check --all-features
@@ -34,12 +34,12 @@ jobs:
     name: Lockfile up to date
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # ratchet:actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: Swatinem/rust-cache@v2
-      - uses: abelfodil/protoc-action@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # ratchet:actions-rust-lang/setup-rust-toolchain@v1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # ratchet:Swatinem/rust-cache@v2
+      - uses: abelfodil/protoc-action@b540a249a18feedb02bfbfa655afa15255cf3dc6 # ratchet:abelfodil/protoc-action@v1
         with:
           protoc-version: "3.19.4"
       - run: cargo check --all-features --locked
@@ -48,15 +48,15 @@ jobs:
     name: Test Suite
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # ratchet:actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: supercharge/redis-github-action@1.8.1
+      - uses: supercharge/redis-github-action@bc274cb7238cd63a45029db04ee48c07a72609fd # ratchet:supercharge/redis-github-action@1.8.1
         with:
           redis-version: 7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: Swatinem/rust-cache@v2
-      - uses: abelfodil/protoc-action@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # ratchet:actions-rust-lang/setup-rust-toolchain@v1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # ratchet:Swatinem/rust-cache@v2
+      - uses: abelfodil/protoc-action@b540a249a18feedb02bfbfa655afa15255cf3dc6 # ratchet:abelfodil/protoc-action@v1
         with:
           protoc-version: "3.19.4"
       - run: cargo test --all-features -vv
@@ -65,27 +65,27 @@ jobs:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # ratchet:actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # ratchet:actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # ratchet:Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
 
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # ratchet:actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # ratchet:actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@v2
-      - uses: abelfodil/protoc-action@v1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # ratchet:Swatinem/rust-cache@v2
+      - uses: abelfodil/protoc-action@b540a249a18feedb02bfbfa655afa15255cf3dc6 # ratchet:abelfodil/protoc-action@v1
         with:
           protoc-version: "3.19.4"
       - run: cargo clippy --all-features --all-targets -- -D warnings
@@ -94,10 +94,10 @@ jobs:
     name: Try in kind (Kubernetes in Docker)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # ratchet:actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: helm/kind-action@v1.2.0
+      - uses: helm/kind-action@94729529f85113b88f4f819c17ce61382e6d8478 # ratchet:helm/kind-action@v1.2.0
         with:
           version: v0.23.0
           install_only: true
@@ -123,13 +123,13 @@ jobs:
           - dockerfile: Dockerfile.ppc64le
             platform: linux/ppc64le
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # ratchet:actions/checkout@v6
         with:
           persist-credentials: false
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # ratchet:docker/setup-buildx-action@v3
       - name: Build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # ratchet:docker/build-push-action@v6
         with:
           push: false
           tags: limitador:dev
@@ -149,7 +149,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # ratchet:actions/checkout@v6
         with:
           persist-credentials: false
       - run: echo '${{ toJSON(needs) }}' | jq -e 'all(.[]; .result == "success" or .result == "skipped")'
