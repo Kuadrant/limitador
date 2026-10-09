@@ -11,3 +11,6 @@
 
 # JetBrains IDEA
 .idea/
+
+# Tooling downloaded by the Makefile
+/bin/
