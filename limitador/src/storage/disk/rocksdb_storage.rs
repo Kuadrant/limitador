@@ -47,50 +47,23 @@ impl CounterStorage for RocksDbStorage {
     }
 
     #[tracing::instrument(skip_all)]
+    fn check(&self, counters: &mut Vec<Counter>, delta: u64) -> Result<Authorization, StorageErr> {
+        Ok(self.evaluate(counters, delta)?.0)
+    }
+
+    #[tracing::instrument(skip_all)]
     fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
-        let mut keys: Vec<Vec<u8>> = Vec::with_capacity(counters.len());
-
-        for counter in &mut *counters {
-            let key = key_for_counter(counter);
-            let slice: &[u8] = key.as_ref();
-            let entry = {
-                let span = debug_span!("datastore");
-                let _entered = span.enter();
-                self.db.get(slice)?
-            };
-            let (val, ttl) = match entry {
-                None => (0, Duration::from_secs(counter.limit().seconds())),
-                Some(raw) => {
-                    let slice: &[u8] = raw.as_ref();
-                    let value: ExpiringValue = slice.try_into()?;
-                    (value.value(), value.ttl())
-                }
-            };
-
-            if load_counters {
-                counter.set_expires_in(ttl);
-                counter.set_remaining(counter.max_value().saturating_sub(val + delta));
+        let (auth, keys) = self.evaluate(counters, delta)?;
+        if matches!(auth, Authorization::Ok) {
+            for (idx, counter) in counters.iter_mut().enumerate() {
+                self.insert_or_update(&keys[idx], counter, delta)?;
             }
-
-            if counter.max_value() < val + delta {
-                return Ok(Authorization::Limited(
-                    counter.limit().name().map(|n| n.to_string()),
-                ));
-            }
-
-            keys.push(key);
         }
-
-        for (idx, counter) in counters.iter_mut().enumerate() {
-            self.insert_or_update(&keys[idx], counter, delta)?;
-        }
-
-        Ok(Authorization::Ok)
+        Ok(auth)
     }
 
     #[tracing::instrument(skip_all)]
@@ -169,7 +142,6 @@ impl CounterStorage for RocksDbStorage {
         check_amount: u64,
         hold_amount: u64,
         ttl: Duration,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
         let now = SystemTime::now();
         let mut values_and_window_ttls = Vec::with_capacity(counters.len());
@@ -189,7 +161,6 @@ impl CounterStorage for RocksDbStorage {
                 check_amount,
                 hold_amount,
                 ttl,
-                load_counters,
                 now,
             },
         ))
@@ -206,6 +177,63 @@ impl CounterStorage for RocksDbStorage {
 }
 
 impl RocksDbStorage {
+    /// Shared by [`CounterStorage::check`] and [`CounterStorage::check_and_update`]: reads
+    /// every counter's current value, annotating each with its `remaining`/`expires_in`, and
+    /// determines whether `delta` more would keep all of them within their limit - also
+    /// returning each counter's storage key, for the caller's benefit if it goes on to persist.
+    /// Never mutates any stored value itself.
+    fn evaluate(
+        &self,
+        counters: &mut [Counter],
+        delta: u64,
+    ) -> Result<(Authorization, Vec<Vec<u8>>), StorageErr> {
+        let mut keys: Vec<Vec<u8>> = Vec::with_capacity(counters.len());
+        let mut first_limited = None;
+
+        for counter in &mut *counters {
+            let key = key_for_counter(counter);
+            let slice: &[u8] = key.as_ref();
+            let entry = {
+                let span = debug_span!("datastore");
+                let _entered = span.enter();
+                self.db.get(slice)?
+            };
+            let (val, ttl) = match entry {
+                None => (0, Duration::from_secs(counter.limit().seconds())),
+                Some(raw) => {
+                    let slice: &[u8] = raw.as_ref();
+                    let value: ExpiringValue = slice.try_into()?;
+                    let ttl = value.ttl();
+                    // A zero ttl means the previous window has already elapsed even though a
+                    // stale entry is still physically present - report a fresh full window,
+                    // the same as a counter that never existed at all.
+                    let ttl = if ttl.is_zero() {
+                        Duration::from_secs(counter.limit().seconds())
+                    } else {
+                        ttl
+                    };
+                    (value.value(), ttl)
+                }
+            };
+
+            counter.set_expires_in(ttl);
+            // `remaining` reflects the counter's actual current state, not a projection of
+            // `delta` having been applied - `check()` never applies it, and `check_and_update`
+            // compensates for its own persisted delta afterward (see `RateLimiter`).
+            counter.set_remaining(counter.max_value().saturating_sub(val));
+
+            if first_limited.is_none() && counter.max_value() < val + delta {
+                first_limited = Some(Authorization::Limited(
+                    counter.limit().name().map(|n| n.to_string()),
+                ));
+            }
+
+            keys.push(key);
+        }
+
+        Ok((first_limited.unwrap_or(Authorization::Ok), keys))
+    }
+
     pub fn open<P: AsRef<std::path::Path>>(path: P, mode: OptimizeFor) -> Result<Self, StorageErr> {
         let mut opts = Options::default();
         match mode {
@@ -370,7 +398,6 @@ mod tests {
                 10,
                 0,
                 Duration::from_secs(60),
-                false,
             )
             .unwrap();
         assert!(matches!(auth, Authorization::Ok));

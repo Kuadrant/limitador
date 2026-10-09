@@ -90,95 +90,23 @@ impl CounterStorage for CrInMemoryStorage {
     }
 
     #[tracing::instrument(skip_all)]
+    fn check(&self, counters: &mut Vec<Counter>, delta: u64) -> Result<Authorization, StorageErr> {
+        Ok(self.evaluate(counters, delta))
+    }
+
+    #[tracing::instrument(skip_all)]
     fn check_and_update(
         &self,
         counters: &mut Vec<Counter>,
         delta: u64,
-        load_counters: bool,
     ) -> Result<Authorization, StorageErr> {
-        let mut first_limited = None;
-        let mut counter_values_to_update: Vec<Vec<u8>> = Vec::new();
-        let now = SystemTime::now();
-
-        let mut process_counter =
-            |counter: &mut Counter, value: u64, delta: u64| -> Option<Authorization> {
-                if load_counters {
-                    let remaining = counter.max_value().checked_sub(value + delta);
-                    counter.set_remaining(remaining.unwrap_or(0));
-                    if first_limited.is_none() && remaining.is_none() {
-                        first_limited = Some(Authorization::Limited(
-                            counter.limit().name().map(|n| n.to_owned()),
-                        ));
-                    }
-                }
-                if !Self::counter_is_within_limits(counter, Some(&value), delta) {
-                    return Some(Authorization::Limited(
-                        counter.limit().name().map(|n| n.to_owned()),
-                    ));
-                }
-                None
-            };
-
-        // Process simple counters
-        for counter in counters.iter_mut() {
-            let key = encode_counter_to_key(counter);
-
-            // most of the time the counter should exist, so first try with a read only lock
-            // since that will allow us to have higher concurrency
-            let counter_existed = {
-                let key = key.clone();
-                let limits = self.limits.read().unwrap();
-                match limits.get(&key) {
-                    None => false,
-                    Some(store_value) => {
-                        if let Some(limited) =
-                            process_counter(counter, store_value.value.read(), delta)
-                        {
-                            if !load_counters {
-                                return Ok(limited);
-                            }
-                        }
-                        counter_values_to_update.push(key);
-                        true
-                    }
-                }
-            };
-
-            // we need to take the slow path since we need to mutate the limits map.
-            if !counter_existed {
-                // try again with a write lock to create the counter if it's still missing.
-                let mut limits = self.limits.write().unwrap();
-                let store_value = limits.entry(key.clone()).or_insert(Arc::new(CounterEntry {
-                    key: key.clone(),
-                    counter: counter.clone(),
-                    value: CrCounterValue::new(
-                        self.identifier.clone(),
-                        counter.max_value(),
-                        counter.window(),
-                    ),
-                }));
-
-                if let Some(limited) = process_counter(counter, store_value.value.read(), delta) {
-                    if !load_counters {
-                        return Ok(limited);
-                    }
-                }
-                counter_values_to_update.push(key);
+        let auth = self.evaluate(counters, delta);
+        if matches!(auth, Authorization::Ok) {
+            for counter in counters.iter() {
+                self.update_counter(counter, delta)?;
             }
         }
-
-        if let Some(limited) = first_limited {
-            return Ok(limited);
-        }
-
-        // Update counters
-        let limits = self.limits.read().unwrap();
-        counter_values_to_update.into_iter().for_each(|key| {
-            let store_value = limits.get(&key).unwrap();
-            self.increment_counter(store_value.clone(), delta, now);
-        });
-
-        Ok(Authorization::Ok)
+        Ok(auth)
     }
 
     #[tracing::instrument(skip_all)]
@@ -276,11 +204,43 @@ impl CrInMemoryStorage {
         self.limits.write().unwrap().remove(&key);
     }
 
-    fn counter_is_within_limits(counter: &Counter, current_val: Option<&u64>, delta: u64) -> bool {
-        match current_val {
-            Some(current_val) => current_val + delta <= counter.max_value(),
-            None => counter.max_value() >= delta,
+    /// Shared by [`CounterStorage::check`] and [`CounterStorage::check_and_update`]: reads
+    /// every counter's current value, annotating each with its `remaining`/`expires_in`, and
+    /// determines whether `delta` more would keep all of them within their limit. Never
+    /// mutates any stored value - in particular, a miss never creates an entry in `self.limits`
+    /// (that only happens in `update_counter`, once admission is actually decided), so `check`
+    /// alone can't grow the map or prematurely start a counter's window.
+    fn evaluate(&self, counters: &mut [Counter], delta: u64) -> Authorization {
+        let mut first_limited = None;
+
+        let mut record = |counter: &mut Counter, value: u64, ttl: Duration| {
+            // A zero ttl means the previous window has already elapsed - report a fresh full
+            // window, the same as a counter that never existed at all.
+            let ttl = if ttl.is_zero() { counter.window() } else { ttl };
+            // `remaining` reflects the counter's actual current state, not a projection of
+            // `delta` having been applied - `check()` never applies it, and `check_and_update`
+            // compensates for its own persisted delta afterward (see `RateLimiter`).
+            counter.set_remaining(counter.max_value().saturating_sub(value));
+            counter.set_expires_in(ttl);
+            if first_limited.is_none() && counter.max_value().checked_sub(value + delta).is_none() {
+                first_limited = Some(Authorization::Limited(
+                    counter.limit().name().map(|n| n.to_owned()),
+                ));
+            }
+        };
+
+        for counter in counters.iter_mut() {
+            let key = encode_counter_to_key(counter);
+            let limits = self.limits.read().unwrap();
+            match limits.get(&key) {
+                Some(store_value) => {
+                    record(counter, store_value.value.read(), store_value.value.ttl())
+                }
+                None => record(counter, 0, counter.window()),
+            }
         }
+
+        first_limited.unwrap_or(Authorization::Ok)
     }
 
     fn increment_counter(&self, counter_entry: Arc<CounterEntry>, delta: u64, when: SystemTime) {
