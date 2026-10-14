@@ -1459,6 +1459,9 @@ mod test {
             .await
             .unwrap();
 
+        // We wait for the flushing period to pass so the counters are flushed in the cached storage
+        tokio::time::sleep(Duration::from_millis(40)).await;
+
         let counters = rate_limiter.get_counters(namespace).await.unwrap();
 
         assert_eq!(counters.len(), 2);
