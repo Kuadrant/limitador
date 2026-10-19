@@ -2,7 +2,7 @@
 # Build Stage cross compiling
 # ------------------------------------------------------------------------------
 
-FROM --platform=${BUILDPLATFORM} mirror.gcr.io/library/rust:1.88 AS limitador-build
+FROM --platform=${BUILDPLATFORM} mirror.gcr.io/library/rust:1.92 AS limitador-build
 
 # libssl3/libssl-dev must be the same version on amd64 and arm64 (Multi-Arch: same),
 # but Debian's security pocket can publish a new libssl3 build for one architecture

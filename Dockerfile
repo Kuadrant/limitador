@@ -2,7 +2,7 @@
 # Build Stage
 # ------------------------------------------------------------------------------
 
-FROM mirror.gcr.io/library/rust:1.88 AS limitador-build
+FROM mirror.gcr.io/library/rust:1.92 AS limitador-build
 
 RUN apt update && apt upgrade -y \
     && apt install -y protobuf-compiler clang
