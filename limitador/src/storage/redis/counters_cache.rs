@@ -100,7 +100,7 @@ impl CachedCounterValue {
     fn no_pending_writes(&self) -> bool {
         let start = self.initial_value.load(Ordering::SeqCst);
         let value = self.value.value_at(SystemTime::now());
-        value - start == 0
+        value.checked_sub(start).unwrap_or(value) == 0
     }
 
     fn revert_writes(&self, writes: u64) -> Result<(), ()> {
@@ -427,6 +427,26 @@ mod tests {
             assert!(value.no_pending_writes().not());
             assert!(value.pending_writes().is_ok());
             assert!(value.no_pending_writes());
+        }
+
+        #[test]
+        fn no_pending_writes_once_the_window_elapsed() {
+            let counter = test_counter(10, None);
+            let value = CachedCounterValue::from_authority(&counter, 0);
+            value.delta(&counter, 5);
+            assert!(value.pending_writes().is_ok()); // flushed: initial_value -> 5
+            assert!(value.no_pending_writes());
+
+            // the window elapses: self.value reads 0 again, while initial_value
+            // still holds the writes of the window that just ended
+            value.add_from_authority(
+                0,
+                SystemTime::now() - Duration::from_secs(1),
+                counter.max_value(),
+            );
+            assert_eq!(value.hits(&counter), 0);
+            assert!(value.no_pending_writes());
+            assert_eq!(value.pending_writes_and_value(), Ok((0, 0)));
         }
 
         #[test]
