@@ -115,7 +115,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
                     ));
                 }
                 if load_counters {
-                    counter.set_remaining(remaining - delta);
+                    counter.set_remaining(remaining.saturating_sub(delta));
                     counter.set_expires_in(fake.ttl()); // todo: this is a plain lie!
                 }
             }

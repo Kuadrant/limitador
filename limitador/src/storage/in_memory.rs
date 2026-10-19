@@ -165,8 +165,7 @@ impl CounterStorage for InMemoryStorage {
         for limit in limits {
             for (counter, expiring_value) in self.counters_in_namespace(limit.namespace()) {
                 let mut counter_with_val = counter.clone();
-                counter_with_val
-                    .set_remaining(counter_with_val.max_value() - expiring_value.value());
+                counter_with_val.set_remaining_after_hits(expiring_value.value());
                 counter_with_val.set_expires_in(expiring_value.ttl());
                 if counter_with_val.expires_in().unwrap() > Duration::ZERO {
                     res.insert(counter_with_val);
@@ -177,8 +176,7 @@ impl CounterStorage for InMemoryStorage {
         for (counter, expiring_value) in self.qualified_counters.iter() {
             if limits.contains(counter.limit()) {
                 let mut counter_with_val = counter.deref().clone();
-                counter_with_val
-                    .set_remaining(counter_with_val.max_value() - expiring_value.value());
+                counter_with_val.set_remaining_after_hits(expiring_value.value());
                 counter_with_val.set_expires_in(expiring_value.ttl());
                 if counter_with_val.expires_in().unwrap() > Duration::ZERO {
                     res.insert(counter_with_val);

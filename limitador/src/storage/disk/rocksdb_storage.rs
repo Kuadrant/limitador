@@ -120,7 +120,8 @@ impl CounterStorage for RocksDbStorage {
                                 counter.update_to_limit(Arc::clone(limit));
                                 let ttl = value.ttl();
                                 counter.set_expires_in(ttl);
-                                counter.set_remaining(limit.max_value() - value.value());
+                                let val = limit.max_value().saturating_sub(value.value());
+                                counter.set_remaining(val);
                                 break;
                             }
                         }

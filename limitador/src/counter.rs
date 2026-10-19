@@ -92,9 +92,19 @@ impl Counter {
     pub fn remaining(&self) -> Option<u64> {
         self.remaining
     }
+    // Function for calculating remaining value after the hit
+    // handling integer underflow because of real time change of
+    // policy value
+    pub fn remaining_after_hits(&self, hits: u64) -> u64 {
+        self.max_value().saturating_sub(hits)
+    }
 
     pub fn set_remaining(&mut self, remaining: u64) {
         self.remaining = Some(remaining)
+    }
+
+    pub fn set_remaining_after_hits(&mut self, hits: u64) {
+        self.remaining = Some(self.remaining_after_hits(hits))
     }
 
     pub fn expires_in(&self) -> Option<Duration> {
@@ -160,5 +170,23 @@ mod tests {
             counter.unwrap().set_variables.get(var),
             Some("13".to_string()).as_ref()
         );
+    }
+
+    #[test]
+    fn remaining_saturates_when_hits_exceed_max_value() {
+        let limit = Limit::new("test_namespace", 3, 60, Vec::default(), Vec::default());
+        let values: HashMap<String, String> = HashMap::default();
+        let mut counter = Counter::new(limit, &values.into())
+            .expect("failed creating counter")
+            .expect("Should have a counter");
+
+        assert_eq!(counter.remaining_after_hits(1), 2);
+        assert_eq!(counter.remaining_after_hits(3), 0);
+        // the limit may have been lowered while the counter was already live
+        assert_eq!(counter.remaining_after_hits(4), 0);
+        assert_eq!(counter.remaining_after_hits(u64::MAX), 0);
+
+        counter.set_remaining_after_hits(4);
+        assert_eq!(counter.remaining(), Some(0));
     }
 }

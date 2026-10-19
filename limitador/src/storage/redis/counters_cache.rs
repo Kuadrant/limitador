@@ -124,7 +124,7 @@ impl CachedCounterValue {
     }
 
     pub fn remaining(&self, counter: &Counter) -> u64 {
-        counter.max_value() - self.hits(counter)
+        counter.remaining_after_hits(self.hits(counter))
     }
 
     pub fn is_limited(&self, counter: &Counter, delta: u64) -> bool {
@@ -476,6 +476,18 @@ mod tests {
             assert!(value.is_limited(&counter, 1).not());
             assert!(value.is_limited(&counter, remaining).not());
             assert!(value.is_limited(&counter, remaining + 1));
+        }
+
+        #[test]
+        fn remaining_is_zero_when_hits_exceed_a_lowered_max_value() {
+            let counter = test_counter(5, None);
+            let value = CachedCounterValue::from_authority(&counter, 0);
+            value.delta(&counter, 4);
+
+            let lowered = test_counter(3, None);
+            assert_eq!(value.hits(&lowered), 4);
+            assert_eq!(value.remaining(&lowered), 0);
+            assert!(value.is_limited(&lowered, 1));
         }
     }
 
