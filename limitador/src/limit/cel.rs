@@ -8,7 +8,14 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, LazyLock};
 
-static CEL_ENV: LazyLock<Arc<cel::Env>> = LazyLock::new(|| Arc::new(cel::Env::stdlib()));
+static CEL_ENV: LazyLock<Arc<cel::Env>> = LazyLock::new(|| {
+    let mut env = cel::Env::stdlib();
+    env.add_extension(cel::extensions::strings)
+        .expect("strings extension must not conflict with the standard library");
+    env.add_extension(cel::extensions::lists)
+        .expect("lists extension must not conflict with the standard library or strings extension");
+    Arc::new(env)
+});
 
 pub(super) mod errors {
     use cel::ExecutionError;
@@ -427,6 +434,26 @@ mod tests {
     }
 
     #[test]
+    fn extension_functions_produce_metric_labels() {
+        let exp = Expression::parse(
+            "{'user': user.trim().lowerAscii(), \
+             'roles': roles.split(',').distinct().sort().join(',')}",
+        )
+        .expect("failed to parse");
+        let ctx = Context::from(HashMap::from([
+            ("user".to_string(), " ALICE ".to_string()),
+            ("roles".to_string(), "reader,ops,reader".to_string()),
+        ]));
+        assert_eq!(
+            exp.eval_map(&ctx),
+            Ok(HashMap::from([
+                ("user".to_string(), "alice".to_string()),
+                ("roles".to_string(), "ops,reader".to_string()),
+            ]))
+        );
+    }
+
+    #[test]
     fn expression_scalar_values() {
         for (source, expected) in [
             ("42", "42"),
@@ -467,6 +494,17 @@ mod tests {
     fn predicate_no_var() {
         let pred = Predicate::parse("not_there == 42").expect("failed to parse");
         assert_eq!(pred.test(&ctx()), Ok(false));
+    }
+
+    #[test]
+    fn extension_predicate_requires_bindings_even_when_a_branch_matches() {
+        let pred = Predicate::parse("plan.trim().lowerAscii() == 'gold' || user == 'alice'")
+            .expect("failed to parse");
+        let mut values = HashMap::from([("plan".to_string(), " GOLD ".to_string())]);
+        assert_eq!(pred.test(&Context::from(values.clone())), Ok(false));
+
+        values.insert("user".to_string(), "bob".to_string());
+        assert_eq!(pred.test(&Context::from(values)), Ok(true));
     }
 
     #[test]
