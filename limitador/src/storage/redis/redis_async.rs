@@ -180,7 +180,9 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                         .await?
                 };
                 if let Some(val) = option {
-                    let count = limit.max_value().saturating_sub(u64::try_from(val).unwrap_or(0));
+                    let count = limit
+                        .max_value()
+                        .saturating_sub(u64::try_from(val).unwrap_or(0));
                     counter.set_remaining(count);
                     let ttl: i64 = {
                         con.ttl(&counter_key)
