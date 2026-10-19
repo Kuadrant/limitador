@@ -463,4 +463,79 @@ mod tests {
             Some(&"true".to_string())
         );
     }
+
+    #[test]
+    fn cel_extensions_normalize_conditions_and_counter_keys() {
+        let variables = [
+            "descriptors[0].user.trim().lowerAscii()",
+            "descriptors[0].roles.split(',').distinct().sort().join(',')",
+        ];
+        let limit = Limit::new(
+            "ns",
+            42,
+            10,
+            vec!["descriptors[0].plan.trim().lowerAscii() == 'gold'"
+                .try_into()
+                .expect("failed parsing!")],
+            variables.map(|source| source.try_into().expect("failed parsing!")),
+        );
+        let mut ctx = Context::default();
+        ctx.list_binding(
+            "descriptors".to_string(),
+            vec![HashMap::from([
+                ("plan".to_string(), " GOLD ".to_string()),
+                ("user".to_string(), " ALICE ".to_string()),
+                ("roles".to_string(), "reader,ops,reader".to_string()),
+            ])],
+        );
+
+        assert!(!limit.applies(&Context::default()));
+        assert!(limit.applies(&ctx));
+        let counter = Counter::new(limit, &ctx)
+            .expect("failed to resolve counter")
+            .expect("counter should apply");
+        assert_eq!(
+            counter.set_variables(),
+            &BTreeMap::from([
+                (variables[0].to_string(), "alice".to_string()),
+                (variables[1].to_string(), "ops,reader".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn cel_optional_macros_apply_limits_and_resolve_counter_keys() {
+        for variable in [
+            "descriptors[0].?user.optMap(u, u.lowerAscii()).orValue('anonymous')",
+            "descriptors[0].?user.optFlatMap(u, u == 'ALICE' ? descriptors[0].?canonical : descriptors[0].?other).orValue('anonymous')",
+        ] {
+            let limit = Limit::new(
+                "ns",
+                42,
+                10,
+                vec!["descriptors[0].?user.optMap(u, u == 'ALICE').orValue(true)"
+                    .try_into()
+                    .expect("failed parsing!")],
+                vec![variable.try_into().expect("failed parsing!")],
+            );
+            assert!(!limit.applies(&Context::default()));
+            for (descriptor, expected) in [
+                (HashMap::from([
+                    ("user".to_string(), "ALICE".to_string()),
+                    ("canonical".to_string(), "alice".to_string()),
+                ]), "alice"),
+                (HashMap::default(), "anonymous"),
+            ] {
+                let mut ctx = Context::default();
+                ctx.list_binding("descriptors".to_string(), vec![descriptor]);
+                assert!(limit.applies(&ctx), "{variable}");
+                assert!(!limit.has_variable("u"));
+                assert!(!limit.has_variable("optional"));
+                let counter = Counter::new(limit.clone(), &ctx)
+                    .expect("failed to resolve counter")
+                    .expect("counter should apply");
+                assert_eq!(counter.set_variables().get(variable), Some(&expected.to_string()));
+            }
+        }
+    }
 }
