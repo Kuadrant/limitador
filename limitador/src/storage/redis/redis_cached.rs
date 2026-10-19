@@ -109,7 +109,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
             for counter in not_cached.iter_mut() {
                 let fake = CachedCounterValue::load_from_authority_asap(counter, 0);
                 let remaining = fake.remaining(counter);
-                if first_limited.is_none() && remaining == 0 {
+                if first_limited.is_none() && fake.is_limited(counter, delta) {
                     first_limited = Some(Authorization::Limited(
                         counter.limit().name().map(|n| n.to_owned()),
                     ));
