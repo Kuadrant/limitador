@@ -21,7 +21,7 @@ use tonic::codegen::http::HeaderMap;
 use tonic::{async_trait, transport, transport::Server, Request, Response, Status};
 use tonic_middleware::{Middleware, MiddlewareLayer, ServiceBound};
 use tracing::{Instrument, Level, Span};
-use tracing_opentelemetry::OpenTelemetrySpanExt;
+use tracing_opentelemetry::{OpenTelemetrySpanExt, SetParentError};
 
 include!("envoy_types.rs");
 
@@ -116,7 +116,10 @@ impl RateLimitService for MyRateLimiter {
         let parent_context =
             global::get_text_map_propagator(|propagator| propagator.extract(&rl_headers));
         let span = Span::current();
-        span.set_parent(parent_context);
+        match span.set_parent(parent_context) {
+            Ok(()) | Err(SetParentError::LayerNotFound | SetParentError::SpanDisabled) => {}
+            Err(err) => debug!("Could not set parent trace context: {err}"),
+        }
 
         if namespace.is_empty() {
             return Ok(Response::new(RateLimitResponse {
