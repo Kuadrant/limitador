@@ -54,15 +54,14 @@ pub struct CachedRedisStorage {
 
 #[async_trait]
 impl AsyncCounterStorage for CachedRedisStorage {
-    // Cache-backed, like `check`/`check_and_update`: the whole point of this backend is
-    // trading accuracy for speed, so a cache miss assumes a fresh (0) counter rather than
-    // paying for a live Redis round trip - self-correcting once `apply_remote_delta` reconciles
-    // with the authoritative value on the next flush.
+    // Shares `evaluate` with `check`/`check_and_update`: a cache hit is served from the local
+    // cache, while a cache miss reads the authoritative value live from Redis (see `evaluate`).
     #[tracing::instrument(skip_all)]
     async fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr> {
         let mut counter = counter.clone();
         Ok(matches!(
-            self.evaluate(std::slice::from_mut(&mut counter), delta),
+            self.evaluate(std::slice::from_mut(&mut counter), delta)
+                .await?,
             Authorization::Ok
         ))
     }
@@ -84,7 +83,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
         counters: &mut Vec<Counter>,
         delta: u64,
     ) -> Result<Authorization, StorageErr> {
-        Ok(self.evaluate(counters, delta))
+        self.evaluate(counters, delta).await
     }
 
     // Notice that this method does not guarantee 100% accuracy when applying the
@@ -97,7 +96,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
         counters: &mut Vec<Counter>,
         delta: u64,
     ) -> Result<Authorization, StorageErr> {
-        let auth = self.evaluate(counters, delta);
+        let auth = self.evaluate(counters, delta).await?;
         if matches!(auth, Authorization::Ok) {
             for counter in counters.iter() {
                 self.cached_counters.increase_by(counter, delta).await;
@@ -202,16 +201,21 @@ impl AsyncCounterStorage for CachedRedisStorage {
 }
 
 impl CachedRedisStorage {
-    /// Shared by [`AsyncCounterStorage::check`] and [`AsyncCounterStorage::check_and_update`]:
-    /// reads every counter's current cached value (fetching it live, uncached, when missing),
-    /// annotating each with its `remaining`/`expires_in`, and determines whether `delta` more
-    /// would keep all of them within their limit. Never mutates the cache itself.
-    fn evaluate(&self, counters: &mut [Counter], delta: u64) -> Authorization {
-        let mut not_cached: Vec<&mut Counter> = vec![];
+    /// Shared by [`AsyncCounterStorage::check`], [`AsyncCounterStorage::is_within_limits`] and
+    /// [`AsyncCounterStorage::check_and_update`]: reads every counter's current value - from the
+    /// local cache when present, otherwise live from Redis in one batched round trip (same as
+    /// `reserve`) - annotating each with its `remaining`/`expires_in`, and determines whether
+    /// `delta` more would keep all of them within their limit. Never mutates the cache itself.
+    async fn evaluate(
+        &self,
+        counters: &mut [Counter],
+        delta: u64,
+    ) -> Result<Authorization, StorageErr> {
         let mut first_limited = None;
+        let mut missing: Vec<usize> = vec![];
 
-        // Check cached counters
-        for counter in counters.iter_mut() {
+        // Serve cached counters from the local cache.
+        for (idx, counter) in counters.iter_mut().enumerate() {
             match self.cached_counters.get(counter) {
                 Some(val) => {
                     if first_limited.is_none() && val.is_limited(counter, delta) {
@@ -231,27 +235,38 @@ impl CachedRedisStorage {
                     let ttl = if ttl.is_zero() { counter.window() } else { ttl };
                     counter.set_expires_in(ttl);
                 }
-                _ => {
-                    not_cached.push(counter);
-                }
+                _ => missing.push(idx),
             }
         }
 
-        // Fetch non-cached counters, cache them, and check them
-        if !not_cached.is_empty() {
-            for counter in not_cached.iter_mut() {
-                let fake = CachedCounterValue::load_from_authority_asap(counter, 0);
-                if first_limited.is_none() && fake.is_limited(counter, delta) {
+        // Read missing counters live from Redis (one batched round trip) rather than assuming a
+        // fresh (0) counter: a cold instance would otherwise admit an already-exhausted counter.
+        // This preserves this backend's pre-cache behaviour of reading Redis directly on a miss
+        // and matches `reserve`. Does not seed the cache, so `evaluate` stays read-only;
+        // `check_and_update` still seeds the cache afterwards via `increase_by`.
+        if !missing.is_empty() {
+            let missing_counters: Vec<Counter> =
+                missing.iter().map(|&i| counters[i].clone()).collect();
+            let fetched = self
+                .async_redis_storage
+                .values_and_window_ttls(&missing_counters)
+                .await?;
+            for (&i, (value, ttl)) in missing.iter().zip(fetched) {
+                let counter = &mut counters[i];
+                if first_limited.is_none()
+                    && counter.max_value().checked_sub(value + delta).is_none()
+                {
                     first_limited = Some(Authorization::Limited(
                         counter.limit().name().map(|n| n.to_owned()),
                     ));
                 }
-                counter.set_remaining(fake.remaining(counter));
-                counter.set_expires_in(fake.ttl()); // todo: this is a plain lie!
+                counter.set_remaining(counter.max_value().saturating_sub(value));
+                let ttl = if ttl.is_zero() { counter.window() } else { ttl };
+                counter.set_expires_in(ttl);
             }
         }
 
-        first_limited.unwrap_or(Authorization::Ok)
+        Ok(first_limited.unwrap_or(Authorization::Ok))
     }
 
     pub async fn new(redis_url: &str) -> Result<Self, RedisError> {
@@ -511,7 +526,7 @@ mod tests {
         CachedCounterValue, CountersCache, CountersCacheBuilder,
     };
     use crate::storage::redis::redis_cached::{flush_batcher_and_update_counters, update_counters};
-    use crate::storage::redis::CachedRedisStorage;
+    use crate::storage::redis::{AsyncRedisStorage, CachedRedisStorage};
     use crate::storage::{AsyncCounterStorage, Authorization};
     use redis::{Cmd, ErrorKind, RedisError, Value};
     use redis_test::{MockCmd, MockRedisConnection};
@@ -772,6 +787,40 @@ mod tests {
         assert!(
             !storage.is_within_limits(&counters[0], 4).await.unwrap(),
             "is_within_limits must immediately see usage reported via update_counter"
+        );
+    }
+
+    // Regression test: on a cache miss, a read-only `check` must read the authoritative value
+    // from Redis rather than assuming a fresh (0) counter. A cold instance (one that never wrote
+    // this counter itself) would otherwise keep admitting a counter other instances have already
+    // exhausted in Redis - `check` never writes, so nothing would ever warm its local cache.
+    #[tokio::test]
+    #[serial]
+    async fn check_reads_authoritative_value_on_cache_miss() {
+        // Another instance exhausts the counter directly in Redis.
+        let authority = AsyncRedisStorage::new("redis://127.0.0.1:6379")
+            .await
+            .unwrap();
+        let seed = counter("cached_check_cold_miss_test", 10);
+        authority.update_counter(&seed, 10).await.unwrap();
+
+        // A brand-new instance has never cached this counter: its `check` must still observe the
+        // exhausted Redis value.
+        let cold = CachedRedisStorage::new("redis://127.0.0.1:6379")
+            .await
+            .unwrap();
+        let mut counters = vec![counter("cached_check_cold_miss_test", 10)];
+        assert!(
+            matches!(
+                cold.check(&mut counters, 1).await.unwrap(),
+                Authorization::Limited(_)
+            ),
+            "a cold check must read the exhausted counter from Redis, not assume 0"
+        );
+        assert_eq!(
+            counters[0].remaining(),
+            Some(0),
+            "remaining must reflect the authoritative Redis value on a cache miss"
         );
     }
 
