@@ -526,12 +526,12 @@ mod tests {
         CachedCounterValue, CountersCache, CountersCacheBuilder,
     };
     use crate::storage::redis::redis_cached::{flush_batcher_and_update_counters, update_counters};
-    use crate::storage::redis::{AsyncRedisStorage, CachedRedisStorage};
+    use crate::storage::redis::{AsyncRedisStorage, CachedRedisStorage, CachedRedisStorageBuilder};
     use crate::storage::{AsyncCounterStorage, Authorization};
     use redis::{Cmd, ErrorKind, RedisError, Value};
     use redis_test::{MockCmd, MockRedisConnection};
     use serial_test::serial;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::io;
     use std::ops::Add;
     use std::sync::atomic::AtomicBool;
@@ -821,6 +821,69 @@ mod tests {
             counters[0].remaining(),
             Some(0),
             "remaining must reflect the authoritative Redis value on a cache miss"
+        );
+    }
+
+    // Cross-instance regression test: usage Reported through one cached instance (local cache +
+    // background flush to Redis) must become visible to a *different*, cold instance's read-only
+    // check, which now reads Redis on a cache miss. Exercises the full Report -> cache -> flush ->
+    // Redis -> cold check path - both `Report` and `Check` previously went straight to Redis.
+    #[tokio::test]
+    #[serial]
+    async fn report_on_one_instance_is_visible_to_check_on_another() {
+        let limit = Arc::new(Limit::new(
+            "cached_cross_instance_report_test",
+            10,
+            60,
+            vec![],
+            Vec::<Expression>::default(),
+        ));
+        let seed = Counter::new((*limit).clone(), &Context::default())
+            .unwrap()
+            .expect("must have a counter");
+
+        // Reporting instance flushes to Redis quickly.
+        let reporter = CachedRedisStorageBuilder::new("redis://127.0.0.1:6379")
+            .flushing_period(Duration::from_millis(10))
+            .build()
+            .await
+            .unwrap();
+        // Start from a clean counter so `remaining` is deterministic across reruns.
+        reporter
+            .delete_counters(&HashSet::from([limit.clone()]))
+            .await
+            .unwrap();
+        reporter.update_counter(&seed, 7).await.unwrap();
+
+        // Let the reporter's background flush push the usage to Redis.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // A different instance that never cached this counter must observe the reported usage,
+        // both in its admission decision and in the `remaining` it reports.
+        let other = CachedRedisStorage::new("redis://127.0.0.1:6379")
+            .await
+            .unwrap();
+        let mut counters = vec![Counter::new((*limit).clone(), &Context::default())
+            .unwrap()
+            .expect("must have a counter")];
+        assert!(
+            matches!(
+                other.check(&mut counters, 1).await.unwrap(),
+                Authorization::Ok
+            ),
+            "1 more is within the limit of 10 with 7 already used on another instance"
+        );
+        assert_eq!(
+            counters[0].remaining(),
+            Some(3),
+            "a cold instance's check must see the 7 reported by another instance (10 - 7)"
+        );
+        assert!(
+            matches!(
+                other.check(&mut counters, 4).await.unwrap(),
+                Authorization::Limited(_)
+            ),
+            "7 (reported elsewhere) + 4 exceeds the limit of 10"
         );
     }
 
