@@ -116,7 +116,11 @@ impl CounterStorage for CrInMemoryStorage {
         for counter_entry in limits_map.values() {
             if limits.contains(counter_entry.counter.limit()) {
                 let mut counter: Counter = counter_entry.counter.clone();
-                counter.set_remaining(counter.max_value() - counter_entry.value.read());
+                counter.set_remaining(
+                    counter
+                        .max_value()
+                        .saturating_sub(counter_entry.value.read()),
+                );
                 counter.set_expires_in(counter_entry.value.ttl());
                 if counter.expires_in().unwrap() > Duration::ZERO {
                     res.insert(counter);

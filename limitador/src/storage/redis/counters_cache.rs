@@ -124,7 +124,10 @@ impl CachedCounterValue {
     }
 
     pub fn remaining(&self, counter: &Counter) -> u64 {
-        counter.max_value() - self.hits(counter)
+        // Saturating: a counter can overshoot its limit (see `add_from_authority`'s
+        // `counter_overshoot`, and uncapped `update_counter` deltas from Report/Commit), so
+        // `hits` may exceed `max_value` - a plain subtraction would underflow.
+        counter.max_value().saturating_sub(self.hits(counter))
     }
 
     pub fn is_limited(&self, counter: &Counter, delta: u64) -> bool {
@@ -476,6 +479,19 @@ mod tests {
             assert!(value.is_limited(&counter, 1).not());
             assert!(value.is_limited(&counter, remaining).not());
             assert!(value.is_limited(&counter, remaining + 1));
+        }
+
+        // Regression test: a counter can overshoot its limit (uncapped `update_counter` deltas
+        // from Report/Commit, or an over-limit value folded in by `add_from_authority`), so
+        // `hits` may exceed `max_value`. `remaining` must saturate to 0 rather than underflow -
+        // which would panic in debug builds and wrap to a huge value in release.
+        #[test]
+        fn remaining_saturates_when_overshooting_the_limit() {
+            let counter = test_counter(10, None);
+            let value = CachedCounterValue::from_authority(&counter, 0);
+            value.delta(&counter, 15);
+            assert_eq!(value.hits(&counter), 15);
+            assert_eq!(value.remaining(&counter), 0);
         }
     }
 

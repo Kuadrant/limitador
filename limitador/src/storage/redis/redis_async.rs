@@ -156,7 +156,11 @@ impl AsyncCounterStorage for AsyncRedisStorage {
                         .await?
                 };
                 if let Some(val) = option {
-                    counter.set_remaining(limit.max_value() - u64::try_from(val).unwrap_or(0));
+                    counter.set_remaining(
+                        limit
+                            .max_value()
+                            .saturating_sub(u64::try_from(val).unwrap_or(0)),
+                    );
                     let ttl: i64 = {
                         con.ttl(&counter_key)
                             .instrument(info_span!("datastore"))
