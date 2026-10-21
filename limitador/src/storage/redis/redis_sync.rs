@@ -31,7 +31,9 @@ impl CounterStorage for RedisStorage {
         let mut con = self.conn_pool.get()?;
 
         match con.get::<Vec<u8>, Option<i64>>(key_for_counter(counter))? {
-            Some(val) => Ok(u64::try_from(val).unwrap_or(0) + delta <= counter.max_value()),
+            Some(val) => {
+                Ok(u64::try_from(val).unwrap_or(0).saturating_add(delta) <= counter.max_value())
+            }
             None => Ok(counter.max_value().checked_sub(delta).is_some()),
         }
     }

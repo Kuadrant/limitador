@@ -64,7 +64,12 @@ pub fn is_limited(
             .unwrap_or(counter.window());
 
         counter.set_expires_in(expires_in);
-        if first_limited.is_none() && counter.max_value().checked_sub(value + delta).is_none() {
+        if first_limited.is_none()
+            && counter
+                .max_value()
+                .checked_sub(value.saturating_add(delta))
+                .is_none()
+        {
             first_limited = Some(Authorization::Limited(
                 counter.limit().name().map(|n| n.to_owned()),
             ))

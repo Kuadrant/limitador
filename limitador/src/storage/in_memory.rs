@@ -34,7 +34,7 @@ impl CounterStorage for InMemoryStorage {
                 .unwrap_or_default()
         };
 
-        Ok(counter.max_value() >= value + delta)
+        Ok(counter.max_value() >= value.saturating_add(delta))
     }
 
     #[tracing::instrument(skip_all)]
@@ -104,7 +104,12 @@ impl CounterStorage for InMemoryStorage {
             let ttl = if ttl.is_zero() { counter.window() } else { ttl };
             counter.set_remaining(counter.max_value().saturating_sub(value));
             counter.set_expires_in(ttl);
-            if first_limited.is_none() && counter.max_value().checked_sub(value + delta).is_none() {
+            if first_limited.is_none()
+                && counter
+                    .max_value()
+                    .checked_sub(value.saturating_add(delta))
+                    .is_none()
+            {
                 first_limited = Some(Authorization::Limited(
                     counter.limit().name().map(|n| n.to_owned()),
                 ));
@@ -278,7 +283,12 @@ impl InMemoryStorage {
             // compensates for its own persisted delta afterward (see `RateLimiter`).
             counter.set_remaining(counter.max_value().saturating_sub(value));
             counter.set_expires_in(ttl);
-            if first_limited.is_none() && counter.max_value().checked_sub(value + delta).is_none() {
+            if first_limited.is_none()
+                && counter
+                    .max_value()
+                    .checked_sub(value.saturating_add(delta))
+                    .is_none()
+            {
                 first_limited = Some(Authorization::Limited(
                     counter.limit().name().map(|n| n.to_owned()),
                 ));

@@ -43,7 +43,9 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             .instrument(info_span!("datastore"))
             .await?
         {
-            Some(val) => Ok(u64::try_from(val).unwrap_or(0) + delta <= counter.max_value()),
+            Some(val) => {
+                Ok(u64::try_from(val).unwrap_or(0).saturating_add(delta) <= counter.max_value())
+            }
             None => Ok(counter.max_value().checked_sub(delta).is_some()),
         }
     }

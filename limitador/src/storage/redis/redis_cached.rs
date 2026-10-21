@@ -260,7 +260,10 @@ impl CachedRedisStorage {
             for (&i, (value, ttl)) in missing.iter().zip(fetched) {
                 let counter = &mut counters[i];
                 if first_limited.is_none()
-                    && counter.max_value().checked_sub(value + delta).is_none()
+                    && counter
+                        .max_value()
+                        .checked_sub(value.saturating_add(delta))
+                        .is_none()
                 {
                     first_limited = Some(Authorization::Limited(
                         counter.limit().name().map(|n| n.to_owned()),
