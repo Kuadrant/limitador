@@ -1,4 +1,6 @@
 use crate::counter::Counter;
+use crate::{response_headers_for, HasCounters};
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::time::{Duration, SystemTime};
 use uuid::Uuid;
@@ -97,6 +99,19 @@ pub struct ReserveResult {
     pub amount: u64,
     pub counters: Vec<Counter>,
     pub limit_name: Option<String>,
+}
+
+impl HasCounters for ReserveResult {
+    fn counters_mut(&mut self) -> &mut Vec<Counter> {
+        &mut self.counters
+    }
+}
+
+impl ReserveResult {
+    /// See [`crate::CheckResult::response_header`].
+    pub fn response_header(&mut self) -> HashMap<String, String> {
+        response_headers_for(self)
+    }
 }
 
 /// Result of `RateLimiter::commit_reservation`/`AsyncRateLimiter::commit_reservation`.

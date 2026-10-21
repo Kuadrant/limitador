@@ -4,6 +4,7 @@ package kuadrant.service.ratelimit.v1;
 
 import "envoy/service/ratelimit/v3/rls.proto";
 import "envoy/extensions/common/ratelimit/v3/ratelimit.proto";
+import "envoy/config/core/v3/base.proto";
 import "google/protobuf/duration.proto";
 
 service RateLimitService {
@@ -42,6 +43,11 @@ message ReserveResponse {
   // amount if the server clamped it down; purely informational, Commit's actual_amount is
   // independent of it.
   uint64 reserved_amount = 3;
+  // Standard rate-limit metadata (see
+  // https://datatracker.ietf.org/doc/id/draft-polli-ratelimit-headers-03.html) for the most
+  // restrictive matching counter, present on both OK and OverLimit codes. Empty unless the
+  // server is configured to compute these headers.
+  repeated envoy.config.core.v3.HeaderValue response_headers = 4;
 }
 
 message CommitRequest {

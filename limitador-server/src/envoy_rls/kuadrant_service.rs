@@ -10,7 +10,7 @@ use super::server::custom::service::ratelimit::v1::{
 };
 use super::server::envoy::service::ratelimit::v3::rate_limit_response::Code;
 use super::server::envoy::service::ratelimit::v3::{RateLimitRequest, RateLimitResponse};
-use super::server::ReservationConfig;
+use super::server::{RateLimitHeaders, ReservationConfig};
 use crate::prometheus_metrics::PrometheusMetrics;
 use crate::Limiter;
 use limitador::limit::Context;
@@ -20,6 +20,7 @@ pub struct KuadrantService {
     limiter: Arc<Limiter>,
     metrics: Arc<PrometheusMetrics>,
     reservation_config: ReservationConfig,
+    rate_limit_headers: RateLimitHeaders,
 }
 
 impl KuadrantService {
@@ -27,30 +28,46 @@ impl KuadrantService {
     // `new_with_reservation_config` so it can pass along the real, CLI-configured settings.
     #[cfg(test)]
     pub fn new(limiter: Arc<Limiter>, metrics: Arc<PrometheusMetrics>) -> Self {
-        Self::new_with_reservation_config(limiter, metrics, ReservationConfig::default())
+        Self::new_with_reservation_config(
+            limiter,
+            metrics,
+            ReservationConfig::default(),
+            RateLimitHeaders::None,
+        )
     }
 
     pub fn new_with_reservation_config(
         limiter: Arc<Limiter>,
         metrics: Arc<PrometheusMetrics>,
         reservation_config: ReservationConfig,
+        rate_limit_headers: RateLimitHeaders,
     ) -> Self {
         Self {
             limiter,
             metrics,
             reservation_config,
+            rate_limit_headers,
         }
     }
 }
 
 #[tonic::async_trait]
 impl RateLimitService for KuadrantService {
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(skip_all, fields(
+        ratelimit.namespace,
+        ratelimit.limited,
+        ratelimit.limit_name,
+        ratelimit.num_counters,
+        ratelimit.most_restrictive.limit,
+        ratelimit.most_restrictive.remaining,
+        ratelimit.most_restrictive.reset_secs
+    ))]
     async fn check_rate_limit(
         &self,
         request: Request<RateLimitRequest>,
     ) -> Result<Response<RateLimitResponse>, Status> {
         debug!("CheckRateLimit request received: {:?}", request);
+        let span = tracing::Span::current();
 
         let mut values: Vec<HashMap<String, String>> = Vec::default();
         let (_metadata, _ext, req) = request.into_parts();
@@ -68,6 +85,7 @@ impl RateLimitService for KuadrantService {
             }));
         }
 
+        span.record("ratelimit.namespace", namespace.as_str());
         let namespace = namespace.into();
 
         for descriptor in &req.descriptors {
@@ -100,7 +118,12 @@ impl RateLimitService for KuadrantService {
             return Err(Status::unavailable("Service unavailable"));
         }
 
-        let rate_limited_resp = rate_limited_resp.unwrap();
+        let mut rate_limited_resp = rate_limited_resp.unwrap();
+        span.record("ratelimit.limited", rate_limited_resp.limited);
+        if let Some(ref name) = rate_limited_resp.limit_name {
+            span.record("ratelimit.limit_name", name.as_str());
+        }
+
         let resp_code = if rate_limited_resp.limited {
             self.metrics.incr_limited_calls(
                 &namespace,
@@ -113,11 +136,19 @@ impl RateLimitService for KuadrantService {
             Code::Ok
         };
 
+        let headers_enabled = self.rate_limit_headers != RateLimitHeaders::None;
+        let response_headers = if headers_enabled {
+            span.record("ratelimit.num_counters", rate_limited_resp.counters.len());
+            rate_limited_resp.response_header()
+        } else {
+            HashMap::new()
+        };
+
         let reply = RateLimitResponse {
             overall_code: resp_code.into(),
             statuses: vec![],
             request_headers_to_add: vec![],
-            response_headers_to_add: vec![],
+            response_headers_to_add: self.rate_limit_headers.headers_from_map(response_headers),
             raw_body: vec![],
             dynamic_metadata: None,
             quota: None,
@@ -206,12 +237,21 @@ impl RateLimitService for KuadrantService {
         Ok(Response::new(reply))
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(skip_all, fields(
+        ratelimit.namespace,
+        ratelimit.limited,
+        ratelimit.limit_name,
+        ratelimit.num_counters,
+        ratelimit.most_restrictive.limit,
+        ratelimit.most_restrictive.remaining,
+        ratelimit.most_restrictive.reset_secs
+    ))]
     async fn reserve(
         &self,
         request: Request<ReserveRequest>,
     ) -> Result<Response<ReserveResponse>, Status> {
         debug!("Reserve request received: {:?}", request);
+        let span = tracing::Span::current();
 
         if self.reservation_config.disable_reservations {
             return Err(Status::unimplemented("reservations are disabled"));
@@ -226,9 +266,11 @@ impl RateLimitService for KuadrantService {
                 code: Code::Unknown.into(),
                 reservation_id: None,
                 reserved_amount: 0,
+                response_headers: vec![],
             }));
         }
 
+        span.record("ratelimit.namespace", namespace.as_str());
         let namespace = namespace.into();
 
         for descriptor in &req.descriptors {
@@ -245,12 +287,8 @@ impl RateLimitService for KuadrantService {
         let ttl = req.ttl.and_then(|d| Duration::try_from(d).ok());
 
         let reserve_resp = match &*self.limiter {
-            Limiter::Blocking(limiter) => limiter.reserve(&namespace, &ctx, req.amount, ttl, false),
-            Limiter::Async(limiter) => {
-                limiter
-                    .reserve(&namespace, &ctx, req.amount, ttl, false)
-                    .await
-            }
+            Limiter::Blocking(limiter) => limiter.reserve(&namespace, &ctx, req.amount, ttl),
+            Limiter::Async(limiter) => limiter.reserve(&namespace, &ctx, req.amount, ttl).await,
         };
 
         if let Err(e) = reserve_resp {
@@ -261,21 +299,35 @@ impl RateLimitService for KuadrantService {
             return Err(Status::unavailable("Service unavailable"));
         }
 
-        let reserve_resp = reserve_resp.unwrap();
+        let mut reserve_resp = reserve_resp.unwrap();
+        span.record("ratelimit.limited", reserve_resp.limited);
+        if let Some(ref name) = reserve_resp.limit_name {
+            span.record("ratelimit.limit_name", name.as_str());
+        }
+
         let (code, reservation_id) = if reserve_resp.limited {
             self.metrics
                 .incr_limited_calls(&namespace, reserve_resp.limit_name.as_deref(), &ctx);
             (Code::OverLimit, None)
         } else {
             self.metrics.incr_authorized_calls(&namespace, &ctx);
-            let reservation_id = reserve_resp.reservation_id.map(|id| id.to_string());
+            let reservation_id = reserve_resp.reservation_id.clone().map(|id| id.to_string());
             (Code::Ok, reservation_id)
+        };
+
+        let headers_enabled = self.rate_limit_headers != RateLimitHeaders::None;
+        let response_headers = if headers_enabled {
+            span.record("ratelimit.num_counters", reserve_resp.counters.len());
+            reserve_resp.response_header()
+        } else {
+            HashMap::new()
         };
 
         Ok(Response::new(ReserveResponse {
             code: code.into(),
             reservation_id,
             reserved_amount: reserve_resp.amount,
+            response_headers: self.rate_limit_headers.headers_from_map(response_headers),
         }))
     }
 
