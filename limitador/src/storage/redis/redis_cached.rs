@@ -124,16 +124,16 @@ impl AsyncCounterStorage for CachedRedisStorage {
     }
 
     // Local-memory only (see `LocalReservationRegistry`'s docs): admission is checked against
-    // this instance's own cached view of each counter. Unlike `check`/`check_and_update`, a
-    // cache miss here can't just default to 0: those write on every call, so a wrong guess is
-    // corrected in full by the very next flush (`apply_remote_delta` folds in whatever Redis
-    // has beyond what we last accounted for, not just incremental drift). `reserve` never
-    // writes to this cache, and its admission decision - unlike a `check`'s - doesn't get
-    // discarded afterward: an under-estimate would be admitted as a real hold in
+    // this instance's own cached view of each counter. A cache miss can't just default to 0.
+    // Unlike `check_and_update` - which writes on every admitted call, so a wrong guess is
+    // corrected in full by the very next flush (`apply_remote_delta` folds in whatever Redis has
+    // beyond what we last accounted for, not just incremental drift) - `reserve` never writes to
+    // this cache, so nothing reconciles a wrong guess afterward. And unlike a read-only `check`,
+    // whose decision is discarded, an under-estimate here is admitted as a real hold in
     // `LocalReservationRegistry`, which every subsequent `reserve` call on this counter folds
     // into its own admission math via `outstanding()`, compounding the mistake for up to
-    // `ReservationLimits::max_ttl`. Misses are fetched live from Redis instead, in one batched
-    // round trip.
+    // `ReservationLimits::max_ttl`. Misses are fetched live from Redis instead (the read-only
+    // `check` path does the same), in one batched round trip.
     #[tracing::instrument(skip_all)]
     async fn reserve(
         &self,

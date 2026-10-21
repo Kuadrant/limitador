@@ -265,10 +265,10 @@ impl InMemoryStorage {
         }
     }
 
-    /// Shared by [`CounterStorage::check`] and [`CounterStorage::check_and_update`]: reads
-    /// every counter's current value, annotating each with its `remaining`/`expires_in`, and
-    /// determines whether `delta` more would keep all of them within their limit. Never
-    /// mutates any stored value.
+    /// Backs [`CounterStorage::check`]: reads every counter's current value, annotating each with
+    /// its `remaining`/`expires_in`, and determines whether `delta` more would keep all of them
+    /// within their limit. Never mutates any stored value. (`check_and_update` has its own
+    /// single-pass implementation that annotates and persists under one lock.)
     fn evaluate(&self, counters: &mut [Counter], delta: u64) -> Authorization {
         let limits_by_namespace = self.simple_limits.read().unwrap();
         let mut first_limited = None;
@@ -279,8 +279,7 @@ impl InMemoryStorage {
             // as a counter that never existed at all, rather than a misleading "already reset".
             let ttl = if ttl.is_zero() { counter.window() } else { ttl };
             // `remaining` reflects the counter's actual current state, not a projection of
-            // `delta` having been applied - `check()` never applies it, and `check_and_update`
-            // compensates for its own persisted delta afterward (see `RateLimiter`).
+            // `delta` having been applied - `check()` is read-only and never applies it.
             counter.set_remaining(counter.max_value().saturating_sub(value));
             counter.set_expires_in(ttl);
             if first_limited.is_none()
@@ -308,7 +307,7 @@ impl InMemoryStorage {
 
         // Never insert into `qualified_counters` here on a miss - `check()` must stay
         // read-only. Persisting (and thus actually starting a counter's window) only happens
-        // in `check_and_update`'s subsequent `update_counter` call, once admission is decided.
+        // in `check_and_update`, once admission is decided.
         for counter in counters.iter_mut().filter(|c| c.is_qualified()) {
             match self.qualified_counters.get(counter) {
                 Some(value) => record(counter, value.value(), value.ttl()),
