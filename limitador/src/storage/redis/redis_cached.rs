@@ -54,13 +54,13 @@ pub struct CachedRedisStorage {
 
 #[async_trait]
 impl AsyncCounterStorage for CachedRedisStorage {
-    // Shares `evaluate` with `check`/`check_and_update`: a cache hit is served from the local
-    // cache, while a cache miss reads the authoritative value live from Redis (see `evaluate`).
+    // Read-only: a cache hit is served from the local cache, a cache miss reads the authoritative
+    // value live from Redis (see `check_reading_misses`).
     #[tracing::instrument(skip_all)]
     async fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr> {
         let mut counter = counter.clone();
         Ok(matches!(
-            self.evaluate(std::slice::from_mut(&mut counter), delta)
+            self.check_reading_misses(std::slice::from_mut(&mut counter), delta)
                 .await?,
             Authorization::Ok
         ))
@@ -83,7 +83,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
         counters: &mut Vec<Counter>,
         delta: u64,
     ) -> Result<Authorization, StorageErr> {
-        self.evaluate(counters, delta).await
+        self.check_reading_misses(counters, delta).await
     }
 
     // Notice that this method does not guarantee 100% accuracy when applying the
@@ -96,7 +96,7 @@ impl AsyncCounterStorage for CachedRedisStorage {
         counters: &mut Vec<Counter>,
         delta: u64,
     ) -> Result<Authorization, StorageErr> {
-        let auth = self.evaluate(counters, delta).await?;
+        let auth = self.check_assuming_fresh_misses(counters, delta);
         if matches!(auth, Authorization::Ok) {
             for counter in counters.iter() {
                 self.cached_counters.increase_by(counter, delta).await;
@@ -201,20 +201,18 @@ impl AsyncCounterStorage for CachedRedisStorage {
 }
 
 impl CachedRedisStorage {
-    /// Shared by [`AsyncCounterStorage::check`], [`AsyncCounterStorage::is_within_limits`] and
-    /// [`AsyncCounterStorage::check_and_update`]: reads every counter's current value - from the
-    /// local cache when present, otherwise live from Redis in one batched round trip (same as
-    /// `reserve`) - annotating each with its `remaining`/`expires_in`, and determines whether
-    /// `delta` more would keep all of them within their limit. Never mutates the cache itself.
-    async fn evaluate(
+    /// Annotate every counter already present in the local cache with its current
+    /// `remaining`/`expires_in`, and track whether `delta` more would keep it within its limit.
+    /// Returns the first limited authorization found (if any) and the indices of the counters that
+    /// were not present in the cache, left for the caller to resolve. Never mutates the cache.
+    fn annotate_cached(
         &self,
         counters: &mut [Counter],
         delta: u64,
-    ) -> Result<Authorization, StorageErr> {
+    ) -> (Option<Authorization>, Vec<usize>) {
         let mut first_limited = None;
         let mut missing: Vec<usize> = vec![];
 
-        // Serve cached counters from the local cache.
         for (idx, counter) in counters.iter_mut().enumerate() {
             match self.cached_counters.get(counter) {
                 Some(val) => {
@@ -224,9 +222,7 @@ impl CachedRedisStorage {
                         ));
                     }
                     // `remaining` reflects the counter's actual current state, not a projection
-                    // of `delta` having been applied - `check()` never applies it, and
-                    // `check_and_update` compensates for its own persisted delta afterward (see
-                    // `RateLimiter`).
+                    // of `delta` having been applied.
                     counter.set_remaining(val.remaining(counter));
                     // A zero ttl means the previous window has already elapsed even though a
                     // stale entry is still cached - report a fresh full window, the same as a
@@ -239,11 +235,21 @@ impl CachedRedisStorage {
             }
         }
 
-        // Read missing counters live from Redis (one batched round trip) rather than assuming a
-        // fresh (0) counter: a cold instance would otherwise admit an already-exhausted counter.
-        // This preserves this backend's pre-cache behaviour of reading Redis directly on a miss
-        // and matches `reserve`. Does not seed the cache, so `evaluate` stays read-only;
-        // `check_and_update` still seeds the cache afterwards via `increase_by`.
+        (first_limited, missing)
+    }
+
+    /// Determine whether `delta` more would keep every counter within its limit, annotating each
+    /// with its `remaining`/`expires_in`. Cache hits are served from the local cache; cache misses
+    /// are read live from Redis in one batched round trip. Reading the authoritative value on a
+    /// miss (rather than assuming a fresh counter) avoids admitting an already-exhausted counter
+    /// when the local cache is cold. Never mutates the cache.
+    async fn check_reading_misses(
+        &self,
+        counters: &mut [Counter],
+        delta: u64,
+    ) -> Result<Authorization, StorageErr> {
+        let (mut first_limited, missing) = self.annotate_cached(counters, delta);
+
         if !missing.is_empty() {
             let missing_counters: Vec<Counter> =
                 missing.iter().map(|&i| counters[i].clone()).collect();
@@ -267,6 +273,29 @@ impl CachedRedisStorage {
         }
 
         Ok(first_limited.unwrap_or(Authorization::Ok))
+    }
+
+    /// Determine whether `delta` more would keep every counter within its limit, annotating each
+    /// with its `remaining`/`expires_in`. Cache hits are served from the local cache; a cache miss
+    /// is assumed to be a fresh (`0`) counter without reading Redis. This trades accuracy for
+    /// speed: an uncached counter that is actually over its limit elsewhere is admitted until the
+    /// local cache learns its value. Synchronous - never touches Redis - and never mutates the
+    /// cache.
+    fn check_assuming_fresh_misses(&self, counters: &mut [Counter], delta: u64) -> Authorization {
+        let (mut first_limited, missing) = self.annotate_cached(counters, delta);
+
+        for &i in &missing {
+            let counter = &mut counters[i];
+            if first_limited.is_none() && counter.max_value().checked_sub(delta).is_none() {
+                first_limited = Some(Authorization::Limited(
+                    counter.limit().name().map(|n| n.to_owned()),
+                ));
+            }
+            counter.set_remaining(counter.max_value());
+            counter.set_expires_in(counter.window());
+        }
+
+        first_limited.unwrap_or(Authorization::Ok)
     }
 
     pub async fn new(redis_url: &str) -> Result<Self, RedisError> {
@@ -821,6 +850,35 @@ mod tests {
             counters[0].remaining(),
             Some(0),
             "remaining must reflect the authoritative Redis value on a cache miss"
+        );
+    }
+
+    // Regression test: unlike the read-only `check`, `check_and_update` must NOT read Redis on a
+    // cache miss - the enforcing path stays off Redis on the hot path and self-corrects via the
+    // local write + next flush. A cold instance therefore admits a counter that is already
+    // exhausted elsewhere in Redis (accuracy-for-speed), rather than blocking on a Redis round trip.
+    #[tokio::test]
+    #[serial]
+    async fn check_and_update_assumes_fresh_on_cache_miss() {
+        // Another instance exhausts the counter directly in Redis.
+        let authority = AsyncRedisStorage::new("redis://127.0.0.1:6379")
+            .await
+            .unwrap();
+        let seed = counter("cached_check_and_update_cold_miss_test", 10);
+        authority.update_counter(&seed, 10).await.unwrap();
+
+        // A brand-new instance has never cached this counter. `check_and_update` assumes a fresh
+        // counter on the miss and admits, without reading the exhausted Redis value.
+        let cold = CachedRedisStorage::new("redis://127.0.0.1:6379")
+            .await
+            .unwrap();
+        let mut counters = vec![counter("cached_check_and_update_cold_miss_test", 10)];
+        assert!(
+            matches!(
+                cold.check_and_update(&mut counters, 1).await.unwrap(),
+                Authorization::Ok
+            ),
+            "a cold check_and_update must assume a fresh counter on a miss, not read Redis"
         );
     }
 
