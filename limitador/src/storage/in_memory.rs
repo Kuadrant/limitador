@@ -82,13 +82,82 @@ impl CounterStorage for InMemoryStorage {
         counters: &mut Vec<Counter>,
         delta: u64,
     ) -> Result<Authorization, StorageErr> {
-        let auth = self.evaluate(counters, delta);
-        if matches!(auth, Authorization::Ok) {
-            for counter in counters.iter() {
-                self.update_counter(counter, delta)?;
+        let now = SystemTime::now();
+        let limits_by_namespace = self.simple_limits.read().unwrap();
+        let mut first_limited = None;
+
+        // Keep a handle to every counter's value so, if admitted, we can apply `delta` atomically
+        // in a second pass - without re-looking it up or taking the write lock (the read lock
+        // already guards the map structure; `AtomicExpiringValue::update` is atomic).
+        let mut simple_to_update: Vec<(&AtomicExpiringValue, Duration)> = Vec::new();
+        let mut qualified_to_update: Vec<(Arc<AtomicExpiringValue>, Duration)> = Vec::new();
+        // Simple counters missing from the map (a concurrent `delete`/`clear` race): annotated as
+        // fresh here, created on admission via `update_counter` (which takes the write lock).
+        let mut missing_simple: Vec<usize> = Vec::new();
+
+        // Annotate `counter` with its current (pre-persist) `remaining`/`expires_in` and flag the
+        // first one for which `delta` more would exceed the limit. `remaining` is pre-delta - the
+        // caller (`RateLimiter::check_rate_limited_and_update`) subtracts `delta` afterward.
+        let mut annotate = |counter: &mut Counter, value: u64, ttl: Duration| {
+            // A zero ttl means the previous window has already elapsed - report a fresh full
+            // window, the same as a counter that never existed at all.
+            let ttl = if ttl.is_zero() { counter.window() } else { ttl };
+            counter.set_remaining(counter.max_value().saturating_sub(value));
+            counter.set_expires_in(ttl);
+            if first_limited.is_none() && counter.max_value().checked_sub(value + delta).is_none() {
+                first_limited = Some(Authorization::Limited(
+                    counter.limit().name().map(|n| n.to_owned()),
+                ));
+            }
+        };
+
+        for (idx, counter) in counters.iter_mut().enumerate() {
+            if counter.is_qualified() {
+                let value = match self.qualified_counters.get(counter) {
+                    Some(value) => value,
+                    None => self.qualified_counters.get_with_by_ref(counter, || {
+                        Arc::new(AtomicExpiringValue::new(0, now + counter.window()))
+                    }),
+                };
+                annotate(counter, value.value(), value.ttl());
+                qualified_to_update.push((value, counter.window()));
+            } else {
+                // Normally always present (populated by `add_counter`), but a concurrent
+                // `delete_limit`/`clear` could remove it - treat that race as a fresh counter
+                // rather than panic.
+                match limits_by_namespace.get(counter.limit()) {
+                    Some(value) => {
+                        annotate(counter, value.value(), value.ttl());
+                        simple_to_update.push((value, counter.window()));
+                    }
+                    None => {
+                        annotate(counter, 0, counter.window());
+                        missing_simple.push(idx);
+                    }
+                }
             }
         }
-        Ok(auth)
+
+        // Denied: every counter has been annotated, but no usage is persisted.
+        if let Some(limited) = first_limited {
+            return Ok(limited);
+        }
+
+        // Admitted: apply `delta`. Present counters update atomically under the held read lock.
+        for (value, ttl) in &simple_to_update {
+            value.update(delta, *ttl, now);
+        }
+        for (value, ttl) in &qualified_to_update {
+            value.update(delta, *ttl, now);
+        }
+        // Drop the read lock before `update_counter`, which takes the write lock to create the
+        // (rare) missing simple entries.
+        drop(limits_by_namespace);
+        for &idx in &missing_simple {
+            self.update_counter(&counters[idx], delta)?;
+        }
+
+        Ok(Authorization::Ok)
     }
 
     #[tracing::instrument(skip_all)]
