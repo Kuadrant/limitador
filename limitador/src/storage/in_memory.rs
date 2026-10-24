@@ -172,6 +172,9 @@ impl CounterStorage for InMemoryStorage {
         for limit in limits {
             for (counter, expiring_value) in self.counters_in_namespace(limit.namespace()) {
                 let mut counter_with_val = counter.clone();
+                if let Some(live) = limits.get(counter_with_val.limit()) {
+                    counter_with_val.update_to_limit(Arc::clone(live));
+                }
                 counter_with_val.set_remaining(
                     counter_with_val
                         .max_value()
@@ -185,8 +188,9 @@ impl CounterStorage for InMemoryStorage {
         }
 
         for (counter, expiring_value) in self.qualified_counters.iter() {
-            if limits.contains(counter.limit()) {
+            if let Some(live) = limits.get(counter.limit()) {
                 let mut counter_with_val = counter.deref().clone();
+                counter_with_val.update_to_limit(Arc::clone(live));
                 counter_with_val.set_remaining(
                     counter_with_val
                         .max_value()

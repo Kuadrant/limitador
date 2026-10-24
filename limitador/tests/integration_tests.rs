@@ -273,6 +273,7 @@ mod test {
     test_with_all_storage_impls!(configure_with_keeps_the_given_limits_and_counters_if_they_exist);
     test_with_all_storage_impls!(configure_with_deletes_all_except_the_limits_given);
     test_with_all_storage_impls!(configure_with_updates_the_limits);
+    test_with_all_storage_impls!(get_counters_after_max_value_is_raised);
     test_with_all_storage_impls!(add_limit_only_adds_if_not_present);
 
     test_with_reservation_capable_storage_impls!(reserve_accounts_for_outstanding_reservations);
@@ -1411,6 +1412,63 @@ mod test {
 
         assert_eq!(limits.len(), 1);
         assert_eq!(limits.iter().next().unwrap().max_value(), 20);
+    }
+
+    async fn get_counters_after_max_value_is_raised(rate_limiter: &mut TestsLimiter) {
+        let namespace = "test_namespace";
+
+        let simple_limit = |max_value| {
+            Limit::new(
+                namespace,
+                max_value,
+                300,
+                vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+                Vec::<Expression>::default(),
+            )
+        };
+        let qualified_limit = |max_value| {
+            Limit::new(
+                namespace,
+                max_value,
+                600,
+                vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+                vec!["app_id".try_into().expect("failed parsing!")],
+            )
+        };
+
+        let mut values = HashMap::new();
+        values.insert("req_method".to_string(), "GET".to_string());
+        values.insert("app_id".to_string(), "1".to_string());
+        let ctx = values.into();
+
+        rate_limiter
+            .configure_with(vec![simple_limit(100), qualified_limit(100)])
+            .await
+            .unwrap();
+        rate_limiter
+            .check_rate_limited_and_update(namespace, &ctx, 95)
+            .await
+            .unwrap();
+
+        rate_limiter
+            .configure_with(vec![simple_limit(12000), qualified_limit(12000)])
+            .await
+            .unwrap();
+        rate_limiter
+            .check_rate_limited_and_update(namespace, &ctx, 10)
+            .await
+            .unwrap();
+
+        // We wait for the flushing period to pass so the counters are flushed in the cached storage
+        tokio::time::sleep(Duration::from_millis(40)).await;
+
+        let counters = rate_limiter.get_counters(namespace).await.unwrap();
+
+        assert_eq!(counters.len(), 2);
+        for counter in counters {
+            assert_eq!(counter.max_value(), 12000);
+            assert_eq!(counter.remaining().unwrap(), 12000 - 105);
+        }
     }
 
     async fn add_limit_only_adds_if_not_present(rate_limiter: &mut TestsLimiter) {
