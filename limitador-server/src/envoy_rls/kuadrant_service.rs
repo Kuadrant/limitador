@@ -8,13 +8,55 @@ use super::server::custom::service::ratelimit::v1::rate_limit_service_server::Ra
 use super::server::custom::service::ratelimit::v1::{
     CommitRequest, CommitResponse, ReserveRequest, ReserveResponse,
 };
+use super::server::envoy::extensions::common::ratelimit::v3::RateLimitDescriptor;
 use super::server::envoy::service::ratelimit::v3::rate_limit_response::Code;
 use super::server::envoy::service::ratelimit::v3::{RateLimitRequest, RateLimitResponse};
 use super::server::{RateLimitHeaders, ReservationConfig};
 use crate::prometheus_metrics::PrometheusMetrics;
 use crate::Limiter;
+use limitador::errors::LimitadorError;
 use limitador::limit::Context;
 use limitador::reservation::ReservationId;
+
+/// Maps a `LimitadorError` to the gRPC status returned to the client, shared by all four
+/// RLS methods so they classify failures consistently.
+///
+/// - Transient storage errors (e.g. losing the connection to the backend) become
+///   `unavailable`, letting the caller's `failureMode` decide the outcome; the message is a
+///   sanitized constant since retrying may succeed.
+/// - A storage backend that doesn't support the requested operation (e.g. reservations)
+///   becomes `failed_precondition`: the method exists, but the deployment isn't configured
+///   to satisfy it, so retrying won't help until an operator changes the config.
+/// - A CEL evaluation failure becomes `internal`: it's deterministic (not transient) and
+///   stems from the server's own configured limit expressions, not from the caller.
+///
+/// Note the wasm-shim (and Envoy's native filter) treat any non-OK status identically,
+/// routing it through `failureMode`; the distinct codes exist for honest logs and metrics,
+/// not to change request-level behavior.
+fn status_from_error(e: &LimitadorError) -> Status {
+    match e {
+        LimitadorError::InterpreterError(_) => Status::internal(e.to_string()),
+        LimitadorError::StorageError(err) if err.is_transient() => {
+            Status::unavailable("Service unavailable")
+        }
+        LimitadorError::StorageError(_) => Status::failed_precondition(e.to_string()),
+    }
+}
+
+fn context_from_descriptors(descriptors: &[RateLimitDescriptor]) -> Context<'_> {
+    let mut values: Vec<HashMap<String, String>> = Vec::default();
+    for descriptor in descriptors {
+        let mut map = HashMap::default();
+        for entry in &descriptor.entries {
+            map.insert(entry.key.clone(), entry.value.clone());
+        }
+        values.push(map);
+    }
+
+    let mut ctx = Context::default();
+    ctx.list_binding("descriptors".to_string(), values);
+    ctx
+}
 
 pub struct KuadrantService {
     limiter: Arc<Limiter>,
@@ -69,7 +111,6 @@ impl RateLimitService for KuadrantService {
         debug!("CheckRateLimit request received: {:?}", request);
         let span = tracing::Span::current();
 
-        let mut values: Vec<HashMap<String, String>> = Vec::default();
         let (_metadata, _ext, req) = request.into_parts();
         let namespace = req.domain;
 
@@ -88,16 +129,7 @@ impl RateLimitService for KuadrantService {
         span.record("ratelimit.namespace", namespace.as_str());
         let namespace = namespace.into();
 
-        for descriptor in &req.descriptors {
-            let mut map = HashMap::default();
-            for entry in &descriptor.entries {
-                map.insert(entry.key.clone(), entry.value.clone());
-            }
-            values.push(map);
-        }
-
-        let mut ctx = Context::default();
-        ctx.list_binding("descriptors".to_string(), values);
+        let ctx = context_from_descriptors(&req.descriptors);
 
         let rate_limited_resp = match &*self.limiter {
             Limiter::Blocking(limiter) => limiter.is_rate_limited(&namespace, &ctx, 1),
@@ -105,17 +137,11 @@ impl RateLimitService for KuadrantService {
         };
 
         if let Err(e) = rate_limited_resp {
-            // In this case we could return "Code::Unknown" but that's not
-            // very helpful. When envoy receives "Unknown" it simply lets
-            // the request pass and this cannot be configured using the
-            // "failure_mode_deny" attribute, so it's equivalent to
-            // returning "Code::Ok". That's why we return an "unavailable"
-            // error here. What envoy does after receiving that kind of
-            // error can be configured with "failure_mode_deny". The only
-            // errors that can happen here have to do with connecting to the
-            // limits storage, which should be temporary.
+            // Returning a successful response with "Code::Unknown" would make envoy let the
+            // request pass silently (it can't be governed by "failure_mode_deny"), so we
+            // return a gRPC error instead and let `status_from_error` classify it.
             error!("Error: {:?}", e);
-            return Err(Status::unavailable("Service unavailable"));
+            return Err(status_from_error(&e));
         }
 
         let mut rate_limited_resp = rate_limited_resp.unwrap();
@@ -164,7 +190,6 @@ impl RateLimitService for KuadrantService {
     ) -> Result<Response<RateLimitResponse>, Status> {
         debug!("Report request received: {:?}", request);
 
-        let mut values: Vec<HashMap<String, String>> = Vec::default();
         let (_metadata, _ext, req) = request.into_parts();
         let namespace = req.domain;
 
@@ -182,14 +207,6 @@ impl RateLimitService for KuadrantService {
 
         let namespace = namespace.into();
 
-        for descriptor in &req.descriptors {
-            let mut map = HashMap::default();
-            for entry in &descriptor.entries {
-                map.insert(entry.key.clone(), entry.value.clone());
-            }
-            values.push(map);
-        }
-
         // "hits_addend" is optional according to the spec, and should default
         // to 1, However, with the autogenerated structs it defaults to 0.
         let hits_addend = if req.hits_addend == 0 {
@@ -198,8 +215,7 @@ impl RateLimitService for KuadrantService {
             req.hits_addend
         } as u64;
 
-        let mut ctx = Context::default();
-        ctx.list_binding("descriptors".to_string(), values);
+        let ctx = context_from_descriptors(&req.descriptors);
 
         let rate_limited_resp = match &*self.limiter {
             Limiter::Blocking(limiter) => limiter.update_counters(&namespace, &ctx, hits_addend),
@@ -207,17 +223,11 @@ impl RateLimitService for KuadrantService {
         };
 
         if let Err(e) = rate_limited_resp {
-            // In this case we could return "Code::Unknown" but that's not
-            // very helpful. When envoy receives "Unknown" it simply lets
-            // the request pass and this cannot be configured using the
-            // "failure_mode_deny" attribute, so it's equivalent to
-            // returning "Code::Ok". That's why we return an "unavailable"
-            // error here. What envoy does after receiving that kind of
-            // error can be configured with "failure_mode_deny". The only
-            // errors that can happen here have to do with connecting to the
-            // limits storage, which should be temporary.
+            // Returning a successful response with "Code::Unknown" would make envoy let the
+            // request pass silently (it can't be governed by "failure_mode_deny"), so we
+            // return a gRPC error instead and let `status_from_error` classify it.
             error!("Error: {:?}", e);
-            return Err(Status::unavailable("Service unavailable"));
+            return Err(status_from_error(&e));
         }
 
         self.metrics.incr_report_calls(&namespace, &ctx);
@@ -257,7 +267,6 @@ impl RateLimitService for KuadrantService {
             return Err(Status::unimplemented("reservations are disabled"));
         }
 
-        let mut values: Vec<HashMap<String, String>> = Vec::default();
         let (_metadata, _ext, req) = request.into_parts();
         let namespace = req.domain;
 
@@ -273,16 +282,7 @@ impl RateLimitService for KuadrantService {
         span.record("ratelimit.namespace", namespace.as_str());
         let namespace = namespace.into();
 
-        for descriptor in &req.descriptors {
-            let mut map = HashMap::default();
-            for entry in &descriptor.entries {
-                map.insert(entry.key.clone(), entry.value.clone());
-            }
-            values.push(map);
-        }
-
-        let mut ctx = Context::default();
-        ctx.list_binding("descriptors".to_string(), values);
+        let ctx = context_from_descriptors(&req.descriptors);
 
         let ttl = req.ttl.and_then(|d| Duration::try_from(d).ok());
 
@@ -292,11 +292,9 @@ impl RateLimitService for KuadrantService {
         };
 
         if let Err(e) = reserve_resp {
-            // See the comment on the same pattern in `check_rate_limit` above: an
-            // "unavailable" error lets `failure_mode_deny` decide the outcome, rather than
-            // silently letting the request through.
+            // See the comment on the same pattern in `check_rate_limit` above.
             error!("Error: {:?}", e);
-            return Err(Status::unavailable("Service unavailable"));
+            return Err(status_from_error(&e));
         }
 
         let mut reserve_resp = reserve_resp.unwrap();
@@ -342,7 +340,6 @@ impl RateLimitService for KuadrantService {
             return Err(Status::unimplemented("reservations are disabled"));
         }
 
-        let mut values: Vec<HashMap<String, String>> = Vec::default();
         let (_metadata, _ext, req) = request.into_parts();
         let namespace = req.domain;
 
@@ -354,16 +351,7 @@ impl RateLimitService for KuadrantService {
 
         let namespace = namespace.into();
 
-        for descriptor in &req.descriptors {
-            let mut map = HashMap::default();
-            for entry in &descriptor.entries {
-                map.insert(entry.key.clone(), entry.value.clone());
-            }
-            values.push(map);
-        }
-
-        let mut ctx = Context::default();
-        ctx.list_binding("descriptors".to_string(), values);
+        let ctx = context_from_descriptors(&req.descriptors);
 
         let reservation_id = req.reservation_id.map(ReservationId::from);
 
@@ -387,8 +375,9 @@ impl RateLimitService for KuadrantService {
         };
 
         if let Err(e) = commit_resp {
+            // See the comment on the same pattern in `check_rate_limit` above.
             error!("Error: {:?}", e);
-            return Err(Status::unavailable("Service unavailable"));
+            return Err(status_from_error(&e));
         }
 
         let commit_resp = commit_resp.unwrap();
