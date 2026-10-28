@@ -80,6 +80,26 @@ or you can run tests disabling the "redis storage" feature:
 cd limitador; cargo test --no-default-features
 ```
 
+### GitHub Actions
+
+Every action referenced from `.github/workflows` must be pinned to an immutable commit SHA, since tags can be
+force-pushed by their maintainers. This is enforced by the `verify-ratchet` CI check, which is backed by
+[ratchet](https://github.com/sethvargo/ratchet).
+
+Check if every github action is properly pinned, the same way CI does it:
+
+```bash
+make verify-ratchet
+```
+
+If you add or change an action reference, pin it before pushing:
+
+```bash
+make ratchet-pin
+```
+
+Pinned references are refreshed monthly by the [ratchet-update](.github/workflows/ratchet-update.yaml) workflow.
+
 ## Contributing
 
 Join us on the [#kuadrant](https://kubernetes.slack.com/archives/C05J0D0V525) channel in the Kubernetes Slack workspace,

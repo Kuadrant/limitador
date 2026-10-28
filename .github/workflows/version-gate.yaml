@@ -15,11 +15,11 @@ jobs:
   check-version-consistency:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # ratchet:actions/checkout@v6
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # ratchet:actions-rust-lang/setup-rust-toolchain@v1
 
-      - uses: abelfodil/protoc-action@v1
+      - uses: abelfodil/protoc-action@b540a249a18feedb02bfbfa655afa15255cf3dc6 # ratchet:abelfodil/protoc-action@v1
         with:
           protoc-version: "3.19.4"
 
@@ -34,7 +34,7 @@ jobs:
     if: startsWith(github.base_ref, 'release-')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # ratchet:actions/checkout@v6
 
       - uses: ./.github/actions/install-yq
 
