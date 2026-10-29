@@ -175,6 +175,28 @@ mod tests {
     }
 
     #[test]
+    fn counter_key_with_id_format_and_decode() {
+        let limit = Limit::with_id(
+            "test_id",
+            "example.com",
+            10,
+            60,
+            vec!["req_method == 'GET'".try_into().expect("failed parsing!")],
+            vec!["app_id".try_into().expect("failed parsing!")],
+        );
+        let ctx = HashMap::from([("app_id".to_string(), "foo".to_string())]).into();
+        let counter = Counter::new(limit, &ctx)
+            .expect("counter creation failed!")
+            .expect("must have a counter");
+
+        let raw = key_for_counter(&counter);
+        assert_eq!(b"\x02\x07test_id\x01\x06app_id\x03foo", raw.as_slice());
+        let decoded = partial_counter_from_counter_key(&raw);
+        assert_eq!(decoded.id(), Some("test_id"));
+        assert_eq!(decoded.set_variables(), counter.set_variables());
+    }
+
+    #[test]
     fn counter_key_does_not_include_transient_state() {
         let namespace = "ns_counter:";
         let limit = Limit::new(
@@ -196,13 +218,14 @@ mod tests {
     }
 }
 
-#[cfg(feature = "disk_storage")]
 pub mod bin {
     use serde::{Deserialize, Serialize};
     use std::collections::HashMap;
 
     use crate::counter::Counter;
-    use crate::limit::{Limit, Predicate};
+    use crate::limit::Limit;
+    #[cfg(feature = "disk_storage")]
+    use crate::limit::Predicate;
 
     #[derive(PartialEq, Debug, Serialize, Deserialize)]
     struct IdCounterKey<'a> {
@@ -309,15 +332,18 @@ pub mod bin {
         }
     }
 
+    #[cfg(feature = "disk_storage")]
     pub fn key_for_counter(counter: &Counter) -> Vec<u8> {
         let key: CounterKey = counter.into();
         postcard::to_stdvec(&key).unwrap()
     }
 
+    #[cfg(feature = "disk_storage")]
     pub fn prefix_for_namespace(namespace: &str) -> Vec<u8> {
         postcard::to_stdvec(namespace).unwrap()
     }
 
+    #[cfg(feature = "disk_storage")]
     pub fn partial_counter_from_counter_key(key: &[u8]) -> Counter {
         let key: CounterKey = postcard::from_bytes(key).unwrap();
         let CounterKey {
@@ -345,7 +371,7 @@ pub mod bin {
         Counter::resolved_vars(limit, map).unwrap()
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "disk_storage"))]
     mod tests {
         use super::{
             key_for_counter, key_for_counter_v2, partial_counter_from_counter_key,
