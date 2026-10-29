@@ -4,8 +4,8 @@
 
 FROM --platform=${BUILDPLATFORM} mirror.gcr.io/library/rust:1.92 AS limitador-build
 
-# libssl3/libssl-dev must be the same version on amd64 and arm64 (Multi-Arch: same),
-# but Debian's security pocket can publish a new libssl3 build for one architecture
+# libssl3t64/libssl-dev must be the same version on amd64 and arm64 (Multi-Arch: same),
+# but Debian's security pocket can publish a new libssl3t64 build for one architecture
 # before the other, so neither side's candidate is reliably installable on its own.
 # Pin both to the highest version available for BOTH architectures, and allow
 # downgrading the native amd64 package in case `apt upgrade -y` moved it ahead
@@ -13,9 +13,9 @@ FROM --platform=${BUILDPLATFORM} mirror.gcr.io/library/rust:1.92 AS limitador-bu
 RUN dpkg --add-architecture arm64 \
     && apt update \
     && apt upgrade -y \
-    && SSL_VER="$( { apt-cache madison libssl3 | awk '{print $3}' | sort -u; apt-cache madison libssl3:arm64 | awk '{print $3}' | sort -u; } | sort | uniq -d | sort -V | tail -n1 )" \
+    && SSL_VER="$( { apt-cache madison libssl3t64 | awk '{print $3}' | sort -u; apt-cache madison libssl3t64:arm64 | awk '{print $3}' | sort -u; } | sort | uniq -d | sort -V | tail -n1 )" \
     && apt install -y --allow-downgrades protobuf-compiler clang g++-aarch64-linux-gnu libc6-dev-arm64-cross pkg-config \
-       "libssl3=${SSL_VER}" "libssl3:arm64=${SSL_VER}" "libssl-dev=${SSL_VER}" "libssl-dev:arm64=${SSL_VER}"
+       "libssl3t64=${SSL_VER}" "libssl3t64:arm64=${SSL_VER}" "libssl-dev=${SSL_VER}" "libssl-dev:arm64=${SSL_VER}"
 
 RUN rustup target add aarch64-unknown-linux-gnu \
     && rustup toolchain install stable-aarch64-unknown-linux-gnu --force-non-host
