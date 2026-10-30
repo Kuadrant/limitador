@@ -324,8 +324,8 @@ impl CachedRedisStorage {
             redis::Client::open(info)
                 .expect("This couldn't fail in the past, yet now it did somehow!"),
             ConnectionManagerConfig::default()
-                .set_connection_timeout((response_timeout * 3) + Duration::from_millis(50))
-                .set_response_timeout(response_timeout)
+                .set_connection_timeout(Some((response_timeout * 3) + Duration::from_millis(50)))
+                .set_response_timeout(Some(response_timeout))
                 .set_number_of_retries(1),
         )
         .await?;
@@ -595,7 +595,7 @@ mod tests {
         let result = CachedRedisStorage::new("redis://127.0.0.1:21").await;
         assert!(result.is_err());
         let error = result.err().unwrap();
-        assert_eq!(error.kind(), ErrorKind::IoError);
+        assert_eq!(error.kind(), ErrorKind::Io);
         assert!(error.is_connection_refusal())
     }
 

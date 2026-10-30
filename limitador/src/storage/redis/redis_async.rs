@@ -1,6 +1,6 @@
 extern crate redis;
 
-use self::redis::aio::ConnectionManager;
+use self::redis::aio::{ConnectionManager, ConnectionManagerConfig};
 use self::redis::ConnectionInfo;
 use crate::counter::Counter;
 use crate::limit::Limit;
@@ -10,7 +10,7 @@ use crate::storage::redis::is_limited;
 use crate::storage::redis::scripts::{SCRIPT_RESERVE, SCRIPT_UPDATE_COUNTER, VALUES_AND_TTLS};
 use crate::storage::{AsyncCounterStorage, Authorization, StorageErr};
 use async_trait::async_trait;
-use redis::{AsyncCommands, ErrorKind, RedisError};
+use redis::{AsyncCommands, ErrorKind, RedisError, ServerErrorKind};
 use std::collections::HashSet;
 use std::ops::Deref;
 use std::str::FromStr;
@@ -111,7 +111,7 @@ impl AsyncCounterStorage for AsyncRedisStorage {
             .instrument(info_span!("datastore"))
             .await
         {
-            if err.kind() == ErrorKind::NoScriptError {
+            if err.kind() == ErrorKind::Server(ServerErrorKind::NoScript) {
                 script.prepare_invoke().load_async(&mut con).await?;
                 pipeline
                     .query_async::<()>(&mut con)
@@ -326,9 +326,12 @@ impl AsyncRedisStorage {
     pub async fn new(redis_url: &str) -> Result<Self, RedisError> {
         let info = ConnectionInfo::from_str(redis_url)?;
         Self::new_with_conn_manager(
-            ConnectionManager::new(
+            ConnectionManager::new_with_config(
                 redis::Client::open(info)
                     .expect("This couldn't fail in the past, yet now it did somehow!"),
+                ConnectionManagerConfig::default()
+                    .set_connection_timeout(None)
+                    .set_response_timeout(None),
             )
             .await?,
         )
@@ -447,8 +450,63 @@ mod tests {
         let result = AsyncRedisStorage::new("redis://127.0.0.1:21").await;
         assert!(result.is_err());
         let error = result.err().unwrap();
-        assert_eq!(error.kind(), ErrorKind::IoError);
+        assert_eq!(error.kind(), ErrorKind::Io);
         assert!(error.is_connection_refusal())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn does_not_apply_default_response_timeout() {
+        let redis_url = "redis://127.0.0.1:6379";
+        let storage = AsyncRedisStorage::new(redis_url).await.unwrap();
+        let mut connection = redis::Client::open(redis_url)
+            .unwrap()
+            .get_multiplexed_async_connection()
+            .await
+            .unwrap();
+
+        redis::cmd("CLIENT")
+            .arg("PAUSE")
+            .arg(1_000)
+            .arg("ALL")
+            .query_async::<()>(&mut connection)
+            .await
+            .unwrap();
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            storage.is_within_limits(&counter("async_slow_response", 10), 1),
+        )
+        .await
+        .expect("Redis should resume after its one-second pause")
+        .expect("ordinary async storage should allow responses slower than 500ms");
+        assert!(result);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn check_and_update_reloads_missing_script() {
+        let storage = AsyncRedisStorage::new("redis://127.0.0.1:6379")
+            .await
+            .unwrap();
+        storage.clear().await.unwrap();
+        let mut counters = vec![counter("async_missing_script", 10)];
+        let mut connection = storage.conn_manager.clone();
+
+        redis::cmd("SCRIPT")
+            .arg("FLUSH")
+            .query_async::<()>(&mut connection)
+            .await
+            .unwrap();
+
+        let authorization = storage.check_and_update(&mut counters, 1).await.unwrap();
+        assert!(matches!(authorization, Authorization::Ok));
+        let value: u64 = redis::cmd("GET")
+            .arg(crate::storage::keys::key_for_counter(&counters[0]))
+            .query_async(&mut connection)
+            .await
+            .unwrap();
+        assert_eq!(value, 1);
     }
 
     #[tokio::test]

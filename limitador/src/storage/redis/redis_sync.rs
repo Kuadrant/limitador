@@ -528,7 +528,7 @@ mod test {
         assert!(result.is_err());
         assert_eq!(
             result.err().unwrap(),
-            "Redis URL did not parse- InvalidClientConfig".to_string()
+            "Redis URL did not parse - InvalidClientConfig".to_string()
         )
     }
 
