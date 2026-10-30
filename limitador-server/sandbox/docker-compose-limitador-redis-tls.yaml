@@ -8,6 +8,8 @@ services:
       dockerfile: Dockerfile
     depends_on:
       - redis
+    environment:
+      SSL_CERT_FILE: /opt/kuadrant/redis-ca.crt
     command:
       - --rls-ip
       - 0.0.0.0
@@ -21,7 +23,7 @@ services:
       - --grpc-reflection-service
       - /opt/kuadrant/limits/limits.yaml
       - redis
-      - rediss://:foobared@redis:6379/#insecure
+      - rediss://:foobared@redis:6379/
     expose:
       - "8080"
       - "8081"
@@ -29,6 +31,7 @@ services:
       - "18080:8080"
     volumes:
       - ./limits.yaml:/opt/kuadrant/limits/limits.yaml
+      - ./ca.crt:/opt/kuadrant/redis-ca.crt:ro
   redis:
     image: redis:7
     restart: always

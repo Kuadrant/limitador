@@ -16,7 +16,7 @@ edition = "2021"
 default = ["disk_storage", "redis_storage"]
 disk_storage = ["rocksdb"]
 distributed_storage = ["tokio", "tokio-stream", "h2", "base64", "tonic", "tonic-reflection", "prost", "prost-types"]
-redis_storage = ["redis", "r2d2", "tokio"]
+redis_storage = ["redis", "r2d2", "tokio", "dep:rustls"]
 
 [dependencies]
 moka = { version = "0.12", features = ["sync"] }
@@ -31,13 +31,14 @@ metrics = "0.24.2"
 
 # Optional dependencies
 rocksdb = { version = "0.24", optional = true, features = ["multi-threaded-cf"] }
-redis = { version = "1.7", optional = true, features = [
+redis = { version = "1.7", optional = true, default-features = false, features = [
     "connection-manager",
     "tokio-comp",
-    "tls-native-tls",
-    "tokio-native-tls-comp",
+    "tokio-rustls-comp",
     "script",
 ] }
+# Redis disables rustls defaults, so explicitly select its crypto provider.
+rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "tls12"] }
 r2d2 = { version = "0.8", optional = true }
 tokio = { version = "1", optional = true, features = [
     "rt-multi-thread",
@@ -59,11 +60,10 @@ cel = "0.12"
 serial_test = "3.0"
 criterion = { version = "0.5.1", features = ["html_reports", "async_tokio"] }
 redis-test = { version = "1.0.4", features = ["aio"] }
-redis = { version = "1.7", features = [
+redis = { version = "1.7", default-features = false, features = [
     "connection-manager",
     "tokio-comp",
-    "tls-native-tls",
-    "tokio-native-tls-comp",
+    "tokio-rustls-comp",
 ] }
 paste = "1"
 rand = "0.10"
