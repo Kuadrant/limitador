@@ -296,68 +296,9 @@ mod test {
     test_with_reservation_capable_storage_impls!(
         reserve_then_commit_then_reserve_reflects_committed_usage
     );
-    // Not run against `disk_storage`, unlike the other reservation tests above:
-    // `RocksDbStorage::insert_or_update` silently no-ops a delta that alone exceeds
-    // `max_value`, so `update_counters`'s forced overshoot below never actually gets
-    // written - see https://github.com/Kuadrant/limitador/issues/516. Once that's fixed,
-    // replace this whole manual block with a single
-    // `test_with_reservation_capable_storage_impls!(reserve_denies_amount_zero_when_already_over_limit);`
-    // like the other reservation tests above.
-    #[tokio::test]
-    async fn reserve_denies_amount_zero_when_already_over_limit_in_memory_storage() {
-        let rate_limiter = RateLimiter::new_with_storage(Box::<InMemoryStorage>::default());
-        reserve_denies_amount_zero_when_already_over_limit(
-            &mut TestsLimiter::new_from_blocking_impl(rate_limiter),
-        )
-        .await;
-    }
-
-    #[cfg(feature = "redis_storage")]
-    #[tokio::test]
-    #[serial]
-    async fn reserve_denies_amount_zero_when_already_over_limit_with_sync_redis() {
-        let storage = RedisStorage::default();
-        storage.clear().unwrap();
-        let rate_limiter = RateLimiter::new_with_storage(Box::new(storage));
-        reserve_denies_amount_zero_when_already_over_limit(
-            &mut TestsLimiter::new_from_blocking_impl(rate_limiter),
-        )
-        .await;
-    }
-
-    #[cfg(feature = "redis_storage")]
-    #[tokio::test]
-    #[serial]
-    async fn reserve_denies_amount_zero_when_already_over_limit_with_async_redis() {
-        let storage = AsyncRedisStorage::new("redis://127.0.0.1:6379")
-            .await
-            .expect("We need a Redis running locally");
-        storage.clear().await.unwrap();
-        let rate_limiter = AsyncRateLimiter::new_with_storage(Box::new(storage));
-        reserve_denies_amount_zero_when_already_over_limit(&mut TestsLimiter::new_from_async_impl(
-            rate_limiter,
-        ))
-        .await;
-    }
-
-    #[cfg(feature = "redis_storage")]
-    #[tokio::test]
-    #[serial]
-    async fn reserve_denies_amount_zero_when_already_over_limit_with_async_redis_and_local_cache() {
-        let storage_builder = CachedRedisStorageBuilder::new("redis://127.0.0.1:6379")
-            .flushing_period(Duration::from_millis(2))
-            .max_cached_counters(10000);
-        let storage = storage_builder
-            .build()
-            .await
-            .expect("We need a Redis running locally");
-        storage.clear().await.unwrap();
-        let rate_limiter = AsyncRateLimiter::new_with_storage(Box::new(storage));
-        reserve_denies_amount_zero_when_already_over_limit(&mut TestsLimiter::new_from_async_impl(
-            rate_limiter,
-        ))
-        .await;
-    }
+    test_with_reservation_capable_storage_impls!(
+        reserve_denies_amount_zero_when_already_over_limit
+    );
 
     test_with_distributed_storage_impls!(distributed_rate_limited);
 

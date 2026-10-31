@@ -293,16 +293,16 @@ impl RocksDbStorage {
                 slice.try_into()?
             }
         };
-        if value.value_at(now) + delta <= counter.max_value() {
-            let expiring_value =
-                ExpiringValue::new(delta, now + Duration::from_secs(counter.limit().seconds()));
-            let span = debug_span!("datastore");
-            let _entered = span.enter();
-            self.db
-                .merge(key, <ExpiringValue as Into<Vec<u8>>>::into(expiring_value))?;
-            return Ok(value.update(delta, counter.window(), now));
-        }
-        Ok(value)
+        // The delta is applied unconditionally, like every other `CounterStorage`: callers
+        // that need an admission check (`check_and_update`) do their own beforehand, while
+        // `update_counter` must record usage even when it alone overshoots `max_value`.
+        let expiring_value =
+            ExpiringValue::new(delta, now + Duration::from_secs(counter.limit().seconds()));
+        let span = debug_span!("datastore");
+        let _entered = span.enter();
+        self.db
+            .merge(key, <ExpiringValue as Into<Vec<u8>>>::into(expiring_value))?;
+        Ok(value.update(delta, counter.window(), now))
     }
 }
 
@@ -382,6 +382,21 @@ mod tests {
                 "Should be above threshold still!"
             );
         }
+    }
+
+    #[test]
+    fn update_counter_applies_delta_exceeding_max_value() {
+        let tmp = TempDir::new().expect("We should have a dir!");
+        let storage =
+            RocksDbStorage::open(tmp.path(), OptimizeFor::Space).expect("We should have storage");
+        let counter = counter(10);
+
+        storage.update_counter(&counter, 15).unwrap();
+
+        assert!(
+            !storage.is_within_limits(&counter, 0).unwrap(),
+            "the overshooting delta should have been recorded"
+        );
     }
 
     #[test]
