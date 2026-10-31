@@ -355,8 +355,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         move |result: Result<Event, Error>| match result {
             Ok(ref event) => {
                 match event.kind {
+                    // Renames are matched on their `To` event, whose only path is the
+                    // destination. `Both` lists the source path first, which would miss a file
+                    // renamed onto the watched path (e.g. `mv limits.yaml.tmp limits.yaml`).
                     EventKind::Modify(ModifyKind::Data(_))
-                    | EventKind::Modify(ModifyKind::Name(RenameMode::Both))
+                    | EventKind::Modify(ModifyKind::Name(RenameMode::To))
                     | EventKind::Create(CreateKind::Other) => {
                         if let Some(location) = event.paths.first() {
                             if let Ok(actual_location) = std::fs::canonicalize(&limit_cfg) {
