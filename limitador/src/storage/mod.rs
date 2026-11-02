@@ -22,7 +22,11 @@ pub use crate::storage::distributed::CrInMemoryStorage as DistributedInMemorySto
 pub mod redis;
 
 mod atomic_expiring_value;
-#[cfg(any(feature = "disk_storage", feature = "redis_storage"))]
+#[cfg(any(
+    feature = "disk_storage",
+    feature = "redis_storage",
+    feature = "distributed_storage"
+))]
 mod keys;
 // Used unconditionally by `in_memory` and, when enabled, by `disk`/`redis`.
 mod local_reservations;
