@@ -2,7 +2,9 @@ use limitador::counter::Counter;
 use limitador::errors::LimitadorError;
 use limitador::limit::{Context, Limit, Namespace};
 use limitador::reservation::{CommitResult, ReservationId, ReserveResult};
-use limitador::{AsyncRateLimiter, CheckResult, RateLimiter};
+#[cfg(feature = "redis_storage")]
+use limitador::AsyncRateLimiter;
+use limitador::{CheckResult, RateLimiter};
 use std::collections::HashSet;
 use std::time::Duration;
 
@@ -37,6 +39,7 @@ impl TestsLimiter {
     pub async fn get_namespaces(&self) -> HashSet<Namespace> {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => limiter.get_namespaces(),
+            #[cfg(feature = "redis_storage")]
             LimiterImpl::Async(limiter) => limiter.get_namespaces(),
         }
     }
@@ -44,6 +47,7 @@ impl TestsLimiter {
     pub async fn add_limit(&self, limit: &Limit) -> bool {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => limiter.add_limit(limit.clone()),
+            #[cfg(feature = "redis_storage")]
             LimiterImpl::Async(limiter) => limiter.add_limit(limit.clone()),
         }
     }
@@ -51,6 +55,7 @@ impl TestsLimiter {
     pub async fn delete_limit(&self, limit: &Limit) -> Result<(), LimitadorError> {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => limiter.delete_limit(limit),
+            #[cfg(feature = "redis_storage")]
             LimiterImpl::Async(limiter) => limiter.delete_limit(limit).await,
         }
     }
@@ -58,6 +63,7 @@ impl TestsLimiter {
     pub async fn get_limits(&self, namespace: &str) -> HashSet<Limit> {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => limiter.get_limits(&namespace.into()),
+            #[cfg(feature = "redis_storage")]
             LimiterImpl::Async(limiter) => limiter.get_limits(&namespace.into()),
         }
     }
@@ -65,6 +71,7 @@ impl TestsLimiter {
     pub async fn delete_limits(&self, namespace: &str) -> Result<(), LimitadorError> {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => limiter.delete_limits(&namespace.into()),
+            #[cfg(feature = "redis_storage")]
             LimiterImpl::Async(limiter) => limiter.delete_limits(&namespace.into()).await,
         }
     }
@@ -79,6 +86,7 @@ impl TestsLimiter {
             LimiterImpl::Blocking(limiter) => {
                 limiter.is_rate_limited(&namespace.into(), ctx, delta)
             }
+            #[cfg(feature = "redis_storage")]
             LimiterImpl::Async(limiter) => {
                 limiter.is_rate_limited(&namespace.into(), ctx, delta).await
             }
@@ -95,6 +103,7 @@ impl TestsLimiter {
             LimiterImpl::Blocking(limiter) => {
                 limiter.update_counters(&namespace.into(), ctx, delta)
             }
+            #[cfg(feature = "redis_storage")]
             LimiterImpl::Async(limiter) => {
                 limiter.update_counters(&namespace.into(), ctx, delta).await
             }
@@ -111,6 +120,7 @@ impl TestsLimiter {
             LimiterImpl::Blocking(limiter) => {
                 limiter.check_rate_limited_and_update(&namespace.into(), ctx, delta)
             }
+            #[cfg(feature = "redis_storage")]
             LimiterImpl::Async(limiter) => {
                 limiter
                     .check_rate_limited_and_update(&namespace.into(), ctx, delta)
@@ -122,6 +132,7 @@ impl TestsLimiter {
     pub async fn get_counters(&self, namespace: &str) -> Result<HashSet<Counter>, LimitadorError> {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => limiter.get_counters(&namespace.into()),
+            #[cfg(feature = "redis_storage")]
             LimiterImpl::Async(limiter) => limiter.get_counters(&namespace.into()).await,
         }
     }
@@ -132,6 +143,7 @@ impl TestsLimiter {
     ) -> Result<(), LimitadorError> {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => limiter.configure_with(limits),
+            #[cfg(feature = "redis_storage")]
             LimiterImpl::Async(limiter) => limiter.configure_with(limits).await,
         }
     }
@@ -145,6 +157,7 @@ impl TestsLimiter {
     ) -> Result<ReserveResult, LimitadorError> {
         match &self.limiter_impl {
             LimiterImpl::Blocking(limiter) => limiter.reserve(&namespace.into(), ctx, amount, ttl),
+            #[cfg(feature = "redis_storage")]
             LimiterImpl::Async(limiter) => {
                 limiter.reserve(&namespace.into(), ctx, amount, ttl).await
             }
@@ -162,6 +175,7 @@ impl TestsLimiter {
             LimiterImpl::Blocking(limiter) => {
                 limiter.commit_reservation(&namespace.into(), ctx, reservation_id, actual_amount)
             }
+            #[cfg(feature = "redis_storage")]
             LimiterImpl::Async(limiter) => {
                 limiter
                     .commit_reservation(&namespace.into(), ctx, reservation_id, actual_amount)

@@ -47,7 +47,11 @@ impl Counter {
         })
     }
 
-    #[cfg(any(feature = "redis_storage", feature = "disk_storage"))]
+    #[cfg(any(
+        feature = "redis_storage",
+        feature = "disk_storage",
+        feature = "distributed_storage"
+    ))]
     pub(crate) fn key(&self) -> Self {
         Self {
             limit: Arc::clone(&self.limit),
@@ -109,7 +113,11 @@ impl Counter {
         !self.set_variables.is_empty()
     }
 
-    #[cfg(any(feature = "disk_storage", feature = "redis_storage"))]
+    #[cfg(any(
+        feature = "disk_storage",
+        feature = "redis_storage",
+        feature = "distributed_storage"
+    ))]
     pub(crate) fn variables_for_key(&self) -> Vec<(&str, &str)> {
         let mut variables = Vec::with_capacity(self.set_variables.len());
         for (var, value) in &self.set_variables {

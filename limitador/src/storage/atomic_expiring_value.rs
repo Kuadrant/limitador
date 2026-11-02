@@ -78,7 +78,7 @@ impl AtomicExpiryTime {
         self.expiry.load(Ordering::SeqCst) <= when
     }
 
-    #[cfg(feature = "redis_storage")]
+    #[cfg(any(feature = "redis_storage", feature = "distributed_storage"))]
     pub fn update(&self, expiry: SystemTime) {
         self.expiry
             .store(Self::since_epoch(expiry), Ordering::SeqCst);
