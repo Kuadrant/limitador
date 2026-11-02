@@ -41,7 +41,8 @@ WORKDIR /usr/src/limitador
 ARG GITHUB_SHA
 ARG CARGO_ARGS
 ENV GITHUB_SHA=${GITHUB_SHA:-unknown}
-ENV RUSTFLAGS="-C target-feature=-crt-static"
+ENV RUSTFLAGS="-C target-feature=-crt-static" \
+    OPENSSL_NO_VENDOR=1
 
 # We set the env here just to make sure that the build is invalidated if the args change
 ENV CARGO_ARGS=${CARGO_ARGS}

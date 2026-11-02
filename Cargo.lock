@@ -1956,13 +1956,13 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "notify",
- "openssl",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "paperclip",
  "prost 0.14.1",
  "prost-types 0.14.1",
+ "quixotic-plecostomus-rustls-openssl",
  "serde",
  "serde_yaml",
  "sysinfo",
@@ -2289,9 +2289,9 @@ checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
 name = "openssl"
-version = "0.10.80"
+version = "0.10.81"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a45fa2aa886c42762255da344f0a0d313e254066c46aad76f300c3d3da62d967"
+checksum = "77823a27f0babb03091cb9ed9ef80af3b39dbc82f97e8fa530374b7dafd87a45"
 dependencies = [
  "bitflags 2.13.2",
  "cfg-if",
@@ -2320,9 +2320,9 @@ checksum = "7e036b411754132fd6b74e94b74e9a13c5cf606fa93d1885c35860d3060820b1"
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.116"
+version = "0.9.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f28a22dc7140cda5f096e5e7724a6962ca81a7f8bfd2979f9b18c11af56318c4"
+checksum = "b47e7e6bb2c38cd930d25a23b40fa52e068c10e85f3e03a7f5ba5aaca5713695"
 dependencies = [
  "cc",
  "libc",
@@ -2807,6 +2807,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "quixotic-plecostomus-rustls-openssl"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a6a3a34cedce4e2fa3139daae891222fde83957801bf0de8ecc8c09ffaf8796"
+dependencies = [
+ "foreign-types",
+ "once_cell",
+ "openssl",
+ "openssl-sys",
+ "rustls",
+ "zeroize",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3098,7 +3112,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "once_cell",
- "ring",
  "rustls-pki-types",
  "rustls-webpki",
  "subtle",

@@ -37,8 +37,7 @@ redis = { version = "1.7", optional = true, default-features = false, features =
     "tokio-rustls-comp",
     "script",
 ] }
-# Redis disables rustls defaults, so explicitly select its crypto provider.
-rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "tls12"] }
+rustls = { version = "0.23.46", optional = true, default-features = false, features = ["std", "tls12"] }
 r2d2 = { version = "0.8", optional = true }
 tokio = { version = "1", optional = true, features = [
     "rt-multi-thread",
