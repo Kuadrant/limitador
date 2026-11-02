@@ -2,10 +2,39 @@
 # Build Stage
 # ------------------------------------------------------------------------------
 
-FROM mirror.gcr.io/library/rust:1.88 AS limitador-build
+FROM registry.access.redhat.com/ubi10/ubi-minimal:10.1 AS limitador-build
 
-RUN apt update && apt upgrade -y \
-    && apt install -y protobuf-compiler clang
+ARG RUSTC_VERSION=1.92.0
+ARG PROTOC_VERSION=3.19.4
+
+ENV CARGO_HOME=/usr/local/cargo \
+    RUSTUP_HOME=/usr/local/rustup \
+    PATH=/usr/local/cargo/bin:${PATH}
+
+RUN microdnf --assumeyes install --nodocs \
+        gcc gcc-c++ make clang clang-devel openssl-devel pkgconf-pkg-config \
+        tar gzip unzip \
+    && microdnf clean all
+
+RUN case "$(uname -m)" in \
+        x86_64) RUSTUP_ARCH=x86_64-unknown-linux-gnu; PROTOC_ARCH=x86_64 ;; \
+        aarch64) RUSTUP_ARCH=aarch64-unknown-linux-gnu; PROTOC_ARCH=aarch_64 ;; \
+        ppc64le) RUSTUP_ARCH=powerpc64le-unknown-linux-gnu; PROTOC_ARCH=ppcle_64 ;; \
+        s390x) RUSTUP_ARCH=s390x-unknown-linux-gnu; PROTOC_ARCH=s390_64 ;; \
+        *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
+    esac \
+    && cd /tmp \
+    && curl --fail --show-error --location --proto '=https' --tlsv1.2 \
+        --output rustup-init "https://static.rust-lang.org/rustup/dist/${RUSTUP_ARCH}/rustup-init" \
+    && curl --fail --show-error --location --proto '=https' --tlsv1.2 \
+        --output rustup-init.sha256 "https://static.rust-lang.org/rustup/dist/${RUSTUP_ARCH}/rustup-init.sha256" \
+    && sha256sum -c rustup-init.sha256 \
+    && chmod +x rustup-init \
+    && ./rustup-init --no-modify-path --profile minimal --default-toolchain "${RUSTC_VERSION}" -y \
+    && curl --fail --show-error --location --proto '=https' --tlsv1.2 \
+        --output protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip" \
+    && unzip -q protoc.zip -d /usr/local \
+    && rm rustup-init rustup-init.sha256 protoc.zip
 
 WORKDIR /usr/src/limitador
 

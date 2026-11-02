@@ -18,3 +18,5 @@ doc
 
 # Exception - Used in docker build
 !limitador-server/examples/limits.yaml
+# Cross-compilation setup used by the architecture Dockerfiles
+!build/prepare-cross.sh

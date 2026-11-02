@@ -1,44 +1,67 @@
 # ------------------------------------------------------------------------------
-# Build Stage cross compiling
+# Build Stage: cross-compile for ARM64
 # ------------------------------------------------------------------------------
 
-FROM --platform=${BUILDPLATFORM} mirror.gcr.io/library/rust:1.88 AS limitador-build
+FROM --platform=${BUILDPLATFORM} registry.access.redhat.com/ubi10/ubi-minimal:10.1 AS limitador-build
 
-# libssl3/libssl-dev must be the same version on amd64 and arm64 (Multi-Arch: same),
-# but Debian's security pocket can publish a new libssl3 build for one architecture
-# before the other, so neither side's candidate is reliably installable on its own.
-# Pin both to the highest version available for BOTH architectures, and allow
-# downgrading the native amd64 package in case `apt upgrade -y` moved it ahead
-# of what's currently available for arm64.
-RUN dpkg --add-architecture arm64 \
-    && apt update \
-    && apt upgrade -y \
-    && SSL_VER="$( { apt-cache madison libssl3 | awk '{print $3}' | sort -u; apt-cache madison libssl3:arm64 | awk '{print $3}' | sort -u; } | sort | uniq -d | sort -V | tail -n1 )" \
-    && apt install -y --allow-downgrades protobuf-compiler clang g++-aarch64-linux-gnu libc6-dev-arm64-cross pkg-config \
-       "libssl3=${SSL_VER}" "libssl3:arm64=${SSL_VER}" "libssl-dev=${SSL_VER}" "libssl-dev:arm64=${SSL_VER}"
+ARG RUSTC_VERSION=1.92.0
+ARG PROTOC_VERSION=3.19.4
 
-RUN rustup target add aarch64-unknown-linux-gnu \
-    && rustup toolchain install stable-aarch64-unknown-linux-gnu --force-non-host
+ENV CARGO_HOME=/usr/local/cargo \
+    RUSTUP_HOME=/usr/local/rustup \
+    PATH=/usr/local/cargo/bin:${PATH}
+
+RUN microdnf --assumeyes install --nodocs \
+        gcc gcc-c++ make clang clang-devel openssl-devel pkgconf-pkg-config \
+        tar gzip unzip \
+    && microdnf clean all
+
+RUN case "$(uname -m)" in \
+        x86_64) RUSTUP_ARCH=x86_64-unknown-linux-gnu; PROTOC_ARCH=x86_64 ;; \
+        aarch64) RUSTUP_ARCH=aarch64-unknown-linux-gnu; PROTOC_ARCH=aarch_64 ;; \
+        ppc64le) RUSTUP_ARCH=powerpc64le-unknown-linux-gnu; PROTOC_ARCH=ppcle_64 ;; \
+        s390x) RUSTUP_ARCH=s390x-unknown-linux-gnu; PROTOC_ARCH=s390_64 ;; \
+        *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
+    esac \
+    && cd /tmp \
+    && curl --fail --show-error --location --proto '=https' --tlsv1.2 \
+        --output rustup-init "https://static.rust-lang.org/rustup/dist/${RUSTUP_ARCH}/rustup-init" \
+    && curl --fail --show-error --location --proto '=https' --tlsv1.2 \
+        --output rustup-init.sha256 "https://static.rust-lang.org/rustup/dist/${RUSTUP_ARCH}/rustup-init.sha256" \
+    && sha256sum -c rustup-init.sha256 \
+    && chmod +x rustup-init \
+    && ./rustup-init --no-modify-path --profile minimal --default-toolchain "${RUSTC_VERSION}" -y \
+    && curl --fail --show-error --location --proto '=https' --tlsv1.2 \
+        --output protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip" \
+    && unzip -q protoc.zip -d /usr/local \
+    && rm rustup-init rustup-init.sha256 protoc.zip
+
+RUN microdnf --assumeyes install --nodocs dnf llvm lld \
+    && microdnf clean all
+
+COPY build/prepare-cross.sh /usr/local/bin/prepare-cross.sh
+RUN sh /usr/local/bin/prepare-cross.sh aarch64 aarch64-unknown-linux-gnu
 
 WORKDIR /usr/src/limitador
 
 ARG GITHUB_SHA
+ARG CARGO_ARGS
 ENV GITHUB_SHA=${GITHUB_SHA:-unknown}
 ENV RUSTFLAGS="-C target-feature=-crt-static" \
-    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
-    CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc \
-    CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++ \
-    # https://github.com/rust-lang/rust-bindgen/issues/1229
-    BINDGEN_EXTRA_CLANG_ARGS="--sysroot=/usr/aarch64-linux-gnu" \
-    OPENSSL_LIB_DIR=/usr/lib/aarch64-linux-gnu \
-    OPENSSL_INCLUDE_DIR=/usr/include/aarch64-linux-gnu \
-    PKG_CONFIG_SYSROOT_DIR=/usr/aarch64-linux-gnu \
-    PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
+    CARGO_ARGS=${CARGO_ARGS} \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/local/bin/cross-cc \
+    CC_aarch64_unknown_linux_gnu=/usr/local/bin/cross-cc \
+    CXX_aarch64_unknown_linux_gnu=/usr/local/bin/cross-cxx \
+    AR_aarch64_unknown_linux_gnu=llvm-ar \
+    BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-unknown-linux-gnu --sysroot=/opt/sysroot" \
+    OPENSSL_LIB_DIR=/opt/sysroot/usr/lib64 \
+    OPENSSL_INCLUDE_DIR=/opt/sysroot/usr/include \
+    PKG_CONFIG_SYSROOT_DIR=/opt/sysroot \
+    PKG_CONFIG_LIBDIR=/opt/sysroot/usr/lib64/pkgconfig:/opt/sysroot/usr/share/pkgconfig \
     PKG_CONFIG_ALLOW_CROSS=1
 
 COPY . .
-
-RUN cargo build --release --target aarch64-unknown-linux-gnu
+RUN cargo build --release --target aarch64-unknown-linux-gnu ${CARGO_ARGS}
 
 # ------------------------------------------------------------------------------
 # Run Stage
