@@ -268,6 +268,10 @@ impl Default for Status {
 
 #[actix_rt::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    rustls_openssl::default_provider()
+        .install_default()
+        .map_err(|_| "a rustls crypto provider was already installed before server startup")?;
+
     let config = {
         let (config, version) = create_config();
         eprintln!("{LIMITADOR_HEADER} {version}");

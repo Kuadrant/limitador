@@ -61,7 +61,8 @@ build-all-features: clean ## Build the image "limitador-testing-all-features" im
 
 ca: ## Create CA cert
 	openssl genrsa -out ca.key 2048
-	openssl req -batch -new -x509 -nodes -key ca.key -sha256 -days 1024 -out ca.crt
+	openssl req -batch -new -x509 -nodes -key ca.key -sha256 -days 1024 -out ca.crt \
+		-subj '/CN=Limitador sandbox CA' -addext 'basicConstraints=critical,CA:TRUE'
 
 redis-client-certs: ## Create CSR, then sign it with CA cert
 	openssl req -subj '/CN=redis'  -newkey rsa:4096 -nodes \
@@ -70,7 +71,8 @@ redis-client-certs: ## Create CSR, then sign it with CA cert
 			-keyout redis.key \
 			-out redis.csr
 	chmod +r redis.key
-	openssl x509 -req -in redis.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out redis.crt -days 500 -sha256
+	openssl x509 -req -in redis.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out redis.crt -days 500 -sha256 \
+		-extfile redis-tls/redis-cert.ext
 
 ##@ Cleanning targets
 

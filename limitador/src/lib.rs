@@ -32,6 +32,11 @@
 //! # }
 //! ```
 //!
+//! For TLS, use a `rediss://` URL and configure a
+//! [rustls crypto provider](https://docs.rs/rustls/0.23.46/rustls/crypto/struct.CryptoProvider.html)
+//! in the application before constructing storage. Limitador does not select or
+//! install a provider.
+//!
 //! # Limits
 //!
 //! The definition of a limit includes:

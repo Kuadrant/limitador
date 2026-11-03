@@ -48,6 +48,7 @@ ARG GITHUB_SHA
 ARG CARGO_ARGS
 ENV GITHUB_SHA=${GITHUB_SHA:-unknown}
 ENV RUSTFLAGS="-C target-feature=-crt-static" \
+    OPENSSL_NO_VENDOR=1 \
     CARGO_ARGS=${CARGO_ARGS} \
     CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/local/bin/cross-cc \
     CC_aarch64_unknown_linux_gnu=/usr/local/bin/cross-cc \
