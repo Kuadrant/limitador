@@ -31,7 +31,7 @@ impl CounterStorage for RocksDbStorage {
     fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr> {
         let key = key_for_counter(counter);
         let value = self.insert_or_update(&key, counter, 0)?;
-        Ok(counter.max_value() >= value.value() + delta)
+        Ok(counter.max_value() >= value.value().saturating_add(delta))
     }
 
     #[tracing::instrument(skip_all)]
@@ -223,7 +223,7 @@ impl RocksDbStorage {
             // compensates for its own persisted delta afterward (see `RateLimiter`).
             counter.set_remaining(counter.max_value().saturating_sub(val));
 
-            if first_limited.is_none() && counter.max_value() < val + delta {
+            if first_limited.is_none() && counter.max_value() < val.saturating_add(delta) {
                 first_limited = Some(Authorization::Limited(
                     counter.limit().name().map(|n| n.to_string()),
                 ));
@@ -397,6 +397,23 @@ mod tests {
             !storage.is_within_limits(&counter, 0).unwrap(),
             "the overshooting delta should have been recorded"
         );
+    }
+
+    #[test]
+    fn update_counter_saturates_instead_of_overflowing() {
+        let tmp = TempDir::new().expect("We should have a dir!");
+        let storage =
+            RocksDbStorage::open(tmp.path(), OptimizeFor::Space).expect("We should have storage");
+        let counter = counter(10);
+
+        storage.update_counter(&counter, u64::MAX).unwrap();
+        storage.update_counter(&counter, 1).unwrap();
+
+        assert!(!storage.is_within_limits(&counter, 1).unwrap());
+        assert!(matches!(
+            storage.check(&mut vec![counter.clone()], 1).unwrap(),
+            Authorization::Limited(_)
+        ));
     }
 
     #[test]
