@@ -353,7 +353,12 @@ impl RateLimitService for KuadrantService {
 
         let ctx = context_from_descriptors(&req.descriptors);
 
-        let reservation_id = req.reservation_id.map(ReservationId::from);
+        // proto3 presence alone can't tell "no reservation" from an empty id,
+        // so an empty string is treated the same as an absent one
+        let reservation_id = req
+            .reservation_id
+            .filter(|id| !id.is_empty())
+            .map(ReservationId::from);
 
         let commit_resp = match &*self.limiter {
             Limiter::Blocking(limiter) => limiter.commit_reservation(
@@ -931,9 +936,15 @@ mod tests {
     }
 
     mod reserve_and_commit {
+        use std::collections::HashSet;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
         use tonic::IntoRequest;
 
+        use limitador::counter::Counter;
         use limitador::limit::Limit;
+        use limitador::storage::in_memory::InMemoryStorage;
+        use limitador::storage::{Authorization, CounterStorage, StorageErr};
         use limitador::RateLimiter;
 
         use crate::envoy_rls::server::envoy::extensions::common::ratelimit::v3::rate_limit_descriptor::Entry;
@@ -1093,6 +1104,158 @@ mod tests {
             .into_request();
             let response = service.reserve(req).await.unwrap().into_inner();
             assert_eq!(response.code, i32::from(Code::OverLimit));
+        }
+
+        // in-memory storage that counts how often a reservation release is attempted
+        struct CountingStorage {
+            inner: InMemoryStorage,
+            releases: Arc<AtomicUsize>,
+        }
+
+        impl CounterStorage for CountingStorage {
+            fn is_within_limits(&self, counter: &Counter, delta: u64) -> Result<bool, StorageErr> {
+                self.inner.is_within_limits(counter, delta)
+            }
+            fn add_counter(&self, limit: &Limit) -> Result<(), StorageErr> {
+                self.inner.add_counter(limit)
+            }
+            fn update_counter(&self, counter: &Counter, delta: u64) -> Result<(), StorageErr> {
+                self.inner.update_counter(counter, delta)
+            }
+            fn check(
+                &self,
+                counters: &mut Vec<Counter>,
+                delta: u64,
+            ) -> Result<Authorization, StorageErr> {
+                self.inner.check(counters, delta)
+            }
+            fn check_and_update(
+                &self,
+                counters: &mut Vec<Counter>,
+                delta: u64,
+            ) -> Result<Authorization, StorageErr> {
+                self.inner.check_and_update(counters, delta)
+            }
+            fn get_counters(
+                &self,
+                limits: &HashSet<Arc<Limit>>,
+            ) -> Result<HashSet<Counter>, StorageErr> {
+                self.inner.get_counters(limits)
+            }
+            fn delete_counters(&self, limits: &HashSet<Arc<Limit>>) -> Result<(), StorageErr> {
+                self.inner.delete_counters(limits)
+            }
+            fn clear(&self) -> Result<(), StorageErr> {
+                self.inner.clear()
+            }
+            fn reserve(
+                &self,
+                counters: &mut Vec<Counter>,
+                reservation_id: &ReservationId,
+                check_amount: u64,
+                hold_amount: u64,
+                ttl: Duration,
+            ) -> Result<Authorization, StorageErr> {
+                self.inner
+                    .reserve(counters, reservation_id, check_amount, hold_amount, ttl)
+            }
+            fn release_reservation(
+                &self,
+                counters: &[Counter],
+                reservation_id: &ReservationId,
+            ) -> Result<bool, StorageErr> {
+                self.releases.fetch_add(1, Ordering::SeqCst);
+                self.inner.release_reservation(counters, reservation_id)
+            }
+        }
+
+        fn service_counting_releases(namespace: &str) -> (KuadrantService, Arc<AtomicUsize>) {
+            let releases = Arc::new(AtomicUsize::new(0));
+            let limiter = RateLimiter::new_with_storage(Box::new(CountingStorage {
+                inner: InMemoryStorage::new(10_000),
+                releases: releases.clone(),
+            }));
+            limiter.add_limit(Limit::new(
+                namespace,
+                10,
+                60,
+                vec!["descriptors[0]['req.method'] == 'GET'"
+                    .try_into()
+                    .expect("failed parsing!")],
+                vec!["descriptors[0]['app.id']"
+                    .try_into()
+                    .expect("failed parsing!")],
+            ));
+            let service = KuadrantService::new(
+                Arc::new(Limiter::Blocking(limiter)),
+                Arc::new(PrometheusMetrics::new_with_handle(
+                    false,
+                    TEST_PROMETHEUS_HANDLE.clone(),
+                )),
+            );
+            (service, releases)
+        }
+
+        #[tokio::test]
+        async fn commit_treats_empty_reservation_id_as_absent() {
+            let namespace = "test_namespace";
+            let (service, releases) = service_counting_releases(namespace);
+
+            let commit_req = CommitRequest {
+                domain: namespace.to_string(),
+                descriptors: vec![descriptor("1")],
+                reservation_id: Some("".to_string()),
+                actual_amount: 3,
+            }
+            .into_request();
+
+            let response = service.commit(commit_req).await.unwrap().into_inner();
+            assert!(!response.reservation_released);
+            assert_eq!(releases.load(Ordering::SeqCst), 0);
+
+            // actual_amount is still applied: 3 + 8 = 11 > 10
+            let req = ReserveRequest {
+                domain: namespace.to_string(),
+                descriptors: vec![descriptor("1")],
+                amount: 8,
+                ttl: None,
+            }
+            .into_request();
+            let response = service.reserve(req).await.unwrap().into_inner();
+            assert_eq!(response.code, i32::from(Code::OverLimit));
+        }
+
+        #[tokio::test]
+        async fn commit_with_reservation_id_releases_it() {
+            let namespace = "test_namespace";
+            let (service, releases) = service_counting_releases(namespace);
+
+            let reserved = service
+                .reserve(
+                    ReserveRequest {
+                        domain: namespace.to_string(),
+                        descriptors: vec![descriptor("1")],
+                        amount: 6,
+                        ttl: None,
+                    }
+                    .into_request(),
+                )
+                .await
+                .unwrap()
+                .into_inner();
+            assert!(reserved.reservation_id.is_some());
+
+            let commit_req = CommitRequest {
+                domain: namespace.to_string(),
+                descriptors: vec![descriptor("1")],
+                reservation_id: reserved.reservation_id,
+                actual_amount: 2,
+            }
+            .into_request();
+
+            let response = service.commit(commit_req).await.unwrap().into_inner();
+            assert!(response.reservation_released);
+            assert_eq!(releases.load(Ordering::SeqCst), 1);
         }
     }
 }
