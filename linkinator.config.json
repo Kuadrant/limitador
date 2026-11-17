@@ -1,5 +1,13 @@
 {
+	"skip": [
+		"https://crates.io/crates/limitador",
+		"https://kubernetes.slack.com/archives/C05J0D0V525",
+		"https://docs.redislabs.com/latest/rs/databases/active-active/get-started/",
+		"https://docs.redislabs.com/latest/rs/concepts/intercluster-replication/"
+	],
+
 	"recurse": true,
 	"directoryListing": true,
 	"markdown": true
+
 }

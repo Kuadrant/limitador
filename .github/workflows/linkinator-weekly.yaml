@@ -2,7 +2,7 @@ name: Documentation Link Check (Weekly)
 
 # Weekly full-repo broken link scan.
 # Referencing: https://github.com/Kuadrant/mcp-gateway/pull/952 & mcp-gateway/.github/workflows/linkinator-weekly.yaml
-# This workflow runs a weekly link check on the entire repository using Linkinator. If broken links are found, it will create or update an issue in the repository with the details of the broken links.
+
 on:
   schedule:
     # Monday at 07:12 UTC
