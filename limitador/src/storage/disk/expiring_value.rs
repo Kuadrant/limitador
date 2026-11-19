@@ -32,7 +32,7 @@ impl ExpiringValue {
             self.expiry
         };
 
-        let value = self.value_at(now) + delta;
+        let value = self.value_at(now).saturating_add(delta);
         Self { value, expiry }
     }
 
@@ -40,7 +40,7 @@ impl ExpiringValue {
     pub fn merge(self, other: ExpiringValue, now: SystemTime) -> Self {
         if self.expiry > now {
             ExpiringValue {
-                value: self.value + other.value,
+                value: self.value.saturating_add(other.value),
                 expiry: self.expiry,
             }
         } else {
@@ -148,6 +148,16 @@ mod tests {
         assert_eq!(val.ttl(), Duration::ZERO);
         let val = val.update(3, Duration::from_secs(10), now);
         assert_eq!(val.value_at(now - Duration::from_secs(1)), 3);
+    }
+
+    #[test]
+    fn update_and_merge_saturate() {
+        let now = SystemTime::now();
+        let expiry = now + Duration::from_secs(10);
+        let val = ExpiringValue::new(u64::MAX, expiry).update(1, Duration::from_secs(10), now);
+        assert_eq!(val.value_at(now), u64::MAX);
+        let val = val.merge(ExpiringValue::new(1, expiry), now);
+        assert_eq!(val.value_at(now), u64::MAX);
     }
 
     #[test]
