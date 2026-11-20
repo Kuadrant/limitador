@@ -1869,7 +1869,7 @@ dependencies = [
 
 [[package]]
 name = "limitador"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "async-trait",
  "base64",
@@ -1904,7 +1904,7 @@ dependencies = [
 
 [[package]]
 name = "limitador-server"
-version = "2.6.0"
+version = "2.6.1"
 dependencies = [
  "actix-rt",
  "actix-web",
