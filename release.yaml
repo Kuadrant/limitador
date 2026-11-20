@@ -1,4 +1,4 @@
 limitador:
-  version: "2.6.0"
-  crate-version: "0.14.0"
+  version: "2.6.1"
+  crate-version: "0.14.1"
 dependencies: {}
