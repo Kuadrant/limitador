@@ -11,7 +11,7 @@ use super::server::custom::service::ratelimit::v1::{
 use super::server::envoy::extensions::common::ratelimit::v3::RateLimitDescriptor;
 use super::server::envoy::service::ratelimit::v3::rate_limit_response::Code;
 use super::server::envoy::service::ratelimit::v3::{RateLimitRequest, RateLimitResponse};
-use super::server::{RateLimitHeaders, ReservationConfig};
+use super::server::{set_parent_from_metadata, RateLimitHeaders, ReservationConfig};
 use crate::prometheus_metrics::PrometheusMetrics;
 use crate::Limiter;
 use limitador::errors::LimitadorError;
@@ -111,7 +111,8 @@ impl RateLimitService for KuadrantService {
         debug!("CheckRateLimit request received: {:?}", request);
         let span = tracing::Span::current();
 
-        let (_metadata, _ext, req) = request.into_parts();
+        let (metadata, _ext, req) = request.into_parts();
+        set_parent_from_metadata(&span, metadata);
         let namespace = req.domain;
 
         if namespace.is_empty() {
@@ -190,7 +191,8 @@ impl RateLimitService for KuadrantService {
     ) -> Result<Response<RateLimitResponse>, Status> {
         debug!("Report request received: {:?}", request);
 
-        let (_metadata, _ext, req) = request.into_parts();
+        let (metadata, _ext, req) = request.into_parts();
+        set_parent_from_metadata(&tracing::Span::current(), metadata);
         let namespace = req.domain;
 
         if namespace.is_empty() {
@@ -262,12 +264,13 @@ impl RateLimitService for KuadrantService {
     ) -> Result<Response<ReserveResponse>, Status> {
         debug!("Reserve request received: {:?}", request);
         let span = tracing::Span::current();
+        let (metadata, _ext, req) = request.into_parts();
+        set_parent_from_metadata(&span, metadata);
 
         if self.reservation_config.disable_reservations {
             return Err(Status::unimplemented("reservations are disabled"));
         }
 
-        let (_metadata, _ext, req) = request.into_parts();
         let namespace = req.domain;
 
         if namespace.is_empty() {
@@ -336,11 +339,13 @@ impl RateLimitService for KuadrantService {
     ) -> Result<Response<CommitResponse>, Status> {
         debug!("Commit request received: {:?}", request);
 
+        let (metadata, _ext, req) = request.into_parts();
+        set_parent_from_metadata(&tracing::Span::current(), metadata);
+
         if self.reservation_config.disable_reservations {
             return Err(Status::unimplemented("reservations are disabled"));
         }
 
-        let (_metadata, _ext, req) = request.into_parts();
         let namespace = req.domain;
 
         if namespace.is_empty() {
@@ -1093,6 +1098,144 @@ mod tests {
             .into_request();
             let response = service.reserve(req).await.unwrap().into_inner();
             assert_eq!(response.code, i32::from(Code::OverLimit));
+        }
+    }
+
+    mod trace_context {
+        use std::sync::Arc;
+
+        use opentelemetry::trace::TracerProvider;
+        use opentelemetry_sdk::propagation::TraceContextPropagator;
+        use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+        use tonic::IntoRequest;
+        use tracing_subscriber::layer::SubscriberExt;
+
+        use limitador::limit::Limit;
+        use limitador::RateLimiter;
+
+        use crate::envoy_rls::server::tests::TEST_PROMETHEUS_HANDLE;
+
+        use super::super::*;
+
+        const TRACE_ID: &str = "0af7651916cd43dd8448eb211c80319c";
+        const TRACEPARENT: &str = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+
+        fn service() -> KuadrantService {
+            let limiter = RateLimiter::new(10_000);
+            limiter.add_limit(Limit::new("test_namespace", 10, 60, [], []));
+            KuadrantService::new(
+                Arc::new(Limiter::Blocking(limiter)),
+                Arc::new(PrometheusMetrics::new_with_handle(
+                    false,
+                    TEST_PROMETHEUS_HANDLE.clone(),
+                )),
+            )
+        }
+
+        fn with_traceparent<T>(msg: T) -> Request<T> {
+            let mut request = msg.into_request();
+            request
+                .metadata_mut()
+                .insert("traceparent", TRACEPARENT.parse().unwrap());
+            request
+        }
+
+        /// Runs `call` with an OpenTelemetry-enabled subscriber installed and returns the
+        /// trace ids of all spans it exported.
+        async fn exported_trace_ids<F, Fut>(call: F) -> Vec<String>
+        where
+            F: FnOnce(Arc<KuadrantService>) -> Fut,
+            Fut: std::future::Future<Output = ()>,
+        {
+            opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
+            // built before tracing is set up, so that its own spans aren't exported
+            let service = Arc::new(service());
+            let exporter = InMemorySpanExporter::default();
+            let provider = SdkTracerProvider::builder()
+                .with_simple_exporter(exporter.clone())
+                .build();
+            let subscriber = tracing_subscriber::registry().with(
+                tracing_opentelemetry::layer()
+                    .with_tracer(provider.tracer("test"))
+                    // same as the server's own tracing setup
+                    .with_context_activation(false),
+            );
+            let _guard = tracing::subscriber::set_default(subscriber);
+            call(service).await;
+            drop(_guard);
+            provider.force_flush().unwrap();
+            exporter
+                .get_finished_spans()
+                .unwrap()
+                .iter()
+                .map(|span| span.span_context.trace_id().to_string())
+                .collect()
+        }
+
+        fn assert_inherited(trace_ids: Vec<String>) {
+            assert!(!trace_ids.is_empty(), "no span was exported");
+            assert!(
+                trace_ids.iter().all(|id| id == TRACE_ID),
+                "unexpected trace ids: {trace_ids:?}"
+            );
+        }
+
+        #[tokio::test]
+        async fn check_rate_limit_inherits_trace_context() {
+            let ids = exported_trace_ids(|svc| async move {
+                let request = with_traceparent(RateLimitRequest {
+                    domain: "test_namespace".to_string(),
+                    descriptors: vec![],
+                    hits_addend: 1,
+                });
+                svc.check_rate_limit(request).await.unwrap();
+            })
+            .await;
+            assert_inherited(ids);
+        }
+
+        #[tokio::test]
+        async fn report_inherits_trace_context() {
+            let ids = exported_trace_ids(|svc| async move {
+                let request = with_traceparent(RateLimitRequest {
+                    domain: "test_namespace".to_string(),
+                    descriptors: vec![],
+                    hits_addend: 1,
+                });
+                svc.report(request).await.unwrap();
+            })
+            .await;
+            assert_inherited(ids);
+        }
+
+        #[tokio::test]
+        async fn reserve_inherits_trace_context() {
+            let ids = exported_trace_ids(|svc| async move {
+                let request = with_traceparent(ReserveRequest {
+                    domain: "test_namespace".to_string(),
+                    descriptors: vec![],
+                    amount: 1,
+                    ttl: None,
+                });
+                svc.reserve(request).await.unwrap();
+            })
+            .await;
+            assert_inherited(ids);
+        }
+
+        #[tokio::test]
+        async fn commit_inherits_trace_context() {
+            let ids = exported_trace_ids(|svc| async move {
+                let request = with_traceparent(CommitRequest {
+                    domain: "test_namespace".to_string(),
+                    descriptors: vec![],
+                    reservation_id: None,
+                    actual_amount: 1,
+                });
+                svc.commit(request).await.unwrap();
+            })
+            .await;
+            assert_inherited(ids);
         }
     }
 }
