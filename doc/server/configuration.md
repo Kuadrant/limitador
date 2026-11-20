@@ -118,6 +118,11 @@ These predicates are [CEL](https://cel.dev/) Expressions that operate on the con
 `service.ratelimit.v3.RateLimitRequest`](https://www.envoyproxy.io/docs/envoy/latest/api-v3/service/ratelimit/v3/rls.proto#service-ratelimit-v3-ratelimitrequest),
 each of which being exposed a `List` of `Map` with both keys and values as `String`.
 
+#### String and list functions
+
+Limitador enables the CEL [strings](https://docs.rs/cel/0.16.0/cel/extensions/fn.strings.html)
+and [lists](https://docs.rs/cel/0.16.0/cel/extensions/fn.lists.html) extensions.
+
 ### Counter storages
 
 Limitador will load all the `limit` definitions from the `LIMITS_FILE` and keep these in memory. To enforce these
@@ -386,4 +391,3 @@ require Redis.
 - Must be one of:
   - `"NONE"` - Does not add any additional headers to the http response.
   - `"DRAFT_VERSION_03"`.  Adds response headers per https://datatracker.ietf.org/doc/id/draft-polli-ratelimit-headers-03.html
-

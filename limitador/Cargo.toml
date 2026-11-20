@@ -53,7 +53,7 @@ tonic = { version = "0.12.3", optional = true }
 tonic-reflection = { version = "0.12.3", optional = true }
 prost = { version = "0.13.3", optional = true }
 prost-types = { version = "0.13.3", optional = true }
-cel = "0.12"
+cel = { version = "0.16", default-features = false, features = ["regex", "chrono"] }
 
 [dev-dependencies]
 serial_test = "3.0"

@@ -665,11 +665,10 @@ impl RateLimiter {
         let limits = self.storage.get_limits(namespace);
         limits
             .iter()
-            .filter(|lim| lim.applies(ctx))
-            .filter_map(|lim| match Counter::new(Arc::clone(lim), ctx) {
-                Ok(None) => None,
-                Ok(Some(c)) => Some(Ok(c)),
-                Err(e) => Some(Err(e)),
+            .filter_map(|lim| match lim.applies(ctx) {
+                Ok(true) => Counter::new(Arc::clone(lim), ctx).transpose(),
+                Ok(false) => None,
+                Err(error) => Some(Err(error.into())),
             })
             .collect()
     }
@@ -947,11 +946,10 @@ impl AsyncRateLimiter {
         let limits = self.storage.get_limits(namespace);
         limits
             .iter()
-            .filter(|lim| lim.applies(ctx))
-            .filter_map(|lim| match Counter::new(Arc::clone(lim), ctx) {
-                Ok(None) => None,
-                Ok(Some(c)) => Some(Ok(c)),
-                Err(e) => Some(Err(e)),
+            .filter_map(|lim| match lim.applies(ctx) {
+                Ok(true) => Counter::new(Arc::clone(lim), ctx).transpose(),
+                Ok(false) => None,
+                Err(error) => Some(Err(error.into())),
             })
             .collect()
     }
