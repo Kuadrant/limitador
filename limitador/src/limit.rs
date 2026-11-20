@@ -154,12 +154,13 @@ impl Limit {
             .any(|v| v.as_str() == var)
     }
 
-    pub fn applies(&self, ctx: &Context) -> bool {
+    pub fn applies(&self, ctx: &Context) -> Result<bool, EvaluationError> {
         let ctx = ctx.for_limit(self);
-        let all_conditions_apply = self
-            .conditions
-            .iter()
-            .all(|predicate| predicate.test(&ctx.for_limit(self)).unwrap());
+        for predicate in &self.conditions {
+            if !predicate.test(&ctx)? {
+                return Ok(false);
+            }
+        }
 
         let all_vars_are_set = self.variables.iter().all(|var| {
             ctx.has_variables(
@@ -170,7 +171,7 @@ impl Limit {
             )
         });
 
-        all_conditions_apply && all_vars_are_set
+        Ok(all_vars_are_set)
     }
 }
 
@@ -250,7 +251,7 @@ mod tests {
         values.insert("x".into(), "5".into());
         values.insert("y".into(), "1".into());
 
-        assert!(limit.applies(&values.into()))
+        assert!(limit.applies(&values.into()).unwrap())
     }
 
     #[test]
@@ -267,7 +268,7 @@ mod tests {
         values.insert("x".into(), "1".into());
         values.insert("y".into(), "1".into());
 
-        assert!(!limit.applies(&values.into()))
+        assert!(!limit.applies(&values.into()).unwrap())
     }
 
     #[test]
@@ -285,7 +286,7 @@ mod tests {
         values.insert("a".into(), "1".into());
         values.insert("y".into(), "1".into());
 
-        assert!(!limit.applies(&values.into()))
+        assert!(!limit.applies(&values.into()).unwrap())
     }
 
     #[test]
@@ -302,7 +303,7 @@ mod tests {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "5".into());
 
-        assert!(!limit.applies(&values.into()))
+        assert!(!limit.applies(&values.into()).unwrap())
     }
 
     #[test]
@@ -323,7 +324,7 @@ mod tests {
         values.insert("y".into(), "2".into());
         values.insert("z".into(), "1".into());
 
-        assert!(limit.applies(&values.into()))
+        assert!(limit.applies(&values.into()).unwrap())
     }
 
     #[test]
@@ -344,7 +345,7 @@ mod tests {
         values.insert("y".into(), "2".into());
         values.insert("z".into(), "1".into());
 
-        assert!(!limit.applies(&values.into()))
+        assert!(!limit.applies(&values.into()).unwrap())
     }
 
     #[test]
@@ -408,10 +409,10 @@ mod tests {
                 .expect("failed parsing!")],
             Vec::default(),
         );
-        assert!(!limit.applies(&Context::default()));
+        assert!(!limit.applies(&Context::default()).unwrap());
 
         limit.set_name("named_limit".to_string());
-        assert!(limit.applies(&Context::default()));
+        assert!(limit.applies(&Context::default()).unwrap());
 
         let limit = Limit::with_id(
             "my_id",
@@ -424,7 +425,7 @@ mod tests {
             ],
             Vec::default(),
         );
-        assert!(limit.applies(&Context::default()));
+        assert!(limit.applies(&Context::default()).unwrap());
 
         let limit = Limit::with_id(
             "my_id",
@@ -436,7 +437,7 @@ mod tests {
                 .expect("failed parsing!")],
             Vec::default(),
         );
-        assert!(!limit.applies(&Context::default()));
+        assert!(!limit.applies(&Context::default()).unwrap());
     }
 
     #[test]
@@ -453,7 +454,7 @@ mod tests {
             ("bar".to_string(), "foo,baz".to_string()),
         ]);
         let ctx = map.into();
-        assert!(limit.applies(&ctx));
+        assert!(limit.applies(&ctx).unwrap());
         assert_eq!(
             Counter::new(limit, &ctx)
                 .expect("failed")
@@ -489,8 +490,8 @@ mod tests {
             ])],
         );
 
-        assert!(!limit.applies(&Context::default()));
-        assert!(limit.applies(&ctx));
+        assert!(!limit.applies(&Context::default()).unwrap());
+        assert!(limit.applies(&ctx).unwrap());
         let counter = Counter::new(limit, &ctx)
             .expect("failed to resolve counter")
             .expect("counter should apply");
@@ -518,7 +519,7 @@ mod tests {
                     .expect("failed parsing!")],
                 vec![variable.try_into().expect("failed parsing!")],
             );
-            assert!(!limit.applies(&Context::default()));
+            assert!(!limit.applies(&Context::default()).unwrap());
             for (descriptor, expected) in [
                 (HashMap::from([
                     ("user".to_string(), "ALICE".to_string()),
@@ -528,7 +529,7 @@ mod tests {
             ] {
                 let mut ctx = Context::default();
                 ctx.list_binding("descriptors".to_string(), vec![descriptor]);
-                assert!(limit.applies(&ctx), "{variable}");
+                assert!(limit.applies(&ctx).unwrap(), "{variable}");
                 assert!(!limit.has_variable("u"));
                 assert!(!limit.has_variable("optional"));
                 let counter = Counter::new(limit.clone(), &ctx)
