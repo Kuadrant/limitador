@@ -17,6 +17,7 @@ use crate::Limiter;
 use limitador::limit::Context;
 use tonic::body::Body;
 use tonic::codegen::http::HeaderMap;
+use tonic::metadata::MetadataMap;
 use tonic::{async_trait, transport, transport::Server, Request, Response, Status};
 use tonic_middleware::{Middleware, MiddlewareLayer, ServiceBound};
 use tracing::{Instrument, Level, Span};
@@ -113,14 +114,8 @@ impl RateLimitService for MyRateLimiter {
         let mut values: Vec<HashMap<String, String>> = Vec::default();
         let (metadata, _ext, req) = request.into_parts();
         let namespace = req.domain;
-        let rl_headers = RateLimitRequestHeaders::new(metadata.into_headers());
-        let parent_context =
-            global::get_text_map_propagator(|propagator| propagator.extract(&rl_headers));
         let span = Span::current();
-        match span.set_parent(parent_context) {
-            Ok(()) | Err(SetParentError::LayerNotFound | SetParentError::SpanDisabled) => {}
-            Err(err) => debug!("Could not set parent trace context: {err}"),
-        }
+        set_parent_from_metadata(&span, metadata);
 
         if namespace.is_empty() {
             return Ok(Response::new(RateLimitResponse {
@@ -220,6 +215,18 @@ impl RateLimitService for MyRateLimiter {
         };
 
         Ok(Response::new(reply))
+    }
+}
+
+/// Makes `span` a child of the W3C trace context (e.g. `traceparent`) carried in the incoming
+/// request `metadata`, if any, so that spans for all RLS methods join the caller's trace.
+pub(super) fn set_parent_from_metadata(span: &Span, metadata: MetadataMap) {
+    let rl_headers = RateLimitRequestHeaders::new(metadata.into_headers());
+    let parent_context =
+        global::get_text_map_propagator(|propagator| propagator.extract(&rl_headers));
+    match span.set_parent(parent_context) {
+        Ok(()) | Err(SetParentError::LayerNotFound | SetParentError::SpanDisabled) => {}
+        Err(err) => debug!("Could not set parent trace context: {err}"),
     }
 }
 

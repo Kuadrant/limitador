@@ -54,5 +54,8 @@ metrics-exporter-prometheus = { version = "0.17.2", default-features = false, fe
 chrono = { version = "0.4", features = ["serde"] }
 
 
+[dev-dependencies]
+opentelemetry_sdk = { version = "0.32.1", default-features = false, features = ["trace", "testing"] }
+
 [build-dependencies]
 tonic-prost-build = "0.14"
