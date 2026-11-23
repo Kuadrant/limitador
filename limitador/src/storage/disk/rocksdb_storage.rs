@@ -145,18 +145,19 @@ impl CounterStorage for RocksDbStorage {
         ttl: Duration,
     ) -> Result<Authorization, StorageErr> {
         let now = SystemTime::now();
-        let mut values_and_window_ttls = Vec::with_capacity(counters.len());
-        for counter in counters.iter() {
-            let key = key_for_counter(counter);
-            // Zero-delta "touch": establishes a fresh window if absent/expired, without
-            // affecting the counter's real value - mirrors `InMemoryStorage`'s `touch`.
-            let value = self.insert_or_update(&key, counter, 0)?;
-            values_and_window_ttls.push((value.value(), value.ttl()));
-        }
-
-        Ok(self.reservations.reserve(
+        self.reservations.reserve_reading_values(
             counters,
-            &values_and_window_ttls,
+            |counters| {
+                let mut values_and_window_ttls = Vec::with_capacity(counters.len());
+                for counter in counters {
+                    let key = key_for_counter(counter);
+                    // Zero-delta "touch": establishes a fresh window if absent/expired, without
+                    // affecting the counter's real value - mirrors `InMemoryStorage`'s `touch`.
+                    let value = self.insert_or_update(&key, counter, 0)?;
+                    values_and_window_ttls.push((value.value(), value.ttl()));
+                }
+                Ok(values_and_window_ttls)
+            },
             ReservationRequest {
                 reservation_id,
                 check_amount,
@@ -164,7 +165,7 @@ impl CounterStorage for RocksDbStorage {
                 ttl,
                 now,
             },
-        ))
+        )
     }
 
     #[tracing::instrument(skip_all)]
@@ -407,5 +408,13 @@ mod tests {
             .release_reservation(&counters, &reservation_id)
             .unwrap();
         assert!(!released, "nothing should have been held to release");
+    }
+
+    #[test]
+    fn concurrent_commits_never_cause_over_admission() {
+        let tmp = TempDir::new().expect("We should have a dir!");
+        let storage = RocksDbStorage::open(tmp.path(), OptimizeFor::Throughput)
+            .expect("We should have a storage");
+        crate::storage::local_reservations::assert_commits_never_cause_over_admission(&storage);
     }
 }

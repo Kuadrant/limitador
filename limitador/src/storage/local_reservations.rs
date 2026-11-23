@@ -42,7 +42,9 @@ pub(crate) struct LocalReservationRegistry {
     //
     // - In `reserve()`: without it, two truly concurrent calls (real OS-thread parallelism)
     //   could both read the same stale `outstanding` value, both decide to admit, and both
-    //   write - jointly exceeding the limit.
+    //   write - jointly exceeding the limit. Backends that can read their counters
+    //   synchronously do so under this lock too (see `reserve_reading_values`), because
+    //   `release()` could otherwise remove a hold whose usage the value they read predates.
     // - In `release()`: without it, a concurrent `reserve()` could replace a counter's cache
     //   entry with a fresh `Arc` (e.g. if the one `release()` just read had already
     //   expired/been evicted) before `release()` writes back; `release()` would then discard
@@ -120,16 +122,40 @@ impl LocalReservationRegistry {
 
     /// `values_and_window_ttls[i]` must be the current value and remaining window ttl of
     /// `counters[i]`, already read (and, if absent, lazily established) by the caller.
+    #[cfg(any(test, feature = "redis_storage"))]
     pub(crate) fn reserve(
         &self,
         counters: &mut [Counter],
         values_and_window_ttls: &[(u64, Duration)],
         request: ReservationRequest,
     ) -> Authorization {
-        debug_assert!(request.hold_amount <= request.check_amount);
-
-        // Held for the whole check-then-write sequence below - see `admission_lock`'s docs.
+        // Held for the whole check-then-write sequence - see `admission_lock`'s docs.
         let _admission_guard = self.admission_lock.lock().unwrap();
+        self.admit(counters, values_and_window_ttls, request)
+    }
+
+    /// Like `reserve`, but `read_values` runs while `admission_lock` is held. A commit applies
+    /// its usage before releasing its hold, so a value read here can't miss usage whose hold
+    /// is already gone. `read_values` must return one entry per counter, in the same order.
+    pub(crate) fn reserve_reading_values<E>(
+        &self,
+        counters: &mut [Counter],
+        read_values: impl FnOnce(&[Counter]) -> Result<Vec<(u64, Duration)>, E>,
+        request: ReservationRequest,
+    ) -> Result<Authorization, E> {
+        let _admission_guard = self.admission_lock.lock().unwrap();
+        let values_and_window_ttls = read_values(counters)?;
+        Ok(self.admit(counters, &values_and_window_ttls, request))
+    }
+
+    // Callers must hold `admission_lock`.
+    fn admit(
+        &self,
+        counters: &mut [Counter],
+        values_and_window_ttls: &[(u64, Duration)],
+        request: ReservationRequest,
+    ) -> Authorization {
+        debug_assert!(request.hold_amount <= request.check_amount);
 
         let now = request.now;
         let mut first_limited = None;
@@ -247,6 +273,67 @@ impl LocalReservationRegistry {
     }
 }
 
+/// Runs concurrent reserve/commit/release cycles against one limit per round, and fails if
+/// more reservations are ever admitted than the limit allows.
+#[cfg(test)]
+pub(crate) fn assert_commits_never_cause_over_admission<S>(storage: &S)
+where
+    S: crate::storage::CounterStorage + Sync,
+{
+    use crate::limit::{Context, Limit};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Barrier;
+    use std::thread;
+
+    const MAX_VALUE: u64 = 100;
+    const WORKERS: usize = 8;
+    const ATTEMPTS_PER_WORKER: usize = 200;
+    const ROUNDS: usize = 50;
+    let ttl = Duration::from_secs(60);
+
+    for round in 0..ROUNDS {
+        let namespace = format!("reserve_commit_race_{round}");
+        let limit = Limit::new(
+            namespace.as_str(),
+            MAX_VALUE,
+            60,
+            vec![],
+            Vec::<crate::limit::Expression>::default(),
+        );
+        let counter = Counter::new(limit, &Context::default())
+            .unwrap()
+            .expect("must have a counter");
+        let barrier = Barrier::new(WORKERS);
+        let admitted = AtomicU64::new(0);
+
+        thread::scope(|scope| {
+            for _ in 0..WORKERS {
+                scope.spawn(|| {
+                    barrier.wait();
+                    for _ in 0..ATTEMPTS_PER_WORKER {
+                        let id = ReservationId::new();
+                        let mut counters = vec![counter.clone()];
+                        let auth = storage.reserve(&mut counters, &id, 1, 1, ttl).unwrap();
+                        if matches!(auth, Authorization::Ok) {
+                            admitted.fetch_add(1, Ordering::SeqCst);
+                            storage.update_counter(&counter, 1).unwrap();
+                            storage
+                                .release_reservation(std::slice::from_ref(&counter), &id)
+                                .unwrap();
+                        }
+                    }
+                });
+            }
+        });
+
+        let admitted = admitted.load(Ordering::SeqCst);
+        assert!(
+            admitted <= MAX_VALUE,
+            "round {round}: admitted {admitted} reservations against a limit of {MAX_VALUE}"
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -307,5 +394,33 @@ mod tests {
             },
         );
         assert!(matches!(auth2, Authorization::Ok));
+    }
+
+    #[test]
+    fn reserve_reading_values_reads_while_holding_admission_lock() {
+        let registry = LocalReservationRegistry::new(10);
+        let window_ttl = Duration::from_secs(60);
+        let mut counters = [counter(10)];
+
+        let auth = registry
+            .reserve_reading_values(
+                &mut counters,
+                |_| {
+                    assert!(
+                        registry.admission_lock.try_lock().is_err(),
+                        "values must be read under admission_lock"
+                    );
+                    Ok::<_, ()>(vec![(0, window_ttl)])
+                },
+                ReservationRequest {
+                    reservation_id: &ReservationId::new(),
+                    check_amount: 1,
+                    hold_amount: 1,
+                    ttl: window_ttl,
+                    now: SystemTime::now(),
+                },
+            )
+            .unwrap();
+        assert!(matches!(auth, Authorization::Ok));
     }
 }

@@ -230,14 +230,14 @@ impl CounterStorage for InMemoryStorage {
         ttl: Duration,
     ) -> Result<Authorization, StorageErr> {
         let now = SystemTime::now();
-        let values_and_window_ttls: Vec<(u64, Duration)> = counters
-            .iter()
-            .map(|counter| self.touch(counter, now))
-            .collect();
-
-        Ok(self.reservations.reserve(
+        self.reservations.reserve_reading_values(
             counters,
-            &values_and_window_ttls,
+            |counters| {
+                Ok(counters
+                    .iter()
+                    .map(|counter| self.touch(counter, now))
+                    .collect())
+            },
             ReservationRequest {
                 reservation_id,
                 check_amount,
@@ -245,7 +245,7 @@ impl CounterStorage for InMemoryStorage {
                 ttl,
                 now,
             },
-        ))
+        )
     }
 
     #[tracing::instrument(skip_all)]
@@ -603,5 +603,11 @@ mod tests {
 
         assert!(matches!(auth, Authorization::Ok));
         assert_eq!(counters[0].remaining().unwrap(), 10);
+    }
+
+    #[test]
+    fn concurrent_commits_never_cause_over_admission() {
+        let storage = InMemoryStorage::default();
+        crate::storage::local_reservations::assert_commits_never_cause_over_admission(&storage);
     }
 }
