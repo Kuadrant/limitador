@@ -6,7 +6,16 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+
+static CEL_ENV: LazyLock<Arc<cel::Env>> = LazyLock::new(|| {
+    let mut env = cel::Env::stdlib();
+    env.add_extension(cel::extensions::strings)
+        .expect("strings extension must not conflict with the standard library");
+    env.add_extension(cel::extensions::lists)
+        .expect("lists extension must not conflict with the standard library or strings extension");
+    Arc::new(env)
+});
 
 pub(super) mod errors {
     use cel::ExecutionError;
@@ -75,12 +84,12 @@ pub(super) mod errors {
 
 pub struct Context<'a> {
     variables: HashSet<String>,
-    ctx: cel::Context<'a>,
+    ctx: cel::Context<'a, 'static>,
 }
 
 impl<'a> Context<'a> {
     pub(crate) fn new(root: String, values: HashMap<String, String>) -> Self {
-        let mut ctx = cel::Context::default();
+        let mut ctx = cel::Context::with_env(Arc::clone(&CEL_ENV));
         let mut variables = HashSet::new();
 
         if root.is_empty() {
@@ -166,7 +175,7 @@ pub struct Expression {
 impl Expression {
     pub fn parse<T: ToString>(source: T) -> Result<Self, ParseError> {
         let source = source.to_string();
-        let parser = cel::parser::Parser::new();
+        let parser = CEL_ENV.parser();
         match parser.parse(&source) {
             Ok(expression) => Ok(Self { source, expression }),
             Err(err) => Err(ParseError::from(err, source)),
@@ -245,6 +254,7 @@ fn err_on_value(val: Value) -> EvaluationError {
         Value::Opaque(o) => {
             EvaluationError::UnexpectedValueType(format!("opaque: `{}`", o.runtime_type_name()))
         }
+        Value::Struct(s) => EvaluationError::UnexpectedValueType(format!("struct: `{}`", s.name())),
     }
 }
 
@@ -389,8 +399,8 @@ impl From<Predicate> for String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Context, Expression, Predicate};
-    use std::collections::{HashMap, HashSet};
+    use super::{Context, EvaluationError, ExecutionError, Expression, Predicate};
+    use std::collections::HashMap;
 
     #[test]
     fn expression() {
@@ -405,6 +415,64 @@ mod tests {
         let deserialized: Expression =
             serde_json::from_str(&serialized).expect("failed to deserialize");
         assert_eq!(exp.eval(&ctx()), deserialized.eval(&ctx()));
+    }
+
+    #[test]
+    fn expression_missing_map_key() {
+        let exp = Expression::parse("{'present': 'value'}.missing").expect("failed to parse");
+        assert_eq!(exp.eval(&ctx()), Ok(None));
+    }
+
+    #[test]
+    fn expression_map_keeps_only_string_labels() {
+        let exp = Expression::parse("{'label': 'value', 'number': 42, 1: 'ignored'}")
+            .expect("failed to parse");
+        assert_eq!(
+            exp.eval_map(&ctx()),
+            Ok(HashMap::from([("label".to_string(), "value".to_string())]))
+        );
+    }
+
+    #[test]
+    fn extension_functions_produce_metric_labels() {
+        let exp = Expression::parse(
+            "{'user': user.trim().lowerAscii(), \
+             'roles': roles.split(',').distinct().sort().join(',')}",
+        )
+        .expect("failed to parse");
+        let ctx = Context::from(HashMap::from([
+            ("user".to_string(), " ALICE ".to_string()),
+            ("roles".to_string(), "reader,ops,reader".to_string()),
+        ]));
+        assert_eq!(
+            exp.eval_map(&ctx),
+            Ok(HashMap::from([
+                ("user".to_string(), "alice".to_string()),
+                ("roles".to_string(), "ops,reader".to_string()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn expression_scalar_values() {
+        for (source, expected) in [
+            ("42", "42"),
+            ("42u", "42"),
+            ("1.5", "1.5"),
+            ("'value'", "value"),
+            ("true", "true"),
+            ("null", "null"),
+        ] {
+            let exp = Expression::parse(source).expect("failed to parse");
+            assert_eq!(exp.eval(&ctx()), Ok(Some(expected.to_string())), "{source}");
+        }
+    }
+
+    #[test]
+    fn parse_error_preserves_source() {
+        let err = Expression::parse("1 +").expect_err("invalid expression should not parse");
+        assert!(err.to_string().starts_with("couldn't parse 1 +:"));
+        assert!(std::error::Error::source(&err).is_some());
     }
 
     #[test]
@@ -429,12 +497,33 @@ mod tests {
     }
 
     #[test]
+    fn extension_predicate_requires_bindings_even_when_a_branch_matches() {
+        let pred = Predicate::parse("plan.trim().lowerAscii() == 'gold' || user == 'alice'")
+            .expect("failed to parse");
+        let mut values = HashMap::from([("plan".to_string(), " GOLD ".to_string())]);
+        assert_eq!(pred.test(&Context::from(values.clone())), Ok(false));
+
+        values.insert("user".to_string(), "bob".to_string());
+        assert_eq!(pred.test(&Context::from(values)), Ok(true));
+    }
+
+    #[test]
     fn predicate_no_key() {
+        let pred = Predicate::parse("there[0].not == 42").expect("failed to parse");
+        let mut ctx = Context::default();
+        ctx.list_binding("there".to_string(), vec![HashMap::default()]);
+        assert_eq!(pred.test(&ctx), Ok(false));
+    }
+
+    #[test]
+    fn predicate_field_access_on_a_string_is_a_type_error() {
         let pred = Predicate::parse("there.not == 42").expect("failed to parse");
-        assert_eq!(
+        assert!(matches!(
             pred.test(&HashMap::from([("there".to_string(), String::default())]).into()),
-            Ok(false)
-        );
+            Err(EvaluationError::ExecutionError(
+                ExecutionError::NoSuchOverload(_)
+            ))
+        ));
     }
 
     #[test]
@@ -462,9 +551,6 @@ mod tests {
     }
 
     fn ctx<'a>() -> Context<'a> {
-        Context {
-            variables: HashSet::default(),
-            ctx: cel::Context::default(),
-        }
+        Context::default()
     }
 }

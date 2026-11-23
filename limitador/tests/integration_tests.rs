@@ -260,6 +260,7 @@ mod test {
     test_with_all_storage_impls!(takes_into_account_only_vars_of_the_limits);
     test_with_all_storage_impls!(is_rate_limited_returns_false_when_no_limits_in_namespace);
     test_with_all_storage_impls!(is_rate_limited_returns_false_when_no_matching_limits);
+    test_with_all_storage_impls!(condition_evaluation_errors_are_returned);
     test_with_all_storage_impls!(is_rate_limited_applies_limit_if_its_unconditional);
     test_with_all_storage_impls!(check_rate_limited_and_update);
     test_with_all_storage_impls!(check_rate_limited_and_update_load_counters);
@@ -988,6 +989,47 @@ mod test {
                 .unwrap()
                 .limited
         );
+    }
+
+    async fn condition_evaluation_errors_are_returned(limiter: &mut TestsLimiter) {
+        use limitador::errors::LimitadorError;
+        use limitador::limit::EvaluationError;
+
+        for condition in ["there.not == 42", "42", "1 / 0 == 0"] {
+            let namespace = "condition_errors";
+            let limit = Limit::new(
+                namespace,
+                10,
+                60,
+                vec![condition.try_into().unwrap()],
+                Vec::<Expression>::new(),
+            );
+            limiter.add_limit(&limit).await;
+            let ctx = Context::from(HashMap::from([("there".to_string(), "text".to_string())]));
+            for result in [
+                limiter.is_rate_limited(namespace, &ctx, 1).await,
+                limiter
+                    .check_rate_limited_and_update(namespace, &ctx, 1)
+                    .await,
+            ] {
+                match result {
+                    Err(LimitadorError::InterpreterError(error)) => match (condition, error) {
+                        ("42", EvaluationError::UnexpectedValueType(_))
+                        | (
+                            "there.not == 42",
+                            EvaluationError::ExecutionError(cel::ExecutionError::NoSuchOverload(_)),
+                        )
+                        | (
+                            "1 / 0 == 0",
+                            EvaluationError::ExecutionError(cel::ExecutionError::DivisionByZero(_)),
+                        ) => {}
+                        (_, error) => panic!("unexpected error for {condition}: {error}"),
+                    },
+                    _ => panic!("expected a condition error for {condition}"),
+                }
+            }
+            limiter.delete_limits(namespace).await.unwrap();
+        }
     }
 
     async fn check_rate_limited_and_update(rate_limiter: &mut TestsLimiter) {
