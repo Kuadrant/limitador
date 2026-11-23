@@ -1944,7 +1944,6 @@ dependencies = [
  "tokio-stream",
  "tonic 0.12.3",
  "tonic-build 0.12.3",
- "tonic-reflection 0.12.3",
  "tracing",
  "uuid",
 ]
@@ -1979,7 +1978,7 @@ dependencies = [
  "tonic-middleware",
  "tonic-prost",
  "tonic-prost-build",
- "tonic-reflection 0.14.2",
+ "tonic-reflection",
  "tracing",
  "tracing-log",
  "tracing-opentelemetry",
@@ -3895,19 +3894,6 @@ dependencies = [
  "syn 2.0.106",
  "tempfile",
  "tonic-build 0.14.2",
-]
-
-[[package]]
-name = "tonic-reflection"
-version = "0.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "878d81f52e7fcfd80026b7fdb6a9b578b3c3653ba987f87f0dce4b64043cba27"
-dependencies = [
- "prost 0.13.5",
- "prost-types 0.13.5",
- "tokio",
- "tokio-stream",
- "tonic 0.12.3",
 ]
 
 [[package]]
