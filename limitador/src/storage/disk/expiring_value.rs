@@ -53,6 +53,10 @@ impl ExpiringValue {
             .duration_since(SystemTime::now())
             .unwrap_or(Duration::ZERO)
     }
+
+    pub fn ttl_at(&self, when: SystemTime) -> Duration {
+        self.expiry.duration_since(when).unwrap_or(Duration::ZERO)
+    }
 }
 
 impl Default for ExpiringValue {
@@ -128,6 +132,17 @@ mod tests {
         let now = SystemTime::now();
         let val = ExpiringValue::new(42, now);
         assert_eq!(val.value_at(now), 0);
+    }
+
+    #[test]
+    fn ttl_at_is_relative_to_the_given_time() {
+        let now = SystemTime::now();
+        let val = ExpiringValue::new(42, now + Duration::from_secs(10));
+        assert_eq!(
+            val.ttl_at(now + Duration::from_secs(4)),
+            Duration::from_secs(6)
+        );
+        assert_eq!(val.ttl_at(now + Duration::from_secs(11)), Duration::ZERO);
     }
 
     #[test]
