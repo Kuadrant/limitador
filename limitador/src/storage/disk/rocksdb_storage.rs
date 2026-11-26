@@ -144,10 +144,9 @@ impl CounterStorage for RocksDbStorage {
         hold_amount: u64,
         ttl: Duration,
     ) -> Result<Authorization, StorageErr> {
-        let now = SystemTime::now();
         self.reservations.reserve_reading_values(
             counters,
-            |counters| {
+            |counters, _now| {
                 let mut values_and_window_ttls = Vec::with_capacity(counters.len());
                 for counter in counters {
                     let key = key_for_counter(counter);
@@ -163,7 +162,7 @@ impl CounterStorage for RocksDbStorage {
                 check_amount,
                 hold_amount,
                 ttl,
-                now,
+                now: SystemTime::now(),
             },
         )
     }

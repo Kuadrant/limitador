@@ -137,14 +137,18 @@ impl LocalReservationRegistry {
     /// Like `reserve`, but `read_values` runs while `admission_lock` is held. A commit applies
     /// its usage before releasing its hold, so a value read here can't miss usage whose hold
     /// is already gone. `read_values` must return one entry per counter, in the same order.
+    ///
+    /// `request.now` is replaced with the time once the lock is held, and that time is passed
+    /// to `read_values`. Otherwise a lock wait would make hold expiries end before the window.
     pub(crate) fn reserve_reading_values<E>(
         &self,
         counters: &mut [Counter],
-        read_values: impl FnOnce(&[Counter]) -> Result<Vec<(u64, Duration)>, E>,
-        request: ReservationRequest,
+        read_values: impl FnOnce(&[Counter], SystemTime) -> Result<Vec<(u64, Duration)>, E>,
+        mut request: ReservationRequest,
     ) -> Result<Authorization, E> {
         let _admission_guard = self.admission_lock.lock().unwrap();
-        let values_and_window_ttls = read_values(counters)?;
+        request.now = SystemTime::now();
+        let values_and_window_ttls = read_values(counters, request.now)?;
         Ok(self.admit(counters, &values_and_window_ttls, request))
     }
 
@@ -405,7 +409,7 @@ mod tests {
         let auth = registry
             .reserve_reading_values(
                 &mut counters,
-                |_| {
+                |_, _| {
                     assert!(
                         registry.admission_lock.try_lock().is_err(),
                         "values must be read under admission_lock"
@@ -422,5 +426,48 @@ mod tests {
             )
             .unwrap();
         assert!(matches!(auth, Authorization::Ok));
+    }
+
+    #[test]
+    fn hold_expiry_matches_window_end_after_lock_wait() {
+        let registry = LocalReservationRegistry::new(10);
+        let lock_wait = Duration::from_millis(300);
+        let stale_now = SystemTime::now();
+        let window_end = stale_now + Duration::from_secs(60);
+        let mut counters = [counter(10)];
+
+        std::thread::scope(|scope| {
+            let guard = registry.admission_lock.lock().unwrap();
+            let reserver = scope.spawn(|| {
+                registry
+                    .reserve_reading_values(
+                        &mut counters,
+                        |_, _| {
+                            let window_ttl = window_end
+                                .duration_since(SystemTime::now())
+                                .unwrap_or_default();
+                            Ok::<_, ()>(vec![(0, window_ttl)])
+                        },
+                        ReservationRequest {
+                            reservation_id: &ReservationId::new(),
+                            check_amount: 1,
+                            hold_amount: 1,
+                            ttl: Duration::from_secs(120),
+                            now: stale_now,
+                        },
+                    )
+                    .unwrap()
+            });
+            std::thread::sleep(lock_wait);
+            drop(guard);
+            assert!(matches!(reserver.join().unwrap(), Authorization::Ok));
+        });
+
+        let entry = registry.entries.get(&counters[0]).expect("hold was stored");
+        let hold = &entry.read().unwrap().entries[0];
+        assert!(
+            hold.is_live_at(window_end - lock_wait / 2),
+            "hold must not expire before its counter's window ends"
+        );
     }
 }

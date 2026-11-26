@@ -229,10 +229,9 @@ impl CounterStorage for InMemoryStorage {
         hold_amount: u64,
         ttl: Duration,
     ) -> Result<Authorization, StorageErr> {
-        let now = SystemTime::now();
         self.reservations.reserve_reading_values(
             counters,
-            |counters| {
+            |counters, now| {
                 Ok(counters
                     .iter()
                     .map(|counter| self.touch(counter, now))
@@ -243,7 +242,7 @@ impl CounterStorage for InMemoryStorage {
                 check_amount,
                 hold_amount,
                 ttl,
-                now,
+                now: SystemTime::now(),
             },
         )
     }
