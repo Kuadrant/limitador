@@ -442,10 +442,14 @@ mod tests {
                 registry
                     .reserve_reading_values(
                         &mut counters,
-                        |_, _| {
-                            let window_ttl = window_end
-                                .duration_since(SystemTime::now())
-                                .unwrap_or_default();
+                        |_, now| {
+                            assert!(
+                                now >= stale_now + lock_wait,
+                                "the time must be taken after the lock wait"
+                            );
+                            // A slow read must not move the expiry either.
+                            std::thread::sleep(Duration::from_millis(100));
+                            let window_ttl = window_end.duration_since(now).unwrap_or_default();
                             Ok::<_, ()>(vec![(0, window_ttl)])
                         },
                         ReservationRequest {
@@ -466,8 +470,9 @@ mod tests {
         let entry = registry.entries.get(&counters[0]).expect("hold was stored");
         let hold = &entry.read().unwrap().entries[0];
         assert!(
-            hold.is_live_at(window_end - lock_wait / 2),
+            hold.is_live_at(window_end - Duration::from_millis(1)),
             "hold must not expire before its counter's window ends"
         );
+        assert!(!hold.is_live_at(window_end));
     }
 }

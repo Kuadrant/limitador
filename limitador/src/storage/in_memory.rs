@@ -379,14 +379,14 @@ impl InMemoryStorage {
                 Some(value) => value,
             };
             let current = value.update(0, counter.window(), now);
-            (current, value.ttl())
+            (current, value.ttl_at(now))
         } else {
             let mut counters = self.simple_limits.write().unwrap();
             let value = counters
                 .entry(counter.limit().clone())
                 .or_insert_with(|| AtomicExpiringValue::new(0, now + counter.window()));
             let current = value.update(0, counter.window(), now);
-            (current, value.ttl())
+            (current, value.ttl_at(now))
         }
     }
 }

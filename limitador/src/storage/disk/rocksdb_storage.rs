@@ -146,14 +146,14 @@ impl CounterStorage for RocksDbStorage {
     ) -> Result<Authorization, StorageErr> {
         self.reservations.reserve_reading_values(
             counters,
-            |counters, _now| {
+            |counters, now| {
                 let mut values_and_window_ttls = Vec::with_capacity(counters.len());
                 for counter in counters {
                     let key = key_for_counter(counter);
                     // Zero-delta "touch": establishes a fresh window if absent/expired, without
                     // affecting the counter's real value - mirrors `InMemoryStorage`'s `touch`.
-                    let value = self.insert_or_update(&key, counter, 0)?;
-                    values_and_window_ttls.push((value.value(), value.ttl()));
+                    let value = self.insert_or_update_at(&key, counter, 0, now)?;
+                    values_and_window_ttls.push((value.value_at(now), value.ttl_at(now)));
                 }
                 Ok(values_and_window_ttls)
             },
@@ -280,7 +280,16 @@ impl RocksDbStorage {
         counter: &Counter,
         delta: u64,
     ) -> Result<ExpiringValue, StorageErr> {
-        let now = SystemTime::now();
+        self.insert_or_update_at(key, counter, delta, SystemTime::now())
+    }
+
+    fn insert_or_update_at(
+        &self,
+        key: &[u8],
+        counter: &Counter,
+        delta: u64,
+        now: SystemTime,
+    ) -> Result<ExpiringValue, StorageErr> {
         let entry = {
             let span = debug_span!("datastore");
             let _entered = span.enter();

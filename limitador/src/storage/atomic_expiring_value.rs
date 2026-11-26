@@ -44,6 +44,13 @@ impl AtomicExpiringValue {
     pub fn ttl(&self) -> Duration {
         self.expiry.ttl()
     }
+
+    pub fn ttl_at(&self, when: SystemTime) -> Duration {
+        self.expiry
+            .expires_at()
+            .duration_since(when)
+            .unwrap_or(Duration::ZERO)
+    }
 }
 
 #[derive(Debug)]
@@ -197,6 +204,17 @@ mod tests {
         let now = SystemTime::now();
         let val = AtomicExpiringValue::new(42, now);
         assert_eq!(val.value_at(now), 0);
+    }
+
+    #[test]
+    fn ttl_at_is_relative_to_the_given_time() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let val = AtomicExpiringValue::new(42, now + Duration::from_secs(10));
+        assert_eq!(
+            val.ttl_at(now + Duration::from_secs(4)),
+            Duration::from_secs(6)
+        );
+        assert_eq!(val.ttl_at(now + Duration::from_secs(11)), Duration::ZERO);
     }
 
     #[test]
