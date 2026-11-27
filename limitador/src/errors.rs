@@ -18,7 +18,7 @@ impl Display for LimitadorError {
                 write!(f, "error while accessing the limits storage: {err:?}")
             }
             LimitadorError::InterpreterError(err) => {
-                write!(f, "error parsing condition: {err:?}")
+                write!(f, "error evaluating limit: {err}")
             }
         }
     }

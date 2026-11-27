@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 mod cel;
 
@@ -138,7 +139,12 @@ impl Limit {
         for variable in &self.variables {
             let name = variable.source().into();
             match variable.eval(ctx)? {
-                None => return Ok(None),
+                None => {
+                    return Err(EvaluationError::UnresolvedVariable {
+                        limit: Arc::new(self.clone()),
+                        variable: name,
+                    })
+                }
                 Some(value) => {
                     map.insert(name, value);
                 }
@@ -162,8 +168,8 @@ impl Limit {
             }
         }
 
-        let all_vars_are_set = self.variables.iter().all(|var| {
-            ctx.has_variables(
+        let unset_var = self.variables.iter().find(|var| {
+            !ctx.has_variables(
                 &var.variables()
                     .iter()
                     .map(String::as_str)
@@ -171,7 +177,13 @@ impl Limit {
             )
         });
 
-        Ok(all_vars_are_set)
+        match unset_var {
+            Some(var) => Err(EvaluationError::UnresolvedVariable {
+                limit: Arc::new(self.clone()),
+                variable: var.source().into(),
+            }),
+            None => Ok(true),
+        }
     }
 }
 
@@ -290,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn limit_does_not_apply_when_var_not_set() {
+    fn limit_fails_when_var_not_set() {
         let limit = Limit::new(
             "test_namespace",
             10,
@@ -303,7 +315,10 @@ mod tests {
         let mut values: HashMap<String, String> = HashMap::new();
         values.insert("x".into(), "5".into());
 
-        assert!(!limit.applies(&values.into()).unwrap())
+        assert!(matches!(
+            limit.applies(&values.into()),
+            Err(EvaluationError::UnresolvedVariable { variable, .. }) if variable == "y"
+        ))
     }
 
     #[test]
