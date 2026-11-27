@@ -261,6 +261,7 @@ mod test {
     test_with_all_storage_impls!(is_rate_limited_returns_false_when_no_limits_in_namespace);
     test_with_all_storage_impls!(is_rate_limited_returns_false_when_no_matching_limits);
     test_with_all_storage_impls!(condition_evaluation_errors_are_returned);
+    test_with_all_storage_impls!(unresolved_variables_are_returned);
     test_with_all_storage_impls!(is_rate_limited_applies_limit_if_its_unconditional);
     test_with_all_storage_impls!(check_rate_limited_and_update);
     test_with_all_storage_impls!(check_rate_limited_and_update_load_counters);
@@ -1029,6 +1030,48 @@ mod test {
                 }
             }
             limiter.delete_limits(namespace).await.unwrap();
+        }
+    }
+
+    async fn unresolved_variables_are_returned(limiter: &mut TestsLimiter) {
+        use limitador::errors::LimitadorError;
+        use limitador::limit::EvaluationError;
+
+        for (namespace, variable) in [
+            ("unresolved_binding", "app_id"),
+            ("unresolved_key", "{'alice': 'gold'}[user]"),
+        ] {
+            let per_user = Limit::new(namespace, 10, 60, vec![], vec!["user".try_into().unwrap()]);
+            let limit = Limit::new(
+                namespace,
+                10,
+                60,
+                vec!["req_method == 'GET'".try_into().unwrap()],
+                vec![variable.try_into().unwrap()],
+            );
+            limiter.add_limit(&per_user).await;
+            limiter.add_limit(&limit).await;
+            let ctx = Context::from(HashMap::from([
+                ("req_method".to_string(), "GET".to_string()),
+                ("user".to_string(), "bob".to_string()),
+            ]));
+            for result in [
+                limiter.is_rate_limited(namespace, &ctx, 1).await,
+                limiter
+                    .check_rate_limited_and_update(namespace, &ctx, 1)
+                    .await,
+            ] {
+                match result {
+                    Err(LimitadorError::InterpreterError(
+                        EvaluationError::UnresolvedVariable {
+                            variable: unresolved,
+                            ..
+                        },
+                    )) => assert_eq!(unresolved, variable),
+                    _ => panic!("expected an unresolved variable for {variable}"),
+                }
+            }
+            assert!(limiter.get_counters(namespace).await.unwrap().is_empty());
         }
     }
 

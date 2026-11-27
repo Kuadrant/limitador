@@ -148,7 +148,8 @@ impl PartialEq for Counter {
 #[cfg(test)]
 mod tests {
     use crate::counter::Counter;
-    use crate::limit::Limit;
+    use crate::errors::LimitadorError;
+    use crate::limit::{EvaluationError, Limit};
     use std::collections::HashMap;
 
     #[test]
@@ -168,5 +169,26 @@ mod tests {
             counter.unwrap().set_variables.get(var),
             Some("13".to_string()).as_ref()
         );
+    }
+
+    #[test]
+    fn fails_on_unresolved_variables() {
+        let var = "{'alice': 'gold'}[user]";
+        let limit = Limit::new(
+            "",
+            10,
+            60,
+            Vec::default(),
+            [var.try_into().expect("failed parsing")],
+        );
+        let map = HashMap::from([("user".to_string(), "bob".to_string())]);
+        let ctx = map.into();
+        assert!(matches!(
+            Counter::new(limit, &ctx),
+            Err(LimitadorError::InterpreterError(EvaluationError::UnresolvedVariable {
+                variable,
+                ..
+            })) if variable == var
+        ));
     }
 }

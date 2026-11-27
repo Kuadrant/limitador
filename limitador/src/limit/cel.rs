@@ -18,14 +18,17 @@ static CEL_ENV: LazyLock<Arc<cel::Env>> = LazyLock::new(|| {
 });
 
 pub(super) mod errors {
+    use crate::limit::Limit;
     use cel::ExecutionError;
     use std::error::Error;
     use std::fmt::{Display, Formatter};
+    use std::sync::Arc;
 
     #[derive(Debug, PartialEq)]
     pub enum EvaluationError {
         UnexpectedValueType(String),
         ExecutionError(ExecutionError),
+        UnresolvedVariable { limit: Arc<Limit>, variable: String },
     }
 
     impl Display for EvaluationError {
@@ -35,6 +38,9 @@ pub(super) mod errors {
                     write!(f, "unexpected value of type {value}")
                 }
                 EvaluationError::ExecutionError(error) => error.fmt(f),
+                EvaluationError::UnresolvedVariable { variable, .. } => {
+                    write!(f, "unresolved variable `{variable}`")
+                }
             }
         }
     }
@@ -44,6 +50,7 @@ pub(super) mod errors {
             match self {
                 EvaluationError::UnexpectedValueType(_) => None,
                 EvaluationError::ExecutionError(err) => Some(err),
+                EvaluationError::UnresolvedVariable { .. } => None,
             }
         }
     }
